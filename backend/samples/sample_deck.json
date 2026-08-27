@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "meta": {
+    "title": "시장 진입 검토 견본",
+    "report_type": "research",
+    "audience": "경영진",
+    "preset_overrides": {}
+  },
+  "structure": {
+    "chapters": [
+      {"id": "ch01", "topic": "표지", "conclusion": "", "template": "cover", "source_refs": []},
+      {"id": "ch02", "topic": "핵심 요약", "conclusion": "3개 시장 중 1곳이 진입 요건을 충족", "template": "summary", "source_refs": []},
+      {"id": "ch03", "topic": "1부: 시장 현황", "conclusion": "", "template": "divider", "source_refs": []},
+      {"id": "ch04", "topic": "시장 규모와 성장률", "conclusion": "성장률 기준으로는 B 시장이 우위", "template": "bullet_box", "source_refs": []},
+      {"id": "ch05", "topic": "시장별 지표 비교", "conclusion": "", "template": "table", "source_refs": []},
+      {"id": "ch06", "topic": "진입 방식 비교", "conclusion": "직접 진출보다 제휴 진출이 리스크 대비 효율 우위", "template": "compare2", "source_refs": []}
+    ]
+  },
+  "slides": [
+    {"chapter_id": "ch01", "slots": {"template": "cover", "title": "시장 진입 검토", "subtitle": "3개 후보 시장 비교 분석", "date": "2026-08-27", "audience": "경영진 보고"}},
+    {"chapter_id": "ch02", "slots": {"template": "summary", "conclusion": "3개 시장 중 1곳이 진입 요건을 충족", "points": [
+      {"text": "후보 3개 시장의 규모, 성장률, 규제 환경을 비교", "level": 0},
+      {"text": "정량 지표는 공개 통계 기준, 정성 평가는 현지 인터뷰 기준", "level": 0},
+      {"text": "재무 시뮬레이션은 보수 시나리오 단일 적용", "level": 1}
+    ]}},
+    {"chapter_id": "ch03", "slots": {"template": "divider", "section_no": "1", "section_title": "시장 현황"}},
+    {"chapter_id": "ch04", "slots": {"template": "bullet_box", "bullets": [
+      {"text": "A 시장: 규모 최대, 성장 정체", "level": 0},
+      {"text": "B 시장: 규모 중간, 연 12% 성장", "level": 0},
+      {"text": "성장 동인: 구독형 소비 확산", "level": 1},
+      {"text": "C 시장: 규모 최소, 규제 불확실성", "level": 0}
+    ], "conclusion": "성장률 기준으로는 B 시장이 우위", "footnote": "주: 규모는 2025년 공개 통계 기준"}},
+    {"chapter_id": "ch05", "slots": {"template": "table", "columns": ["지표", "A 시장", "B 시장", "C 시장"], "rows": [
+      ["시장 규모", "12.0조 원", "6.5조 원", "2.1조 원"],
+      ["연 성장률", "2%", "12%", "8%"],
+      ["규제 리스크", "낮음", "중간", "높음"]
+    ], "footnote": "주: 성장률은 3개년 평균"}},
+    {"chapter_id": "ch06", "slots": {"template": "compare2",
+      "left": {"heading": "직접 진출", "bullets": [{"text": "통제력 높음", "level": 0}, {"text": "초기 투자 큼", "level": 0}]},
+      "right": {"heading": "제휴 진출", "bullets": [{"text": "초기 투자 작음", "level": 0}, {"text": "현지 정보 접근 유리", "level": 0}]},
+      "conclusion": "직접 진출보다 제휴 진출이 리스크 대비 효율 우위"}}
+  ]
+}
