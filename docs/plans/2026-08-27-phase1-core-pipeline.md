@@ -2418,6 +2418,18 @@ def test_title_with_invalid_filename_chars_sanitized(tmp_path):
     assert ":" not in out.name
 
 
+def test_bracket_title_versions_increment(tmp_path):
+    # 대괄호 제목: glob 문자 클래스 해석으로 버전 스캔이 깨지던 회귀 사례 (2026-08-27 리뷰 실측)
+    deck_path = tmp_path / "deck.json"
+    _write_deck(deck_path, title="[대외비] 검토 보고")
+    out_dir = tmp_path / "exports"
+    first = export_deck(deck_path, out_dir)
+    second = export_deck(deck_path, out_dir)
+    assert first.name.endswith("_v001.pptx")
+    assert second.name.endswith("_v002.pptx")
+    assert first.exists() and second.exists()
+
+
 def test_export_works_from_non_ascii_paths(tmp_path):
     korean_dir = tmp_path / "한글 폴더"
     korean_dir.mkdir()
@@ -2469,7 +2481,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Deck
 from slidecaptain.models.preset import Preset, apply_overrides
 
-_VERSION_RE = re.compile(r"_v(\d{3})\.pptx$")
+_VERSION_RE = re.compile(r"_v(\d{3,})\.pptx$")
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
@@ -2479,13 +2491,20 @@ def _safe_title(title: str) -> str:
 
 
 def _next_version_path(out_dir: Path, title: str) -> Path:
+    # glob을 쓰지 않는다: 제목의 대괄호가 문자 클래스로 해석되어 스캔이 깨진다 (2026-08-27 리뷰 실측)
+    prefix = f"{title}_v"
     existing = [
         int(m.group(1))
-        for p in out_dir.glob(f"{title}_v*.pptx")
-        if (m := _VERSION_RE.search(p.name))
+        for p in out_dir.iterdir()
+        if p.name.startswith(prefix) and (m := _VERSION_RE.search(p.name))
     ]
     next_no = max(existing, default=0) + 1
-    return out_dir / f"{title}_v{next_no:03d}.pptx"
+    path = out_dir / f"{title}_v{next_no:03d}.pptx"
+    # 백스톱: 어떤 사유로든 스캔이 놓친 파일이 있으면 절대 그 경로를 돌려주지 않는다
+    while path.exists():
+        next_no += 1
+        path = out_dir / f"{title}_v{next_no:03d}.pptx"
+    return path
 
 
 def export_deck(
@@ -2544,7 +2563,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: 통과 확인**
 
 Run: `backend/.venv/Scripts/python.exe -m pytest backend/tests/test_exporter.py -q`
-Expected: `6 passed`
+Expected: `7 passed`
 
 - [ ] **Step 5: 커밋**
 
