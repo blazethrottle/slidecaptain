@@ -62,7 +62,7 @@ def _apply_bullet(paragraph, para: Para, preset: Preset) -> None:
 def _fill_text_frame(tf, frame: Frame, preset: Preset) -> None:
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.NONE
-    pad = _emu(preset.spacing.box_padding) if frame.fill else 0
+    pad = _emu(preset.spacing.box_padding) if (frame.fill or frame.border) else 0
     tf.margin_left = pad
     tf.margin_right = pad
     tf.margin_top = pad

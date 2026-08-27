@@ -292,8 +292,10 @@ def _build_compare2(
     def card_frame(name: str, card, x: float) -> Frame:
         paras = [Para(text=card.heading, font_pt=r.body_pt, bold=True, color=c.accent)]
         paras += _bullet_paras(card.bullets, preset)
-        bullets_h_available = card_h - s.card_heading_height - s.card_heading_gap
-        measure = measure_bullets(card.bullets, card_w, r.body_pt, metrics.face(False), s)
+        bullets_h_available = card_h - s.card_heading_height - s.card_heading_gap - 2 * s.box_padding
+        measure = measure_bullets(
+            card.bullets, card_w - 2 * s.box_padding, r.body_pt, metrics.face(False), s
+        )
         if measure.total_height_pt > bullets_h_available:
             warnings.append(_measure_warning(chapter, name, measure.total_height_pt, bullets_h_available))
         return Frame(

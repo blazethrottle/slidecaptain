@@ -14,7 +14,7 @@ from pptx.oxml.ns import qn
 from slidecaptain.export.exporter import export_deck
 from slidecaptain.models.preset import BODY_MIN_PT, FOOTNOTE_MIN_PT
 
-SAMPLE = Path("backend/samples/sample_deck.json")
+SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "sample_deck.json"
 
 
 @pytest.fixture(scope="module")
@@ -91,6 +91,7 @@ def test_body_area_font_steps_at_most_two_per_content_slide(exported):
                         for para in cell.text_frame.paragraphs:
                             for run in para.runs:
                                 sizes.add(run.font.size.pt)
+        assert sizes, f"{idx + 1}번째 장에서 본문 run을 찾지 못했습니다"
         assert len(sizes) <= 2, f"{idx + 1}번째 장의 본문 크기 단계가 {sorted(sizes)}로 2개를 넘습니다"
 
 
@@ -98,8 +99,13 @@ def test_deterministic_export(tmp_path):
     def signature(prs):
         return [
             [
-                (s.name, s.left, s.top, s.width, s.height,
-                 s.text_frame.text if s.has_text_frame else "")
+                (
+                    s.name, s.left, s.top, s.width, s.height,
+                    s.text_frame.text if s.has_text_frame else "",
+                    tuple(cell.text_frame.text for row in s.table.rows for cell in row.cells)
+                    if getattr(s, "has_table", False) and s.has_table
+                    else (),
+                )
                 for s in slide.shapes
             ]
             for slide in prs.slides

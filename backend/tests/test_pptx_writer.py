@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from pptx import Presentation
 from pptx.oxml.ns import qn
@@ -9,7 +7,6 @@ from slidecaptain.export.pptx_writer import write_pptx
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import Frame, Para, RenderPlan, SlidePlan
 
-OUT_DIR = Path("backend/tests/_out")
 PRESET = Preset()
 
 
@@ -114,3 +111,31 @@ def test_box_fill_and_border(saved):
     box = shapes["ch01:conclusion"]
     assert box.fill.fore_color.rgb == 0xEEF3F9 or str(box.fill.fore_color.rgb) == "EEF3F9"
     assert str(box.line.color.rgb) == "D0D7E2"
+
+
+def _border_only_plan() -> RenderPlan:
+    return RenderPlan(
+        page_width_pt=960.0,
+        page_height_pt=540.0,
+        slides=[
+            SlidePlan(
+                chapter_id="ch01",
+                template="compare2",
+                frames=[
+                    Frame(
+                        name="ch01:left_card", x=50.0, y=92.0, w=420.0, h=318.0,
+                        border="D0D7E2",
+                        paras=[Para(text="카드 내용", font_pt=12.0)],
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+def test_border_only_frame_gets_padding(tmp_path):
+    out = tmp_path / "border.pptx"
+    write_pptx(_border_only_plan(), out, PRESET)
+    prs = Presentation(str(out))
+    shape = prs.slides[0].shapes[0]
+    assert shape.text_frame.margin_left == Emu(round(10.0 * 12700))
