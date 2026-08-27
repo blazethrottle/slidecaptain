@@ -72,6 +72,18 @@ def test_export_works_from_non_ascii_paths(tmp_path):
     assert Presentation(str(out))
 
 
+def test_bracket_title_versions_increment(tmp_path):
+    # 대괄호 제목: glob 문자 클래스 해석으로 버전 스캔이 깨지던 회귀 사례
+    deck_path = tmp_path / "deck.json"
+    _write_deck(deck_path, title="[대외비] 검토 보고")
+    out_dir = tmp_path / "exports"
+    first = export_deck(deck_path, out_dir)
+    second = export_deck(deck_path, out_dir)
+    assert first.name.endswith("_v001.pptx")
+    assert second.name.endswith("_v002.pptx")
+    assert first.exists() and second.exists()
+
+
 def test_preset_overrides_from_meta_applied(tmp_path):
     deck_path = tmp_path / "deck.json"
     deck = _write_deck(deck_path)

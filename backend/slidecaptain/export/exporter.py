@@ -17,7 +17,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Deck
 from slidecaptain.models.preset import Preset, apply_overrides
 
-_VERSION_RE = re.compile(r"_v(\d{3})\.pptx$")
+_VERSION_RE = re.compile(r"_v(\d{3,})\.pptx$")
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
@@ -27,13 +27,19 @@ def _safe_title(title: str) -> str:
 
 
 def _next_version_path(out_dir: Path, title: str) -> Path:
+    prefix = f"{title}_v"
     existing = [
         int(m.group(1))
-        for p in out_dir.glob(f"{title}_v*.pptx")
-        if (m := _VERSION_RE.search(p.name))
+        for p in out_dir.iterdir()
+        if p.name.startswith(prefix) and (m := _VERSION_RE.search(p.name))
     ]
     next_no = max(existing, default=0) + 1
-    return out_dir / f"{title}_v{next_no:03d}.pptx"
+    path = out_dir / f"{title}_v{next_no:03d}.pptx"
+    # 백스톱: 어떤 사유로든 스캔이 놓친 파일이 있으면 절대 그 경로를 돌려주지 않는다
+    while path.exists():
+        next_no += 1
+        path = out_dir / f"{title}_v{next_no:03d}.pptx"
+    return path
 
 
 def export_deck(
