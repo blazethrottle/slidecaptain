@@ -1,0 +1,9 @@
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+projects/
+backend/tests/_out/
+node_modules/
+frontend/dist/
+.superpowers/
