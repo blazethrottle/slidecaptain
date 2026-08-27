@@ -4,20 +4,26 @@
 레이아웃 엔진이 수식으로 계산한다 (설계서 5.4).
 """
 
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 BODY_MIN_PT = 12.0
 FOOTNOTE_MIN_PT = 9.0
 
+HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
+
 
 class Fonts(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     korean: str = "맑은 고딕"
     latin: str = "맑은 고딕"
 
 
 class FontRoles(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     cover_title_pt: float = 28.0
     section_title_pt: float = 24.0
     title_pt: float = 20.0
@@ -43,15 +49,19 @@ class FontRoles(BaseModel):
 class Colors(BaseModel):
     """색상은 알파 없는 6자리 16진수 문자열."""
 
-    text: str = "202020"
-    accent: str = "1F4E79"
-    box_fill: str = "EEF3F9"
-    table_header_fill: str = "F2F2F2"
-    border: str = "D0D7E2"
-    background: str = "FFFFFF"
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    text: HexColor = "202020"
+    accent: HexColor = "1F4E79"
+    box_fill: HexColor = "EEF3F9"
+    table_header_fill: HexColor = "F2F2F2"
+    border: HexColor = "D0D7E2"
+    background: HexColor = "FFFFFF"
 
 
 class Spacing(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     margin_left: float = 50.0
     margin_right: float = 50.0
     margin_top: float = 36.0
@@ -81,6 +91,8 @@ class Spacing(BaseModel):
 
 
 class Preset(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
     fonts: Fonts = Fonts()
     font_roles: FontRoles = FontRoles()
     colors: Colors = Colors()

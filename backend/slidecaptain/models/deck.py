@@ -47,7 +47,7 @@ class BulletBoxSlots(BaseModel):
 
 class TableSlots(BaseModel):
     template: Literal["table"] = "table"
-    columns: list[str]
+    columns: list[str] = Field(min_length=1)
     rows: list[list[str]]
     footnote: str = ""
 
@@ -107,3 +107,22 @@ class Deck(BaseModel):
     meta: DeckMeta
     structure: Structure = Structure()
     slides: list[Slide] = []
+
+    @model_validator(mode="after")
+    def _chapters_and_slides_consistent(self) -> "Deck":
+        seen_ids: set[str] = set()
+        for ch in self.structure.chapters:
+            if ch.id in seen_ids:
+                raise ValueError(f"장 id가 중복되었습니다: {ch.id}")
+            seen_ids.add(ch.id)
+        chapters_by_id = {ch.id: ch for ch in self.structure.chapters}
+        for slide in self.slides:
+            chapter = chapters_by_id.get(slide.chapter_id)
+            if chapter is None:
+                continue  # 구조안에 없는 chapter_id는 엔진의 기존 ValueError가 담당한다
+            if chapter.template != slide.slots.template:
+                raise ValueError(
+                    f"장 {chapter.id}의 template({chapter.template})이 "
+                    f"슬롯 template({slide.slots.template})과 다릅니다"
+                )
+        return self

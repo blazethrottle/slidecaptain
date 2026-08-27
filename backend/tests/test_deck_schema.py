@@ -68,3 +68,36 @@ def test_bullet_level_limited():
 def test_report_type_restricted():
     with pytest.raises(ValidationError):
         DeckMeta(title="x", report_type="poem")
+
+
+def test_empty_table_columns_rejected():
+    with pytest.raises(ValidationError):
+        TableSlots(columns=[], rows=[])
+
+
+def test_duplicate_chapter_id_rejected():
+    with pytest.raises(ValidationError):
+        Deck(
+            meta=DeckMeta(title="테스트"),
+            structure=Structure(
+                chapters=[
+                    Chapter(id="ch01", topic="A", template="bullet_box"),
+                    Chapter(id="ch01", topic="B", template="table"),
+                ]
+            ),
+        )
+
+
+def test_slide_template_mismatches_chapter_template_rejected():
+    with pytest.raises(ValidationError):
+        Deck(
+            meta=DeckMeta(title="테스트"),
+            structure=Structure(
+                chapters=[
+                    Chapter(id="ch01", topic="A", template="bullet_box"),
+                ]
+            ),
+            slides=[
+                Slide(chapter_id="ch01", slots=TableSlots(columns=["열"], rows=[["값"]])),
+            ],
+        )

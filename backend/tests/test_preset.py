@@ -57,3 +57,19 @@ def test_preset_roundtrip_json():
     p = Preset()
     p2 = Preset.model_validate_json(p.model_dump_json())
     assert p2 == p
+
+
+def test_apply_overrides_rejects_typo_key():
+    with pytest.raises(ValidationError):
+        apply_overrides(Preset(), {"font_rolez": {"body_pt": 13.0}})
+
+
+def test_assignment_after_creation_revalidates_floor():
+    p = Preset()
+    with pytest.raises(ValidationError):
+        p.font_roles.body_pt = 5.0
+
+
+def test_colors_reject_non_hex_value():
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"colors": {"accent": "#1F4E79"}})
