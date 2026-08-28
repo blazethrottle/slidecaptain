@@ -1,7 +1,7 @@
 """CLI.
 
 - python -m slidecaptain export <deck.json> [--out DIR]
-- python -m slidecaptain serve [--data-dir PATH] [--port N]
+- python -m slidecaptain serve [--data-dir PATH] [--port N] [--model MODEL]
 """
 
 import argparse
@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_serve = sub.add_parser("serve", help="로컬 API 서버를 연다 (127.0.0.1 전용)")
     p_serve.add_argument("--data-dir", type=Path, default=Path.home() / "slidecaptain-projects")
     p_serve.add_argument("--port", type=int, default=8765)
+    p_serve.add_argument("--model", default=None, help="AI 생성 모델 (기본: sonnet)")
     return parser
 
 
@@ -44,12 +45,18 @@ def _run_export(args) -> int:
     return 0
 
 
+def _build_serve_app(data_dir: Path, model: str | None):
+    from slidecaptain.pipeline.subscription import SubscriptionProvider
+    from slidecaptain.server.app import create_app
+    from slidecaptain.storage.file_store import FileProjectStore
+
+    return create_app(FileProjectStore(data_dir), provider=SubscriptionProvider(model=model))
+
+
 def _run_serve(args) -> int:
     import uvicorn
 
     from slidecaptain.fonts.installer import _bundled_font_paths, ensure_fonts
-    from slidecaptain.server.app import create_app
-    from slidecaptain.storage.file_store import FileProjectStore
 
     try:
         if ensure_fonts() == "installed":
@@ -58,7 +65,7 @@ def _run_serve(args) -> int:
         assets_dir = _bundled_font_paths()[0].parent
         print(f"폰트 자동 설치에 실패했습니다: {e}\n화면 표시가 다른 폰트로 대체될 수 있습니다. 수동 설치 파일: {assets_dir}", file=sys.stderr)
 
-    app = create_app(FileProjectStore(args.data_dir))
+    app = _build_serve_app(args.data_dir, args.model)
     print(f"프로젝트 폴더: {args.data_dir}")
     print(f"서버 주소: http://127.0.0.1:{args.port} (이 PC에서만 접근 가능)")
     uvicorn.run(app, host="127.0.0.1", port=args.port)

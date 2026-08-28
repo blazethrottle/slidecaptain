@@ -56,3 +56,28 @@ def test_serve_parser_defaults():
     args = build_parser().parse_args(["serve"])
     assert args.port == 8765
     assert args.data_dir.name == "slidecaptain-projects"
+
+
+def test_serve_parser_accepts_model():
+    from slidecaptain.__main__ import build_parser
+
+    args = build_parser().parse_args(["serve", "--model", "opus"])
+    assert args.model == "opus"
+    args_default = build_parser().parse_args(["serve"])
+    assert args_default.model is None
+
+
+def test_serve_app_wires_model_to_provider(tmp_path, monkeypatch):
+    import slidecaptain.pipeline.subscription as sub
+    from slidecaptain.__main__ import _build_serve_app
+
+    captured = {}
+
+    class Spy(sub.SubscriptionProvider):
+        def __init__(self, model=None):
+            captured["model"] = model
+            super().__init__(model)
+
+    monkeypatch.setattr(sub, "SubscriptionProvider", Spy)
+    _build_serve_app(tmp_path / "data", "opus")
+    assert captured["model"] == "opus"

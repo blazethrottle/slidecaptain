@@ -10,9 +10,11 @@ from pydantic import BaseModel, ValidationError
 from slidecaptain.export.exporter import export_deck_data
 from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.font_metrics import FontMetrics
-from slidecaptain.models.deck import Deck
+from slidecaptain.models.deck import Deck, Slots
 from slidecaptain.models.preset import Preset, apply_overrides
 from slidecaptain.models.render import RenderPlan
+from slidecaptain.pipeline.provider import AIProvider, ProviderError
+from slidecaptain.pipeline.service import ChapterResult, GenerationService, StructureResult
 from slidecaptain.storage.file_store import (
     InvalidName,
     InvalidSourceEncoding,
@@ -54,6 +56,20 @@ class ExportResult(BaseModel):
     path: str
 
 
+class GenerateStructureRequest(BaseModel):
+    target_chapters: int | None = None
+    instructions: str = ""
+
+
+class GenerateChapterRequest(BaseModel):
+    instructions: str = ""
+
+
+class CondenseChapterRequest(BaseModel):
+    slots: Slots  # 화면이 들고 있는 현재 슬롯 (미저장 수정 포함. 설계 결정 13)
+    instructions: str = ""
+
+
 def _validated_preset(deck: Deck) -> Preset:
     """덱의 preset_overrides를 검증해 프리셋을 만든다.
 
@@ -67,14 +83,37 @@ def _validated_preset(deck: Deck) -> Preset:
         raise HTTPException(422, f"프리셋 덮어쓰기 값이 유효하지 않습니다: {first}")
 
 
-def create_app(store: ProjectStore) -> FastAPI:
+def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastAPI:
     app = FastAPI(title="Slide Captain", version="0.2.0")
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
+    service = GenerationService(provider, metrics) if provider is not None else None
 
     @app.exception_handler(StorageError)
     async def storage_error_handler(request, exc: StorageError):
         status = next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls))
         return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    @app.exception_handler(ProviderError)
+    async def provider_error_handler(request, exc: ProviderError):
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    def _require_service() -> GenerationService:
+        if service is None:
+            # 오류 문구는 비개발자가 수행할 수 있는 행동으로 (2026-08-28 적대 리뷰 반영)
+            raise HTTPException(
+                503, "AI 생성 기능을 사용할 수 없는 상태입니다. 앱을 다시 시작해 주세요."
+            )
+        return service
+
+    def _load_sources(name: str) -> dict[str, str]:
+        files = store.list_sources(name)
+        if not files:
+            raise HTTPException(
+                422,
+                "입력 자료가 없습니다. 자료 화면에서 파일을 추가하거나, "
+                "프로젝트 폴더의 sources에 텍스트 파일을 넣어 주세요.",
+            )
+        return {f: store.read_source(name, f) for f in files}
 
     @app.get("/api/projects", response_model=list[ProjectInfo])
     def list_projects():
@@ -127,5 +166,42 @@ def create_app(store: ProjectStore) -> FastAPI:
     def write_source(name: str, filename: str, body: SourceText):
         store.write_source(name, filename, body.text)
         return OkResponse()
+
+    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
+    async def generate_structure(name: str, req: GenerateStructureRequest):
+        svc = _require_service()
+        deck = store.load_deck(name)
+        sources = _load_sources(name)
+        return await svc.generate_structure(deck.meta, sources, req.target_chapters, req.instructions)
+
+    @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult)
+    async def generate_chapter(name: str, chapter_id: str, req: GenerateChapterRequest):
+        svc = _require_service()
+        deck = store.load_deck(name)
+        if all(ch.id != chapter_id for ch in deck.structure.chapters):
+            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+        preset = _validated_preset(deck)
+        sources = _load_sources(name)
+        return await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions)
+
+    @app.post(
+        "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
+        response_model=ChapterResult,
+    )
+    async def condense_chapter(name: str, chapter_id: str, req: CondenseChapterRequest):
+        svc = _require_service()
+        deck = store.load_deck(name)
+        chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
+        if chapter is None:
+            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+        if req.slots.template != chapter.template:
+            raise HTTPException(
+                422,
+                f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
+                "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+            )
+        preset = _validated_preset(deck)
+        sources = _load_sources(name)
+        return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
 
     return app

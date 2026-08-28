@@ -464,6 +464,171 @@
           }
         }
       }
+    },
+    "/api/projects/{name}/generate/structure": {
+      "post": {
+        "summary": "Generate Structure",
+        "operationId": "generate_structure_api_projects__name__generate_structure_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateStructureRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StructureResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/generate/chapter/{chapter_id}": {
+      "post": {
+        "summary": "Generate Chapter",
+        "operationId": "generate_chapter_api_projects__name__generate_chapter__chapter_id__post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateChapterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/generate/chapter/{chapter_id}/condense": {
+      "post": {
+        "summary": "Condense Chapter",
+        "operationId": "condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "chapter_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chapter Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CondenseChapterRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -620,6 +785,95 @@
         ],
         "title": "Chapter"
       },
+      "ChapterResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "format_error"
+            ],
+            "title": "Status"
+          },
+          "slots": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CoverSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SummarySlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BulletBoxSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/TableSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CompareSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DividerSlots"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "template",
+                  "mapping": {
+                    "bullet_box": "#/components/schemas/BulletBoxSlots",
+                    "compare2": "#/components/schemas/CompareSlots",
+                    "cover": "#/components/schemas/CoverSlots",
+                    "divider": "#/components/schemas/DividerSlots",
+                    "summary": "#/components/schemas/SummarySlots",
+                    "table": "#/components/schemas/TableSlots"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slots"
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text",
+            "default": ""
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityWarning"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          },
+          "unverified_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unverified Numbers",
+            "default": []
+          },
+          "format_retried": {
+            "type": "boolean",
+            "title": "Format Retried",
+            "default": false
+          },
+          "condensed": {
+            "type": "boolean",
+            "title": "Condensed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "ChapterResult"
+      },
       "CompareSlots": {
         "properties": {
           "template": {
@@ -646,6 +900,54 @@
           "conclusion"
         ],
         "title": "CompareSlots"
+      },
+      "CondenseChapterRequest": {
+        "properties": {
+          "slots": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverSlots"
+              },
+              {
+                "$ref": "#/components/schemas/SummarySlots"
+              },
+              {
+                "$ref": "#/components/schemas/BulletBoxSlots"
+              },
+              {
+                "$ref": "#/components/schemas/TableSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CompareSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DividerSlots"
+              }
+            ],
+            "title": "Slots",
+            "discriminator": {
+              "propertyName": "template",
+              "mapping": {
+                "bullet_box": "#/components/schemas/BulletBoxSlots",
+                "compare2": "#/components/schemas/CompareSlots",
+                "cover": "#/components/schemas/CoverSlots",
+                "divider": "#/components/schemas/DividerSlots",
+                "summary": "#/components/schemas/SummarySlots",
+                "table": "#/components/schemas/TableSlots"
+              }
+            }
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "slots"
+        ],
+        "title": "CondenseChapterRequest"
       },
       "CoverSlots": {
         "properties": {
@@ -878,6 +1180,39 @@
           "h"
         ],
         "title": "Frame"
+      },
+      "GenerateChapterRequest": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "GenerateChapterRequest"
+      },
+      "GenerateStructureRequest": {
+        "properties": {
+          "target_chapters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Chapters"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "GenerateStructureRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1199,6 +1534,51 @@
         },
         "type": "object",
         "title": "Structure"
+      },
+      "StructureResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "format_error"
+            ],
+            "title": "Status"
+          },
+          "structure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Structure"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text",
+            "default": ""
+          },
+          "unverified_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unverified Numbers",
+            "default": []
+          },
+          "format_retried": {
+            "type": "boolean",
+            "title": "Format Retried",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "StructureResult"
       },
       "SummarySlots": {
         "properties": {

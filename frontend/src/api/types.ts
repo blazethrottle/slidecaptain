@@ -143,6 +143,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/generate/structure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Structure */
+        post: operations["generate_structure_api_projects__name__generate_structure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/generate/chapter/{chapter_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Chapter */
+        post: operations["generate_chapter_api_projects__name__generate_chapter__chapter_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/generate/chapter/{chapter_id}/condense": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Condense Chapter */
+        post: operations["condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -223,6 +274,41 @@ export interface components {
              */
             source_refs: string[];
         };
+        /** ChapterResult */
+        ChapterResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "format_error";
+            /** Slots */
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"]) | null;
+            /**
+             * Raw Text
+             * @default
+             */
+            raw_text: string;
+            /**
+             * Warnings
+             * @default []
+             */
+            warnings: components["schemas"]["CapacityWarning"][];
+            /**
+             * Unverified Numbers
+             * @default []
+             */
+            unverified_numbers: string[];
+            /**
+             * Format Retried
+             * @default false
+             */
+            format_retried: boolean;
+            /**
+             * Condensed
+             * @default false
+             */
+            condensed: boolean;
+        };
         /** CompareSlots */
         CompareSlots: {
             /**
@@ -234,6 +320,16 @@ export interface components {
             right: components["schemas"]["Card"];
             /** Conclusion */
             conclusion: string;
+        };
+        /** CondenseChapterRequest */
+        CondenseChapterRequest: {
+            /** Slots */
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
         };
         /** CoverSlots */
         CoverSlots: {
@@ -360,6 +456,24 @@ export interface components {
              * @default top
              */
             valign: string;
+        };
+        /** GenerateChapterRequest */
+        GenerateChapterRequest: {
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** GenerateStructureRequest */
+        GenerateStructureRequest: {
+            /** Target Chapters */
+            target_chapters?: number | null;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -498,6 +612,30 @@ export interface components {
              * @default []
              */
             chapters: components["schemas"]["Chapter"][];
+        };
+        /** StructureResult */
+        StructureResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "format_error";
+            structure?: components["schemas"]["Structure"] | null;
+            /**
+             * Raw Text
+             * @default
+             */
+            raw_text: string;
+            /**
+             * Unverified Numbers
+             * @default []
+             */
+            unverified_numbers: string[];
+            /**
+             * Format Retried
+             * @default false
+             */
+            format_retried: boolean;
         };
         /** SummarySlots */
         SummarySlots: {
@@ -898,6 +1036,113 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_structure_api_projects__name__generate_structure_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateStructureRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StructureResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_chapter_api_projects__name__generate_chapter__chapter_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateChapterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                chapter_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CondenseChapterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterResult"];
                 };
             };
             /** @description Validation Error */
