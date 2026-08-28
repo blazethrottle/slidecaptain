@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from slidecaptain.server.app import create_app
@@ -13,6 +16,14 @@ def test_openapi_contains_core_schemas(schema):
     names = schema["components"]["schemas"].keys()
     for required in ["Deck", "RenderPlan", "RenderStyle", "ProjectInfo", "SnapshotInfo"]:
         assert required in names, f"{required} 스키마가 OpenAPI에 없습니다"
+
+
+def test_committed_openapi_json_matches_live_app(schema):
+    path = Path(__file__).resolve().parent.parent / "openapi.json"
+    committed = json.loads(path.read_text(encoding="utf-8"))
+    assert committed == schema, (
+        "커밋된 openapi.json이 앱과 다릅니다. scripts/dump_openapi.py로 재생성해 주세요"
+    )
 
 
 def test_openapi_contains_all_routes(schema):
