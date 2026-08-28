@@ -39,7 +39,7 @@ def saved(tmp_path):
     metrics = FontMetrics.from_bundled()
     plan = build_render_plan(_table_deck(), PRESET, metrics)
     out = tmp_path / "table.pptx"
-    write_pptx(plan, out, PRESET)
+    write_pptx(plan, out)
     return Presentation(str(out))
 
 

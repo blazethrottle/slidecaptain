@@ -55,7 +55,28 @@ class SlidePlan(BaseModel):
     warnings: list[CapacityWarning] = []
 
 
+class RenderStyle(BaseModel):
+    """라이터와 미리보기가 소비하는 시각 스타일. 프리셋에서 계산되어 렌더 계획에 내장된다.
+
+    렌더 계획은 이 블록 덕에 자기완결적이다: 소비자는 프리셋을 다시 해석하지 않는다.
+    """
+
+    korean_font: str
+    latin_font: str
+    text_color: str
+    box_padding_pt: float
+    line_spacing: float  # 행간 계수. 라이터가 font_pt에 곱해 고정 pt로 기록한다
+    bullet_indent_pt: float
+    bullet_gap_pt: float
+    table_cell_pad_x_pt: float
+    table_cell_pad_y_pt: float
+    border_width_pt: float
+    bullet_char: str
+    bullet_font: str
+
+
 class RenderPlan(BaseModel):
     page_width_pt: float
     page_height_pt: float
+    style: RenderStyle
     slides: list[SlidePlan]

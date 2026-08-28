@@ -16,8 +16,7 @@ from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
-from slidecaptain.models.preset import Preset
-from slidecaptain.models.render import Frame, Para, RenderPlan, TablePlan
+from slidecaptain.models.render import Frame, Para, RenderPlan, RenderStyle, TablePlan
 
 EMU_PER_PT = 12700
 
@@ -28,11 +27,11 @@ def _emu(pt: float) -> Emu:
     return Emu(round(pt * EMU_PER_PT))
 
 
-def _style_run(run, para: Para, preset: Preset) -> None:
+def _style_run(run, para: Para, style: RenderStyle) -> None:
     run.font.size = Pt(para.font_pt)
     run.font.bold = para.bold
     run.font.color.rgb = RGBColor.from_string(para.color)
-    run.font.name = preset.fonts.latin  # a:latin만 기록된다 (실측 검증 2026-08-27)
+    run.font.name = style.latin_font  # a:latin만 기록된다 (실측 검증 2026-08-27)
     # 공식 API가 a:rPr에 lang="ko-KR"을 기록한다 (v0.1은 한국어 고정)
     run.font.language_id = MSO_LANGUAGE_ID.KOREAN
     # 한글 폰트는 a:ea 요소로 지정해야 실제 렌더에 적용된다. 스키마 순서상 a:latin 바로 뒤에 넣는다
@@ -45,24 +44,24 @@ def _style_run(run, para: Para, preset: Preset) -> None:
             latin.addnext(ea)
         else:
             rPr.append(ea)
-    ea.set("typeface", preset.fonts.korean)
+    ea.set("typeface", style.korean_font)
 
 
-def _apply_bullet(paragraph, para: Para, preset: Preset) -> None:
-    indent_emu = round(preset.spacing.bullet_indent * EMU_PER_PT)
+def _apply_bullet(paragraph, para: Para, style: RenderStyle) -> None:
+    indent_emu = round(style.bullet_indent_pt * EMU_PER_PT)
     pPr = paragraph._p.get_or_add_pPr()
     pPr.set("marL", str(indent_emu * (para.level + 1)))
     pPr.set("indent", str(-indent_emu))
-    bu_font = pPr.makeelement(qn("a:buFont"), {"typeface": "Arial"})
-    bu_char = pPr.makeelement(qn("a:buChar"), {"char": "•"})
+    bu_font = pPr.makeelement(qn("a:buFont"), {"typeface": style.bullet_font})
+    bu_char = pPr.makeelement(qn("a:buChar"), {"char": style.bullet_char})
     pPr.append(bu_font)
     pPr.append(bu_char)
 
 
-def _fill_text_frame(tf, frame: Frame, preset: Preset) -> None:
+def _fill_text_frame(tf, frame: Frame, style: RenderStyle) -> None:
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.NONE
-    pad = _emu(preset.spacing.box_padding) if (frame.fill or frame.border) else 0
+    pad = _emu(style.box_padding_pt) if (frame.fill or frame.border) else 0
     tf.margin_left = pad
     tf.margin_right = pad
     tf.margin_top = pad
@@ -71,18 +70,18 @@ def _fill_text_frame(tf, frame: Frame, preset: Preset) -> None:
         paragraph = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         paragraph.alignment = _ALIGN[para.align]
         # 고정 pt 행간: 용량 계산(line_height_pt)과 렌더를 일치시킨다
-        paragraph.line_spacing = Pt(para.font_pt * preset.spacing.line_spacing)
+        paragraph.line_spacing = Pt(para.font_pt * style.line_spacing)
         paragraph.level = para.level
         if para.bullet:
-            _apply_bullet(paragraph, para, preset)
+            _apply_bullet(paragraph, para, style)
         if i > 0 and para.bullet:
-            paragraph.space_before = Pt(preset.spacing.bullet_gap)
+            paragraph.space_before = Pt(style.bullet_gap_pt)
         run = paragraph.add_run()
         run.text = para.text
-        _style_run(run, para, preset)
+        _style_run(run, para, style)
 
 
-def _add_text_shape(slide, frame: Frame, preset: Preset) -> None:
+def _add_text_shape(slide, frame: Frame, style: RenderStyle) -> None:
     if frame.fill or frame.border:
         shape = slide.shapes.add_shape(
             MSO_SHAPE.RECTANGLE, _emu(frame.x), _emu(frame.y), _emu(frame.w), _emu(frame.h)
@@ -95,16 +94,16 @@ def _add_text_shape(slide, frame: Frame, preset: Preset) -> None:
             shape.fill.background()
         if frame.border:
             shape.line.color.rgb = RGBColor.from_string(frame.border)
-            shape.line.width = Pt(0.75)
+            shape.line.width = Pt(style.border_width_pt)
         else:
             shape.line.fill.background()
     else:
         shape = slide.shapes.add_textbox(_emu(frame.x), _emu(frame.y), _emu(frame.w), _emu(frame.h))
     shape.name = frame.name
-    _fill_text_frame(shape.text_frame, frame, preset)
+    _fill_text_frame(shape.text_frame, frame, style)
 
 
-def _add_table_shape(slide, frame: Frame, preset: Preset) -> None:
+def _add_table_shape(slide, frame: Frame, style: RenderStyle) -> None:
     plan: TablePlan = frame.table
     n_rows = len(plan.rows) + 1
     n_cols = len(plan.header)
@@ -123,27 +122,28 @@ def _add_table_shape(slide, frame: Frame, preset: Preset) -> None:
     for r_idx, row in enumerate(all_rows):
         for c_idx, text in enumerate(row):
             cell = table.cell(r_idx, c_idx)
-            cell.margin_left = _emu(preset.spacing.table_cell_pad_x)
-            cell.margin_right = _emu(preset.spacing.table_cell_pad_x)
-            cell.margin_top = _emu(preset.spacing.table_cell_pad_y)
-            cell.margin_bottom = _emu(preset.spacing.table_cell_pad_y)
+            cell.margin_left = _emu(style.table_cell_pad_x_pt)
+            cell.margin_right = _emu(style.table_cell_pad_x_pt)
+            cell.margin_top = _emu(style.table_cell_pad_y_pt)
+            cell.margin_bottom = _emu(style.table_cell_pad_y_pt)
             if r_idx == 0:
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = RGBColor.from_string(plan.header_fill)
             tf = cell.text_frame
             tf.word_wrap = True
             paragraph = tf.paragraphs[0]
-            paragraph.line_spacing = Pt(plan.font_pt * preset.spacing.line_spacing)
+            paragraph.line_spacing = Pt(plan.font_pt * style.line_spacing)
             run = paragraph.add_run()
             run.text = text
             _style_run(
                 run,
-                Para(text=text, font_pt=plan.font_pt, bold=(r_idx == 0), color=preset.colors.text),
-                preset,
+                Para(text=text, font_pt=plan.font_pt, bold=(r_idx == 0), color=style.text_color),
+                style,
             )
 
 
-def write_pptx(plan: RenderPlan, out_path: str | Path, preset: Preset) -> None:
+def write_pptx(plan: RenderPlan, out_path: str | Path) -> None:
+    style = plan.style
     prs = Presentation()
     prs.slide_width = _emu(plan.page_width_pt)
     prs.slide_height = _emu(plan.page_height_pt)
@@ -152,7 +152,7 @@ def write_pptx(plan: RenderPlan, out_path: str | Path, preset: Preset) -> None:
         slide = prs.slides.add_slide(blank_layout)
         for frame in slide_plan.frames:
             if frame.table is not None:
-                _add_table_shape(slide, frame, preset)
+                _add_table_shape(slide, frame, style)
             else:
-                _add_text_shape(slide, frame, preset)
+                _add_text_shape(slide, frame, style)
     prs.save(str(out_path))

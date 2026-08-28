@@ -4,16 +4,31 @@ from pptx.oxml.ns import qn
 from pptx.util import Emu
 
 from slidecaptain.export.pptx_writer import write_pptx
-from slidecaptain.models.preset import Preset
-from slidecaptain.models.render import Frame, Para, RenderPlan, SlidePlan
+from slidecaptain.models.render import Frame, Para, RenderPlan, RenderStyle, SlidePlan
 
-PRESET = Preset()
+
+def _style() -> RenderStyle:
+    return RenderStyle(
+        korean_font="맑은 고딕",
+        latin_font="맑은 고딕",
+        text_color="202020",
+        box_padding_pt=10.0,
+        line_spacing=1.4,
+        bullet_indent_pt=18.0,
+        bullet_gap_pt=6.0,
+        table_cell_pad_x_pt=6.0,
+        table_cell_pad_y_pt=3.0,
+        border_width_pt=0.75,
+        bullet_char="•",
+        bullet_font="Arial",
+    )
 
 
 def _simple_plan() -> RenderPlan:
     return RenderPlan(
         page_width_pt=960.0,
         page_height_pt=540.0,
+        style=_style(),
         slides=[
             SlidePlan(
                 chapter_id="ch01",
@@ -44,7 +59,7 @@ def _simple_plan() -> RenderPlan:
 @pytest.fixture()
 def saved(tmp_path) -> Presentation:
     out = tmp_path / "out.pptx"
-    write_pptx(_simple_plan(), out, PRESET)
+    write_pptx(_simple_plan(), out)
     return Presentation(str(out))
 
 
@@ -117,6 +132,7 @@ def _border_only_plan() -> RenderPlan:
     return RenderPlan(
         page_width_pt=960.0,
         page_height_pt=540.0,
+        style=_style(),
         slides=[
             SlidePlan(
                 chapter_id="ch01",
@@ -135,7 +151,22 @@ def _border_only_plan() -> RenderPlan:
 
 def test_border_only_frame_gets_padding(tmp_path):
     out = tmp_path / "border.pptx"
-    write_pptx(_border_only_plan(), out, PRESET)
+    write_pptx(_border_only_plan(), out)
     prs = Presentation(str(out))
     shape = prs.slides[0].shapes[0]
     assert shape.text_frame.margin_left == Emu(round(10.0 * 12700))
+
+
+def test_style_comes_from_plan_not_literal(tmp_path):
+    style = _style()
+    style.border_width_pt = 2.0
+    plan = _simple_plan()
+    plan.style = style
+    bordered_frame = next(
+        f for slide in plan.slides for f in slide.frames if f.border and f.table is None
+    )
+    out = tmp_path / "t.pptx"
+    write_pptx(plan, out)
+    prs = Presentation(str(out))
+    shapes = {s.name: s for slide in prs.slides for s in slide.shapes}
+    assert shapes[bordered_frame.name].line.width.pt == pytest.approx(2.0)

@@ -59,6 +59,15 @@ class Colors(BaseModel):
     background: HexColor = "FFFFFF"
 
 
+class BulletMarker(BaseModel):
+    """불릿 목록 표식. 문자와 표식 전용 폰트 (승격 전에는 라이터의 리터럴이었다)."""
+
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+
+    char: str = "•"
+    font: str = "Arial"
+
+
 class Spacing(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
@@ -88,6 +97,7 @@ class Spacing(BaseModel):
     page_number_height: float = 16.0
     page_number_bottom: float = 28.0
     safety_ratio: float = 0.97
+    border_width_pt: float = 0.75
 
 
 class Preset(BaseModel):
@@ -97,6 +107,7 @@ class Preset(BaseModel):
     font_roles: FontRoles = FontRoles()
     colors: Colors = Colors()
     spacing: Spacing = Spacing()
+    bullet_marker: BulletMarker = BulletMarker()
     page_width_pt: float = 960.0
     page_height_pt: float = 540.0
     language: str = "ko-KR"

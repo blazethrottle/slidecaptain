@@ -73,3 +73,16 @@ def test_assignment_after_creation_revalidates_floor():
 def test_colors_reject_non_hex_value():
     with pytest.raises(ValidationError):
         Preset.model_validate({"colors": {"accent": "#1F4E79"}})
+
+
+def test_border_width_and_bullet_marker_promoted():
+    p = Preset()
+    assert p.spacing.border_width_pt == 0.75
+    assert p.bullet_marker.char == "•"
+    assert p.bullet_marker.font == "Arial"
+
+
+def test_bullet_marker_override():
+    p = apply_overrides(Preset(), {"bullet_marker": {"char": "-"}})
+    assert p.bullet_marker.char == "-"
+    assert p.bullet_marker.font == "Arial"

@@ -60,6 +60,6 @@ def export_deck(
     # tempfile 표준 임시 폴더는 ASCII 경로다. 임시로 저장한 뒤 최종 경로로 이동한다
     with tempfile.TemporaryDirectory(prefix="slidecaptain_") as tmp:
         tmp_file = Path(tmp) / "deck.pptx"
-        write_pptx(plan, tmp_file, preset)
+        write_pptx(plan, tmp_file)
         shutil.move(str(tmp_file), str(final_path))
     return final_path
