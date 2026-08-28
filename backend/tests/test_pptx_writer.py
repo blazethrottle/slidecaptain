@@ -9,8 +9,8 @@ from slidecaptain.models.render import Frame, Para, RenderPlan, RenderStyle, Sli
 
 def _style() -> RenderStyle:
     return RenderStyle(
-        korean_font="맑은 고딕",
-        latin_font="맑은 고딕",
+        korean_font="Noto Sans KR",
+        latin_font="Noto Sans KR",
         text_color="202020",
         box_padding_pt=10.0,
         line_spacing=1.4,
@@ -90,8 +90,8 @@ def test_every_run_has_korean_lang_and_fonts(saved):
                 assert rPr.get("lang") == "ko-KR"
                 latin = rPr.find(qn("a:latin"))
                 ea = rPr.find(qn("a:ea"))
-                assert latin is not None and latin.get("typeface") == "맑은 고딕"
-                assert ea is not None and ea.get("typeface") == "맑은 고딕"
+                assert latin is not None and latin.get("typeface") == "Noto Sans KR"
+                assert ea is not None and ea.get("typeface") == "Noto Sans KR"
 
 
 def test_autofit_disabled_everywhere(saved):

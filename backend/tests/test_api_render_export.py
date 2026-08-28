@@ -36,7 +36,7 @@ def test_render_plan_returns_frames_and_style(client):
     assert r.status_code == 200
     plan = r.json()
     assert plan["page_width_pt"] == 960.0
-    assert plan["style"]["korean_font"] == "맑은 고딕"
+    assert plan["style"]["korean_font"] == "Noto Sans KR"
     assert plan["style"]["border_width_pt"] == 0.75
     assert len(plan["slides"]) == 1
     assert plan["slides"][0]["frames"], "프레임이 비어 있습니다"

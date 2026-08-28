@@ -14,7 +14,7 @@ def test_default_preset_values():
     assert p.page_width_pt == 960.0
     assert p.page_height_pt == 540.0
     assert p.language == "ko-KR"
-    assert p.fonts.korean == "맑은 고딕"
+    assert p.fonts.korean == "Noto Sans KR"
     assert p.font_roles.body_pt == 12.0
     assert p.font_roles.title_pt == 20.0
     assert p.font_roles.footnote_pt == 9.0

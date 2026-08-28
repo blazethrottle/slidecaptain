@@ -17,8 +17,8 @@ HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
 class Fonts(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
-    korean: str = "맑은 고딕"
-    latin: str = "맑은 고딕"
+    korean: str = "Noto Sans KR"
+    latin: str = "Noto Sans KR"
 
 
 class FontRoles(BaseModel):

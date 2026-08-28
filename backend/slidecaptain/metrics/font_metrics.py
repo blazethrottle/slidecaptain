@@ -1,7 +1,9 @@
 """글자 폭 데이터: 실제 폰트의 advance width로 줄바꿈 지점을 결정론적으로 계산한다 (설계서 5.2).
 
 폭 공식: width_pt = advance / unitsPerEm * font_size_pt
-레귤러(malgun.ttf)와 볼드(malgunbd.ttf)는 영문 폭이 다르므로 두 벌을 따로 잰다.
+Noto Sans KR(가변 폰트, NotoSansKR-VF.ttf)은 wght 400(레귤러)과 700(볼드)을 인스턴스화해
+두 벌을 따로 잰다. 실측(2026-08-28): 한글 음절은 두 무게 모두 920/1000 = 0.92em으로 균일하다
+(맑은 고딕의 1.0em과 다름). 영문은 비례폭이며 볼드가 더 넓다.
 """
 
 import json
@@ -14,8 +16,7 @@ HANGUL_END = 0xD7A3
 # ASCII 전체 + 자주 나오는 기호 (엔대시, 줄임표, 원화)
 _COLLECT_CODEPOINTS = list(range(0x20, 0x7F)) + [0x2013, 0x2026, 0x20A9]
 
-_MALGUN = Path("C:/Windows/Fonts/malgun.ttf")
-_MALGUN_BOLD = Path("C:/Windows/Fonts/malgunbd.ttf")
+_NOTO_VF = Path("C:/Windows/Fonts/NotoSansKR-VF.ttf")
 
 
 class FaceMetrics:
@@ -43,10 +44,14 @@ class FaceMetrics:
         return units / self.upem * font_pt
 
     @classmethod
-    def from_ttf_file(cls, path: str | Path) -> "FaceMetrics":
+    def from_ttf_file(cls, path: str | Path, wght: float | None = None) -> "FaceMetrics":
         from fontTools.ttLib import TTFont
 
         font = TTFont(str(path))
+        if wght is not None and "fvar" in font:
+            from fontTools.varLib.instancer import instantiateVariableFont
+
+            font = instantiateVariableFont(font, {"wght": wght}, inplace=False)
         upem = font["head"].unitsPerEm
         cmap = font.getBestCmap()
         hmtx = font["hmtx"]
@@ -107,8 +112,21 @@ class FontMetrics:
         )
 
     @classmethod
+    def from_variable_ttf(
+        cls,
+        path: str | Path,
+        regular_wght: float = 400.0,
+        bold_wght: float = 700.0,
+    ) -> "FontMetrics":
+        """가변 폰트 한 파일에서 두 무게(wght)를 인스턴스화해 레귤러/볼드를 잰다."""
+        return cls(
+            regular=FaceMetrics.from_ttf_file(path, wght=regular_wght),
+            bold=FaceMetrics.from_ttf_file(path, wght=bold_wght),
+        )
+
+    @classmethod
     def from_bundled(cls) -> "FontMetrics":
-        raw = resources.files("slidecaptain.metrics").joinpath("assets/malgun_metrics.json").read_text("utf-8")
+        raw = resources.files("slidecaptain.metrics").joinpath("assets/noto_sans_kr_metrics.json").read_text("utf-8")
         data = json.loads(raw)
         return cls(
             regular=FaceMetrics.from_dict(data["regular"]),
@@ -118,8 +136,8 @@ class FontMetrics:
     @classmethod
     def load_default(cls) -> "FontMetrics":
         """폰트 파일이 있으면 실측, 없으면 번들 수치 (코어의 OS 무관 동작 보장)."""
-        if _MALGUN.exists() and _MALGUN_BOLD.exists():
-            return cls.from_ttf(_MALGUN, _MALGUN_BOLD)
+        if _NOTO_VF.exists():
+            return cls.from_variable_ttf(_NOTO_VF)
         return cls.from_bundled()
 
     def to_json(self) -> str:
