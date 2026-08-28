@@ -93,6 +93,8 @@ def test_install_fonts_registers_windows_registry(tmp_path, monkeypatch):
     fake_user_dir = tmp_path / "user_fonts"
     monkeypatch.setattr(installer, "_user_font_dir", lambda: fake_user_dir)
     monkeypatch.setattr(sys, "platform", "win32")
+    # 이 테스트는 레지스트리 기록만 본다. 즉시 반영 호출은 별도 테스트에서 검증한다.
+    monkeypatch.setattr(installer, "_refresh_windows_fonts", lambda paths: None)
 
     recorded: dict = {}
 
@@ -109,8 +111,10 @@ def test_install_fonts_registers_windows_registry(tmp_path, monkeypatch):
         REG_SZ = object()
 
         @staticmethod
-        def OpenKey(hive, subkey, reserved, access):
-            recorded["opened_key"] = subkey
+        def CreateKeyEx(hive, subkey, reserved, access):
+            # 키가 없는 계정도 실패 없이 만들어지는 것을 흉내낸다 (OpenKey와 달리
+            # FileNotFoundError를 내지 않음)
+            recorded["created_key"] = subkey
             return FakeKey()
 
         @staticmethod
@@ -121,7 +125,7 @@ def test_install_fonts_registers_windows_registry(tmp_path, monkeypatch):
 
     installer.install_fonts()
 
-    assert recorded["opened_key"] == installer._REG_KEY
+    assert recorded["created_key"] == installer._REG_KEY
     assert set(recorded["values"]) == {
         "Noto Sans KR (TrueType)",
         "Noto Sans KR Bold (TrueType)",
@@ -129,6 +133,92 @@ def test_install_fonts_registers_windows_registry(tmp_path, monkeypatch):
     for path_str in recorded["values"].values():
         assert path_str.endswith(".ttf")
         assert Path(path_str).is_absolute()
+
+
+def _fake_winreg_module():
+    """레지스트리 기록만 성공시키는 최소 가짜 winreg (즉시 반영 테스트가 재사용)."""
+
+    class FakeKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class FakeWinreg:
+        HKEY_CURRENT_USER = object()
+        KEY_SET_VALUE = object()
+        REG_SZ = object()
+
+        @staticmethod
+        def CreateKeyEx(hive, subkey, reserved, access):
+            return FakeKey()
+
+        @staticmethod
+        def SetValueEx(key, value_name, reserved, value_type, data):
+            pass
+
+    return FakeWinreg()
+
+
+def test_install_fonts_refreshes_windows_fonts_immediately(tmp_path, monkeypatch):
+    fake_user_dir = tmp_path / "user_fonts"
+    monkeypatch.setattr(installer, "_user_font_dir", lambda: fake_user_dir)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winreg", _fake_winreg_module())
+
+    calls: dict = {"add_font": [], "broadcast": []}
+
+    class FakeGdi32:
+        def AddFontResourceW(self, path):
+            calls["add_font"].append(path)
+            return 1
+
+    class FakeUser32:
+        def SendMessageTimeoutW(self, *args):
+            calls["broadcast"].append(args)
+            return 1
+
+    class FakeWindll:
+        def __init__(self):
+            self.gdi32 = FakeGdi32()
+            self.user32 = FakeUser32()
+
+    class FakeCtypes:
+        def __init__(self):
+            self.windll = FakeWindll()
+
+    monkeypatch.setitem(sys.modules, "ctypes", FakeCtypes())
+
+    result = installer.install_fonts()
+
+    assert {Path(p).name for p in calls["add_font"]} == {
+        "NotoSansKR-Regular.ttf",
+        "NotoSansKR-Bold.ttf",
+    }
+    assert len(calls["broadcast"]) == 1
+    hwnd_broadcast, wm_fontchange = calls["broadcast"][0][0], calls["broadcast"][0][1]
+    assert hwnd_broadcast == 0xFFFF
+    assert wm_fontchange == 0x001D
+    assert len(result) == 2  # 즉시 반영 실패 여부와 무관하게 설치 결과는 그대로 반환
+
+
+def test_install_fonts_succeeds_even_if_font_refresh_raises(tmp_path, monkeypatch):
+    fake_user_dir = tmp_path / "user_fonts"
+    monkeypatch.setattr(installer, "_user_font_dir", lambda: fake_user_dir)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "winreg", _fake_winreg_module())
+
+    class BrokenCtypes:
+        windll = None  # windll.gdi32 접근 시 AttributeError
+
+    monkeypatch.setitem(sys.modules, "ctypes", BrokenCtypes())
+
+    result = installer.install_fonts()
+
+    assert len(result) == 2
+    for path in result:
+        assert path.exists()
 
 
 # ---- ensure_fonts -----------------------------------------------------------

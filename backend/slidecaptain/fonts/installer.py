@@ -61,11 +61,36 @@ def install_fonts() -> list[Path]:
     if sys.platform == "win32":
         import winreg
 
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        # CreateKeyEx는 키가 없으면 만든다: 사용자 폰트를 한 번도 설치한 적 없는 계정은
+        # HKCU에 이 Fonts 키 자체가 없을 수 있고, 그 경우 OpenKey는 FileNotFoundError를 낸다.
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
             for value_name, path in zip(_REG_VALUE_NAMES, installed_paths):
                 winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, str(path.resolve()))
 
+        _refresh_windows_fonts(installed_paths)
+
     return installed_paths
+
+
+def _refresh_windows_fonts(paths: list[Path]) -> None:
+    """설치한 폰트를 재로그온 없이 즉시 반영 시도한다. 즉시 반영 시도이며 실패 시
+    재로그온 후 적용된다 (설치 자체는 이 함수의 성패와 무관하게 성공으로 취급한다)."""
+    try:
+        import ctypes
+
+        gdi32 = ctypes.windll.gdi32
+        user32 = ctypes.windll.user32
+        for path in paths:
+            gdi32.AddFontResourceW(str(path.resolve()))
+
+        HWND_BROADCAST = 0xFFFF
+        WM_FONTCHANGE = 0x001D
+        SMTO_ABORTIFHUNG = 0x0002
+        user32.SendMessageTimeoutW(
+            HWND_BROADCAST, WM_FONTCHANGE, 0, 0, SMTO_ABORTIFHUNG, 1000, None
+        )
+    except Exception:
+        pass
 
 
 def ensure_fonts() -> str:

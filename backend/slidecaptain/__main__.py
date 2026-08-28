@@ -47,7 +47,7 @@ def _run_export(args) -> int:
 def _run_serve(args) -> int:
     import uvicorn
 
-    from slidecaptain.fonts.installer import ensure_fonts
+    from slidecaptain.fonts.installer import _bundled_font_paths, ensure_fonts
     from slidecaptain.server.app import create_app
     from slidecaptain.storage.file_store import FileProjectStore
 
@@ -55,7 +55,8 @@ def _run_serve(args) -> int:
         if ensure_fonts() == "installed":
             print("Noto Sans KR 폰트를 사용자 계정에 설치했습니다. PowerPoint가 열려 있었다면 다시 시작해야 새 폰트가 보입니다.")
     except Exception as e:  # 설치 실패는 안내만 하고 계속 간다 (폭 계산은 번들 수치로 동작)
-        print(f"폰트 자동 설치에 실패했습니다: {e}\n화면 표시가 다른 폰트로 대체될 수 있습니다. 수동 설치 파일: backend/slidecaptain/fonts/assets", file=sys.stderr)
+        assets_dir = _bundled_font_paths()[0].parent
+        print(f"폰트 자동 설치에 실패했습니다: {e}\n화면 표시가 다른 폰트로 대체될 수 있습니다. 수동 설치 파일: {assets_dir}", file=sys.stderr)
 
     app = create_app(FileProjectStore(args.data_dir))
     print(f"프로젝트 폴더: {args.data_dir}")
