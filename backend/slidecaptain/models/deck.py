@@ -109,6 +109,16 @@ class Deck(BaseModel):
     slides: list[Slide] = []
 
     @model_validator(mode="after")
+    def _schema_version_supported(self) -> "Deck":
+        if self.schema_version != SCHEMA_VERSION:
+            raise ValueError(
+                f"이 덱 파일의 스키마 버전({self.schema_version})은 지원하지 않습니다. "
+                f"이 앱은 버전 {SCHEMA_VERSION}만 읽을 수 있습니다. "
+                f"파일이 더 새 버전이라면 앱을 업데이트해 주세요."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _chapters_and_slides_consistent(self) -> "Deck":
         seen_ids: set[str] = set()
         for ch in self.structure.chapters:

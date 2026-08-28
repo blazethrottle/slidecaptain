@@ -101,3 +101,15 @@ def test_slide_template_mismatches_chapter_template_rejected():
                 Slide(chapter_id="ch01", slots=TableSlots(columns=["열"], rows=[["값"]])),
             ],
         )
+
+
+def test_unsupported_schema_version_rejected():
+    with pytest.raises(ValidationError) as exc_info:
+        Deck.model_validate({"schema_version": 99, "meta": {"title": "t"}})
+    assert "스키마 버전" in str(exc_info.value)
+    assert "99" in str(exc_info.value)
+
+
+def test_current_schema_version_accepted():
+    deck = Deck.model_validate({"schema_version": 1, "meta": {"title": "t"}})
+    assert deck.schema_version == 1
