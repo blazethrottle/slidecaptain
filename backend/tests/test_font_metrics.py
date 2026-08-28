@@ -4,7 +4,9 @@ import pytest
 
 from slidecaptain.metrics.font_metrics import FontMetrics
 
-NOTO_VF = Path("C:/Windows/Fonts/NotoSansKR-VF.ttf")
+_FONTS_ASSETS = Path(__file__).resolve().parents[1] / "slidecaptain" / "fonts" / "assets"
+NOTO_REGULAR = _FONTS_ASSETS / "NotoSansKR-Regular.ttf"
+NOTO_BOLD = _FONTS_ASSETS / "NotoSansKR-Bold.ttf"
 
 
 def test_bundled_metrics_load_both_faces():
@@ -14,7 +16,7 @@ def test_bundled_metrics_load_both_faces():
 
 
 def test_hangul_uniform_width_is_point_nine_two_em():
-    # 실측 검증(2026-08-28): Noto Sans KR(가변 폰트, wght 400/700 인스턴스)의 한글 음절은
+    # 실측 검증(2026-08-28): Noto Sans KR(동봉된 정적 레귤러/볼드 파일)의 한글 음절은
     # 레귤러와 볼드 모두 920/1000 = 0.92em으로 균일하다 (맑은 고딕의 1.0em과 다름)
     m = FontMetrics.from_bundled()
     assert m.face(False).width_pt("가", 12.0) == pytest.approx(0.92 * 12.0)
@@ -52,12 +54,13 @@ def test_unknown_char_falls_back_to_safe_width():
     assert face.width_pt("\u2603", 12.0) == pytest.approx(0.92 * 12.0)  # SNOWMAN: 번들에 없는 글자
 
 
-@pytest.mark.skipif(not NOTO_VF.exists(), reason="Noto Sans KR 가변 폰트가 없는 환경")
-def test_bundled_matches_live_ttf():
-    live = FontMetrics.from_variable_ttf(NOTO_VF)
+def test_bundled_matches_bundled_font_files():
+    # 패키지에 동봉된 정적 TTF(backend/slidecaptain/fonts/assets)를 직접 실측해 번들 JSON과 대조한다.
+    # 정적 파일이라 인스턴스화가 필요 없어 어느 환경에서나 빠르게 돈다.
+    live = FontMetrics.from_ttf(NOTO_REGULAR, NOTO_BOLD)
     bundled = FontMetrics.from_bundled()
     for bold in (False, True):
-        for text in ("가나다", "Market 12,300", "요약: 결론 우선"):
+        for text in ("가나다", "Market 12,300", "요약: 결론 우선", "W"):
             assert bundled.face(bold).width_pt(text, 12.0) == pytest.approx(
                 live.face(bold).width_pt(text, 12.0)
             )

@@ -23,6 +23,7 @@ include = ["slidecaptain*"]
 
 [tool.setuptools.package-data]
 "slidecaptain.metrics" = ["assets/*.json"]
+"slidecaptain.fonts" = ["assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
