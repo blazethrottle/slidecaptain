@@ -40,7 +40,11 @@ class SubscriptionProvider:
         options = ClaudeAgentOptions(
             tools=[],  # 도구 없이 순수 생성만
             setting_sources=[],  # 사용자 설정 격리: CLAUDE.md와 스킬이 생성에 개입하지 못하게
-            max_turns=1,
+            # 구조화 출력 경로는 생성 1턴 + 구조화 출력 정리 1턴을 쓴다: 2가 실측 최소값이다
+            # (2026-08-28 스모크 격리 진단. 트리비얼 프롬프트에서만 통과하던 max_turns=1로는
+            # 실제 생성 프롬프트가 "Reached maximum number of turns (1)"로 거부됐다).
+            # 스키마 불일치 시 SDK 자체의 재프롬프트 여지는 없다: 그 경우는 앱의 형식 게이트가 담당한다.
+            max_turns=2,
             model=self.model,
             output_format={"type": "json_schema", "schema": schema},
         )

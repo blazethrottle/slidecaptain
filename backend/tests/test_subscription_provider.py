@@ -43,7 +43,7 @@ def test_complete_returns_structured_and_raw(monkeypatch):
     assert options.model == DEFAULT_MODEL == "sonnet"
     assert options.tools == []
     assert options.setting_sources == []
-    assert options.max_turns == 1
+    assert options.max_turns == 2
     assert options.output_format == {"type": "json_schema", "schema": {"type": "object"}}
 
 
