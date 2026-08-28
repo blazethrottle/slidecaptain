@@ -19,6 +19,7 @@ from slidecaptain.storage.file_store import (
     ProjectNotFound,
     ProjectInfo,
     ProjectStore,
+    SnapshotInfo,
     SnapshotNotFound,
     SourceNotFound,
     StorageError,
@@ -37,6 +38,10 @@ _STATUS_BY_ERROR = [
 class CreateProjectRequest(BaseModel):
     name: str
     title: str = ""
+
+
+class SourceText(BaseModel):
+    text: str
 
 
 class OkResponse(BaseModel):
@@ -89,5 +94,26 @@ def create_app(store: ProjectStore) -> FastAPI:
         deck = store.load_deck(name)
         path = export_deck_data(deck, store.exports_dir(name))
         return ExportResult(path=str(path))
+
+    @app.get("/api/projects/{name}/snapshots", response_model=list[SnapshotInfo])
+    def list_snapshots(name: str):
+        return store.list_snapshots(name)
+
+    @app.post("/api/projects/{name}/snapshots/{snapshot_id}/restore", response_model=Deck)
+    def restore_snapshot(name: str, snapshot_id: str):
+        return store.restore_snapshot(name, snapshot_id)
+
+    @app.get("/api/projects/{name}/sources", response_model=list[str])
+    def list_sources(name: str):
+        return store.list_sources(name)
+
+    @app.get("/api/projects/{name}/sources/{filename}", response_model=SourceText)
+    def read_source(name: str, filename: str):
+        return SourceText(text=store.read_source(name, filename))
+
+    @app.put("/api/projects/{name}/sources/{filename}", response_model=OkResponse)
+    def write_source(name: str, filename: str, body: SourceText):
+        store.write_source(name, filename, body.text)
+        return OkResponse()
 
     return app
