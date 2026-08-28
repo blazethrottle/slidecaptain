@@ -42,24 +42,32 @@ def _next_version_path(out_dir: Path, title: str) -> Path:
     return path
 
 
-def export_deck(
-    deck_path: str | Path,
+def export_deck_data(
+    deck: Deck,
     out_dir: str | Path,
     global_preset: Preset | None = None,
 ) -> Path:
-    deck_path = Path(deck_path)
+    """메모리의 덱을 새 버전 파일로 내보낸다. 덱 데이터는 절대 고치지 않는다."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    deck = Deck.model_validate_json(deck_path.read_text(encoding="utf-8"))
     preset = apply_overrides(global_preset or Preset(), deck.meta.preset_overrides)
     metrics = FontMetrics.load_default()
     plan = build_render_plan(deck, preset, metrics)
 
     final_path = _next_version_path(out_dir, _safe_title(deck.meta.title))
-    # tempfile 표준 임시 폴더는 ASCII 경로다. 임시로 저장한 뒤 최종 경로로 이동한다
+    # 임시 폴더에서 쓴 뒤 이동: 저장 도중 실패해도 exports/에 깨진 파일이 남지 않는다
     with tempfile.TemporaryDirectory(prefix="slidecaptain_") as tmp:
         tmp_file = Path(tmp) / "deck.pptx"
         write_pptx(plan, tmp_file)
         shutil.move(str(tmp_file), str(final_path))
     return final_path
+
+
+def export_deck(
+    deck_path: str | Path,
+    out_dir: str | Path,
+    global_preset: Preset | None = None,
+) -> Path:
+    deck = Deck.model_validate_json(Path(deck_path).read_text(encoding="utf-8"))
+    return export_deck_data(deck, out_dir, global_preset)
