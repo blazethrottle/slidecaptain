@@ -69,9 +69,9 @@
 낳는 `$defs`/`$ref`를 포함해도 스키마를 그대로 지켜 응답한다는 것을 별도 진단 호출로 확인했다(생성된 슬롯이
 pydantic 모델 파싱과 분량 게이트, 수치 대조 게이트를 모두 통과함까지 검증). 다만 태스크 11의 실호출 스모크
 (`backend/scripts/smoke_generation.py`)를 브리프대로 실제 서비스 경로(`GenerationService` → `SubscriptionProvider`)로
-실행하면 구조안 생성 단계에서부터 실패한다: 원인은 스키마가 아니라 `SubscriptionProvider.complete()`가 고정한
-`max_turns=1`이다. 한 줄짜리 트리비얼 프롬프트와 단일 필드 스키마 조합에서는 통과하지만, 실제 분량의 구조안·장별
-프롬프트에서는 CLI가 "Reached maximum number of turns (1)"로 응답을 거부한다(같은 호출을 `max_turns=2`로만
+실행했더니 구조안 생성 단계에서부터 실패했다: 원인은 스키마가 아니라 `SubscriptionProvider.complete()`가 고정한
+`max_turns=1`이다. 한 줄짜리 트리비얼 프롬프트와 단일 필드 스키마 조합에서는 통과했지만, 실제 분량의 구조안과 장별
+프롬프트에서는 CLI가 "Reached maximum number of turns (1)"로 응답을 거부했다(같은 호출을 `max_turns=2`로만
 바꾸면 구조안 생성과 장별 생성 모두, 위의 중첩 스키마 케이스를 포함해 성공한다는 것을 확인했다). 이 값은 태스크
 7(프로바이더 구현)에서 결정하고 테스트로 고정했다(`backend/tests/test_subscription_provider.py:46`). 태스크 11의 파일 범위는
 스모크 스크립트와 문서라 이 결함은 고치지 않고 이월표에 신규 항목으로 등재했다(아래). 이 결함은 같은 날 max_turns=2
@@ -108,7 +108,7 @@ pydantic 모델 파싱과 분량 게이트, 수치 대조 게이트를 모두 �
 | _content_geometry 공개 이름 승격, Frame.valign 정리, TablePlan 길이 validator, 표 머리글 채움색 단언 | 다음 리팩터 기회 |
 | 저장소 .gitattributes 정비 (CRLF 경고 소음 제거) | 위생 잡무, 아무 때나 |
 | 미로그인 실패 문구의 실환경 실증(AI 호출 오류의 원인별 세분 안내: 미로그인, 한도, 네트워크 구체화 포함): 현재 `ProviderCallFailed`의 한국어 안내문은 미로그인, 한도 소진, 네트워크 오류를 구분하지 않고 같은 문구로 묶는다 | 다른 환경에서 처음 실행할 때 (폰트 자동 설치 실환경 실증과 같은 묶음) |
-| `SubscriptionProvider.complete()`가 고정한 `max_turns=1`이 실제 분량의 구조안·장별 프롬프트에는 부족함(2026-08-28 태스크 11 스모크 실측: 구조안 생성부터 "Reached maximum number of turns (1)"로 실패. 트리비얼 프롬프트+단일 필드 스키마는 통과하지만 실제 프롬프트는 통과 못함. `max_turns=2`로는 구조안과 장별 생성(중첩 `$defs`/`$ref` 스키마 포함) 모두 성공을 확인함). max_turns 상향과 `backend/tests/test_subscription_provider.py:46`의 단언값 조정 필요 | 단계 3에서 처리 완료 (2026-08-28. max_turns=2로 상향, 테스트 단언 조정, 스모크 재실행 성공) |
+| `SubscriptionProvider.complete()`가 고정한 `max_turns=1`이 실제 분량의 구조안과 장별 프롬프트에는 부족함(2026-08-28 태스크 11 스모크 실측: 구조안 생성부터 "Reached maximum number of turns (1)"로 실패. 트리비얼 프롬프트+단일 필드 스키마는 통과하지만 실제 프롬프트는 통과 못함. `max_turns=2`로는 구조안과 장별 생성(중첩 `$defs`/`$ref` 스키마 포함) 모두 성공을 확인함). max_turns 상향과 `backend/tests/test_subscription_provider.py:46`의 단언값 조정 필요 | 단계 3에서 처리 완료 (2026-08-28. max_turns=2로 상향, 테스트 단언 조정, 스모크 재실행 성공) |
 
 방치 확정(수정하지 않음): 내보내기 동시 실행 경합(1인 로컬 앱), 한글 없는 폰트의 ValueError(맑은 고딕 고정 경로), 표 셀 autofit 미설정(표 셀에는 축소 동작 없음), 버전 파일명 접두어 충돌(번호 증가 방향이라 무해), 임시 폴더 ASCII 전제(python-pptx는 유니코드 경로 저장 가능. 단, 단계 5 렌더 검증의 PowerPoint COM에서는 실제 ASCII 보장이 필요하므로 그때 재설계. 주의: tempfile 기본 폴더는 Windows 계정명이 한글이면 비ASCII가 되므로, 현재 exporter 주석의 "표준 임시 폴더는 ASCII"라는 단정을 단계 5에서 그대로 상속하면 안 된다).
 
