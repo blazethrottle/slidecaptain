@@ -98,6 +98,7 @@ def capacity_contract(template: str, preset: Preset) -> dict[str, int]:
             "footnote_max_lines": max_lines(s.footnote_height, r.footnote_pt, s.line_spacing),
         },
         "compare2": {
+            "card_heading_max_lines": max_lines(s.card_heading_height, r.body_pt, s.line_spacing),
             "card_bullets_max_lines": max_lines(
                 content_h - s.box_height - s.box_gap - s.card_heading_height - s.card_heading_gap,
                 r.body_pt,
@@ -107,3 +108,10 @@ def capacity_contract(template: str, preset: Preset) -> dict[str, int]:
         },
     }
     return contracts[template]
+
+
+def hangul_chars_per_line(preset: Preset, face) -> int:
+    """본문 폭의 한 줄에 한글이 약 몇 자 들어가는지 어림한다 (AI 프롬프트의 분량 환산 안내용)."""
+    g = _content_geometry(preset)
+    char_width = face.width_pt("가", preset.font_roles.body_pt)
+    return math.floor(g["content_width"] * preset.spacing.safety_ratio / char_width)

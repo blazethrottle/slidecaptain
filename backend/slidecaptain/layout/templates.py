@@ -113,6 +113,41 @@ def _conclusion_warning(chapter: Chapter, text: str, preset: Preset, metrics) ->
     return _measure_warning(chapter, "conclusion", lines * lh, inner_h)
 
 
+def _fixed_height_warning(
+    chapter: Chapter, slot: str, text: str,
+    width_pt: float, height_pt: float, font_pt: float, bold: bool,
+    preset: Preset, metrics,
+) -> CapacityWarning | None:
+    """높이가 고정된 한 줄성 영역(제목, 각주, 카드 소제목)의 초과를 실측으로 잡는다."""
+    if not text:
+        return None
+    s = preset.spacing
+    capacity = max_lines(height_pt, font_pt, s.line_spacing)
+    lines = measure_lines(text, width_pt, font_pt, metrics.face(bold), s)
+    if lines <= capacity:
+        return None
+    lh = line_height_pt(font_pt, s.line_spacing)
+    return _measure_warning(chapter, slot, lines * lh, height_pt)
+
+
+def _title_warning(chapter: Chapter, preset: Preset, metrics) -> CapacityWarning | None:
+    s, r = preset.spacing, preset.font_roles
+    g = _content_geometry(preset)
+    return _fixed_height_warning(
+        chapter, "title", chapter.topic, g["content_width"], s.title_height, r.title_pt, True,
+        preset, metrics,
+    )
+
+
+def _footnote_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> CapacityWarning | None:
+    s, r = preset.spacing, preset.font_roles
+    g = _content_geometry(preset)
+    return _fixed_height_warning(
+        chapter, "footnote", text, g["content_width"], s.footnote_height, r.footnote_pt, False,
+        preset, metrics,
+    )
+
+
 def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     x = s.margin_left + s.cover_indent
@@ -162,6 +197,8 @@ def _build_bullet_box(
     g = _content_geometry(preset)
     bullets_h = g["content_bottom"] - g["content_top"] - s.box_height - s.box_gap
     warnings = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
     measure = measure_bullets(
         slots.bullets, g["content_width"], preset.font_roles.body_pt, metrics.face(False), s
     )
@@ -169,6 +206,8 @@ def _build_bullet_box(
         warnings.append(_measure_warning(chapter, "bullets", measure.total_height_pt, bullets_h))
     if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
         warnings.append(cw)
+    if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
+        warnings.append(fw)
     frames = [
         _title_frame(chapter, preset),
         Frame(
@@ -192,6 +231,8 @@ def _build_summary(
     points_top = g["content_top"] + s.box_height + s.summary_box_gap
     points_h = g["content_bottom"] - points_top
     warnings = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
     measure = measure_bullets(
         slots.points, g["content_width"], preset.font_roles.body_pt, metrics.face(False), s
     )
@@ -254,9 +295,13 @@ def _build_table(
 
     row_heights = [row_height(slots.columns, True)] + [row_height(row, False) for row in slots.rows]
     warnings = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
     total_h = sum(row_heights)
     if total_h > table_h:
         warnings.append(_measure_warning(chapter, "table", total_h, table_h))
+    if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
+        warnings.append(fw)
     frames = [
         _title_frame(chapter, preset),
         Frame(
@@ -286,12 +331,20 @@ def _build_compare2(
     card_h = g["content_bottom"] - g["content_top"] - s.box_height - s.box_gap
     card_w = (g["content_width"] - s.card_gap) / 2
     warnings = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
     if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
         warnings.append(cw)
 
     def card_frame(name: str, card, x: float) -> Frame:
         paras = [Para(text=card.heading, font_pt=r.body_pt, bold=True, color=c.accent)]
         paras += _bullet_paras(card.bullets, preset)
+        if (hw := _fixed_height_warning(
+            chapter, f"{name}_heading", card.heading,
+            card_w - 2 * s.box_padding, s.card_heading_height, r.body_pt, True,
+            preset, metrics,
+        )) is not None:
+            warnings.append(hw)
         bullets_h_available = card_h - s.card_heading_height - s.card_heading_gap - 2 * s.box_padding
         measure = measure_bullets(
             card.bullets, card_w - 2 * s.box_padding, r.body_pt, metrics.face(False), s

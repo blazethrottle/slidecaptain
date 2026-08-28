@@ -8,6 +8,7 @@ from slidecaptain.metrics.capacity import (
     measure_bullets,
     measure_lines,
 )
+from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Bullet
 from slidecaptain.models.preset import Preset
 
@@ -72,3 +73,16 @@ def test_capacity_contract_bullet_box():
 def test_capacity_contract_unknown_template():
     with pytest.raises(KeyError):
         capacity_contract("fancy_chart", PRESET)
+
+
+def test_compare2_contract_includes_heading_limit():
+    contract = capacity_contract("compare2", Preset())
+    assert contract["card_heading_max_lines"] == 1
+
+
+def test_hangul_chars_per_line_matches_bundle_metrics():
+    # 본문 폭 860pt x safety 0.97 / (0.92em x 12pt) = 75.5... -> 75자 (번들 폭 실측 기준)
+    from slidecaptain.metrics.capacity import hangul_chars_per_line
+
+    metrics = FontMetrics.load_default()
+    assert hangul_chars_per_line(Preset(), metrics.face(False)) == 75

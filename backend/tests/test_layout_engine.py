@@ -251,3 +251,63 @@ def test_chapter_without_slide_is_skipped_and_pages_renumber():
         p for f in plan.slides[0].frames if f.name.endswith(":page_number") for p in f.paras
     )
     assert page_para.text == "1"
+
+
+def _plan_for(chapter: Chapter, slots) -> "SlidePlan":
+    deck = Deck(
+        meta=DeckMeta(title="경고 테스트"),
+        structure=Structure(chapters=[chapter]),
+        slides=[Slide(chapter_id=chapter.id, slots=slots)],
+    )
+    return build_render_plan(deck, Preset(), METRICS).slides[0]
+
+
+def _warned_slots(plan_slide) -> set[str]:
+    return {w.slot for w in plan_slide.warnings}
+
+
+# 제목 경고는 4종 빌더 전부에 배선되므로 전부 검증한다 (2026-08-28 적대 리뷰 반영)
+@pytest.mark.parametrize(
+    "template,slots",
+    [
+        ("bullet_box", BulletBoxSlots(conclusion="결론")),
+        ("summary", SummarySlots(conclusion="결론")),
+        ("table", TableSlots(columns=["a"], rows=[["b"]])),
+        ("compare2", CompareSlots(left=Card(heading="좌"), right=Card(heading="우"), conclusion="결론")),
+    ],
+)
+def test_long_topic_warns_title_overflow(template, slots):
+    long_topic = "제목 영역 한 줄을 확실히 넘기기 위한 매우 길고 긴 장 제목 문장이며 계속 이어진다" * 2
+    chapter = Chapter(id="c1", topic=long_topic, template=template)
+    slide = _plan_for(chapter, slots)
+    assert "title" in _warned_slots(slide)
+
+
+def test_short_topic_no_title_warning():
+    chapter = Chapter(id="c1", topic="짧은 제목", template="bullet_box")
+    slide = _plan_for(chapter, BulletBoxSlots(conclusion="결론"))
+    assert "title" not in _warned_slots(slide)
+
+
+def test_long_footnote_warns_on_bullet_box_and_table():
+    long_footnote = "출처와 기준 시점을 장황하게 설명하는 각주 문장 " * 12
+    chapter_b = Chapter(id="c1", topic="주제", template="bullet_box")
+    slide_b = _plan_for(chapter_b, BulletBoxSlots(conclusion="결론", footnote=long_footnote))
+    assert "footnote" in _warned_slots(slide_b)
+
+    chapter_t = Chapter(id="c2", topic="주제", template="table")
+    slide_t = _plan_for(chapter_t, TableSlots(columns=["a"], rows=[["b"]], footnote=long_footnote))
+    assert "footnote" in _warned_slots(slide_t)
+
+
+def test_long_card_heading_warns_on_compare2():
+    # 실측 근거(2026-08-28): 카드 소제목 예산은 388.0pt(카드 내부 폭 400pt x safety 0.97)이고
+    # 아래 문자열은 볼드 12pt로 약 728pt(1회 364pt의 2배)라 확실히 2줄이 된다.
+    # 1회만 쓰면 364pt로 1줄에 들어가 경고가 나지 않는다 (적대 리뷰가 실측으로 확인한 함정)
+    long_heading = "카드 소제목 영역 한 줄을 넘기기 위한 매우 긴 소제목 문구가 계속 이어진다 " * 2
+    chapter = Chapter(id="c1", topic="주제", template="compare2")
+    slide = _plan_for(chapter, CompareSlots(
+        left=Card(heading=long_heading), right=Card(heading="짧음"), conclusion="결론",
+    ))
+    assert "left_card_heading" in _warned_slots(slide)
+    assert "right_card_heading" not in _warned_slots(slide)
