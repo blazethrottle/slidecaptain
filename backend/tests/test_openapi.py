@@ -37,5 +37,8 @@ def test_openapi_contains_all_routes(schema):
         "/api/projects/{name}/snapshots/{snapshot_id}/restore",
         "/api/projects/{name}/sources",
         "/api/projects/{name}/sources/{filename}",
+        "/api/projects/{name}/generate/structure",
+        "/api/projects/{name}/generate/chapter/{chapter_id}",
+        "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
     ]:
         assert route in paths, f"{route} 경로가 OpenAPI에 없습니다"

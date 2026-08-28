@@ -288,3 +288,15 @@ def test_condense_chapter_template_mismatch_raises():
     service, _ = _service([])
     with pytest.raises(ValueError):
         asyncio.run(service.condense_chapter(_deck(), "c1", wrong, SOURCES, Preset()))
+
+
+def test_empty_refs_fall_back_to_all_sources_in_prompt():
+    # 결정 11: 근거 매핑이 비면 자료 전체로 폴백한다 (매핑 누락이 생성 불능으로 이어지지 않게)
+    deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="시장 현황", conclusion="성장", template="bullet_box"),
+    ]))
+    service, stub = _service([ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")])
+    asyncio.run(service.generate_chapter(deck, "c1", SOURCES_TWO, Preset()))
+    prompt = stub.calls[0][0]
+    assert "시장 규모는 500억 원이다" in prompt
+    assert "점유율은 37%다" in prompt

@@ -53,4 +53,5 @@ async def main() -> None:
         print(json.dumps(chapter_result.slots.model_dump(), ensure_ascii=False, indent=2)[:1200])
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
