@@ -52,6 +52,19 @@ class ExportResult(BaseModel):
     path: str
 
 
+def _validated_preset(deck: Deck) -> Preset:
+    """덱의 preset_overrides를 검증해 프리셋을 만든다.
+
+    사용자가 deck.json 파일을 직접 고쳐 PUT 검증을 우회한 경우에도
+    render-plan과 export가 500 대신 같은 422로 답하게 한다.
+    """
+    try:
+        return apply_overrides(Preset(), deck.meta.preset_overrides)
+    except ValidationError as e:
+        first = e.errors()[0]["msg"]
+        raise HTTPException(422, f"프리셋 덮어쓰기 값이 유효하지 않습니다: {first}")
+
+
 def create_app(store: ProjectStore) -> FastAPI:
     app = FastAPI(title="Slide Captain", version="0.2.0")
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
@@ -75,23 +88,20 @@ def create_app(store: ProjectStore) -> FastAPI:
 
     @app.put("/api/projects/{name}/deck", response_model=OkResponse)
     def put_deck(name: str, deck: Deck):
-        try:
-            apply_overrides(Preset(), deck.meta.preset_overrides)
-        except ValidationError as e:
-            first = e.errors()[0]["msg"]
-            raise HTTPException(422, f"프리셋 덮어쓰기 값이 유효하지 않습니다: {first}")
+        _validated_preset(deck)
         store.save_deck(name, deck)
         return OkResponse()
 
     @app.get("/api/projects/{name}/render-plan", response_model=RenderPlan)
     def get_render_plan(name: str):
         deck = store.load_deck(name)
-        preset = apply_overrides(Preset(), deck.meta.preset_overrides)
+        preset = _validated_preset(deck)
         return build_render_plan(deck, preset, metrics)
 
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str):
         deck = store.load_deck(name)
+        _validated_preset(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
         path = export_deck_data(deck, store.exports_dir(name))
         return ExportResult(path=str(path))
 

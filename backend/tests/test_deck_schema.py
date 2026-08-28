@@ -103,6 +103,27 @@ def test_slide_template_mismatches_chapter_template_rejected():
         )
 
 
+def test_ghost_chapter_id_rejected():
+    # 구조안에 없는 장을 가리키는 슬라이드는 모델 검증에서 막는다 (저장 후 500 방지)
+    with pytest.raises(ValidationError) as exc_info:
+        Deck(
+            meta=DeckMeta(title="테스트"),
+            structure=Structure(
+                chapters=[
+                    Chapter(id="ch01", topic="A", template="bullet_box"),
+                ]
+            ),
+            slides=[
+                Slide(
+                    chapter_id="유령장",
+                    slots=BulletBoxSlots(bullets=[Bullet(text="가")], conclusion="결론"),
+                ),
+            ],
+        )
+    assert "구조안에 없는 장" in str(exc_info.value)
+    assert "유령장" in str(exc_info.value)
+
+
 def test_unsupported_schema_version_rejected():
     with pytest.raises(ValidationError) as exc_info:
         Deck.model_validate({"schema_version": 99, "meta": {"title": "t"}})

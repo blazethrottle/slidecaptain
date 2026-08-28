@@ -53,6 +53,16 @@ def test_put_deck_invalid_schema_422(client):
     assert r.status_code == 422
 
 
+def test_put_deck_ghost_chapter_id_422(client):
+    client.post("/api/projects", json={"name": "p1"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["slides"] = [{"chapter_id": "유령장", "slots": {
+        "template": "bullet_box", "bullets": [{"text": "가"}], "conclusion": "결론",
+    }}]
+    r = client.put("/api/projects/p1/deck", json=deck)
+    assert r.status_code == 422
+
+
 def test_put_deck_bad_preset_overrides_422(client):
     client.post("/api/projects", json={"name": "p1"})
     deck = client.get("/api/projects/p1/deck").json()

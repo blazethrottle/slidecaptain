@@ -129,7 +129,10 @@ class Deck(BaseModel):
         for slide in self.slides:
             chapter = chapters_by_id.get(slide.chapter_id)
             if chapter is None:
-                continue  # 구조안에 없는 chapter_id는 엔진의 기존 ValueError가 담당한다
+                raise ValueError(
+                    f"슬라이드가 구조안에 없는 장을 가리킵니다: {slide.chapter_id}. "
+                    "구조안에 장을 먼저 추가하거나 슬라이드를 지워 주세요"
+                )
             if chapter.template != slide.slots.template:
                 raise ValueError(
                     f"장 {chapter.id}의 template({chapter.template})이 "

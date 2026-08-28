@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -64,3 +66,29 @@ def test_export_writes_versioned_pptx(client, store):
 
 def test_render_plan_missing_project_404(client):
     assert client.get("/api/projects/없는것/render-plan").status_code == 404
+
+
+def _corrupt_overrides_on_disk(store):
+    # 사용자가 탐색기에서 deck.json을 직접 고쳐 PUT 검증을 우회한 상황을 재현한다
+    deck_path = store.root / "p1" / "deck.json"
+    data = json.loads(deck_path.read_text(encoding="utf-8"))
+    data["meta"]["preset_overrides"] = {"font_roles": {"body_pt": 8}}  # 하한 위반
+    deck_path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def test_render_plan_with_hand_edited_bad_overrides_422(store):
+    client = TestClient(create_app(store), raise_server_exceptions=False)
+    _project_with_slide(client)
+    _corrupt_overrides_on_disk(store)
+    r = client.get("/api/projects/p1/render-plan")
+    assert r.status_code == 422
+    assert "프리셋" in r.json()["detail"]
+
+
+def test_export_with_hand_edited_bad_overrides_422(store):
+    client = TestClient(create_app(store), raise_server_exceptions=False)
+    _project_with_slide(client)
+    _corrupt_overrides_on_disk(store)
+    r = client.post("/api/projects/p1/export")
+    assert r.status_code == 422
+    assert "프리셋" in r.json()["detail"]
