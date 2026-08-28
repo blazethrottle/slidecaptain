@@ -1,0 +1,1364 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Slide Captain",
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/api/projects": {
+      "get": {
+        "summary": "List Projects",
+        "operationId": "list_projects_api_projects_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Projects Api Projects Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Project",
+        "operationId": "create_project_api_projects_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/deck": {
+      "get": {
+        "summary": "Get Deck",
+        "operationId": "get_deck_api_projects__name__deck_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Put Deck",
+        "operationId": "put_deck_api_projects__name__deck_put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/render-plan": {
+      "get": {
+        "summary": "Get Render Plan",
+        "operationId": "get_render_plan_api_projects__name__render_plan_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderPlan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/export": {
+      "post": {
+        "summary": "Export Project",
+        "operationId": "export_project_api_projects__name__export_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/snapshots": {
+      "get": {
+        "summary": "List Snapshots",
+        "operationId": "list_snapshots_api_projects__name__snapshots_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SnapshotInfo"
+                  },
+                  "title": "Response List Snapshots Api Projects  Name  Snapshots Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/snapshots/{snapshot_id}/restore": {
+      "post": {
+        "summary": "Restore Snapshot",
+        "operationId": "restore_snapshot_api_projects__name__snapshots__snapshot_id__restore_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/sources": {
+      "get": {
+        "summary": "List Sources",
+        "operationId": "list_sources_api_projects__name__sources_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Sources Api Projects  Name  Sources Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/sources/{filename}": {
+      "get": {
+        "summary": "Read Source",
+        "operationId": "read_source_api_projects__name__sources__filename__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceText"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Write Source",
+        "operationId": "write_source_api_projects__name__sources__filename__put",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceText"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Bullet": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "level": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Level",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "Bullet"
+      },
+      "BulletBoxSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "bullet_box",
+            "title": "Template",
+            "default": "bullet_box"
+          },
+          "bullets": {
+            "items": {
+              "$ref": "#/components/schemas/Bullet"
+            },
+            "type": "array",
+            "title": "Bullets",
+            "default": []
+          },
+          "conclusion": {
+            "type": "string",
+            "title": "Conclusion"
+          },
+          "footnote": {
+            "type": "string",
+            "title": "Footnote",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "conclusion"
+        ],
+        "title": "BulletBoxSlots"
+      },
+      "CapacityWarning": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "needed_pt": {
+            "type": "number",
+            "title": "Needed Pt"
+          },
+          "available_pt": {
+            "type": "number",
+            "title": "Available Pt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "slot",
+          "message",
+          "needed_pt",
+          "available_pt"
+        ],
+        "title": "CapacityWarning"
+      },
+      "Card": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "bullets": {
+            "items": {
+              "$ref": "#/components/schemas/Bullet"
+            },
+            "type": "array",
+            "title": "Bullets",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "Card"
+      },
+      "Chapter": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "topic": {
+            "type": "string",
+            "title": "Topic"
+          },
+          "conclusion": {
+            "type": "string",
+            "title": "Conclusion",
+            "default": ""
+          },
+          "template": {
+            "type": "string",
+            "enum": [
+              "cover",
+              "summary",
+              "bullet_box",
+              "table",
+              "compare2",
+              "divider"
+            ],
+            "title": "Template"
+          },
+          "source_refs": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Refs",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "topic",
+          "template"
+        ],
+        "title": "Chapter"
+      },
+      "CompareSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "compare2",
+            "title": "Template",
+            "default": "compare2"
+          },
+          "left": {
+            "$ref": "#/components/schemas/Card"
+          },
+          "right": {
+            "$ref": "#/components/schemas/Card"
+          },
+          "conclusion": {
+            "type": "string",
+            "title": "Conclusion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "left",
+          "right",
+          "conclusion"
+        ],
+        "title": "CompareSlots"
+      },
+      "CoverSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "cover",
+            "title": "Template",
+            "default": "cover"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle",
+            "default": ""
+          },
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "default": ""
+          },
+          "audience": {
+            "type": "string",
+            "title": "Audience",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "CoverSlots"
+      },
+      "CreateProjectRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CreateProjectRequest"
+      },
+      "Deck": {
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "title": "Schema Version",
+            "default": 1
+          },
+          "meta": {
+            "$ref": "#/components/schemas/DeckMeta"
+          },
+          "structure": {
+            "$ref": "#/components/schemas/Structure",
+            "default": {
+              "chapters": []
+            }
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/components/schemas/Slide"
+            },
+            "type": "array",
+            "title": "Slides",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "meta"
+        ],
+        "title": "Deck"
+      },
+      "DeckMeta": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "research",
+              "approval",
+              "strategy"
+            ],
+            "title": "Report Type",
+            "default": "research"
+          },
+          "audience": {
+            "type": "string",
+            "title": "Audience",
+            "default": ""
+          },
+          "preset_overrides": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Preset Overrides",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "title": "DeckMeta"
+      },
+      "DividerSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "divider",
+            "title": "Template",
+            "default": "divider"
+          },
+          "section_no": {
+            "type": "string",
+            "title": "Section No",
+            "default": ""
+          },
+          "section_title": {
+            "type": "string",
+            "title": "Section Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "section_title"
+        ],
+        "title": "DividerSlots"
+      },
+      "ExportResult": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "ExportResult"
+      },
+      "Frame": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "w": {
+            "type": "number",
+            "title": "W"
+          },
+          "h": {
+            "type": "number",
+            "title": "H"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill"
+          },
+          "border": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Border"
+          },
+          "paras": {
+            "items": {
+              "$ref": "#/components/schemas/Para"
+            },
+            "type": "array",
+            "title": "Paras",
+            "default": []
+          },
+          "table": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TablePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "valign": {
+            "type": "string",
+            "title": "Valign",
+            "default": "top"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "Frame"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OkResponse": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "OkResponse"
+      },
+      "Para": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "level": {
+            "type": "integer",
+            "title": "Level",
+            "default": 0
+          },
+          "font_pt": {
+            "type": "number",
+            "title": "Font Pt"
+          },
+          "bold": {
+            "type": "boolean",
+            "title": "Bold",
+            "default": false
+          },
+          "color": {
+            "type": "string",
+            "title": "Color",
+            "default": "202020"
+          },
+          "align": {
+            "type": "string",
+            "enum": [
+              "left",
+              "center",
+              "right"
+            ],
+            "title": "Align",
+            "default": "left"
+          },
+          "bullet": {
+            "type": "boolean",
+            "title": "Bullet",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "font_pt"
+        ],
+        "title": "Para"
+      },
+      "ProjectInfo": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "updated_at"
+        ],
+        "title": "ProjectInfo"
+      },
+      "RenderPlan": {
+        "properties": {
+          "page_width_pt": {
+            "type": "number",
+            "title": "Page Width Pt"
+          },
+          "page_height_pt": {
+            "type": "number",
+            "title": "Page Height Pt"
+          },
+          "style": {
+            "$ref": "#/components/schemas/RenderStyle"
+          },
+          "slides": {
+            "items": {
+              "$ref": "#/components/schemas/SlidePlan"
+            },
+            "type": "array",
+            "title": "Slides"
+          }
+        },
+        "type": "object",
+        "required": [
+          "page_width_pt",
+          "page_height_pt",
+          "style",
+          "slides"
+        ],
+        "title": "RenderPlan"
+      },
+      "RenderStyle": {
+        "properties": {
+          "korean_font": {
+            "type": "string",
+            "title": "Korean Font"
+          },
+          "latin_font": {
+            "type": "string",
+            "title": "Latin Font"
+          },
+          "text_color": {
+            "type": "string",
+            "title": "Text Color"
+          },
+          "box_padding_pt": {
+            "type": "number",
+            "title": "Box Padding Pt"
+          },
+          "line_spacing": {
+            "type": "number",
+            "title": "Line Spacing"
+          },
+          "bullet_indent_pt": {
+            "type": "number",
+            "title": "Bullet Indent Pt"
+          },
+          "bullet_gap_pt": {
+            "type": "number",
+            "title": "Bullet Gap Pt"
+          },
+          "table_cell_pad_x_pt": {
+            "type": "number",
+            "title": "Table Cell Pad X Pt"
+          },
+          "table_cell_pad_y_pt": {
+            "type": "number",
+            "title": "Table Cell Pad Y Pt"
+          },
+          "border_width_pt": {
+            "type": "number",
+            "title": "Border Width Pt"
+          },
+          "bullet_char": {
+            "type": "string",
+            "title": "Bullet Char"
+          },
+          "bullet_font": {
+            "type": "string",
+            "title": "Bullet Font"
+          }
+        },
+        "type": "object",
+        "required": [
+          "korean_font",
+          "latin_font",
+          "text_color",
+          "box_padding_pt",
+          "line_spacing",
+          "bullet_indent_pt",
+          "bullet_gap_pt",
+          "table_cell_pad_x_pt",
+          "table_cell_pad_y_pt",
+          "border_width_pt",
+          "bullet_char",
+          "bullet_font"
+        ],
+        "title": "RenderStyle",
+        "description": "라이터와 미리보기가 소비하는 시각 스타일. 프리셋에서 계산되어 렌더 계획에 내장된다.\n\n렌더 계획은 이 블록 덕에 자기완결적이다: 소비자는 프리셋을 다시 해석하지 않는다."
+      },
+      "Slide": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "slots": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverSlots"
+              },
+              {
+                "$ref": "#/components/schemas/SummarySlots"
+              },
+              {
+                "$ref": "#/components/schemas/BulletBoxSlots"
+              },
+              {
+                "$ref": "#/components/schemas/TableSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CompareSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DividerSlots"
+              }
+            ],
+            "title": "Slots",
+            "discriminator": {
+              "propertyName": "template",
+              "mapping": {
+                "bullet_box": "#/components/schemas/BulletBoxSlots",
+                "compare2": "#/components/schemas/CompareSlots",
+                "cover": "#/components/schemas/CoverSlots",
+                "divider": "#/components/schemas/DividerSlots",
+                "summary": "#/components/schemas/SummarySlots",
+                "table": "#/components/schemas/TableSlots"
+              }
+            }
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "slots"
+        ],
+        "title": "Slide"
+      },
+      "SlidePlan": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "template": {
+            "type": "string",
+            "title": "Template"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/Frame"
+            },
+            "type": "array",
+            "title": "Frames"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityWarning"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "template",
+          "frames"
+        ],
+        "title": "SlidePlan"
+      },
+      "SnapshotInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "saved_at": {
+            "type": "string",
+            "title": "Saved At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "saved_at"
+        ],
+        "title": "SnapshotInfo"
+      },
+      "SourceText": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "SourceText"
+      },
+      "Structure": {
+        "properties": {
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/Chapter"
+            },
+            "type": "array",
+            "title": "Chapters",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "Structure"
+      },
+      "SummarySlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "summary",
+            "title": "Template",
+            "default": "summary"
+          },
+          "conclusion": {
+            "type": "string",
+            "title": "Conclusion"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/Bullet"
+            },
+            "type": "array",
+            "title": "Points",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "conclusion"
+        ],
+        "title": "SummarySlots"
+      },
+      "TablePlan": {
+        "properties": {
+          "col_widths_pt": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Col Widths Pt"
+          },
+          "header": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Header"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "font_pt": {
+            "type": "number",
+            "title": "Font Pt"
+          },
+          "header_fill": {
+            "type": "string",
+            "title": "Header Fill"
+          },
+          "row_heights_pt": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Row Heights Pt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "col_widths_pt",
+          "header",
+          "rows",
+          "font_pt",
+          "header_fill",
+          "row_heights_pt"
+        ],
+        "title": "TablePlan"
+      },
+      "TableSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "table",
+            "title": "Template",
+            "default": "table"
+          },
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Columns"
+          },
+          "rows": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "footnote": {
+            "type": "string",
+            "title": "Footnote",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "columns",
+          "rows"
+        ],
+        "title": "TableSlots"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "slidecaptain-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "generate-types": "openapi-typescript ../backend/openapi.json -o src/api/types.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
+  }
+}
