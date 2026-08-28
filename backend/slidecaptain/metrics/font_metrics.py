@@ -135,9 +135,9 @@ class FontMetrics:
 
     @classmethod
     def load_default(cls) -> "FontMetrics":
-        """폰트 파일이 있으면 실측, 없으면 번들 수치 (코어의 OS 무관 동작 보장)."""
-        if _NOTO_VF.exists():
-            return cls.from_variable_ttf(_NOTO_VF)
+        """런타임은 항상 번들 수치를 쓴다. 실측은 추출 스크립트(scripts/extract_font_metrics.py)가
+        1회 수행하고, 번들과 설치 폰트의 어긋남은 테스트가 감시한다 (가변 폰트 인스턴스화가 약 14초라
+        런타임 실측은 쓰지 않는다, 2026-08-28 실측)."""
         return cls.from_bundled()
 
     def to_json(self) -> str:
