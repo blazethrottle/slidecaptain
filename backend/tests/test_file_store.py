@@ -4,6 +4,7 @@ from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.storage.file_store import (
     FileProjectStore,
     InvalidName,
+    InvalidSourceEncoding,
     ProjectExists,
     ProjectNotFound,
     SnapshotNotFound,
@@ -167,3 +168,26 @@ def test_write_source_tmp_does_not_clobber_real_file(store):
     store.write_source("p1", "a.md.tmp", "진짜 자료")
     store.write_source("p1", "a.md", "본문")
     assert store.read_source("p1", "a.md.tmp") == "진짜 자료"
+
+
+def test_read_source_cp949_fallback(store):
+    store.create_project("p1")
+    path = store.root / "p1" / "sources" / "옛문서.txt"
+    path.write_bytes("한글 자료입니다. 매출 1,234억".encode("cp949"))
+    assert "1,234억" in store.read_source("p1", "옛문서.txt")
+
+
+def test_read_source_utf8_bom_absorbed(store):
+    store.create_project("p1")
+    path = store.root / "p1" / "sources" / "봄문서.txt"
+    path.write_bytes("\ufeff본문 시작".encode("utf-8"))
+    assert store.read_source("p1", "봄문서.txt") == "본문 시작"
+
+
+def test_read_source_binary_rejected_with_guidance(store):
+    store.create_project("p1")
+    path = store.root / "p1" / "sources" / "그림.png"
+    path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\xff\xfe\xfd")
+    with pytest.raises(InvalidSourceEncoding) as exc_info:
+        store.read_source("p1", "그림.png")
+    assert "텍스트" in str(exc_info.value)

@@ -15,6 +15,7 @@ from slidecaptain.models.preset import Preset, apply_overrides
 from slidecaptain.models.render import RenderPlan
 from slidecaptain.storage.file_store import (
     InvalidName,
+    InvalidSourceEncoding,
     ProjectExists,
     ProjectNotFound,
     ProjectInfo,
@@ -27,6 +28,7 @@ from slidecaptain.storage.file_store import (
 
 _STATUS_BY_ERROR = [
     (InvalidName, 422),
+    (InvalidSourceEncoding, 422),
     (ProjectNotFound, 404),
     (SnapshotNotFound, 404),
     (SourceNotFound, 404),

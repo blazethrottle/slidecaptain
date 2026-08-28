@@ -50,6 +50,10 @@ class SourceNotFound(StorageError):
     pass
 
 
+class InvalidSourceEncoding(StorageError):
+    pass
+
+
 class ProjectInfo(BaseModel):
     name: str
     title: str
@@ -230,7 +234,18 @@ class FileProjectStore:
         path = d / "sources" / filename
         if not path.exists():
             raise SourceNotFound(f"자료 파일을 찾지 못했습니다: {filename}")
-        return path.read_text(encoding="utf-8")
+        # utf-8-sig가 BOM 유무 양쪽을 흡수한다. cp949는 한국어 Windows 메모장의
+        # ANSI 저장을 위한 폴백이다 (단계 3 결정 7)
+        for encoding in ("utf-8-sig", "cp949"):
+            try:
+                return path.read_text(encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        raise InvalidSourceEncoding(
+            f"자료 파일 {filename}을 텍스트로 읽지 못했습니다. "
+            "PDF나 이미지 같은 텍스트 아닌 파일은 자료로 쓸 수 없습니다. "
+            "텍스트 파일이라면 UTF-8 인코딩으로 다시 저장해 주세요."
+        )
 
     def write_source(self, name: str, filename: str, text: str) -> None:
         d = self._project_dir(name)

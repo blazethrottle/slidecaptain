@@ -58,3 +58,11 @@ def test_externally_added_source_readable_via_api(client, store):
     r = client.get("/api/projects/p1/sources/자료(최종).md")
     assert r.status_code == 200
     assert r.json()["text"] == "숫자 42"
+
+
+def test_read_binary_source_returns_422(client, store):
+    client.post("/api/projects", json={"name": "p1"})
+    (store.root / "p1" / "sources" / "그림.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff\xfe")
+    r = client.get("/api/projects/p1/sources/그림.png")
+    assert r.status_code == 422
+    assert "텍스트" in r.json()["detail"]
