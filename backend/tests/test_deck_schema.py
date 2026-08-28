@@ -134,3 +134,28 @@ def test_unsupported_schema_version_rejected():
 def test_current_schema_version_accepted():
     deck = Deck.model_validate({"schema_version": 1, "meta": {"title": "t"}})
     assert deck.schema_version == 1
+
+
+def test_duplicate_slide_for_same_chapter_rejected():
+    with pytest.raises(ValidationError) as exc_info:
+        Deck.model_validate({
+            "meta": {"title": "t"},
+            "structure": {"chapters": [{"id": "c1", "topic": "주제", "template": "bullet_box"}]},
+            "slides": [
+                {"chapter_id": "c1", "slots": {"template": "bullet_box", "conclusion": "결론"}},
+                {"chapter_id": "c1", "slots": {"template": "bullet_box", "conclusion": "결론2"}},
+            ],
+        })
+    assert "슬라이드" in str(exc_info.value)
+
+
+def test_table_cell_newline_rejected():
+    with pytest.raises(ValidationError) as exc_info:
+        Deck.model_validate({
+            "meta": {"title": "t"},
+            "structure": {"chapters": [{"id": "c1", "topic": "주제", "template": "table"}]},
+            "slides": [{"chapter_id": "c1", "slots": {
+                "template": "table", "columns": ["항목"], "rows": [["첫 줄\n둘째 줄"]],
+            }}],
+        })
+    assert "줄바꿈" in str(exc_info.value)

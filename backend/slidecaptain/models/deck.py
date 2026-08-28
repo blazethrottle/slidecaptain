@@ -58,6 +58,14 @@ class TableSlots(BaseModel):
                 raise ValueError(f"{i}번째 행의 칸 수({len(row)})가 열 수({len(self.columns)})와 다릅니다")
         return self
 
+    @model_validator(mode="after")
+    def _cells_single_line(self) -> "TableSlots":
+        # 표 셀 줄바꿈은 행 높이 계산과 균일성 규칙을 깨므로 데이터에서 금지한다 (단계 3 결정 8)
+        for text in self.columns + [cell for row in self.rows for cell in row]:
+            if "\n" in text or "\r" in text:
+                raise ValueError("표 칸에는 줄바꿈을 넣을 수 없습니다. 내용을 한 줄로 줄이거나 행을 나눠 주세요")
+        return self
+
 
 class CompareSlots(BaseModel):
     template: Literal["compare2"] = "compare2"
@@ -126,7 +134,14 @@ class Deck(BaseModel):
                 raise ValueError(f"장 id가 중복되었습니다: {ch.id}")
             seen_ids.add(ch.id)
         chapters_by_id = {ch.id: ch for ch in self.structure.chapters}
+        seen_slide_chapters: set[str] = set()
         for slide in self.slides:
+            if slide.chapter_id in seen_slide_chapters:
+                raise ValueError(
+                    f"한 장에 슬라이드가 두 개 있습니다: {slide.chapter_id}. "
+                    "장 하나에는 슬라이드 하나만 둘 수 있습니다"
+                )
+            seen_slide_chapters.add(slide.chapter_id)
             chapter = chapters_by_id.get(slide.chapter_id)
             if chapter is None:
                 raise ValueError(
