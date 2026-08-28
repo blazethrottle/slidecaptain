@@ -1,6 +1,7 @@
 import pytest
 
 from slidecaptain.layout.engine import build_render_plan
+from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
@@ -17,6 +18,8 @@ from slidecaptain.models.deck import (
     TableSlots,
 )
 from slidecaptain.models.preset import Preset
+
+METRICS = FontMetrics.load_default()
 
 
 class FakeFace:
@@ -216,3 +219,35 @@ def test_body_font_sizes_at_most_two_steps_on_content_slides():
         for p in f.paras
     }
     assert len(body_sizes) <= 2
+
+
+def _two_chapter_deck() -> Deck:
+    return Deck(
+        meta=DeckMeta(title="순서 테스트"),
+        structure=Structure(chapters=[
+            Chapter(id="c2", topic="둘째 주제", template="bullet_box"),
+            Chapter(id="c1", topic="첫째 주제", template="bullet_box"),
+        ]),
+        slides=[
+            Slide(chapter_id="c1", slots=BulletBoxSlots(conclusion="결론1")),
+            Slide(chapter_id="c2", slots=BulletBoxSlots(conclusion="결론2")),
+        ],
+    )
+
+
+def test_render_order_follows_structure_not_slides_array():
+    plan = build_render_plan(_two_chapter_deck(), Preset(), METRICS)
+    assert [s.chapter_id for s in plan.slides] == ["c2", "c1"]
+
+
+def test_chapter_without_slide_is_skipped_and_pages_renumber():
+    # c1 슬라이드만 남긴다: 구조안에서 c1은 두 번째 장이므로, 장 위치를 그대로 쪽번호로 쓰는
+    # 버그 구현은 2를 내고 올바른 구현(렌더 순번)은 1을 낸다 (2026-08-28 적대 리뷰 반영)
+    deck = _two_chapter_deck()
+    deck = deck.model_copy(update={"slides": [deck.slides[0]]})
+    plan = build_render_plan(deck, Preset(), METRICS)
+    assert [s.chapter_id for s in plan.slides] == ["c1"]
+    page_para = next(
+        p for f in plan.slides[0].frames if f.name.endswith(":page_number") for p in f.paras
+    )
+    assert page_para.text == "1"

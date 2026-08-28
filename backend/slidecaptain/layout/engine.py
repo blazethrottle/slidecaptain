@@ -25,11 +25,19 @@ def _style_from_preset(preset: Preset) -> RenderStyle:
 
 def build_render_plan(deck: Deck, preset: Preset, metrics) -> RenderPlan:
     chapters = {ch.id: ch for ch in deck.structure.chapters}
-    slides = []
-    for page_no, slide in enumerate(deck.slides, start=1):
-        chapter = chapters.get(slide.chapter_id)
-        if chapter is None:
+    for slide in deck.slides:
+        if slide.chapter_id not in chapters:
             raise ValueError(f"구조안에 없는 장을 그릴 수 없습니다: {slide.chapter_id}")
+    slides_by_chapter = {slide.chapter_id: slide for slide in deck.slides}
+
+    # 렌더 순서의 진본은 구조안이다 (단계 3 결정 1). slides 배열 순서는 의미가 없다.
+    slides = []
+    page_no = 0
+    for chapter in deck.structure.chapters:
+        slide = slides_by_chapter.get(chapter.id)
+        if slide is None:
+            continue  # 내용이 아직 생성되지 않은 장
+        page_no += 1
         slides.append(build_slide(chapter, slide.slots, page_no, preset, metrics))
     return RenderPlan(
         page_width_pt=preset.page_width_pt,
