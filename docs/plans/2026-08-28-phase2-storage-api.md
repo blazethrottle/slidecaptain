@@ -1578,7 +1578,7 @@ print(f"기록 완료: {out}")
 Run (backend 폴더): `.venv/Scripts/python.exe scripts/dump_openapi.py`
 Expected: `기록 완료: ...backend/openapi.json`
 
-Run (저장소 루트): `npm --prefix frontend install` 후 `npm --prefix frontend run generate-types`
+Run: 의존성 설치는 frontend 폴더 안에서 `npm install` (2026-08-28 실측 정정: Windows에서 `npm --prefix frontend install` 형태가 동작하지 않음), 타입 생성은 저장소 루트에서 `npm --prefix frontend run generate-types` (이 형태는 정상 동작)
 Expected: `frontend/src/api/types.ts` 생성. 파일을 열어 `Deck`, `RenderPlan` 타입이 보이는지 확인 (openapi-typescript 7.13은 로드맵 기술 검증에서 동작 확인됨)
 
 - [ ] **Step 6: 전체 확인 후 커밋**
