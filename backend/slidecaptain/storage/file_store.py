@@ -77,6 +77,23 @@ def _validate_name(name: str, kind: str) -> None:
         )
 
 
+def _validate_read_name(name: str) -> None:
+    """읽기용 최소 검증: 탐색기로 넣은 파일(괄호 등 생성 문법 밖 이름)도 읽히도록, 폴더 탈출 방지만 확인한다."""
+    stem = name.split(".")[0].upper()
+    if (
+        not name
+        or "/" in name
+        or "\\" in name
+        or ":" in name
+        or ".." in name
+        or name.endswith(".")
+        or stem in _WINDOWS_RESERVED
+    ):
+        raise InvalidName(
+            f"자료 파일 이름으로 쓸 수 없습니다: {name!r}. 폴더 경로 없이 파일 이름만 적어 주세요."
+        )
+
+
 class ProjectStore(Protocol):
     """저장소 인터페이스 (설계서 2.2). 파일 구현 외의 구현(DB 등)으로 교체 가능하게 한다."""
 
@@ -200,11 +217,16 @@ class FileProjectStore:
 
     def list_sources(self, name: str) -> list[str]:
         d = self._project_dir(name)
-        return sorted(p.name for p in (d / "sources").iterdir() if p.is_file())
+        return sorted(
+            p.name
+            for p in (d / "sources").iterdir()
+            # 점으로 시작하는 이름 제외: ".tmp-" 저장 잔재와 숨김 파일
+            if p.is_file() and not p.name.startswith(".")
+        )
 
     def read_source(self, name: str, filename: str) -> str:
         d = self._project_dir(name)
-        _validate_name(filename, "자료 파일")
+        _validate_read_name(filename)
         path = d / "sources" / filename
         if not path.exists():
             raise SourceNotFound(f"자료 파일을 찾지 못했습니다: {filename}")
@@ -213,7 +235,8 @@ class FileProjectStore:
     def write_source(self, name: str, filename: str, text: str) -> None:
         d = self._project_dir(name)
         _validate_name(filename, "자료 파일")
-        tmp = d / "sources" / (filename + ".tmp")
+        # 접두사형 임시 이름: 정식 자료명 "a.md.tmp"와의 충돌을 피한다
+        tmp = d / "sources" / (".tmp-" + filename)
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, d / "sources" / filename)
 

@@ -6,8 +6,13 @@ from slidecaptain.storage.file_store import FileProjectStore
 
 
 @pytest.fixture
-def client(tmp_path):
-    return TestClient(create_app(FileProjectStore(tmp_path / "projects")))
+def store(tmp_path):
+    return FileProjectStore(tmp_path / "projects")
+
+
+@pytest.fixture
+def client(store):
+    return TestClient(create_app(store))
 
 
 def _save_title(client, title):
@@ -44,3 +49,12 @@ def test_sources_round_trip(client):
 def test_source_missing_404(client):
     client.post("/api/projects", json={"name": "p1"})
     assert client.get("/api/projects/p1/sources/없음.md").status_code == 404
+
+
+def test_externally_added_source_readable_via_api(client, store):
+    client.post("/api/projects", json={"name": "p1"})
+    (store.root / "p1" / "sources" / "자료(최종).md").write_text("숫자 42", encoding="utf-8")
+    assert "자료(최종).md" in client.get("/api/projects/p1/sources").json()
+    r = client.get("/api/projects/p1/sources/자료(최종).md")
+    assert r.status_code == 200
+    assert r.json()["text"] == "숫자 42"

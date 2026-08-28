@@ -135,3 +135,35 @@ def test_source_name_traversal_rejected(store):
         store.write_source("p1", "..\\밖으로.md", "x")
     with pytest.raises(SourceNotFound):
         store.read_source("p1", "없는파일.md")
+
+
+def test_read_source_accepts_externally_added_filename(store):
+    # 탐색기로 넣은 파일은 생성 문법(괄호 금지 등)을 안 지켜도 읽을 수 있어야 한다
+    store.create_project("p1")
+    (store.root / "p1" / "sources" / "자료(최종).md").write_text("# 최종", encoding="utf-8")
+    assert store.read_source("p1", "자료(최종).md") == "# 최종"
+
+
+@pytest.mark.parametrize(
+    "bad", ["", "..", "..\\밖.md", "../밖.md", "a/b.md", "a\\b.md", "C:밖.md", "CON", "이름끝점."]
+)
+def test_read_source_rejects_escape_names(store, bad):
+    store.create_project("p1")
+    with pytest.raises(InvalidName):
+        store.read_source("p1", bad)
+
+
+def test_list_sources_hides_tmp_and_hidden_files(store):
+    store.create_project("p1")
+    store.write_source("p1", "리서치.md", "본문")
+    (store.root / "p1" / "sources" / ".tmp-깨진저장.md").write_text("잔재", encoding="utf-8")
+    (store.root / "p1" / "sources" / ".숨김").write_text("숨김", encoding="utf-8")
+    assert store.list_sources("p1") == ["리서치.md"]
+
+
+def test_write_source_tmp_does_not_clobber_real_file(store):
+    # 정식 자료 이름이 a.md.tmp여도 a.md 저장의 임시 파일과 충돌하면 안 된다
+    store.create_project("p1")
+    store.write_source("p1", "a.md.tmp", "진짜 자료")
+    store.write_source("p1", "a.md", "본문")
+    assert store.read_source("p1", "a.md.tmp") == "진짜 자료"
