@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, messageOf, type Deck, type ProjectInfo } from "../api/client";
 import { EditorScreen } from "./EditorScreen";
+import { RecoveryScreen } from "./RecoveryScreen";
 import { SourcesScreen } from "./SourcesScreen";
 import { StructureScreen } from "./StructureScreen";
 
@@ -10,6 +11,10 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const [deck, setDeck] = useState<Deck | null>(null);
   const [tab, setTab] = useState<Tab>("sources");
   const [error, setError] = useState("");
+  const [exportPath, setExportPath] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const flushEditor = useRef<null | (() => Promise<void>)>(null);
 
   useEffect(() => {
     if (project.status === "ok") {
@@ -18,11 +23,10 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   }, [project.name, project.status]);
 
   if (project.status === "needs_recovery") {
-    // 복구 화면은 Task 16이 교체한다. 그때까지는 안내만 한다
     return (
       <main>
-        <p role="alert">이 프로젝트는 복구가 필요합니다. 스냅샷 복구 화면에서 이전 저장 시점으로 되돌릴 수 있습니다.</p>
-        <button onClick={onBack}>목록으로</button>
+        <h1>{project.title}</h1>
+        <RecoveryScreen project={project} onBack={onBack} />
       </main>
     );
   }
@@ -44,6 +48,22 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   }
 
   const hasSlides = deck.slides.length > 0;
+
+  const doExport = async () => {
+    setExporting(true);
+    setExportPath("");
+    try {
+      await flushEditor.current?.();           // 보류 중 자동 저장 플러시 (결정 1)
+      await api.createSnapshot(project.name);  // 내보내기 직전 복구 지점 (결정 1)
+      const r = await api.exportDeck(project.name);
+      setExportPath(r.path);
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <main className="project-view">
       {error && (
@@ -58,15 +78,30 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           <button aria-pressed={tab === "editor"} disabled={!hasSlides}
             onClick={() => setTab("editor")}
             title={hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
+          <button onClick={doExport} disabled={!hasSlides || exporting}>PPTX 내보내기</button>
+          <button onClick={() => setShowRecovery(true)}>스냅샷 복구</button>
         </nav>
       </header>
-      {tab === "sources" && <SourcesScreen project={project} deck={deck} onDeckChange={setDeck} />}
-      {tab === "structure" && (
+      {exportPath && <p className="export-path">내보내기 완료: {exportPath} (PowerPoint에서 여세요)</p>}
+      {showRecovery && (
+        <RecoveryScreen project={project} onBack={() => {
+          setShowRecovery(false);
+          // 복원본을 다시 읽을 때까지 덱을 내린다: 옛 덱으로 편집기가 재마운트되어
+          // 다음 자동 저장이 복원 결과를 덮어쓰는 사고를 막는다 (2026-08-29 적대 리뷰 반영)
+          setDeck(null);
+          api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
+        }} />
+      )}
+      {!showRecovery && tab === "sources" && (
+        <SourcesScreen project={project} deck={deck} onDeckChange={setDeck} />
+      )}
+      {!showRecovery && tab === "structure" && (
         <StructureScreen project={project} deck={deck} onDeckChange={setDeck}
           onDone={() => setTab("editor")} />
       )}
-      {tab === "editor" && hasSlides && (
-        <EditorScreen project={project} deck={deck} onDeckChange={setDeck} />
+      {!showRecovery && tab === "editor" && hasSlides && (
+        <EditorScreen project={project} deck={deck} onDeckChange={setDeck}
+          onEditorReady={(f) => { flushEditor.current = f; }} />
       )}
     </main>
   );
