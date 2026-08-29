@@ -3,9 +3,12 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -99,7 +102,9 @@ def _validated_preset(deck: Deck, base: Preset | None = None) -> Preset:
         raise HTTPException(422, f"프리셋 덮어쓰기 값이 유효하지 않습니다: {first}")
 
 
-def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastAPI:
+def create_app(
+    store: ProjectStore, provider: AIProvider | None = None, static_dir: Path | None = None
+) -> FastAPI:
     app = FastAPI(title="Slide Captain", version="0.2.0")
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
     service = GenerationService(provider, metrics) if provider is not None else None
@@ -264,5 +269,9 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
         preset = _preset_for(deck)
         sources = _load_sources(name)
         return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
+
+    if static_dir is not None and static_dir.is_dir():
+        # 빌드된 화면을 같은 주소에서 서빙한다 (결정 7). API 라우트가 먼저 등록되어 우선한다
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="ui")
 
     return app

@@ -50,7 +50,10 @@ def _build_serve_app(data_dir: Path, model: str | None):
     from slidecaptain.server.app import create_app
     from slidecaptain.storage.file_store import FileProjectStore
 
-    return create_app(FileProjectStore(data_dir), provider=SubscriptionProvider(model=model))
+    ui_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    return create_app(
+        FileProjectStore(data_dir), provider=SubscriptionProvider(model=model), static_dir=ui_dir
+    )
 
 
 def _run_serve(args) -> int:
@@ -66,6 +69,12 @@ def _run_serve(args) -> int:
         print(f"폰트 자동 설치에 실패했습니다: {e}\n화면 표시가 다른 폰트로 대체될 수 있습니다. 수동 설치 파일: {assets_dir}", file=sys.stderr)
 
     app = _build_serve_app(args.data_dir, args.model)
+    ui_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if not ui_dir.is_dir():
+        print(
+            "화면 파일이 아직 없어 API만 제공합니다. "
+            "frontend 폴더에서 npm run build를 실행하면 화면이 함께 제공됩니다."
+        )
     print(f"프로젝트 폴더: {args.data_dir}")
     print(f"서버 주소: http://127.0.0.1:{args.port} (이 PC에서만 접근 가능)")
     uvicorn.run(app, host="127.0.0.1", port=args.port)
