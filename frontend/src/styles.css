@@ -3,3 +3,9 @@ body { margin: 0; }
 main { padding: 16px; }
 button { cursor: pointer; }
 [role="alert"] { color: #b00020; }
+
+.preview-holder { width: 100%; overflow: hidden; }
+.frame.selected { outline: 2px solid #1F4E79; }
+.frame.warned { outline: 2px solid #B00020; }
+.frame.selected.warned { outline: 2px dashed #B00020; }
+.inline-editor { position: absolute; left: 10%; top: 40%; width: 80%; min-height: 60px; font: inherit; }
