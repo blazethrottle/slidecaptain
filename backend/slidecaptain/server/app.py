@@ -4,8 +4,10 @@
 """
 
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from slidecaptain.export.exporter import export_deck_data
 from slidecaptain.layout.engine import build_render_plan
@@ -38,6 +40,20 @@ _STATUS_BY_ERROR = [
     (StorageError, 400),
 ]
 
+_SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
+
+_VALIDATION_TYPE_MESSAGES = {
+    "missing": "필수 값이 빠졌습니다",
+    "greater_than_equal": "허용된 최솟값보다 작습니다",
+    "string_type": "글자여야 합니다",
+    "int_type": "정수여야 합니다",
+    "bool_type": "참/거짓 값이어야 합니다",
+    "list_type": "목록이어야 합니다",
+    "model_type": "객체 형식이어야 합니다",
+    "literal_error": "허용된 값이 아닙니다",
+    "string_pattern_mismatch": "형식에 맞지 않습니다",
+}
+
 
 class CreateProjectRequest(BaseModel):
     name: str
@@ -57,7 +73,7 @@ class ExportResult(BaseModel):
 
 
 class GenerateStructureRequest(BaseModel):
-    target_chapters: int | None = None
+    target_chapters: int | None = Field(default=None, ge=1)
     instructions: str = ""
 
 
@@ -88,6 +104,9 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
     service = GenerationService(provider, metrics) if provider is not None else None
 
+    # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+
     @app.exception_handler(StorageError)
     async def storage_error_handler(request, exc: StorageError):
         status = next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls))
@@ -96,6 +115,17 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
     @app.exception_handler(ProviderError)
     async def provider_error_handler(request, exc: ProviderError):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request, exc: RequestValidationError):
+        e = exc.errors()[0]
+        if e["type"] == "value_error":
+            # 모델 validator의 한국어 메시지를 그대로 살린다 (예: "구조안에 없는 장을 가리킵니다")
+            message = str(e["msg"]).removeprefix("Value error, ")
+        else:
+            loc = ".".join(str(p) for p in e["loc"] if p != "body")
+            message = f"{loc}: {_VALIDATION_TYPE_MESSAGES.get(e['type'], '입력 형식이 맞지 않습니다')}"
+        return JSONResponse(status_code=422, content={"detail": message})
 
     def _preset_for(deck: Deck) -> Preset:
         return _validated_preset(deck, store.load_global_preset())
@@ -116,7 +146,15 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
                 "입력 자료가 없습니다. 자료 화면에서 파일을 추가하거나, "
                 "프로젝트 폴더의 sources에 텍스트 파일을 넣어 주세요.",
             )
-        return {f: store.read_source(name, f) for f in files}
+        texts = {f: store.read_source(name, f) for f in files}
+        total = sum(len(t) for t in texts.values())
+        if total > _SOURCES_TOTAL_MAX_CHARS:
+            raise HTTPException(
+                422,
+                f"자료가 너무 큽니다(합계 {total:,}자, 한도 {_SOURCES_TOTAL_MAX_CHARS:,}자). "
+                "필요한 부분만 발췌해 주세요.",
+            )
+        return texts
 
     @app.get("/api/preset", response_model=Preset)
     def get_preset():

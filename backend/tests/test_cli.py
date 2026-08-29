@@ -81,3 +81,19 @@ def test_serve_app_wires_model_to_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(sub, "SubscriptionProvider", Spy)
     _build_serve_app(tmp_path / "data", "opus")
     assert captured["model"] == "opus"
+
+
+def test_serve_binds_localhost_only(monkeypatch, tmp_path):
+    import uvicorn
+
+    captured: dict = {}
+
+    def fake_run(app, **kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(uvicorn, "run", fake_run)
+    from slidecaptain.__main__ import main
+
+    assert main(["serve", "--data-dir", str(tmp_path / "data"), "--port", "8770"]) == 0
+    assert captured["host"] == "127.0.0.1"  # 로컬 전용 바인딩 (설계서 1.3)
+    assert captured["port"] == 8770

@@ -120,3 +120,19 @@ def test_condense_chapter_template_mismatch_422(store):
     body = {"slots": {"template": "table", "columns": ["a"], "rows": [["b"]]}}
     r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
     assert r.status_code == 422
+
+
+def test_target_chapters_zero_422(store):
+    client = _client(store, [])
+    client.post("/api/projects", json={"name": "p1"})
+    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 0})
+    assert r.status_code == 422
+
+
+def test_sources_over_total_limit_422(store):
+    client = _client(store, [])
+    client.post("/api/projects", json={"name": "p1"})
+    client.put("/api/projects/p1/sources/큰자료.md", json={"text": "가" * 100_001})
+    r = client.post("/api/projects/p1/generate/structure", json={})
+    assert r.status_code == 422
+    assert "발췌" in r.json()["detail"]

@@ -114,6 +114,27 @@ def test_explicit_snapshot_endpoint(client):
     assert len(client.get("/api/projects/p1/snapshots").json()) == 1
 
 
+def test_validation_error_detail_is_korean_string(client):
+    r = client.post("/api/projects", json={})  # name 빠짐
+    assert r.status_code == 422
+    assert isinstance(r.json()["detail"], str)
+    assert "name" in r.json()["detail"] and "빠졌습니다" in r.json()["detail"]
+
+
+def test_deck_validator_korean_message_preserved(client):
+    client.post("/api/projects", json={"name": "p1"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["slides"] = [{"chapter_id": "유령", "slots": {"template": "bullet_box", "conclusion": "결"}}]
+    r = client.put("/api/projects/p1/deck", json=deck)
+    assert r.status_code == 422
+    assert "구조안에 없는 장" in r.json()["detail"]  # 모델 검증의 한국어 문구가 그대로 나온다
+
+
+def test_foreign_host_header_rejected(client):
+    r = client.get("/api/projects", headers={"host": "evil.example.com"})
+    assert r.status_code == 400
+
+
 def test_recovery_flow_over_api(tmp_path):
     store = FileProjectStore(tmp_path / "projects")
     api = TestClient(create_app(store))

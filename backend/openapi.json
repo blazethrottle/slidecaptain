@@ -1468,7 +1468,8 @@
           "target_chapters": {
             "anyOf": [
               {
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
