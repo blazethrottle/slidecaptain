@@ -20,6 +20,7 @@ from typing import Protocol
 from pydantic import BaseModel, ValidationError
 
 from slidecaptain.models.deck import Deck, DeckMeta
+from slidecaptain.models.preset import Preset
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
@@ -111,6 +112,8 @@ class ProjectStore(Protocol):
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
     def exports_dir(self, name: str) -> Path: ...
+    def load_global_preset(self) -> Preset: ...
+    def save_global_preset(self, preset: Preset) -> None: ...
 
 
 class FileProjectStore:
@@ -259,3 +262,22 @@ class FileProjectStore:
 
     def exports_dir(self, name: str) -> Path:
         return self._project_dir(name) / "exports"
+
+    # -- 전역 프리셋 --------------------------------------------------------
+
+    def load_global_preset(self) -> Preset:
+        path = self.root / "preset.json"
+        if not path.exists():
+            return Preset()
+        try:
+            return Preset.model_validate_json(path.read_text(encoding="utf-8"))
+        except (ValueError, ValidationError) as e:
+            raise StorageError(
+                "전역 프리셋 파일(preset.json)을 읽지 못했습니다. "
+                f"파일을 지우면 기본값으로 돌아갑니다. 원인: {e}"
+            ) from e
+
+    def save_global_preset(self, preset: Preset) -> None:
+        tmp = self.root / "preset.json.tmp"
+        tmp.write_text(preset.model_dump_json(indent=2), encoding="utf-8")
+        os.replace(tmp, self.root / "preset.json")

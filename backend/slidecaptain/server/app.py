@@ -70,14 +70,14 @@ class CondenseChapterRequest(BaseModel):
     instructions: str = ""
 
 
-def _validated_preset(deck: Deck) -> Preset:
+def _validated_preset(deck: Deck, base: Preset | None = None) -> Preset:
     """덱의 preset_overrides를 검증해 프리셋을 만든다.
 
     사용자가 deck.json 파일을 직접 고쳐 PUT 검증을 우회한 경우에도
     render-plan과 export가 500 대신 같은 422로 답하게 한다.
     """
     try:
-        return apply_overrides(Preset(), deck.meta.preset_overrides)
+        return apply_overrides(base if base is not None else Preset(), deck.meta.preset_overrides)
     except ValidationError as e:
         first = e.errors()[0]["msg"]
         raise HTTPException(422, f"프리셋 덮어쓰기 값이 유효하지 않습니다: {first}")
@@ -97,6 +97,9 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
     async def provider_error_handler(request, exc: ProviderError):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
 
+    def _preset_for(deck: Deck) -> Preset:
+        return _validated_preset(deck, store.load_global_preset())
+
     def _require_service() -> GenerationService:
         if service is None:
             # 오류 문구는 비개발자가 수행할 수 있는 행동으로 (2026-08-28 적대 리뷰 반영)
@@ -115,6 +118,15 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
             )
         return {f: store.read_source(name, f) for f in files}
 
+    @app.get("/api/preset", response_model=Preset)
+    def get_preset():
+        return store.load_global_preset()
+
+    @app.put("/api/preset", response_model=OkResponse)
+    def put_preset(preset: Preset):
+        store.save_global_preset(preset)
+        return OkResponse()
+
     @app.get("/api/projects", response_model=list[ProjectInfo])
     def list_projects():
         return store.list_projects()
@@ -129,27 +141,27 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
 
     @app.put("/api/projects/{name}/deck", response_model=OkResponse)
     def put_deck(name: str, deck: Deck):
-        _validated_preset(deck)
+        _preset_for(deck)
         store.save_deck(name, deck)
         return OkResponse()
 
     @app.get("/api/projects/{name}/render-plan", response_model=RenderPlan)
     def get_render_plan(name: str):
         deck = store.load_deck(name)
-        preset = _validated_preset(deck)
+        preset = _preset_for(deck)
         return build_render_plan(deck, preset, metrics)
 
     @app.post("/api/render-plan", response_model=RenderPlan)
     def measure_deck(deck: Deck):
         """저장 없이 실측만 한다: 편집 중 미리보기와 분량 경고의 공급원 (단계 4 결정 2)."""
-        preset = _validated_preset(deck)
+        preset = _preset_for(deck)
         return build_render_plan(deck, preset, metrics)
 
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str):
         deck = store.load_deck(name)
-        _validated_preset(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
-        path = export_deck_data(deck, store.exports_dir(name))
+        _preset_for(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
+        path = export_deck_data(deck, store.exports_dir(name), global_preset=store.load_global_preset())
         return ExportResult(path=str(path))
 
     @app.get("/api/projects/{name}/snapshots", response_model=list[SnapshotInfo])
@@ -186,7 +198,7 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
         deck = store.load_deck(name)
         if all(ch.id != chapter_id for ch in deck.structure.chapters):
             raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-        preset = _validated_preset(deck)
+        preset = _preset_for(deck)
         sources = _load_sources(name)
         return await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions)
 
@@ -206,7 +218,7 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
                 f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
                 "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
             )
-        preset = _validated_preset(deck)
+        preset = _preset_for(deck)
         sources = _load_sources(name)
         return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
 

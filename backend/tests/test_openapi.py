@@ -29,6 +29,7 @@ def test_committed_openapi_json_matches_live_app(schema):
 def test_openapi_contains_all_routes(schema):
     paths = schema["paths"].keys()
     for route in [
+        "/api/preset",
         "/api/projects",
         "/api/projects/{name}/deck",
         "/api/projects/{name}/render-plan",

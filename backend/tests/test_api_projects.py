@@ -70,3 +70,29 @@ def test_put_deck_bad_preset_overrides_422(client):
     r = client.put("/api/projects/p1/deck", json=deck)
     assert r.status_code == 422
     assert "하한" in r.json()["detail"]
+
+
+def test_preset_get_put_and_render_uses_it(client):
+    r = client.get("/api/preset")
+    assert r.status_code == 200
+    preset = r.json()
+    preset["font_roles"]["title_pt"] = 30.0
+    assert client.put("/api/preset", json=preset).status_code == 200
+    assert client.get("/api/preset").json()["font_roles"]["title_pt"] == 30.0
+    # 렌더 계획이 전역 프리셋을 밑판으로 쓴다
+    client.post("/api/projects", json={"name": "p1", "title": "제목"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["structure"]["chapters"] = [{"id": "c1", "topic": "주제", "template": "bullet_box"}]
+    deck["slides"] = [{"chapter_id": "c1", "slots": {
+        "template": "bullet_box", "bullets": [], "conclusion": "결론"}}]
+    plan = client.post("/api/render-plan", json=deck).json()
+    title_para = next(
+        p for f in plan["slides"][0]["frames"] if f["name"].endswith(":title") for p in f["paras"]
+    )
+    assert title_para["font_pt"] == 30.0
+
+
+def test_preset_put_below_floor_422(client):
+    preset = client.get("/api/preset").json()
+    preset["font_roles"]["body_pt"] = 5.0
+    assert client.put("/api/preset", json=preset).status_code == 422

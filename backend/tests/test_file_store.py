@@ -1,6 +1,7 @@
 import pytest
 
 from slidecaptain.models.deck import Deck, DeckMeta
+from slidecaptain.models.preset import Preset
 from slidecaptain.storage.file_store import (
     FileProjectStore,
     InvalidName,
@@ -9,6 +10,7 @@ from slidecaptain.storage.file_store import (
     ProjectNotFound,
     SnapshotNotFound,
     SourceNotFound,
+    StorageError,
 )
 
 
@@ -191,3 +193,24 @@ def test_read_source_binary_rejected_with_guidance(store):
     with pytest.raises(InvalidSourceEncoding) as exc_info:
         store.read_source("p1", "그림.png")
     assert "텍스트" in str(exc_info.value)
+
+
+def test_global_preset_default_when_missing(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    assert store.load_global_preset() == Preset()
+
+
+def test_global_preset_roundtrip(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    preset = Preset()
+    preset.font_roles.title_pt = 22.0
+    store.save_global_preset(preset)
+    assert store.load_global_preset().font_roles.title_pt == 22.0
+
+
+def test_global_preset_corrupt_file_message(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    (tmp_path / "projects" / "preset.json").write_text("{망가짐", encoding="utf-8")
+    with pytest.raises(StorageError) as exc_info:
+        store.load_global_preset()
+    assert "preset.json" in str(exc_info.value)
