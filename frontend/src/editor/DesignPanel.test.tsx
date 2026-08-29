@@ -37,3 +37,16 @@ it("본문 크기를 고치면 덮어쓰기로 기록된다", async () => {
   const next = edit(deck);
   expect((next.meta.preset_overrides as Record<string, Record<string, number>>).font_roles.body_pt).toBe(13);
 });
+
+it("덱 상태가 바뀌면(언두 등) 표시값이 따라간다", async () => {
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  const onApply = vi.fn();
+  const withOverride = {
+    ...deck,
+    meta: { ...deck.meta, preset_overrides: { font_roles: { body_pt: 13 } } },
+  };
+  const { rerender } = render(<DesignPanel deck={withOverride} onApply={onApply} />);
+  expect(await screen.findByLabelText("본문 크기(pt)")).toHaveValue(13);
+  rerender(<DesignPanel deck={deck} onApply={onApply} />);
+  expect(await screen.findByLabelText("본문 크기(pt)")).toHaveValue(12);
+});

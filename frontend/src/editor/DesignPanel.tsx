@@ -41,7 +41,8 @@ export function DesignPanel({ deck, onApply }: {
       <summary>디자인 값 (이 덱에만 적용)</summary>
       {FONT_FIELDS.map(([key, label, min]) => (
         <label key={key}>{label}
-          <input aria-label={label} type="number" min={min} step={0.5}
+          {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
+          <input key={`${key}:${fontValue(key)}`} aria-label={label} type="number" min={min} step={0.5}
             defaultValue={fontValue(key)}
             onBlur={(e) => {
               const v = Number(e.target.value);
@@ -53,7 +54,8 @@ export function DesignPanel({ deck, onApply }: {
       ))}
       {COLOR_FIELDS.map(([key, label]) => (
         <label key={key}>{label}
-          <input aria-label={label} type="color" defaultValue={`#${colorValue(key)}`}
+          {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
+          <input key={`${key}:${colorValue(key)}`} aria-label={label} type="color" defaultValue={`#${colorValue(key)}`}
             onBlur={(e) => {
               // 색 선택기는 드래그 중 change를 연사한다: 확정(blur) 시점에만 반영해 언두와 저장을 지킨다
               const hex = e.target.value.replace("#", "").toUpperCase();

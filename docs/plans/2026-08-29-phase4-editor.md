@@ -3761,7 +3761,8 @@ export function DesignPanel({ deck, onApply }: {
       <summary>디자인 값 (이 덱에만 적용)</summary>
       {FONT_FIELDS.map(([key, label, min]) => (
         <label key={key}>{label}
-          <input aria-label={label} type="number" min={min} step={0.5}
+          {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
+          <input key={`${key}:${fontValue(key)}`} aria-label={label} type="number" min={min} step={0.5}
             defaultValue={fontValue(key)}
             onBlur={(e) => {
               const v = Number(e.target.value);
@@ -3773,7 +3774,8 @@ export function DesignPanel({ deck, onApply }: {
       ))}
       {COLOR_FIELDS.map(([key, label]) => (
         <label key={key}>{label}
-          <input aria-label={label} type="color" defaultValue={`#${colorValue(key)}`}
+          {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
+          <input key={`${key}:${colorValue(key)}`} aria-label={label} type="color" defaultValue={`#${colorValue(key)}`}
             onBlur={(e) => {
               // 색 선택기는 드래그 중 change를 연사한다: 확정(blur) 시점에만 반영해 언두와 저장을 지킨다
               const hex = e.target.value.replace("#", "").toUpperCase();
@@ -3788,6 +3790,8 @@ export function DesignPanel({ deck, onApply }: {
   );
 }
 ```
+
+2026-08-29 태스크 리뷰 정정: 입력에 값 기반 key를 부여한다. uncontrolled 입력이 언두 후 옛 값을 표시하고 blur만으로 재적용되는 결함(리뷰 발견)의 수리.
 
 `frontend/src/editor/PropertyPanel.tsx`에 템플릿 교체 추가: import에 `applyTemplateSwitch`와 `type TemplateName` 추가, "장 주제" label 아래에 삽입:
 
