@@ -14,6 +14,7 @@
 - 로컬 서버: `backend` 폴더에서 `.venv/Scripts/python.exe -m slidecaptain serve` 실행 후 `http://127.0.0.1:8765/docs`
 - CLI 내보내기: `backend` 폴더에서 `.venv/Scripts/python.exe -m slidecaptain export <deck.json>`
 - 타입 재생성: `backend`에서 `.venv/Scripts/python.exe scripts/dump_openapi.py` 실행 후 저장소 루트에서 `npm --prefix frontend run generate-types` (최초 1회는 `frontend` 폴더 안에서 `npm install` 선행. 루트에서 `npm --prefix frontend install` 형태는 Windows에서 동작하지 않는다)
+- 프런트 명령 공통 주의(2026-08-29): 이 PC의 기본 Node가 32비트라 vite가 구동되지 않으므로 64비트 Node(예: `C:\Users\DREAMUS\.claude\tools\node64\node-v22.17.1-win-x64`)를 PATH 앞에 두고 실행한다
 - 프런트 테스트: `frontend` 폴더 안에서 `npm test`
 - 프런트 개발 서버: `frontend` 폴더 안에서 `npm run dev` (백엔드 `serve`와 병행 실행)
 - 화면 빌드: `frontend` 폴더 안에서 `npm run build` (백엔드 `serve`가 빌드된 `dist`를 함께 서빙한다)
