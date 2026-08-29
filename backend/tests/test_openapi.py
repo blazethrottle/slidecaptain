@@ -32,6 +32,7 @@ def test_openapi_contains_all_routes(schema):
         "/api/projects",
         "/api/projects/{name}/deck",
         "/api/projects/{name}/render-plan",
+        "/api/render-plan",
         "/api/projects/{name}/export",
         "/api/projects/{name}/snapshots",
         "/api/projects/{name}/snapshots/{snapshot_id}/restore",

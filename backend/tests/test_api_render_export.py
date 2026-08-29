@@ -92,3 +92,35 @@ def test_export_with_hand_edited_bad_overrides_422(store):
     r = client.post("/api/projects/p1/export")
     assert r.status_code == 422
     assert "프리셋" in r.json()["detail"]
+
+
+def test_measure_returns_plan_without_saving(client):
+    client.post("/api/projects", json={"name": "p1", "title": "제목"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["structure"]["chapters"] = [{"id": "c1", "topic": "주제", "template": "bullet_box"}]
+    deck["slides"] = [{"chapter_id": "c1", "slots": {
+        "template": "bullet_box", "bullets": [{"text": "가"}], "conclusion": "결론"}}]
+    r = client.post("/api/render-plan", json=deck)
+    assert r.status_code == 200
+    assert [s["chapter_id"] for s in r.json()["slides"]] == ["c1"]
+    # 프로젝트에는 반영되지 않았다 (무저장)
+    assert client.get("/api/projects/p1/deck").json()["slides"] == []
+
+
+def test_measure_reports_capacity_warnings(client):
+    # 실측 근거(2026-08-29, 기본 프리셋): 이 문장의 반복 150부터 bullets 영역(318pt)을 넘긴다
+    # (needed 319.2pt). 경계가 1.2pt로 얇아 여유를 두고 200을 쓴다. 프리셋 기본값이 바뀌면 재실측할 것
+    long_text = "분량 초과 확인 문장 " * 200
+    deck = {"meta": {"title": "t"},
+            "structure": {"chapters": [{"id": "c1", "topic": "주제", "template": "bullet_box"}]},
+            "slides": [{"chapter_id": "c1", "slots": {
+                "template": "bullet_box", "bullets": [{"text": long_text}], "conclusion": "결론"}}]}
+    r = client.post("/api/render-plan", json=deck)
+    assert r.status_code == 200
+    assert any(w["slot"] == "bullets" for w in r.json()["slides"][0]["warnings"])
+
+
+def test_measure_invalid_overrides_422(client):
+    deck = {"meta": {"title": "t", "preset_overrides": {"font_roles": {"body_pt": 5}}}}
+    r = client.post("/api/render-plan", json=deck)
+    assert r.status_code == 422

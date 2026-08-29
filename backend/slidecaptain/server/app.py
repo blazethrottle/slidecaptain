@@ -139,6 +139,12 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
         preset = _validated_preset(deck)
         return build_render_plan(deck, preset, metrics)
 
+    @app.post("/api/render-plan", response_model=RenderPlan)
+    def measure_deck(deck: Deck):
+        """저장 없이 실측만 한다: 편집 중 미리보기와 분량 경고의 공급원 (단계 4 결정 2)."""
+        preset = _validated_preset(deck)
+        return build_render_plan(deck, preset, metrics)
+
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str):
         deck = store.load_deck(name)
