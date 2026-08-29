@@ -1,5 +1,7 @@
 import type { Deck } from "../api/client";
-import { applyTextEdit } from "./slotOps";
+import {
+  addBullet, applyTextEdit, deleteTableRow, mergeTableColumns, removeBullet, reorderChapters,
+} from "./slotOps";
 
 function bulletDeck(): Deck {
   return {
@@ -62,4 +64,42 @@ it("카드의 index 0은 소제목, 이후는 불릿이다", () => {
   next = applyTextEdit(deck, { chapterId: "c1", slot: "left_card", index: 1 }, "새 불릿");
   slots = next.slides[0].slots;
   expect(slots.template === "compare2" && slots.left.bullets?.[0].text).toBe("새 불릿");
+});
+
+it("불릿 추가와 삭제", () => {
+  let next = addBullet(bulletDeck(), "c1", "bullets");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "bullet_box" && slots.bullets).toHaveLength(3);
+  next = removeBullet(next, "c1", "bullets", 0);
+  slots = next.slides[0].slots;
+  expect(slots.template === "bullet_box" && slots.bullets?.[0].text).toBe("둘");
+});
+
+it("표 행 삭제와 열 병합", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "table", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", slots: {
+      template: "table", columns: ["구분", "내용", "비고"],
+      rows: [["A", "값1", "메모1"], ["B", "값2", "메모2"]], footnote: "" } }],
+  };
+  let next = deleteTableRow(deck, "c1", 0);
+  let slots = next.slides[0].slots;
+  expect(slots.template === "table" && slots.rows).toEqual([["B", "값2", "메모2"]]);
+  next = mergeTableColumns(deck, "c1", 1);  // "내용"과 "비고" 병합
+  slots = next.slides[0].slots;
+  expect(slots.template === "table" && slots.columns).toEqual(["구분", "내용 비고"]);
+  expect(slots.template === "table" && slots.rows[0]).toEqual(["A", "값1 메모1"]);
+});
+
+it("장 순서 이동", () => {
+  const deck = bulletDeck();
+  deck.structure.chapters = [
+    { id: "c1", topic: "가", conclusion: "", template: "bullet_box", source_refs: [] },
+    { id: "c2", topic: "나", conclusion: "", template: "bullet_box", source_refs: [] },
+    { id: "c3", topic: "다", conclusion: "", template: "bullet_box", source_refs: [] },
+  ];
+  const next = reorderChapters(deck, 0, 2);
+  expect(next.structure.chapters.map((c) => c.topic)).toEqual(["나", "다", "가"]);
 });

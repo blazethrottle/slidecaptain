@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type Deck, type RenderPlan } from "../api/client";
 import { EditorScreen } from "./EditorScreen";
@@ -40,10 +40,12 @@ it("실측을 불러 미리보기를 그리고, 편집을 자동 저장한다 (�
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}}
     timings={{ measureMs: 0, saveMs: 0 }} />);
-  expect(await screen.findByText("하나")).toBeInTheDocument();
+  // 속성 패널도 같은 불릿 텍스트를 보여주므로, 미리보기 영역으로 조회를 한정한다
+  const preview = () => within(document.querySelector(".editor-center") as HTMLElement);
+  expect(await preview().findByText("하나")).toBeInTheDocument();
   // 선택 후 같은 문단을 다시 클릭해 인라인 수정
-  await userEvent.click(screen.getByText("하나"));
-  await userEvent.click(screen.getByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
   const box = await screen.findByLabelText("내용 수정");
   await userEvent.clear(box);
   await userEvent.type(box, "고침{Enter}");
@@ -59,9 +61,11 @@ it("Ctrl+Z가 직전 편집을 되돌린다", async () => {
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}}
     timings={{ measureMs: 0, saveMs: 0 }} />);
-  await screen.findByText("하나");
-  await userEvent.click(screen.getByText("하나"));
-  await userEvent.click(screen.getByText("하나"));
+  // 속성 패널도 같은 불릿 텍스트를 보여주므로, 미리보기 영역으로 조회를 한정한다
+  const preview = () => within(document.querySelector(".editor-center") as HTMLElement);
+  await preview().findByText("하나");
+  await userEvent.click(preview().getByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
   const box = await screen.findByLabelText("내용 수정");
   await userEvent.clear(box);
   await userEvent.type(box, "고침{Enter}");

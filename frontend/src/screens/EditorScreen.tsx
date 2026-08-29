@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { Deck, ProjectInfo } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { Preview, type FrameRef, type TextRef } from "../editor/Preview";
-import { applyTextEdit } from "../editor/slotOps";
+import { PropertyPanel } from "../editor/PropertyPanel";
+import { applyTextEdit, reorderChapters } from "../editor/slotOps";
 import { useDeckEditor, type Timings } from "../state/useDeckEditor";
 
 export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEditorReady, timings }: {
@@ -40,7 +41,8 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
     <div className="editor-screen">
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
-          onSelect={(id) => { setChapterId(id); setSelected(null); }} />
+          onSelect={(id) => { setChapterId(id); setSelected(null); }}
+          onReorder={(from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
       </aside>
       <section className="editor-center">
         {editor.error && <p role="alert">{editor.error}</p>}
@@ -57,6 +59,9 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
         <p>저장 상태: {editor.saveState}</p>
         <button onClick={editor.undo} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
         <button onClick={editor.redo} disabled={!editor.canRedo}>다시 실행</button>
+        {chapterId && (
+          <PropertyPanel deck={editor.deck} chapterId={chapterId} onApply={editor.apply} />
+        )}
         {slide && slide.warnings.length > 0 && (
           <section>
             <h3>분량 경고</h3>

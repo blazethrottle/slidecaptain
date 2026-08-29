@@ -74,3 +74,70 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
     return slots;
   });
 }
+
+type BulletSlot = "bullets" | "points" | "left_card" | "right_card";
+
+export function addBullet(deck: Deck, chapterId: string, slot: BulletSlot): Deck {
+  return updateSlide(deck, chapterId, (slots) => {
+    const item = { text: "새 항목", level: 0 as const };
+    if (slots.template === "bullet_box" && slot === "bullets") {
+      return { ...slots, bullets: [...(slots.bullets ?? []), item] };
+    }
+    if (slots.template === "summary" && slot === "points") {
+      return { ...slots, points: [...(slots.points ?? []), item] };
+    }
+    if (slots.template === "compare2" && (slot === "left_card" || slot === "right_card")) {
+      const key = slot === "left_card" ? "left" : "right";
+      const card = slots[key];
+      return { ...slots, [key]: { ...card, bullets: [...(card.bullets ?? []), item] } };
+    }
+    return slots;
+  });
+}
+
+export function removeBullet(deck: Deck, chapterId: string, slot: BulletSlot, index: number): Deck {
+  return updateSlide(deck, chapterId, (slots) => {
+    if (slots.template === "bullet_box" && slot === "bullets") {
+      return { ...slots, bullets: (slots.bullets ?? []).filter((_, i) => i !== index) };
+    }
+    if (slots.template === "summary" && slot === "points") {
+      return { ...slots, points: (slots.points ?? []).filter((_, i) => i !== index) };
+    }
+    if (slots.template === "compare2" && (slot === "left_card" || slot === "right_card")) {
+      const key = slot === "left_card" ? "left" : "right";
+      const card = slots[key];
+      return { ...slots, [key]: { ...card, bullets: (card.bullets ?? []).filter((_, i) => i !== index) } };
+    }
+    return slots;
+  });
+}
+
+export function deleteTableRow(deck: Deck, chapterId: string, rowIndex: number): Deck {
+  return updateSlide(deck, chapterId, (slots) =>
+    slots.template === "table"
+      ? { ...slots, rows: slots.rows.filter((_, i) => i !== rowIndex) }
+      : slots);
+}
+
+export function mergeTableColumns(deck: Deck, chapterId: string, colIndex: number): Deck {
+  return updateSlide(deck, chapterId, (slots) => {
+    if (slots.template !== "table" || colIndex < 0 || colIndex >= slots.columns.length - 1) {
+      return slots;
+    }
+    const join = (a: string, b: string) => [a, b].filter(Boolean).join(" ");
+    return {
+      ...slots,
+      columns: slots.columns.flatMap((c, j) =>
+        j === colIndex ? [join(c, slots.columns[j + 1])] : j === colIndex + 1 ? [] : [c]),
+      rows: slots.rows.map((r) => r.flatMap((c, j) =>
+        j === colIndex ? [join(c, r[j + 1])] : j === colIndex + 1 ? [] : [c])),
+    };
+  });
+}
+
+export function reorderChapters(deck: Deck, from: number, to: number): Deck {
+  const chapters = [...deck.structure.chapters];
+  const [moved] = chapters.splice(from, 1);
+  chapters.splice(to, 0, moved);
+  return { ...deck, structure: { chapters } };
+}
