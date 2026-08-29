@@ -26,7 +26,7 @@ export function useDeckEditor(
   const deckRef = useRef(deck);
   deckRef.current = deck;
 
-  const saveNow = useCallback(async (target: Deck) => {
+  const saveNow = useCallback(async (target: Deck): Promise<boolean> => {
     const snapshot = firstSave.current || snapshotNext.current;
     setSaveState("저장 중");
     try {
@@ -37,9 +37,11 @@ export function useDeckEditor(
       setSaveState("저장됨");
       setError("");
       onDeckChange(target);
+      return true;
     } catch (e) {
       setSaveState("저장 실패");
       setError(messageOf(e));
+      return false;
     }
   }, [projectName, onDeckChange]);
 
@@ -63,8 +65,10 @@ export function useDeckEditor(
   }, [deck, saveNow, timings.saveMs]);
 
   // 플러시: 보류 중 저장을 즉시 실행한다 (결정 1. 내보내기 직전에 부모가 부른다)
-  const flushSave = useCallback(async () => {
-    if (deckRef.current !== savedDeck.current) await saveNow(deckRef.current);
+  // 성공 여부를 반환해, 저장 실패 시 내보내기를 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
+  const flushSave = useCallback(async (): Promise<boolean> => {
+    if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
+    return true;
   }, [saveNow]);
 
   // 언마운트 플러시: 탭 전환이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)

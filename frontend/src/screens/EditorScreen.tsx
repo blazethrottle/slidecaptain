@@ -12,7 +12,7 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
-  onEditorReady?: (flush: () => Promise<void>) => void;  // 부모(ProjectView)가 내보내기 전에 플러시하도록
+  onEditorReady?: (flush: () => Promise<boolean>) => void;  // 부모(ProjectView)가 내보내기 전에 플러시하도록
   timings?: Timings;
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings);

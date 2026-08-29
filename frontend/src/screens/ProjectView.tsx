@@ -14,7 +14,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const [exportPath, setExportPath] = useState("");
   const [exporting, setExporting] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
-  const flushEditor = useRef<null | (() => Promise<void>)>(null);
+  const flushEditor = useRef<null | (() => Promise<boolean>)>(null);
 
   useEffect(() => {
     if (project.status === "ok") {
@@ -53,7 +53,13 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     setExporting(true);
     setExportPath("");
     try {
-      await flushEditor.current?.();           // 보류 중 자동 저장 플러시 (결정 1)
+      // 보류 중 자동 저장 플러시 (결정 1). 실패하면 마지막 편집이 빠진 채 내보내지므로 중단한다
+      // (2026-08-29 태스크 16 리뷰 반영)
+      const flushed = flushEditor.current ? await flushEditor.current() : true;
+      if (!flushed) {
+        setError("마지막 편집을 저장하지 못해 내보내기를 중단했습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.");
+        return;
+      }
       await api.createSnapshot(project.name);  // 내보내기 직전 복구 지점 (결정 1)
       const r = await api.exportDeck(project.name);
       setExportPath(r.path);
