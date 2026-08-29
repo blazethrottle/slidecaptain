@@ -3118,7 +3118,8 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
       <section className="editor-center">
         {editor.error && <p role="alert">{editor.error}</p>}
         {slide && editor.plan ? (
-          <Preview slide={slide} style={editor.plan.style}
+          // 2026-08-29 태스크 11 리뷰 이월: 장 전환 시 편집창 잔존 방지 리마운트
+          <Preview key={slide.chapter_id} slide={slide} style={editor.plan.style}
             pageW={editor.plan.page_width_pt} pageH={editor.plan.page_height_pt}
             selected={selected} onSelect={setSelected} onCommitText={commitText} />
         ) : (

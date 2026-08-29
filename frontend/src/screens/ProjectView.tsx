@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, messageOf, type Deck, type ProjectInfo } from "../api/client";
+import { EditorScreen } from "./EditorScreen";
 import { SourcesScreen } from "./SourcesScreen";
 import { StructureScreen } from "./StructureScreen";
 
@@ -55,6 +56,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           <button aria-pressed={tab === "sources"} onClick={() => setTab("sources")}>자료</button>
           <button aria-pressed={tab === "structure"} onClick={() => setTab("structure")}>구조안</button>
           <button aria-pressed={tab === "editor"} disabled={!hasSlides}
+            onClick={() => setTab("editor")}
             title={hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
         </nav>
       </header>
@@ -62,6 +64,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       {tab === "structure" && (
         <StructureScreen project={project} deck={deck} onDeckChange={setDeck}
           onDone={() => setTab("editor")} />
+      )}
+      {tab === "editor" && hasSlides && (
+        <EditorScreen project={project} deck={deck} onDeckChange={setDeck} />
       )}
     </main>
   );
