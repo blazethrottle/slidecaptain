@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import type { Deck } from "../api/client";
+import type { Deck, TemplateName } from "../api/client";
 import { TEMPLATE_LABELS } from "./labels";
 import {
   addBullet, applyTextEdit, deleteTableRow, mergeTableColumns, removeBullet,
 } from "./slotOps";
+import { applyTemplateSwitch } from "./templateSwitch";
 
 export function PropertyPanel({ deck, chapterId, onApply }: {
   deck: Deck;
@@ -48,6 +49,24 @@ export function PropertyPanel({ deck, chapterId, onApply }: {
       <label>장 주제
         <input aria-label="장 주제" value={topic}
           onChange={(e) => setTopic(e.target.value)} onBlur={commitTopic} />
+      </label>
+      <label>템플릿
+        <select aria-label="템플릿" value={chapter.template}
+          onChange={(e) => {
+            const to = e.target.value as TemplateName;
+            const result = applyTemplateSwitch(deck, chapterId, to);
+            if (result.dropped.length > 0) {
+              const ok = window.confirm(
+                `다음 내용은 새 템플릿에 자리가 없어 사라집니다:\n- ${result.dropped.join("\n- ")}\n계속할까요?`,
+              );
+              if (!ok) return;
+            }
+            onApply((d) => applyTemplateSwitch(d, chapterId, to).deck);
+          }}>
+          {Object.entries(TEMPLATE_LABELS).map(([v, label]) => (
+            <option key={v} value={v}>{label}</option>
+          ))}
+        </select>
       </label>
       {slots?.template === "bullet_box" && bulletSection("본문 불릿", "bullets", slots.bullets ?? [])}
       {slots?.template === "summary" && bulletSection("요점", "points", slots.points ?? [])}

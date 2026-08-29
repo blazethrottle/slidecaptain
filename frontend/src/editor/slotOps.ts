@@ -141,3 +141,13 @@ export function reorderChapters(deck: Deck, from: number, to: number): Deck {
   chapters.splice(to, 0, moved);
   return { ...deck, structure: { chapters } };
 }
+
+export function setPresetOverride(
+  deck: Deck, group: string, key: string, value: number | string,
+): Deck {
+  const overrides = { ...(deck.meta.preset_overrides ?? {}) } as Record<string, unknown>;
+  const groupValues = { ...((overrides[group] as Record<string, unknown>) ?? {}) };
+  groupValues[key] = value;
+  overrides[group] = groupValues;
+  return { ...deck, meta: { ...deck.meta, preset_overrides: overrides } };
+}

@@ -1,12 +1,23 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, type Deck, type RenderPlan } from "../api/client";
+import { api, type Deck, type Preset, type RenderPlan } from "../api/client";
 import { EditorScreen } from "./EditorScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn() } };
+  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn() } };
 });
+
+// DesignPanel이 오른쪽 패널에 함께 그려지므로, 그 프리셋 조회 목이 필요하다 (Task 14 DesignPanel.test.tsx 픽스처 재사용)
+const preset = {
+  fonts: { korean: "Noto Sans KR", latin: "Noto Sans KR" },
+  font_roles: { cover_title_pt: 28, section_title_pt: 24, title_pt: 20, subtitle_pt: 14,
+    body_pt: 12, box_pt: 12, table_pt: 12, footnote_pt: 9, page_number_pt: 9 },
+  colors: { text: "202020", accent: "1F4E79", box_fill: "EEF3F9",
+    table_header_fill: "F2F2F2", border: "D0D7E2", background: "FFFFFF" },
+  spacing: {}, bullet_marker: { char: "•", font: "Arial" },
+  page_width_pt: 960, page_height_pt: 540, language: "ko-KR",
+} as unknown as Preset;
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
 
@@ -38,6 +49,7 @@ const plan: RenderPlan = {
 it("실측을 불러 미리보기를 그리고, 편집을 자동 저장한다 (첫 저장은 스냅샷)", async () => {
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}}
     timings={{ measureMs: 0, saveMs: 0 }} />);
   // 속성 패널도 같은 불릿 텍스트를 보여주므로, 미리보기 영역으로 조회를 한정한다
@@ -59,6 +71,7 @@ it("실측을 불러 미리보기를 그리고, 편집을 자동 저장한다 (�
 it("Ctrl+Z가 직전 편집을 되돌린다", async () => {
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}}
     timings={{ measureMs: 0, saveMs: 0 }} />);
   // 속성 패널도 같은 불릿 텍스트를 보여주므로, 미리보기 영역으로 조회를 한정한다
