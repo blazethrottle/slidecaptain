@@ -123,7 +123,7 @@ class GenerationService:
             status="ok",
             structure=structure,
             raw_text=raw,
-            unverified_numbers=find_unverified_numbers(texts, list(sources.values())),
+            unverified_numbers=find_unverified_numbers(texts, list(sources.values()) + [meta.title]),
             format_retried=retried,
         )
 
@@ -162,7 +162,7 @@ class GenerationService:
                     warnings = self._measure(chapter, slots, preset)
                     condensed = True
 
-        return self._chapter_result(chapter, slots, raw, warnings, sources, retried, condensed)
+        return self._chapter_result(deck, chapter, slots, raw, warnings, sources, retried, condensed)
 
     async def condense_chapter(
         self,
@@ -192,7 +192,9 @@ class GenerationService:
         if slots is None:
             return ChapterResult(status="format_error", raw_text=raw, format_retried=retried)
         warnings = self._measure(chapter, slots, preset)
-        return self._chapter_result(chapter, slots, raw, warnings, sources, retried, condensed=True)
+        return self._chapter_result(
+            deck, chapter, slots, raw, warnings, sources, retried, condensed=True
+        )
 
     # -- 내부 공통 ---------------------------------------------------------
 
@@ -227,6 +229,7 @@ class GenerationService:
 
     def _chapter_result(
         self,
+        deck: Deck,
         chapter: Chapter,
         slots: Any,
         raw: str,
@@ -242,7 +245,9 @@ class GenerationService:
             slots=slots,
             raw_text=raw,
             warnings=warnings,
-            unverified_numbers=find_unverified_numbers(texts, list(sources.values())),
+            unverified_numbers=find_unverified_numbers(
+                texts, list(sources.values()) + [deck.meta.title]
+            ),
             format_retried=retried,
             condensed=condensed,
         )

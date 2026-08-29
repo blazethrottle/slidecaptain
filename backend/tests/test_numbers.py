@@ -41,3 +41,13 @@ def test_sentence_ending_period_is_a_boundary():
     # 문장 마침표와 한국식 날짜 표기는 소수점이 아니다 (2026-08-28 적대 리뷰 반영)
     sources = ["연간 매출은 1200. 기준일은 2026. 8. 28. 이다"]
     assert find_unverified_numbers(["매출 1200 (2026년 기준)"], sources) == []
+
+
+def test_number_after_sentence_period_is_found():
+    # 자료의 "이다.500억"처럼 문장 마침표 바로 뒤 숫자도 근거로 인정한다 (오탐 제거)
+    assert find_unverified_numbers(["500억 규모"], ["시장이다.500억 규모다"]) == []
+
+
+def test_decimal_fraction_still_guarded():
+    # 3.14의 14는 여전히 소수부라 별개 숫자 14의 근거가 아니다
+    assert find_unverified_numbers(["14개"], ["원주율은 3.14다"]) == ["14"]

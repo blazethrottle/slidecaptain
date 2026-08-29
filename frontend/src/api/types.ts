@@ -4,6 +4,24 @@
  */
 
 export interface paths {
+    "/api/preset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Preset */
+        get: operations["get_preset_api_preset_get"];
+        /** Put Preset */
+        put: operations["put_preset_api_preset_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -40,6 +58,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Snapshots */
+        get: operations["list_snapshots_api_projects__name__snapshots_get"];
+        put?: never;
+        /** Create Snapshot */
+        post: operations["create_snapshot_api_projects__name__snapshots_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/render-plan": {
         parameters: {
             query?: never;
@@ -57,6 +93,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/render-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Measure Deck
+         * @description 저장 없이 실측만 한다: 편집 중 미리보기와 분량 경고의 공급원 (단계 4 결정 2).
+         */
+        post: operations["measure_deck_api_render_plan_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/export": {
         parameters: {
             query?: never;
@@ -68,23 +124,6 @@ export interface paths {
         put?: never;
         /** Export Project */
         post: operations["export_project_api_projects__name__export_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/snapshots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Snapshots */
-        get: operations["list_snapshots_api_projects__name__snapshots_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -229,6 +268,22 @@ export interface components {
              */
             footnote: string;
         };
+        /**
+         * BulletMarker
+         * @description 불릿 목록 표식. 문자와 표식 전용 폰트 (승격 전에는 라이터의 리터럴이었다).
+         */
+        BulletMarker: {
+            /**
+             * Char
+             * @default •
+             */
+            char: string;
+            /**
+             * Font
+             * @default Arial
+             */
+            font: string;
+        };
         /** CapacityWarning */
         CapacityWarning: {
             /** Chapter Id */
@@ -308,6 +363,42 @@ export interface components {
              * @default false
              */
             condensed: boolean;
+        };
+        /**
+         * Colors
+         * @description 색상은 알파 없는 6자리 16진수 문자열.
+         */
+        Colors: {
+            /**
+             * Text
+             * @default 202020
+             */
+            text: string;
+            /**
+             * Accent
+             * @default 1F4E79
+             */
+            accent: string;
+            /**
+             * Box Fill
+             * @default EEF3F9
+             */
+            box_fill: string;
+            /**
+             * Table Header Fill
+             * @default F2F2F2
+             */
+            table_header_fill: string;
+            /**
+             * Border
+             * @default D0D7E2
+             */
+            border: string;
+            /**
+             * Background
+             * @default FFFFFF
+             */
+            background: string;
         };
         /** CompareSlots */
         CompareSlots: {
@@ -429,6 +520,67 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** FontRoles */
+        FontRoles: {
+            /**
+             * Cover Title Pt
+             * @default 28
+             */
+            cover_title_pt: number;
+            /**
+             * Section Title Pt
+             * @default 24
+             */
+            section_title_pt: number;
+            /**
+             * Title Pt
+             * @default 20
+             */
+            title_pt: number;
+            /**
+             * Subtitle Pt
+             * @default 14
+             */
+            subtitle_pt: number;
+            /**
+             * Body Pt
+             * @default 12
+             */
+            body_pt: number;
+            /**
+             * Box Pt
+             * @default 12
+             */
+            box_pt: number;
+            /**
+             * Table Pt
+             * @default 12
+             */
+            table_pt: number;
+            /**
+             * Footnote Pt
+             * @default 9
+             */
+            footnote_pt: number;
+            /**
+             * Page Number Pt
+             * @default 9
+             */
+            page_number_pt: number;
+        };
+        /** Fonts */
+        Fonts: {
+            /**
+             * Korean
+             * @default Noto Sans KR
+             */
+            korean: string;
+            /**
+             * Latin
+             * @default Noto Sans KR
+             */
+            latin: string;
+        };
         /** Frame */
         Frame: {
             /** Name */
@@ -520,6 +672,100 @@ export interface components {
              * @default false
              */
             bullet: boolean;
+            /**
+             * Lines
+             * @default []
+             */
+            lines: string[];
+        };
+        /** Preset */
+        Preset: {
+            /**
+             * @default {
+             *       "korean": "Noto Sans KR",
+             *       "latin": "Noto Sans KR"
+             *     }
+             */
+            fonts: components["schemas"]["Fonts"];
+            /**
+             * @default {
+             *       "cover_title_pt": 28,
+             *       "section_title_pt": 24,
+             *       "title_pt": 20,
+             *       "subtitle_pt": 14,
+             *       "body_pt": 12,
+             *       "box_pt": 12,
+             *       "table_pt": 12,
+             *       "footnote_pt": 9,
+             *       "page_number_pt": 9
+             *     }
+             */
+            font_roles: components["schemas"]["FontRoles"];
+            /**
+             * @default {
+             *       "text": "202020",
+             *       "accent": "1F4E79",
+             *       "box_fill": "EEF3F9",
+             *       "table_header_fill": "F2F2F2",
+             *       "border": "D0D7E2",
+             *       "background": "FFFFFF"
+             *     }
+             */
+            colors: components["schemas"]["Colors"];
+            /**
+             * @default {
+             *       "margin_left": 50,
+             *       "margin_right": 50,
+             *       "margin_top": 36,
+             *       "margin_bottom": 34,
+             *       "title_height": 40,
+             *       "title_gap": 16,
+             *       "footnote_height": 24,
+             *       "footnote_gap": 8,
+             *       "box_height": 56,
+             *       "box_gap": 8,
+             *       "box_padding": 10,
+             *       "summary_box_gap": 12,
+             *       "line_spacing": 1.4,
+             *       "bullet_gap": 6,
+             *       "bullet_indent": 18,
+             *       "card_gap": 20,
+             *       "card_heading_height": 24,
+             *       "card_heading_gap": 8,
+             *       "cover_indent": 30,
+             *       "table_min_col_width": 60,
+             *       "table_cell_pad_x": 6,
+             *       "table_cell_pad_y": 3,
+             *       "page_number_width": 60,
+             *       "page_number_height": 16,
+             *       "page_number_bottom": 28,
+             *       "safety_ratio": 0.97,
+             *       "border_width_pt": 0.75
+             *     }
+             */
+            spacing: components["schemas"]["Spacing"];
+            /**
+             * @default {
+             *       "char": "•",
+             *       "font": "Arial"
+             *     }
+             */
+            bullet_marker: components["schemas"]["BulletMarker"];
+            /**
+             * Page Width Pt
+             * @default 960
+             */
+            page_width_pt: number;
+            /**
+             * Page Height Pt
+             * @default 540
+             */
+            page_height_pt: number;
+            /**
+             * Language
+             * @default ko-KR
+             */
+            language: string;
         };
         /** ProjectInfo */
         ProjectInfo: {
@@ -529,6 +775,12 @@ export interface components {
             title: string;
             /** Updated At */
             updated_at: string;
+            /**
+             * Status
+             * @default ok
+             * @enum {string}
+             */
+            status: "ok" | "needs_recovery";
         };
         /** RenderPlan */
         RenderPlan: {
@@ -605,6 +857,144 @@ export interface components {
             /** Text */
             text: string;
         };
+        /** Spacing */
+        Spacing: {
+            /**
+             * Margin Left
+             * @default 50
+             */
+            margin_left: number;
+            /**
+             * Margin Right
+             * @default 50
+             */
+            margin_right: number;
+            /**
+             * Margin Top
+             * @default 36
+             */
+            margin_top: number;
+            /**
+             * Margin Bottom
+             * @default 34
+             */
+            margin_bottom: number;
+            /**
+             * Title Height
+             * @default 40
+             */
+            title_height: number;
+            /**
+             * Title Gap
+             * @default 16
+             */
+            title_gap: number;
+            /**
+             * Footnote Height
+             * @default 24
+             */
+            footnote_height: number;
+            /**
+             * Footnote Gap
+             * @default 8
+             */
+            footnote_gap: number;
+            /**
+             * Box Height
+             * @default 56
+             */
+            box_height: number;
+            /**
+             * Box Gap
+             * @default 8
+             */
+            box_gap: number;
+            /**
+             * Box Padding
+             * @default 10
+             */
+            box_padding: number;
+            /**
+             * Summary Box Gap
+             * @default 12
+             */
+            summary_box_gap: number;
+            /**
+             * Line Spacing
+             * @default 1.4
+             */
+            line_spacing: number;
+            /**
+             * Bullet Gap
+             * @default 6
+             */
+            bullet_gap: number;
+            /**
+             * Bullet Indent
+             * @default 18
+             */
+            bullet_indent: number;
+            /**
+             * Card Gap
+             * @default 20
+             */
+            card_gap: number;
+            /**
+             * Card Heading Height
+             * @default 24
+             */
+            card_heading_height: number;
+            /**
+             * Card Heading Gap
+             * @default 8
+             */
+            card_heading_gap: number;
+            /**
+             * Cover Indent
+             * @default 30
+             */
+            cover_indent: number;
+            /**
+             * Table Min Col Width
+             * @default 60
+             */
+            table_min_col_width: number;
+            /**
+             * Table Cell Pad X
+             * @default 6
+             */
+            table_cell_pad_x: number;
+            /**
+             * Table Cell Pad Y
+             * @default 3
+             */
+            table_cell_pad_y: number;
+            /**
+             * Page Number Width
+             * @default 60
+             */
+            page_number_width: number;
+            /**
+             * Page Number Height
+             * @default 16
+             */
+            page_number_height: number;
+            /**
+             * Page Number Bottom
+             * @default 28
+             */
+            page_number_bottom: number;
+            /**
+             * Safety Ratio
+             * @default 0.97
+             */
+            safety_ratio: number;
+            /**
+             * Border Width Pt
+             * @default 0.75
+             */
+            border_width_pt: number;
+        };
         /** Structure */
         Structure: {
             /**
@@ -666,6 +1056,16 @@ export interface components {
             header_fill: string;
             /** Row Heights Pt */
             row_heights_pt: number[];
+            /**
+             * Header Lines
+             * @default []
+             */
+            header_lines: string[][];
+            /**
+             * Cell Lines
+             * @default []
+             */
+            cell_lines: string[][][];
         };
         /** TableSlots */
         TableSlots: {
@@ -706,6 +1106,59 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_preset_api_preset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Preset"];
+                };
+            };
+        };
+    };
+    put_preset_api_preset_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Preset"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_projects_api_projects_get: {
         parameters: {
             query?: never;
@@ -792,7 +1245,9 @@ export interface operations {
     };
     put_deck_api_projects__name__deck_put: {
         parameters: {
-            query?: never;
+            query?: {
+                snapshot?: boolean;
+            };
             header?: never;
             path: {
                 name: string;
@@ -807,6 +1262,68 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_snapshots_api_projects__name__snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_snapshot_api_projects__name__snapshots_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -856,6 +1373,39 @@ export interface operations {
             };
         };
     };
+    measure_deck_api_render_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Deck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     export_project_api_projects__name__export_post: {
         parameters: {
             query?: never;
@@ -874,37 +1424,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_snapshots_api_projects__name__snapshots_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SnapshotInfo"][];
                 };
             };
             /** @description Validation Error */

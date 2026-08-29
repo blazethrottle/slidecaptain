@@ -14,6 +14,7 @@ _MULTI_SPACE = re.compile(r" {2,}")
 def normalize_text(text: str) -> str:
     text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
     text = text.replace("\t", " ")
+    text = text.replace("\u3000", " ").replace("\u00a0", " ")  # 전각 공백과 NBSP (단계 3 이월)
     text = text.replace("—", "-").replace("·", ", ")
     return _MULTI_SPACE.sub(" ", text).strip()
 

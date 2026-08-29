@@ -7,6 +7,7 @@
 오류 원문(영문 stderr 등)은 로그로만 남기고 사용자 문구에는 넣지 않는다 (설계 결정 14).
 """
 
+import asyncio
 import logging
 
 from claude_agent_sdk import (
@@ -33,8 +34,9 @@ DEFAULT_MODEL = "sonnet"
 
 
 class SubscriptionProvider:
-    def __init__(self, model: str | None = None) -> None:
+    def __init__(self, model: str | None = None, timeout_s: float = 300.0) -> None:
         self.model = model or DEFAULT_MODEL
+        self.timeout_s = timeout_s
 
     async def complete(self, prompt: str, schema: dict) -> ProviderResponse:
         options = ClaudeAgentOptions(
@@ -48,11 +50,23 @@ class SubscriptionProvider:
             model=self.model,
             output_format={"type": "json_schema", "schema": schema},
         )
-        result: ResultMessage | None = None
-        try:
+
+        async def _consume() -> ResultMessage | None:
+            found: ResultMessage | None = None
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, ResultMessage):
-                    result = message
+                    found = message
+            return found
+
+        result: ResultMessage | None = None
+        try:
+            result = await asyncio.wait_for(_consume(), timeout=self.timeout_s)
+        except TimeoutError as e:
+            _LOG.warning("AI 호출 타임아웃: %.0f초", self.timeout_s)
+            raise ProviderCallFailed(
+                f"AI 응답이 너무 오래 걸려 중단했습니다({self.timeout_s:.0f}초 한도). "
+                "잠시 후 다시 시도해 주세요."
+            ) from e
         except CLINotFoundError as e:
             raise ProviderNotAvailable(
                 "Claude Code를 찾지 못했습니다. 이 앱의 AI 생성에는 Claude Code 설치와 "

@@ -290,6 +290,29 @@ def test_condense_chapter_template_mismatch_raises():
         asyncio.run(service.condense_chapter(_deck(), "c1", wrong, SOURCES, Preset()))
 
 
+def test_deck_title_numbers_count_as_verified():
+    meta = DeckMeta(title="2026 사업 검토")
+    payload = {"chapters": [
+        {"topic": "2026 전략", "conclusion": "", "template": "bullet_box", "source_refs": []}
+    ]}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_structure(meta, {"a.md": "자료에는 연도가 없다"}))
+    assert result.status == "ok"
+    assert "2026" not in result.unverified_numbers  # 덱 제목이 대조 말뭉치에 포함된다
+
+
+def test_chapter_numbers_verified_against_deck_title():
+    deck = Deck(
+        meta=DeckMeta(title="2026 사업 검토"),
+        structure=Structure(chapters=[Chapter(id="c1", topic="표지", template="cover")]),
+    )
+    payload = {"template": "cover", "title": "2026 사업 검토", "subtitle": "", "date": "", "audience": ""}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(deck, "c1", {"a.md": "연도 없음"}, Preset()))
+    assert result.status == "ok"
+    assert "2026" not in result.unverified_numbers
+
+
 def test_empty_refs_fall_back_to_all_sources_in_prompt():
     # 결정 11: 근거 매핑이 비면 자료 전체로 폴백한다 (매핑 누락이 생성 불능으로 이어지지 않게)
     deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[

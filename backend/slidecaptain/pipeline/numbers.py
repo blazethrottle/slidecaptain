@@ -35,15 +35,15 @@ def find_unverified_numbers(texts: list[str], sources: list[str]) -> list[str]:
     """자료 원문 어디에도 없는 숫자 목록.
 
     대조는 콤마를 제거한 정규화 텍스트에서 숫자 경계를 지켜 수행한다
-    (234가 1,234의 일부에 걸려 통과하는 것을 막는다). 숫자 뒤 마침표는
-    바로 숫자가 이어질 때만 소수점으로 보고 경계를 막는다: 문장 끝 마침표와
-    한국식 날짜 표기("2026. 8. 28.")가 오탐되지 않게 한다.
+    (234가 1,234의 일부에 걸려 통과하는 것을 막는다). 앞 경계는 "숫자" 또는
+    "숫자."만 막는다: 문장 마침표 바로 뒤 숫자("이다.500억")는 근거로 인정하고,
+    1234 안의 234와 3.14 안의 14는 여전히 막는다.
     """
     haystack = "\n".join(_normalize(s) for s in sources)
     unverified: list[str] = []
     for text in texts:
         for number in extract_numbers(text):
-            pattern = re.compile(r"(?<![\d.])" + re.escape(number) + r"(?!\.?\d)")
+            pattern = re.compile(r"(?<!\d)(?<!\d\.)" + re.escape(number) + r"(?!\.?\d)")
             if pattern.search(haystack) is None and number not in unverified:
                 unverified.append(number)
     return unverified

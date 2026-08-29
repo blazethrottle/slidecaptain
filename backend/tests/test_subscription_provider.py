@@ -89,3 +89,15 @@ def test_error_result_maps_to_call_failed(monkeypatch):
     with pytest.raises(ProviderCallFailed) as exc_info:
         asyncio.run(SubscriptionProvider().complete("q", {}))
     assert "rate limited" not in str(exc_info.value)
+
+
+def test_timeout_maps_to_korean_error(monkeypatch):
+    async def slow_query(prompt, options):
+        await asyncio.sleep(0.2)
+        yield object()  # 타임아웃이 먼저 걸려 도달하지 않는다
+
+    monkeypatch.setattr(sub, "query", slow_query)
+    provider = SubscriptionProvider(timeout_s=0.05)
+    with pytest.raises(ProviderCallFailed) as exc_info:
+        asyncio.run(provider.complete("프롬프트", {"type": "object"}))
+    assert "오래 걸려" in str(exc_info.value)

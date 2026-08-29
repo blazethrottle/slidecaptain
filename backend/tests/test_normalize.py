@@ -22,3 +22,9 @@ def test_payload_recurses_values_not_keys():
 def test_collect_strings_walks_nested():
     payload = {"a": "하나", "b": [{"c": "둘"}, "셋"], "d": 4}
     assert collect_strings(payload) == ["하나", "둘", "셋"]
+
+
+def test_unicode_spaces_collapsed():
+    assert normalize_text("가　나") == "가 나"
+    assert normalize_text("가 나") == "가 나"
+    assert normalize_text("가　  나") == "가 나"
