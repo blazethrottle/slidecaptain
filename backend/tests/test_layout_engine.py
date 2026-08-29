@@ -300,6 +300,64 @@ def test_long_footnote_warns_on_bullet_box_and_table():
     assert "footnote" in _warned_slots(slide_t)
 
 
+def _deck_with(template: str, slots: dict) -> Deck:
+    return Deck(
+        meta=DeckMeta(title="줄바꿈 테스트"),
+        structure=Structure(chapters=[Chapter(id="c1", topic="주제", template=template)]),
+        slides=[Slide(chapter_id="c1", slots={"template": template, **slots})],
+    )
+
+
+def _plan_frame(plan, suffix: str):
+    return next(f for f in plan.slides[0].frames if f.name.endswith(suffix))
+
+
+def test_para_lines_match_engine_breaks():
+    long_text = ("가나다라마 " * 30).strip()
+    plan = build_render_plan(
+        _deck_with("bullet_box", {"bullets": [{"text": long_text}], "conclusion": "결론"}),
+        Preset(), METRICS,
+    )
+    para = _plan_frame(plan, ":bullets").paras[0]
+    assert len(para.lines) >= 2  # 긴 문장은 여러 줄로 갈라진다
+    assert " ".join(para.lines) == para.text  # 줄 결합이 원문을 보존한다
+
+def test_short_para_has_single_line():
+    plan = build_render_plan(
+        _deck_with("bullet_box", {"bullets": [{"text": "짧다"}], "conclusion": "결론"}),
+        Preset(), METRICS,
+    )
+    assert _plan_frame(plan, ":bullets").paras[0].lines == ["짧다"]
+    assert _plan_frame(plan, ":title").paras[0].lines == ["주제"]
+    assert _plan_frame(plan, ":conclusion").paras[0].lines == ["결론"]
+
+def test_cover_and_divider_paras_have_lines():
+    cover = build_render_plan(
+        _deck_with("cover", {"title": "표지 제목", "subtitle": "부제"}), Preset(), METRICS
+    )
+    assert _plan_frame(cover, ":cover_title").paras[0].lines == ["표지 제목"]
+    divider = build_render_plan(
+        _deck_with("divider", {"section_no": "1", "section_title": "간지 제목"}), Preset(), METRICS
+    )
+    assert _plan_frame(divider, ":section_title").paras[0].lines == ["간지 제목"]
+
+def test_table_plan_carries_cell_lines():
+    long_cell = ("항목 설명 " * 30).strip()
+    plan = build_render_plan(
+        _deck_with("table", {"columns": ["구분", "내용"], "rows": [["A", long_cell]]}),
+        Preset(), METRICS,
+    )
+    tp = _plan_frame(plan, ":table").table
+    assert len(tp.header_lines) == 2 and tp.header_lines[0] == ["구분"]
+    assert len(tp.cell_lines) == 1 and len(tp.cell_lines[0]) == 2
+    assert len(tp.cell_lines[0][1]) >= 2  # 긴 칸은 여러 줄
+    # 행 높이는 줄수에서 계산된 기존 값과 정합해야 한다
+    from slidecaptain.metrics.capacity import line_height_pt
+    lh = line_height_pt(tp.font_pt, Preset().spacing.line_spacing)
+    expected = max(len(c) for c in tp.cell_lines[0]) * lh + 2 * Preset().spacing.table_cell_pad_y
+    assert abs(tp.row_heights_pt[1] - expected) < 0.01
+
+
 def test_long_card_heading_warns_on_compare2():
     # 실측 근거(2026-08-28): 카드 소제목 예산은 388.0pt(카드 내부 폭 400pt x safety 0.97)이고
     # 아래 문자열은 볼드 12pt로 약 728pt(1회 364pt의 2배)라 확실히 2줄이 된다.

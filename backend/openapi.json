@@ -1277,6 +1277,14 @@
             "type": "boolean",
             "title": "Bullet",
             "default": false
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines",
+            "default": []
           }
         },
         "type": "object",
@@ -1647,6 +1655,31 @@
             },
             "type": "array",
             "title": "Row Heights Pt"
+          },
+          "header_lines": {
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Header Lines",
+            "default": []
+          },
+          "cell_lines": {
+            "items": {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Cell Lines",
+            "default": []
           }
         },
         "type": "object",

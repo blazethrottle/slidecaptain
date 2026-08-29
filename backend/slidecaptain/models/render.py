@@ -16,6 +16,7 @@ class Para(BaseModel):
     color: str = "202020"
     align: Literal["left", "center", "right"] = "left"
     bullet: bool = False  # True면 라이터가 목록 표식(•)과 내어쓰기를 적용
+    lines: list[str] = []  # 엔진의 어절 줄바꿈 결과. 미리보기 전용, 라이터는 읽지 않는다
 
 
 class TablePlan(BaseModel):
@@ -25,6 +26,8 @@ class TablePlan(BaseModel):
     font_pt: float
     header_fill: str
     row_heights_pt: list[float]  # 머리글 포함, 위에서부터
+    header_lines: list[list[str]] = []  # 머리글 칸별 줄바꿈 결과 (미리보기 전용)
+    cell_lines: list[list[list[str]]] = []  # 행 x 열 x 줄 (미리보기 전용)
 
 
 class Frame(BaseModel):

@@ -11,6 +11,7 @@ from slidecaptain.metrics.capacity import (
     measure_bullets,
     measure_lines,
 )
+from slidecaptain.metrics.line_breaker import break_paragraph
 from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
@@ -25,16 +26,27 @@ from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import CapacityWarning, Frame, Para, SlidePlan, TablePlan
 
 
-def _bullet_paras(bullets: list[Bullet], preset: Preset) -> list[Para]:
-    r = preset.font_roles
-    c = preset.colors
+def _para_lines(
+    text: str, width_pt: float, font_pt: float, bold: bool, preset: Preset, metrics
+) -> list[str]:
+    """미리보기가 그대로 그릴 줄바꿈 결과. 분량 실측(measure_lines)과 같은 규칙이다."""
+    return break_paragraph(text, width_pt, font_pt, metrics.face(bold), preset.spacing.safety_ratio)
+
+
+def _bullet_paras(bullets: list[Bullet], area_width_pt: float, preset: Preset, metrics) -> list[Para]:
+    s, r, c = preset.spacing, preset.font_roles, preset.colors
     return [
-        Para(text=b.text, level=b.level, font_pt=r.body_pt, color=c.text, bullet=True)
+        Para(
+            text=b.text, level=b.level, font_pt=r.body_pt, color=c.text, bullet=True,
+            lines=_para_lines(
+                b.text, area_width_pt - s.bullet_indent * (b.level + 1), r.body_pt, False, preset, metrics
+            ),
+        )
         for b in bullets
     ]
 
 
-def _title_frame(chapter: Chapter, preset: Preset) -> Frame:
+def _title_frame(chapter: Chapter, preset: Preset, metrics) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = _content_geometry(preset)
     return Frame(
@@ -43,11 +55,14 @@ def _title_frame(chapter: Chapter, preset: Preset) -> Frame:
         y=s.margin_top,
         w=g["content_width"],
         h=s.title_height,
-        paras=[Para(text=chapter.topic, font_pt=r.title_pt, bold=True, color=c.text)],
+        paras=[Para(
+            text=chapter.topic, font_pt=r.title_pt, bold=True, color=c.text,
+            lines=_para_lines(chapter.topic, g["content_width"], r.title_pt, True, preset, metrics),
+        )],
     )
 
 
-def _footnote_frame(chapter: Chapter, text: str, preset: Preset) -> Frame:
+def _footnote_frame(chapter: Chapter, text: str, preset: Preset, metrics) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = _content_geometry(preset)
     return Frame(
@@ -56,7 +71,10 @@ def _footnote_frame(chapter: Chapter, text: str, preset: Preset) -> Frame:
         y=g["footnote_top"],
         w=g["content_width"],
         h=s.footnote_height,
-        paras=[Para(text=text, font_pt=r.footnote_pt, color=c.text)],
+        paras=[Para(
+            text=text, font_pt=r.footnote_pt, color=c.text,
+            lines=_para_lines(text, g["content_width"], r.footnote_pt, False, preset, metrics),
+        )],
     )
 
 
@@ -68,13 +86,17 @@ def _page_number_frame(chapter: Chapter, page_no: int, preset: Preset) -> Frame:
         y=preset.page_height_pt - s.page_number_bottom,
         w=s.page_number_width,
         h=s.page_number_height,
-        paras=[Para(text=str(page_no), font_pt=r.page_number_pt, color=c.text, align="right")],
+        paras=[Para(
+            text=str(page_no), font_pt=r.page_number_pt, color=c.text, align="right",
+            lines=[str(page_no)],
+        )],
     )
 
 
-def _conclusion_box_frame(chapter: Chapter, text: str, y: float, preset: Preset) -> Frame:
+def _conclusion_box_frame(chapter: Chapter, text: str, y: float, preset: Preset, metrics) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = _content_geometry(preset)
+    inner_w = g["content_width"] - 2 * s.box_padding
     return Frame(
         name=f"{chapter.id}:conclusion",
         x=s.margin_left,
@@ -83,7 +105,10 @@ def _conclusion_box_frame(chapter: Chapter, text: str, y: float, preset: Preset)
         h=s.box_height,
         fill=c.box_fill,
         border=c.border,
-        paras=[Para(text=text, font_pt=r.box_pt, bold=True, color=c.accent)],
+        paras=[Para(
+            text=text, font_pt=r.box_pt, bold=True, color=c.accent,
+            lines=_para_lines(text, inner_w, r.box_pt, True, preset, metrics),
+        )],
     )
 
 
@@ -148,43 +173,63 @@ def _footnote_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> C
     )
 
 
-def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset) -> SlidePlan:
+def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     x = s.margin_left + s.cover_indent
     w = preset.page_width_pt - 2 * (s.margin_left + s.cover_indent)
     frames = [
         Frame(
             name=f"{chapter.id}:cover_title", x=x, y=200.0, w=w, h=48.0,
-            paras=[Para(text=slots.title, font_pt=r.cover_title_pt, bold=True, color=c.text)],
+            paras=[Para(
+                text=slots.title, font_pt=r.cover_title_pt, bold=True, color=c.text,
+                lines=_para_lines(slots.title, w, r.cover_title_pt, True, preset, metrics),
+            )],
         ),
         Frame(
             name=f"{chapter.id}:subtitle", x=x, y=260.0, w=w, h=24.0,
-            paras=[Para(text=slots.subtitle, font_pt=r.subtitle_pt, color=c.accent)],
+            paras=[Para(
+                text=slots.subtitle, font_pt=r.subtitle_pt, color=c.accent,
+                lines=_para_lines(slots.subtitle, w, r.subtitle_pt, False, preset, metrics),
+            )],
         ),
         Frame(
             name=f"{chapter.id}:date", x=x, y=430.0, w=w / 2, h=18.0,
-            paras=[Para(text=slots.date, font_pt=r.body_pt, color=c.text)],
+            paras=[Para(
+                text=slots.date, font_pt=r.body_pt, color=c.text,
+                lines=_para_lines(slots.date, w / 2, r.body_pt, False, preset, metrics),
+            )],
         ),
         Frame(
             name=f"{chapter.id}:audience", x=x, y=452.0, w=w / 2, h=18.0,
-            paras=[Para(text=slots.audience, font_pt=r.body_pt, color=c.text)],
+            paras=[Para(
+                text=slots.audience, font_pt=r.body_pt, color=c.text,
+                lines=_para_lines(slots.audience, w / 2, r.body_pt, False, preset, metrics),
+            )],
         ),
     ]
     return SlidePlan(chapter_id=chapter.id, template="cover", frames=frames)
 
 
-def _build_divider(chapter: Chapter, slots: DividerSlots, page_no: int, preset: Preset) -> SlidePlan:
+def _build_divider(
+    chapter: Chapter, slots: DividerSlots, page_no: int, preset: Preset, metrics
+) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     x = s.margin_left + s.cover_indent
     w = preset.page_width_pt - 2 * (s.margin_left + s.cover_indent)
     frames = [
         Frame(
             name=f"{chapter.id}:section_no", x=x, y=218.0, w=w, h=20.0,
-            paras=[Para(text=slots.section_no, font_pt=r.subtitle_pt, color=c.accent)],
+            paras=[Para(
+                text=slots.section_no, font_pt=r.subtitle_pt, color=c.accent,
+                lines=_para_lines(slots.section_no, w, r.subtitle_pt, False, preset, metrics),
+            )],
         ),
         Frame(
             name=f"{chapter.id}:section_title", x=x, y=246.0, w=w, h=44.0,
-            paras=[Para(text=slots.section_title, font_pt=r.section_title_pt, bold=True, color=c.text)],
+            paras=[Para(
+                text=slots.section_title, font_pt=r.section_title_pt, bold=True, color=c.text,
+                lines=_para_lines(slots.section_title, w, r.section_title_pt, True, preset, metrics),
+            )],
         ),
     ]
     return SlidePlan(chapter_id=chapter.id, template="divider", frames=frames)
@@ -209,17 +254,17 @@ def _build_bullet_box(
     if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset),
+        _title_frame(chapter, preset, metrics),
         Frame(
             name=f"{chapter.id}:bullets",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=bullets_h,
-            paras=_bullet_paras(slots.bullets, preset),
+            paras=_bullet_paras(slots.bullets, g["content_width"], preset, metrics),
         ),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset, metrics),
         _page_number_frame(chapter, page_no, preset),
     ]
     if slots.footnote:
-        frames.insert(3, _footnote_frame(chapter, slots.footnote, preset))
+        frames.insert(3, _footnote_frame(chapter, slots.footnote, preset, metrics))
     return SlidePlan(chapter_id=chapter.id, template="bullet_box", frames=frames, warnings=warnings)
 
 
@@ -241,12 +286,12 @@ def _build_summary(
     if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
         warnings.append(cw)
     frames = [
-        _title_frame(chapter, preset),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_top"], preset),
+        _title_frame(chapter, preset, metrics),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_top"], preset, metrics),
         Frame(
             name=f"{chapter.id}:points",
             x=s.margin_left, y=points_top, w=g["content_width"], h=points_h,
-            paras=_bullet_paras(slots.points, preset),
+            paras=_bullet_paras(slots.points, g["content_width"], preset, metrics),
         ),
         _page_number_frame(chapter, page_no, preset),
     ]
@@ -277,23 +322,26 @@ def _table_col_widths(slots: TableSlots, frame_w: float, preset: Preset, metrics
 def _build_table(
     chapter: Chapter, slots: TableSlots, page_no: int, preset: Preset, metrics
 ) -> SlidePlan:
-    from slidecaptain.metrics.line_breaker import break_paragraph
-
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = _content_geometry(preset)
     table_h = g["content_bottom"] - g["content_top"]
     col_widths = _table_col_widths(slots, g["content_width"], preset, metrics)
     lh = line_height_pt(r.table_pt, s.line_spacing)
 
-    def row_height(cells: list[str], bold: bool) -> float:
+    def row_lines(cells: list[str], bold: bool) -> list[list[str]]:
         face = metrics.face(bold)
-        lines = max(
-            len(break_paragraph(cell, col_widths[i] - 2 * s.table_cell_pad_x, r.table_pt, face, s.safety_ratio))
+        return [
+            break_paragraph(cell, col_widths[i] - 2 * s.table_cell_pad_x, r.table_pt, face, s.safety_ratio)
             for i, cell in enumerate(cells)
-        )
-        return lines * lh + 2 * s.table_cell_pad_y
+        ]
 
-    row_heights = [row_height(slots.columns, True)] + [row_height(row, False) for row in slots.rows]
+    header_lines = row_lines(slots.columns, True)
+    cell_lines = [row_lines(row, False) for row in slots.rows]
+
+    def row_height(lines_by_cell: list[list[str]]) -> float:
+        return max(len(lines) for lines in lines_by_cell) * lh + 2 * s.table_cell_pad_y
+
+    row_heights = [row_height(header_lines)] + [row_height(c) for c in cell_lines]
     warnings = []
     if (tw := _title_warning(chapter, preset, metrics)) is not None:
         warnings.append(tw)
@@ -303,7 +351,7 @@ def _build_table(
     if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset),
+        _title_frame(chapter, preset, metrics),
         Frame(
             name=f"{chapter.id}:table",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=table_h,
@@ -314,12 +362,14 @@ def _build_table(
                 font_pt=r.table_pt,
                 header_fill=c.table_header_fill,
                 row_heights_pt=row_heights,
+                header_lines=header_lines,
+                cell_lines=cell_lines,
             ),
         ),
         _page_number_frame(chapter, page_no, preset),
     ]
     if slots.footnote:
-        frames.insert(2, _footnote_frame(chapter, slots.footnote, preset))
+        frames.insert(2, _footnote_frame(chapter, slots.footnote, preset, metrics))
     return SlidePlan(chapter_id=chapter.id, template="table", frames=frames, warnings=warnings)
 
 
@@ -337,8 +387,11 @@ def _build_compare2(
         warnings.append(cw)
 
     def card_frame(name: str, card, x: float) -> Frame:
-        paras = [Para(text=card.heading, font_pt=r.body_pt, bold=True, color=c.accent)]
-        paras += _bullet_paras(card.bullets, preset)
+        paras = [Para(
+            text=card.heading, font_pt=r.body_pt, bold=True, color=c.accent,
+            lines=_para_lines(card.heading, card_w - 2 * s.box_padding, r.body_pt, True, preset, metrics),
+        )]
+        paras += _bullet_paras(card.bullets, card_w - 2 * s.box_padding, preset, metrics)
         if (hw := _fixed_height_warning(
             chapter, f"{name}_heading", card.heading,
             card_w - 2 * s.box_padding, s.card_heading_height, r.body_pt, True,
@@ -359,10 +412,10 @@ def _build_compare2(
         )
 
     frames = [
-        _title_frame(chapter, preset),
+        _title_frame(chapter, preset, metrics),
         card_frame("left_card", slots.left, s.margin_left),
         card_frame("right_card", slots.right, s.margin_left + card_w + s.card_gap),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset, metrics),
         _page_number_frame(chapter, page_no, preset),
     ]
     return SlidePlan(chapter_id=chapter.id, template="compare2", frames=frames, warnings=warnings)
@@ -370,9 +423,9 @@ def _build_compare2(
 
 def build_slide(chapter: Chapter, slots, page_no: int, preset: Preset, metrics) -> SlidePlan:
     if isinstance(slots, CoverSlots):
-        return _build_cover(chapter, slots, preset)
+        return _build_cover(chapter, slots, preset, metrics)
     if isinstance(slots, DividerSlots):
-        return _build_divider(chapter, slots, page_no, preset)
+        return _build_divider(chapter, slots, page_no, preset, metrics)
     if isinstance(slots, SummarySlots):
         return _build_summary(chapter, slots, page_no, preset, metrics)
     if isinstance(slots, BulletBoxSlots):
