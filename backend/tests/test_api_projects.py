@@ -32,6 +32,13 @@ def test_create_invalid_name_unprocessable(client):
     assert r.status_code == 422
 
 
+def test_create_project_named_preset_json_unprocessable(client):
+    # preset.json 이름으로 프로젝트를 만들면 전역 프리셋 파일과 이름이 겹쳐
+    # load_global_preset이 죽는다 (2026-08-29 최종 리뷰 발견)
+    r = client.post("/api/projects", json={"name": "preset.json"})
+    assert r.status_code == 422
+
+
 def test_get_and_put_deck(client):
     client.post("/api/projects", json={"name": "p1", "title": "제목"})
     deck = client.get("/api/projects/p1/deck").json()

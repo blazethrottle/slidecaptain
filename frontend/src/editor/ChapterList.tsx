@@ -25,6 +25,7 @@ export function ChapterList({ deck, plan, selected, onSelect, onReorder }: {
             }
             dragFrom.current = null;
           }}
+          onDragEnd={() => { dragFrom.current = null; }}
         >
           <button aria-pressed={selected === c.id} onClick={() => onSelect(c.id)}>
             {i + 1}. {c.topic} <small>{TEMPLATE_LABELS[c.template]}</small>

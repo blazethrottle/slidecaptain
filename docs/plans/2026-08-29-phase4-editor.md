@@ -130,7 +130,7 @@ frontend/
 1. **저장 단위: 자동 저장 + 의미 시점 스냅샷** (사용자 결정 2026-08-29). 편집 조작은 로컬 상태에 즉시 반영하고, 1.2초 디바운스로 `PUT /deck?snapshot=false` 자동 저장한다. 스냅샷은 네 시점에만 남긴다: ① 편집 세션의 첫 저장(`snapshot=true`) ② 구조안 승인 반영 저장(`snapshot=true`. 이때 저장소가 직전 파일을 스냅샷으로 보존하므로 승인 전 상태가 복구 지점이 된다) ③ AI 재생성/축약 결과 반영 저장(`snapshot=true`) ④ 내보내기 직전(`POST /snapshots` 명시 호출). 스냅샷 복원 직전 보존은 기존 저장소 동작 그대로다. `save_deck`의 기본값은 `snapshot=True`를 유지해 화면 밖 호출자(파일 직접 수정 대비)의 안전을 지킨다. **디바운스에는 플러시가 따른다** (2026-08-29 적대 리뷰 반영): 편집 화면이 내려가는 순간(탭 전환, 목록 복귀)과 내보내기 직전에는 보류 중인 자동 저장을 즉시 실행해, 마지막 1.2초 안의 편집이 소실되거나 내보내기에서 빠지지 않게 한다 (`useDeckEditor`의 언마운트 플러시와 `flushSave`, Task 12와 16).
 2. **무저장 실측 API는 `POST /api/render-plan`** (본문 = Deck 전체, 응답 = RenderPlan). 프로젝트와 무관한 순수 계산이라 경로에 프로젝트를 넣지 않는다. 편집 중 미리보기와 분량 경고는 전부 이 API의 응답으로 갱신한다(0.3초 디바운스). 저장(1.2초)과 실측(0.3초)을 분리해 타이핑 중에도 경고가 빠르게 따라온다.
 3. **렌더 계획에 줄바꿈 결과를 내장한다** (로드맵 결정 1의 미이행분 이행): `Para.lines: list[str]`(엔진의 어절 줄바꿈 결과), 표는 `TablePlan.header_lines: list[list[str]]`와 `cell_lines: list[list[list[str]]]`(행 x 열 x 줄). 미리보기는 이 줄들을 줄 단위 div로 그려, 화면의 줄바꿈이 항상 분량 실측과 일치한다(브라우저 자체 줄바꿈에 맡기면 경고와 화면이 어긋날 수 있다). PPTX 라이터는 이 필드를 소비하지 않는다(강제 개행을 심지 않는 기존 원칙 유지).
-4. **전역 프리셋은 `<data-dir>/preset.json`**: `GET /api/preset`, `PUT /api/preset`(본문 = Preset 전체, 하한 검증 포함). 파일이 없으면 코드 기본값 `Preset()`. 서버의 모든 프리셋 계산(_validated_preset, export)은 전역 프리셋 위에 덱 덮어쓰기를 얹는 순서로 바뀐다. CLI `export`는 data-dir 맥락이 없으므로 기본 프리셋 기준을 유지한다(문서화된 한계). 프리셋 환류 UI("프리셋에 저장" 질문)는 단계 5이고, 이 API는 그 전제다. `preset.json`과 같은 이름의 프로젝트 생성 시도는 기존 `d.exists()` 검사가 409로 거부한다(허용된 부작용).
+4. **전역 프리셋은 `<data-dir>/preset.json`**: `GET /api/preset`, `PUT /api/preset`(본문 = Preset 전체, 하한 검증 포함). 파일이 없으면 코드 기본값 `Preset()`. 서버의 모든 프리셋 계산(_validated_preset, export)은 전역 프리셋 위에 덱 덮어쓰기를 얹는 순서로 바뀐다. CLI `export`는 data-dir 맥락이 없으므로 기본 프리셋 기준을 유지한다(문서화된 한계). 프리셋 환류 UI("프리셋에 저장" 질문)는 단계 5이고, 이 API는 그 전제다. `preset.json`과 같은 이름의 프로젝트 생성 시도는 기존 `d.exists()` 검사가 409로 거부한다(허용된 부작용). **2026-08-29 최종 리뷰 정정**: 이 전제는 실측되지 않은 채로 틀렸다. `preset.json`이라는 이름의 프로젝트는 생성 시점에 `d.exists()`가 아직 거짓이라 그대로 생성되어 data-dir 루트에 같은 이름의 폴더가 생기고, 이후 `load_global_preset`의 `read_text`가 디렉터리를 읽으려다 실패해(Windows에서는 PermissionError) 전역 프리셋을 쓰는 라우트 6개가 전부 미처리 500이 된다(리뷰 발견). 수리: `FileProjectStore.create_project`가 이름 검증 직후 `name in ("preset.json", "preset.json.tmp")`이면 `InvalidName`(422)을 던진다.
 5. **프런트엔드 스택 최소주의**: Vite 8 + React 19 + TS, Vitest + Testing Library. 상태 관리, 라우터, 드래그 라이브러리는 넣지 않는다. 언두는 useReducer의 past/present/future 스택(상한 100), 화면 전환은 App의 상태 분기, 드래그는 HTML5 네이티브 DnD. 근거: 로컬 1인 앱이라 URL 딥링크와 전역 상태 공유 요구가 없고, 의존성마다 회귀 표면이 는다.
 6. **미리보기는 HTML 절대 배치 + transform scale**: 960x540 고정 좌표계(숫자를 px로 그대로 사용)를 컨테이너 폭에 맞춰 `transform: scale()`한다. pt 수치를 px로 그대로 쓰므로 비율이 정확하고, 글자 크기와 행간(font_pt x line_spacing)도 렌더 계획 수치를 그대로 쓴다. 채움이나 테두리가 있는 프레임은 `style.box_padding_pt`만큼 안쪽 여백을 준다(엔진의 실측 폭과 동일 규칙). 폰트는 Noto Sans KR(serve가 설치)이고, 줄바꿈이 서버 계산이라 폰트가 없어도 줄 구조는 유지된다.
 7. **개발은 Vite 프록시, 사용은 정적 마운트, CORS는 열지 않는다**: 개발 서버가 `/api`를 `127.0.0.1:8765`로 프록시하고, 사용 시에는 FastAPI가 `frontend/dist`를 마운트해 한 주소에서 서빙한다. 어느 쪽이든 same-origin이라 CORS 미들웨어가 필요 없고, TrustedHostMiddleware(127.0.0.1, localhost)로 DNS 리바인딩을 막는다.
@@ -2278,6 +2278,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
 
 주의: 이 시점에는 편집 탭 내용이 아직 없으므로, `onDone`이 편집 탭으로 전환해도 빈 본문이 나온다(Task 12가 채운다). 탭 전환 자체는 동작해야 한다.
 
+2026-08-29 최종 리뷰 정정: `StructureScreen`에 `onBusyChange?: (busy: boolean) => void` prop을 추가해 `generate`/`approve`의 busy 전이 시점에 호출한다. 승인 후 순차 생성 진행 중 첫 장이 저장되면 편집 탭이 활성화되는데, 이때 사용자가 편집 탭으로 들어가 편집하면 `useDeckEditor`가 낡은 덱을 통째로 저장해 진행 중인 생성분과 쓰기 경쟁이 나던 결함(리뷰 발견)의 수리다. `ProjectView`가 이 콜백을 `generating` 상태로 받아 자료/편집 탭, PPTX 내보내기, 스냅샷 복구 버튼을 잠근다(Task 16 정정 문단 참고).
+
 - [ ] **Step 3: 통과 확인과 커밋**
 
 Run: `frontend` 폴더 안에서 `npm test` → 전부 PASS, `npm run build` → 성공
@@ -3162,6 +3164,8 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
 ```
 
 2026-08-29 태스크 16 리뷰 정정: flushSave가 성공 여부를 반환하고 실패 시 내보내기를 중단한다(마지막 편집이 빠진 내보내기가 "완료"로 표시되던 결함의 수리). / needs_recovery 진입 단언을 RecoveryScreen 고유 문구로 정밀화.
+
+2026-08-29 최종 리뷰 정정: `EditorScreen`의 `onEditorReady` 타입을 `(flush: (() => Promise<boolean>) | null) => void`로 바꾸고, 등록 effect의 cleanup에서 `onEditorReady?.(null)`을 호출한다. 탭 전환 시 언마운트된 편집기의 낡은 flush 함수를 부모(ProjectView)가 계속 들고 있으면, 다음 탭 전환 플러시가 이미 사라진 편집기를 가리켜 무의미해지던 결함(리뷰 발견)의 수리다.
 
 - [ ] **Step 3: 통과 확인과 커밋**
 
@@ -4320,6 +4324,8 @@ export function RecoveryScreen({ project, onBack }: {
 showRecovery가 참이면 탭 본문 대신 복구 화면만 보이게 기존 탭 렌더 조건 전부에 `!showRecovery &&`를 붙인다 (편집 탭은 위의 배선 코드가 이미 반영).
 
 2026-08-29 태스크 16 리뷰 정정: flushSave가 성공 여부를 반환하고 실패 시 내보내기를 중단한다(마지막 편집이 빠진 내보내기가 "완료"로 표시되던 결함의 수리). / needs_recovery 진입 단언을 RecoveryScreen 고유 문구로 정밀화.
+
+2026-08-29 최종 리뷰 정정: `ProjectView`의 탭 전환을 `const switchTab = async (t: Tab) => { if (flushEditor.current) { await flushEditor.current(); } setTab(t); };`로 바꾸고 nav 버튼 3개(자료, 구조안, 편집)가 이것을 쓰게 한다. 탭 전환 시 편집기의 언마운트 플러시가 비동기로 늦게 착지해 다음 탭이 낡은 덱으로 초기화되던 결함(리뷰 발견)의 수리다(doExport의 기존 flush 호출은 그대로 둔다). 또한 구조안 승인 후 순차 생성 진행 중에는 자료/편집 탭, PPTX 내보내기, 스냅샷 복구 버튼을 잠근다: `StructureScreen`의 `onBusyChange`를 `generating` 상태로 받아 `disabled`와 안내 title("AI 생성이 끝나면 이동할 수 있습니다")을 건다(구조안 탭 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다). 편집 탭이 생성 도중 활성화되면 `useDeckEditor`가 낡은 덱을 통째로 저장해 진행 중인 생성분과 쓰기 경쟁이 나던 결함(리뷰 발견)의 수리다.
 
 - [ ] **Step 3: 통과 확인과 커밋**
 

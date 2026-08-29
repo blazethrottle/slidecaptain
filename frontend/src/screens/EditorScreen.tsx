@@ -12,7 +12,7 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
-  onEditorReady?: (flush: () => Promise<boolean>) => void;  // 부모(ProjectView)가 내보내기 전에 플러시하도록
+  onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 탭 전환 전에 플러시하도록
   timings?: Timings;
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings);
@@ -22,10 +22,17 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
 
   useEffect(() => {
     onEditorReady?.(editor.flushSave);
+    // 언마운트 시 등록을 해제한다: 다음 화면이 이 화면의 낡은 flush 함수를 계속 들고 있으면
+    // 탭 전환 플러시가 이미 사라진 편집기를 가리켜 무의미해진다 (2026-08-29 최종 리뷰 발견)
+    return () => onEditorReady?.(null);
   }, [onEditorReady, editor.flushSave]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // 인라인 편집 입력 중에는 브라우저 네이티브 undo가 동작해야 하므로 덱 undo가 끼어들지 않는다
+      // (2026-08-29 최종 리뷰 발견)
+      const t = e.target as HTMLElement;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) { e.preventDefault(); editor.undo(); }

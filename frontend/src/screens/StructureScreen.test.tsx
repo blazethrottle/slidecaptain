@@ -49,9 +49,12 @@ it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async 
       format_retried: false, condensed: false,
       slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
   const onDone = vi.fn();
-  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  const onBusyChange = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone}
+    onBusyChange={onBusyChange} />);
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
   await screen.findByDisplayValue("본문");
+  onBusyChange.mockClear();  // 구조안 생성 자체의 busy 전이는 이 단언과 무관하므로 승인 클릭 이전 호출은 걷어낸다
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   // 승인 저장 1회(snapshot true) + 장 반영 2회(snapshot false)
@@ -59,6 +62,10 @@ it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async 
   expect(calls[0][2]).toBe(true);
   expect(calls.length).toBe(3);
   expect(calls[2][1].slides).toHaveLength(2);
+  // 편집 탭 게이트(ProjectView)가 순차 생성 진행 중임을 알 수 있도록 busy 전이를 알린다
+  // (2026-08-29 최종 리뷰 발견)
+  expect(onBusyChange.mock.calls[0]).toEqual([true]);
+  expect(onBusyChange.mock.calls.at(-1)).toEqual([false]);
 });
 
 it("형식 오류면 원문과 재시도 경로를 보여준다", async () => {

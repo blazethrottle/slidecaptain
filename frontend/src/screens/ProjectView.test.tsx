@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type Deck, type Preset, type RenderPlan } from "../api/client";
 import { ProjectView } from "./ProjectView";
@@ -8,7 +8,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
-    getPreset: vi.fn() } };
+    getPreset: vi.fn(), generateChapter: vi.fn() } };
 });
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -20,6 +20,17 @@ const deckWithSlide: Deck = {
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
   slides: [{ chapter_id: "c1", slots: {
     template: "bullet_box", bullets: [], conclusion: "결", footnote: "" } }],
+};
+
+// 편집한 값이 실제로 반영되는지 확인하려면 미리보기(plan)가 가리키는 인덱스 0에
+// 실제 불릿이 있어야 한다 (EditorScreen.test.tsx 픽스처와 동일 패턴)
+const deckWithEditableSlide: Deck = {
+  schema_version: 1,
+  meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+  structure: { chapters: [
+    { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
+  slides: [{ chapter_id: "c1", slots: {
+    template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 
 // 편집 탭에서 DesignPanel이 함께 그려지므로, 그 프리셋 조회 목이 필요하다 (EditorScreen.test.tsx 픽스처 재사용)
@@ -100,4 +111,67 @@ it("마지막 편집 저장에 실패하면 내보내기를 중단한다", async
   );
   expect(banner.closest('[role="alert"]')).not.toBeNull();
   expect(api.exportDeck).not.toHaveBeenCalled();
+});
+
+it("탭 전환 전 편집기 플러시를 기다린 뒤 다음 탭을 연다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithEditableSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  // putDeck 응답을 붙잡아 둔다: 응답이 오기 전까지 편집 화면이 유지되어야 플러시 선행이 증명된다
+  // (즉시 resolve하면 setTab이 플러시 이전이든 이후든 결과 DOM이 같아져 판별이 안 된다)
+  let resolvePut = (_v: { ok: true }) => {};
+  vi.mocked(api.putDeck).mockImplementation(
+    () => new Promise((resolve) => { resolvePut = resolve; }));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByText("편집"));
+  const preview = () => within(document.querySelector(".editor-center") as HTMLElement);
+  await userEvent.click(await preview().findByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
+  const box = await screen.findByLabelText("내용 수정");
+  await userEvent.clear(box);
+  await userEvent.type(box, "고침{Enter}");
+  // 기본 timings(1.2초 디바운스)에서는 자동 저장이 아직 발화하지 않은 상태에서 구조안 탭으로 전환한다:
+  // switchTab의 선행 플러시가 없으면 이 편집은 putDeck 호출 없이 유실된다 (Task 16 플러시 실패 테스트 패턴 재사용)
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  const [, savedDeck] = vi.mocked(api.putDeck).mock.calls[0];
+  const slots = savedDeck.slides[0].slots;
+  expect(slots.template === "bullet_box" && slots.bullets?.[0].text).toBe("고침");
+  // putDeck 응답이 오기 전에는 아직 편집 화면이다: 플러시를 기다리지 않고 곧장 탭을
+  // 전환했다면 이 시점에 이미 구조안 화면(옛 덱으로 초기화된 draft)이 떠 있을 것이다
+  expect(document.querySelector(".editor-screen")).not.toBeNull();
+  expect(document.querySelector(".structure-screen")).toBeNull();
+  // 플러시가 응답한 뒤에야 구조안 화면으로 전환된다
+  resolvePut({ ok: true });
+  await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
+  expect(document.querySelector(".editor-screen")).toBeNull();
+});
+
+it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 없다", async () => {
+  // 구조안이 이미 있고(승인 전) 슬라이드는 아직 없는 프로젝트: 승인 즉시 순차 생성이 시작된다
+  const deckWithStructure: Deck = {
+    schema_version: 1,
+    meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+    structure: { chapters: [
+      { id: "c1", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
+    slides: [],
+  };
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithStructure);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter).mockImplementation(() => new Promise(() => {}));  // 절대 응답하지 않는 생성 호출
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+  const editorBtn = screen.getByRole("button", { name: "편집" });
+  await waitFor(() => expect(editorBtn).toBeDisabled());
+  // hasSlides가 false라서가 아니라 생성 진행 중이라서 막혔음을 문구로 구분한다
+  expect(editorBtn).toHaveAttribute("title", "AI 생성이 끝나면 이동할 수 있습니다");
+  const sourcesBtn = screen.getByRole("button", { name: "자료" });
+  expect(sourcesBtn).toBeDisabled();
+  expect(screen.getByRole("button", { name: "PPTX 내보내기" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
+  // 구조안 탭 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
+  expect(screen.getByRole("button", { name: "구조안" })).not.toBeDisabled();
 });

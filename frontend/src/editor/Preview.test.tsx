@@ -62,6 +62,16 @@ it("선택된 프레임의 문단을 클릭하면 입력이 열리고 확정 시
   expect(onCommitText).toHaveBeenCalledWith({ chapterId: "c1", slot: "title", index: 0 }, "새 제목");
 });
 
+it("무변경 확정은 onCommitText를 부르지 않는다", async () => {
+  const onCommitText = vi.fn();
+  render(<Preview slide={slide} style={style} pageW={960} pageH={540}
+    selected={{ chapterId: "c1", slot: "title" }} onSelect={() => {}} onCommitText={onCommitText} />);
+  await userEvent.click(screen.getByText("장 제목"));
+  const box = await screen.findByLabelText("내용 수정");
+  await userEvent.type(box, "{Enter}");
+  expect(onCommitText).not.toHaveBeenCalled();
+});
+
 it("표 칸을 편집하면 행과 열이 담긴 참조로 반영된다", async () => {
   const tableSlide: SlidePlan = {
     chapter_id: "c1", template: "table", warnings: [],

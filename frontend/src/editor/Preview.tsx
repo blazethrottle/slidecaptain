@@ -27,7 +27,7 @@ export function Preview({ slide, style, pageW, pageH, selected, onSelect, onComm
 }) {
   const holder = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [editing, setEditing] = useState<{ ref: TextRef; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ ref: TextRef; text: string; origin: string } | null>(null);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -40,14 +40,16 @@ export function Preview({ slide, style, pageW, pageH, selected, onSelect, onComm
   }, [pageW]);
 
   const commit = () => {
-    if (editing) onCommitText(editing.ref, editing.text);
+    // 변경 없는 확정(문단 클릭 후 Enter만 누른 경우 등)은 언두와 저장을 오염시키지 않는다
+    // (2026-08-29 최종 리뷰 발견)
+    if (editing && editing.text !== editing.origin) onCommitText(editing.ref, editing.text);
     setEditing(null);
   };
 
   const startEdit = (ref: TextRef, text: string) => {
     const frame = { chapterId: ref.chapterId, slot: ref.slot };
     if (selected?.chapterId === frame.chapterId && selected.slot === frame.slot) {
-      setEditing({ ref, text });
+      setEditing({ ref, text, origin: text });
     } else {
       onSelect(frame);
     }

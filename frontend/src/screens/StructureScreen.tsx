@@ -14,11 +14,12 @@ function nextChapterId(chapters: Chapter[]): string {
   return `c${max + 1}`;
 }
 
-export function StructureScreen({ project, deck, onDeckChange, onDone }: {
+export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onDone: () => void;
+  onBusyChange?: (busy: boolean) => void;  // 승인 중 순차 생성 진행을 부모(ProjectView)에 알려 다른 탭 진입을 막는다
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
   const [draftGenerated, setDraftGenerated] = useState(false);  // AI 재생성 초안 여부 (결정 15: 승인 시 전면 교체)
@@ -32,6 +33,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
 
   const generate = async () => {
     setBusy(true);
+    onBusyChange?.(true);
     setError("");
     setRawText("");
     try {
@@ -51,6 +53,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
       setError(messageOf(e));
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
@@ -90,6 +93,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
       if (!ok) return;
     }
     setBusy(true);
+    onBusyChange?.(true);
     setError("");
     try {
       let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
@@ -128,6 +132,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
       setError(messageOf(e));
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 

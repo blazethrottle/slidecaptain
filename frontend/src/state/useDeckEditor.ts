@@ -34,7 +34,9 @@ export function useDeckEditor(
       firstSave.current = false;
       snapshotNext.current = false;
       savedDeck.current = target;
-      setSaveState("저장됨");
+      // 진행 중이던 저장이 늦게 착지해도, 그사이 새 편집이 들어와 있으면 "저장됨"으로
+      // 덮어써 후속 편집의 "저장 대기" 표시를 지우지 않는다 (2026-08-29 최종 리뷰 발견)
+      if (deckRef.current === target) setSaveState("저장됨");
       setError("");
       onDeckChange(target);
       return true;

@@ -161,6 +161,11 @@ class FileProjectStore:
 
     def create_project(self, name: str, title: str = "") -> ProjectInfo:
         _validate_name(name, "프로젝트")
+        if name in ("preset.json", "preset.json.tmp"):
+            raise InvalidName(
+                f"프로젝트 이름으로 쓸 수 없습니다: {name!r}. "
+                "전역 프리셋 파일과 이름이 겹칩니다. 다른 이름을 지어 주세요."
+            )
         d = self.root / name
         if d.exists():
             raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}")
