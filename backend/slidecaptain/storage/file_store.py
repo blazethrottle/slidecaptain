@@ -15,7 +15,7 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ValidationError
 
@@ -59,6 +59,7 @@ class ProjectInfo(BaseModel):
     name: str
     title: str
     updated_at: str  # ISO 8601
+    status: Literal["ok", "needs_recovery"] = "ok"
 
 
 class SnapshotInfo(BaseModel):
@@ -131,6 +132,14 @@ class FileProjectStore:
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
         return d
 
+    def _project_dir_any(self, name: str) -> Path:
+        """스냅샷 경로용: deck.json이 없어도(복구 대상) 프로젝트 폴더에 접근한다."""
+        _validate_name(name, "프로젝트")
+        d = self.root / name
+        if not d.is_dir():
+            raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
+        return d
+
     def _write_deck(self, project_dir: Path, deck: Deck) -> None:
         tmp = project_dir / "deck.json.tmp"
         tmp.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
@@ -164,18 +173,35 @@ class FileProjectStore:
     def list_projects(self) -> list[ProjectInfo]:
         infos = []
         for d in sorted(self.root.iterdir()):
-            if d.is_dir() and (d / "deck.json").exists():
+            if not d.is_dir():
+                continue
+            if (d / "deck.json").exists():
                 infos.append(self._info(d))
+                continue
+            snapshots_dir = d / "snapshots"
+            snapshots = sorted(snapshots_dir.glob("deck-*.json")) if snapshots_dir.is_dir() else []
+            if snapshots:  # deck.json은 사라졌지만 복구 지점이 남은 프로젝트
+                mtime = datetime.fromtimestamp(snapshots[-1].stat().st_mtime).astimezone()
+                infos.append(ProjectInfo(
+                    name=d.name,
+                    title="(deck.json 없음: 스냅샷 복구가 필요합니다)",
+                    updated_at=mtime.isoformat(timespec="seconds"),
+                    status="needs_recovery",
+                ))
         return infos
 
     def _info(self, d: Path) -> ProjectInfo:
         deck_path = d / "deck.json"
+        status: Literal["ok", "needs_recovery"] = "ok"
         try:
             title = Deck.model_validate_json(deck_path.read_text(encoding="utf-8")).meta.title
         except (ValueError, ValidationError):
             title = "(deck.json 읽기 실패: 스냅샷 복구가 필요합니다)"
+            status = "needs_recovery"
         mtime = datetime.fromtimestamp(deck_path.stat().st_mtime).astimezone()
-        return ProjectInfo(name=d.name, title=title, updated_at=mtime.isoformat(timespec="seconds"))
+        return ProjectInfo(
+            name=d.name, title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status
+        )
 
     # -- 덱 ---------------------------------------------------------------
 
@@ -202,7 +228,7 @@ class FileProjectStore:
     # -- 스냅샷 ------------------------------------------------------------
 
     def list_snapshots(self, name: str) -> list[SnapshotInfo]:
-        d = self._project_dir(name)
+        d = self._project_dir_any(name)
         infos = []
         for p in sorted((d / "snapshots").glob("deck-*.json")):
             m = _SNAPSHOT_RE.match(p.stem)
@@ -213,7 +239,7 @@ class FileProjectStore:
         return infos
 
     def restore_snapshot(self, name: str, snapshot_id: str) -> Deck:
-        d = self._project_dir(name)
+        d = self._project_dir_any(name)
         _validate_name(snapshot_id, "스냅샷")
         path = d / "snapshots" / f"{snapshot_id}.json"
         if not path.exists():

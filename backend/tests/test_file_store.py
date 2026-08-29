@@ -231,3 +231,30 @@ def test_snapshot_now(tmp_path):
     store.create_project("p1")
     store.snapshot_now("p1")
     assert len(store.list_snapshots("p1")) == 1
+
+
+def test_project_without_deck_listed_for_recovery(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    store.create_project("p1")
+    store.save_deck("p1", store.load_deck("p1"))  # 스냅샷 1개를 만든다
+    (tmp_path / "projects" / "p1" / "deck.json").unlink()
+    infos = store.list_projects()
+    assert len(infos) == 1 and infos[0].status == "needs_recovery"
+    snaps = store.list_snapshots("p1")  # deck.json 없이도 동작해야 한다
+    assert len(snaps) == 1
+    deck = store.restore_snapshot("p1", snaps[0].id)  # 복원이 deck.json을 재생성한다
+    assert deck.meta.title == "p1"
+    assert store.list_projects()[0].status == "ok"
+
+
+def test_corrupt_deck_marked_needs_recovery(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    store.create_project("p1")
+    (tmp_path / "projects" / "p1" / "deck.json").write_text("{깨짐", encoding="utf-8")
+    assert store.list_projects()[0].status == "needs_recovery"
+
+
+def test_empty_dir_without_snapshots_not_listed(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    (tmp_path / "projects" / "빈폴더").mkdir(parents=True)
+    assert store.list_projects() == []

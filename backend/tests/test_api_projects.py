@@ -112,3 +112,17 @@ def test_explicit_snapshot_endpoint(client):
     r = client.post("/api/projects/p1/snapshots")
     assert r.status_code == 201
     assert len(client.get("/api/projects/p1/snapshots").json()) == 1
+
+
+def test_recovery_flow_over_api(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    api = TestClient(create_app(store))
+    api.post("/api/projects", json={"name": "p1", "title": "제목"})
+    deck = api.get("/api/projects/p1/deck").json()
+    api.put("/api/projects/p1/deck", json=deck)  # 스냅샷 생성
+    (tmp_path / "projects" / "p1" / "deck.json").unlink()
+    assert api.get("/api/projects").json()[0]["status"] == "needs_recovery"
+    snaps = api.get("/api/projects/p1/snapshots").json()
+    r = api.post(f"/api/projects/p1/snapshots/{snaps[0]['id']}/restore")
+    assert r.status_code == 200
+    assert api.get("/api/projects/p1/deck").status_code == 200
