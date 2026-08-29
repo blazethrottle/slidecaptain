@@ -127,6 +127,7 @@ def test_target_chapters_zero_422(store):
     client.post("/api/projects", json={"name": "p1"})
     r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 0})
     assert r.status_code == 422
+    assert "target_chapters" in r.json()["detail"]  # 자료 없음 422가 아니라 ge 검증 422임을 판별
 
 
 def test_sources_over_total_limit_422(store):
