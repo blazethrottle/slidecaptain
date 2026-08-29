@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   api, messageOf, type ChapterResult, type Deck, type ProjectInfo,
 } from "../api/client";
@@ -14,17 +14,30 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   const [result, setResult] = useState<ChapterResult | null>(null);
   const [error, setError] = useState("");
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
+  const chapterIdRef = useRef(chapterId);
+  chapterIdRef.current = chapterId;
+
+  // 장을 전환하면 이전 장의 결과와 오류를 비운다: 다른 장에 반영되는 오귀속 쓰기 방지 (리뷰 반영)
+  useEffect(() => {
+    setResult(null);
+    setError("");
+    setBusy(false);
+  }, [chapterId]);
 
   const run = async (call: () => Promise<ChapterResult>) => {
+    const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     setBusy(true);
     setError("");
     setResult(null);
     try {
-      setResult(await call());
+      const res = await call();
+      if (chapterIdRef.current !== requestedChapterId) return;  // 그사이 장이 바뀌었으면 응답을 버린다
+      setResult(res);
     } catch (e) {
+      if (chapterIdRef.current !== requestedChapterId) return;
       setError(messageOf(e));
     } finally {
-      setBusy(false);
+      if (chapterIdRef.current === requestedChapterId) setBusy(false);
     }
   };
 

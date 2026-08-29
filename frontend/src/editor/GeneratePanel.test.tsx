@@ -57,3 +57,13 @@ it("형식 오류는 원문과 재시도 경로를 보여주고 버리기 전까
   expect(screen.getByText("이상한 원문")).toBeInTheDocument();
   expect(screen.queryByText("반영")).not.toBeInTheDocument();
 });
+
+it("장을 전환하면 이전 장의 결과 패널이 사라진다", async () => {
+  vi.mocked(api.generateChapter).mockResolvedValue(okResult);
+  const { rerender } = render(
+    <GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  expect(await screen.findByText("반영")).toBeInTheDocument();
+  rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" onReplace={() => {}} />);
+  expect(screen.queryByText("반영")).not.toBeInTheDocument();
+});
