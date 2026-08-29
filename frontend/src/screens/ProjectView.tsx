@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, messageOf, type Deck, type ProjectInfo } from "../api/client";
 import { SourcesScreen } from "./SourcesScreen";
+import { StructureScreen } from "./StructureScreen";
 
 export type Tab = "sources" | "structure" | "editor";
 
@@ -52,12 +53,16 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
         <h1>{deck.meta.title}</h1>
         <nav>
           <button aria-pressed={tab === "sources"} onClick={() => setTab("sources")}>자료</button>
-          <button aria-pressed={tab === "structure"} disabled>구조안</button>
+          <button aria-pressed={tab === "structure"} onClick={() => setTab("structure")}>구조안</button>
           <button aria-pressed={tab === "editor"} disabled={!hasSlides}
             title={hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
         </nav>
       </header>
       {tab === "sources" && <SourcesScreen project={project} deck={deck} onDeckChange={setDeck} />}
+      {tab === "structure" && (
+        <StructureScreen project={project} deck={deck} onDeckChange={setDeck}
+          onDone={() => setTab("editor")} />
+      )}
     </main>
   );
 }

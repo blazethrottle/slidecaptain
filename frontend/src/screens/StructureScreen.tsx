@@ -1,0 +1,196 @@
+import { useState } from "react";
+import {
+  api, messageOf,
+  type Chapter, type ChapterResult, type Deck, type ProjectInfo, type TemplateName,
+} from "../api/client";
+import { TEMPLATE_LABELS } from "../editor/labels";
+
+type Progress = Record<string, "대기" | "생성 중" | "완료" | "실패">;
+
+function nextChapterId(chapters: Chapter[]): string {
+  const max = chapters
+    .map((c) => /^c(\d+)$/.exec(c.id))
+    .reduce((n, m) => (m ? Math.max(n, Number(m[1])) : n), 0);
+  return `c${max + 1}`;
+}
+
+export function StructureScreen({ project, deck, onDeckChange, onDone }: {
+  project: ProjectInfo;
+  deck: Deck;
+  onDeckChange: (d: Deck) => void;
+  onDone: () => void;
+}) {
+  const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
+  const [draftGenerated, setDraftGenerated] = useState(false);  // AI 재생성 초안 여부 (결정 15: 승인 시 전면 교체)
+  const [targetChapters, setTargetChapters] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [rawText, setRawText] = useState("");
+  const [numbers, setNumbers] = useState<string[]>([]);
+  const [progress, setProgress] = useState<Progress>({});
+
+  const generate = async () => {
+    setBusy(true);
+    setError("");
+    setRawText("");
+    try {
+      const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
+      const result = await api.generateStructure(project.name, {
+        target_chapters: n, instructions,
+      });
+      if (result.status === "format_error") {
+        setError("AI 응답을 형식에 맞게 읽지 못했습니다. 원문을 확인하고 다시 생성해 주세요.");
+        setRawText(result.raw_text);
+      } else if (result.structure) {
+        setDraft(result.structure.chapters);
+        setDraftGenerated(true);
+        setNumbers(result.unverified_numbers);
+      }
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const update = (i: number, patch: Partial<Chapter>) => {
+    setDraft(draft.map((c, j) => (j === i ? { ...c, ...patch } : c)));
+  };
+  const move = (i: number, delta: number) => {
+    const j = i + delta;
+    if (j < 0 || j >= draft.length) return;
+    const next = [...draft];
+    [next[i], next[j]] = [next[j], next[i]];
+    setDraft(next);
+  };
+  const remove = (i: number) => setDraft(draft.filter((_, j) => j !== i));
+  const add = () => {
+    setDraft([...draft, {
+      id: nextChapterId(draft), topic: "새 장", conclusion: "",
+      template: "bullet_box", source_refs: [],
+    }]);
+  };
+
+  const approve = async () => {
+    // AI 재생성 초안은 장 id가 재부여되어 옛 슬라이드와의 대응이 보장되지 않으므로 전면 교체한다 (결정 15).
+    // 기존 구조안을 손으로 고친 경우에만 id와 템플릿이 일치하는 슬라이드를 계승한다
+    const draftById = new Map(draft.map((c) => [c.id, c]));
+    const kept = draftGenerated ? [] : deck.slides.filter((s) => {
+      const ch = draftById.get(s.chapter_id);
+      return ch !== undefined && ch.template === s.slots.template;
+    });
+    const droppedCount = deck.slides.length - kept.length;
+    if (droppedCount > 0) {
+      const ok = window.confirm(
+        draftGenerated
+          ? `새 구조안을 승인하면 기존 장 내용 ${droppedCount}개를 지우고 전부 새로 생성합니다. 계속할까요?`
+          : `구조안 변경으로 기존 장 내용 ${droppedCount}개가 사라집니다. 계속할까요?`,
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
+      await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
+      onDeckChange(current);
+      const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
+      setProgress(Object.fromEntries(targets.map((c) => [c.id, "대기"])));
+      let failed = false;
+      for (const chapter of targets) {
+        setProgress((p) => ({ ...p, [chapter.id]: "생성 중" }));
+        let result: ChapterResult;
+        try {
+          result = await api.generateChapter(project.name, chapter.id);
+        } catch (e) {
+          setError(messageOf(e));
+          setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
+          failed = true;
+          continue;
+        }
+        if (result.status !== "ok" || !result.slots) {
+          setError("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 시도해 주세요.");
+          setRawText(result.raw_text);
+          setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
+          failed = true;
+          continue;
+        }
+        current = { ...current, slides: [...current.slides, { chapter_id: chapter.id, slots: result.slots }] };
+        await api.putDeck(project.name, current, false);
+        onDeckChange(current);
+        setNumbers((n) => [...new Set([...n, ...result.unverified_numbers])]);
+        setProgress((p) => ({ ...p, [chapter.id]: "완료" }));
+      }
+      if (!failed) onDone();
+    } catch (e) {
+      setError(messageOf(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="structure-screen">
+      {error && <p role="alert">{error}</p>}
+      {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
+      {numbers.length > 0 && (
+        <p className="number-warning">자료에서 찾지 못한 수치가 있습니다: {numbers.join(", ")}. 반영 전에 확인해 주세요.</p>
+      )}
+      <section>
+        <h2>구조안</h2>
+        <label>목표 장수 (비우면 AI가 정함)
+          <input aria-label="목표 장수" type="number" min={1} value={targetChapters}
+            onChange={(e) => setTargetChapters(e.target.value)} />
+        </label>
+        <label>지시사항
+          <textarea aria-label="지시사항" value={instructions}
+            onChange={(e) => setInstructions(e.target.value)} />
+        </label>
+        <button onClick={generate} disabled={busy}>
+          {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
+        </button>
+        {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
+        {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
+      </section>
+      {draft.length > 0 && (
+        <section>
+          <h2>장 구성</h2>
+          <table>
+            <thead>
+              <tr><th>순서</th><th>주제</th><th>결론 한 줄</th><th>템플릿</th><th></th></tr>
+            </thead>
+            <tbody>
+              {draft.map((c, i) => (
+                <tr key={c.id}>
+                  <td>
+                    <button aria-label={`${c.topic} 위로`} onClick={() => move(i, -1)}>위</button>
+                    <button aria-label={`${c.topic} 아래로`} onClick={() => move(i, 1)}>아래</button>
+                  </td>
+                  <td><input aria-label={`${i + 1}번 장 주제`} value={c.topic}
+                    onChange={(e) => update(i, { topic: e.target.value })} /></td>
+                  <td><input aria-label={`${i + 1}번 장 결론`} value={c.conclusion ?? ""}
+                    onChange={(e) => update(i, { conclusion: e.target.value })} /></td>
+                  <td>
+                    <select aria-label={`${i + 1}번 장 템플릿`} value={c.template}
+                      onChange={(e) => update(i, { template: e.target.value as TemplateName })}>
+                      {Object.entries(TEMPLATE_LABELS).map(([v, label]) => (
+                        <option key={v} value={v}>{label}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    <button aria-label={`${c.topic} 삭제`} onClick={() => remove(i)}>삭제</button>
+                    {progress[c.id] && <span> {progress[c.id]}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button onClick={add}>장 추가</button>
+          <button onClick={approve} disabled={busy || draft.length === 0}>승인하고 내용 생성</button>
+        </section>
+      )}
+    </div>
+  );
+}
