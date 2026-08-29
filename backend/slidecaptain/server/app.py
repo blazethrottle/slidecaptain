@@ -140,9 +140,14 @@ def create_app(store: ProjectStore, provider: AIProvider | None = None) -> FastA
         return store.load_deck(name)
 
     @app.put("/api/projects/{name}/deck", response_model=OkResponse)
-    def put_deck(name: str, deck: Deck):
+    def put_deck(name: str, deck: Deck, snapshot: bool = True):
         _preset_for(deck)
-        store.save_deck(name, deck)
+        store.save_deck(name, deck, snapshot=snapshot)
+        return OkResponse()
+
+    @app.post("/api/projects/{name}/snapshots", response_model=OkResponse, status_code=201)
+    def create_snapshot(name: str):
+        store.snapshot_now(name)
         return OkResponse()
 
     @app.get("/api/projects/{name}/render-plan", response_model=RenderPlan)

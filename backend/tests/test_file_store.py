@@ -214,3 +214,20 @@ def test_global_preset_corrupt_file_message(tmp_path):
     with pytest.raises(StorageError) as exc_info:
         store.load_global_preset()
     assert "preset.json" in str(exc_info.value)
+
+
+def test_save_deck_without_snapshot(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    store.create_project("p1")
+    deck = store.load_deck("p1")
+    store.save_deck("p1", deck, snapshot=False)
+    assert store.list_snapshots("p1") == []
+    store.save_deck("p1", deck)  # 기본값은 여전히 스냅샷을 남긴다
+    assert len(store.list_snapshots("p1")) == 1
+
+
+def test_snapshot_now(tmp_path):
+    store = FileProjectStore(tmp_path / "projects")
+    store.create_project("p1")
+    store.snapshot_now("p1")
+    assert len(store.list_snapshots("p1")) == 1

@@ -96,3 +96,19 @@ def test_preset_put_below_floor_422(client):
     preset = client.get("/api/preset").json()
     preset["font_roles"]["body_pt"] = 5.0
     assert client.put("/api/preset", json=preset).status_code == 422
+
+
+def test_put_deck_snapshot_query(client):
+    client.post("/api/projects", json={"name": "p1", "title": "제목"})
+    deck = client.get("/api/projects/p1/deck").json()
+    client.put("/api/projects/p1/deck?snapshot=false", json=deck)
+    assert client.get("/api/projects/p1/snapshots").json() == []
+    client.put("/api/projects/p1/deck", json=deck)  # 기본값은 스냅샷
+    assert len(client.get("/api/projects/p1/snapshots").json()) == 1
+
+
+def test_explicit_snapshot_endpoint(client):
+    client.post("/api/projects", json={"name": "p1"})
+    r = client.post("/api/projects/p1/snapshots")
+    assert r.status_code == 201
+    assert len(client.get("/api/projects/p1/snapshots").json()) == 1
