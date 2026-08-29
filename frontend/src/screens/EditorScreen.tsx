@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { Deck, ProjectInfo } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
+import { GeneratePanel } from "../editor/GeneratePanel";
 import { Preview, type FrameRef, type TextRef } from "../editor/Preview";
 import { PropertyPanel } from "../editor/PropertyPanel";
 import { applyTextEdit, reorderChapters } from "../editor/slotOps";
@@ -64,6 +65,10 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
           <PropertyPanel deck={editor.deck} chapterId={chapterId} onApply={editor.apply} />
         )}
         <DesignPanel deck={editor.deck} onApply={editor.apply} />
+        {chapterId && (
+          <GeneratePanel project={project} deck={editor.deck} chapterId={chapterId}
+            onReplace={editor.replace} />
+        )}
         {slide && slide.warnings.length > 0 && (
           <section>
             <h3>분량 경고</h3>
