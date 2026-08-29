@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type Deck } from "../api/client";
@@ -86,5 +87,49 @@ it("기존 슬라이드가 사라지는 승인은 확인을 거친다", async ()
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   expect(confirmSpy).toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();  // 취소했으므로 반영 없음
+  confirmSpy.mockRestore();
+});
+
+it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공분을 계승한다", async () => {
+  // onDeckChange를 실제 화면(ProjectView)처럼 상태로 반영해야 재승인 시 deck.slides에
+  // 직전 성공분(c1)이 반영된다: 실제 앱과 어긋나는 no-op 콜백으로는 이 시나리오를 재현할 수 없다
+  function Wrapper({ onDone }: { onDone: () => void }) {
+    const [deck, setDeck] = useState<Deck>(emptyDeck());
+    return <StructureScreen project={project} deck={deck} onDeckChange={setDeck} onDone={onDone} />;
+  }
+
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter)
+    .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+      format_retried: false, condensed: false,
+      slots: { template: "cover", title: "제목", subtitle: "", date: "", audience: "" } })
+    .mockResolvedValueOnce({ status: "format_error", slots: null, raw_text: "깨진 응답",
+      warnings: [], unverified_numbers: [], format_retried: true, condensed: false });
+  const onDone = vi.fn();
+  render(<Wrapper onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  // 첫 승인은 빈 덱에서 시작하므로(구조안 생성 직후 draftGenerated=true, deck.slides=[]) 사라질 슬라이드가 없어
+  // window.confirm이 뜨지 않는다: 그래도 실행 경로에 있으면 안전하게 진행되도록 true로 스파이해 둔다
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByText(/실패한 장만 다시 시도/);
+  expect(onDone).not.toHaveBeenCalled();
+
+  // 재승인: setDraftGenerated(false) 정정 덕분에 deck.slides의 c1이 계승되어(kept) 실패한 c2만 재생성 대상이 된다
+  vi.mocked(api.generateChapter).mockResolvedValueOnce({
+    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    format_retried: false, condensed: false,
+    slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(onDone).toHaveBeenCalled());
+  // generateChapter는 총 3회만 불렸다(1회차 c1 성공, c2 실패 + 2회차 c2 재시도뿐, c1은 다시 부르지 않는다)
+  const calls = vi.mocked(api.generateChapter).mock.calls;
+  expect(calls).toHaveLength(3);
+  expect(calls[2][1]).toBe("c2");
   confirmSpy.mockRestore();
 });

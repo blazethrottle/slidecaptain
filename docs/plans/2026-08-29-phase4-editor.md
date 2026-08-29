@@ -1938,6 +1938,8 @@ git commit -m "feat: 프로젝트 화면 골격과 자료, 보고 정보 입력"
 
 ### Task 10: 구조안 생성과 승인 화면 (장별 순차 생성 포함)
 
+> 2026-08-29 태스크 리뷰 정정: 승인 저장 성공 직후 setDraftGenerated(false)를 추가한다. 부분 실패 후 재승인이 성공분을 지우고 전량 재생성하는 결함(리뷰 발견)의 수리이며, 결정 15의 의도(재생성 승인의 전면 교체는 최초 승인에 한정)와 정합.
+
 **Files:**
 - Create: `frontend/src/screens/StructureScreen.tsx`, `frontend/src/editor/labels.ts`
 - Modify: `frontend/src/screens/ProjectView.tsx` (구조안 탭 배선)
@@ -2163,6 +2165,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
       let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
       await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
       onDeckChange(current);
+      setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
       setProgress(Object.fromEntries(targets.map((c) => [c.id, "대기"])));
       let failed = false;

@@ -95,6 +95,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone }: {
       let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
       await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
       onDeckChange(current);
+      setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
       setProgress(Object.fromEntries(targets.map((c) => [c.id, "대기"])));
       let failed = false;
