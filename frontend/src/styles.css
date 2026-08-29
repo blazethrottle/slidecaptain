@@ -1,0 +1,5 @@
+:root { font-family: "Noto Sans KR", sans-serif; color: #202020; }
+body { margin: 0; }
+main { padding: 16px; }
+button { cursor: pointer; }
+[role="alert"] { color: #b00020; }
