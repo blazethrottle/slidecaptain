@@ -1,0 +1,2 @@
+# 배치 파일은 cmd.exe가 CRLF를 전제한다 (goto 라벨 탐색이 LF 전용 파일에서 어긋날 수 있음). 2026-08-31
+*.bat text eol=crlf
