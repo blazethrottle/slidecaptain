@@ -19,6 +19,9 @@ export type CapacityWarning = components["schemas"]["CapacityWarning"];
 export type StructureResult = components["schemas"]["StructureResult"];
 export type ChapterResult = components["schemas"]["ChapterResult"];
 export type TemplateName = Chapter["template"];
+export type UploadResult = components["schemas"]["UploadResult"];
+export type AppStatus = components["schemas"]["AppStatus"];
+export type LoginStatus = components["schemas"]["LoginStatus"];
 
 export class ApiError extends Error {
   constructor(public status: number, detail: string) {
@@ -30,18 +33,21 @@ export function messageOf(e: unknown): string {
   return e instanceof ApiError ? e.message : "서버에 연결하지 못했습니다. 앱을 다시 시작해 주세요.";
 }
 
+async function throwIfFailed(r: Response): Promise<void> {
+  if (r.ok) return;
+  let detail = "요청이 실패했습니다. 잠시 후 다시 시도해 주세요.";
+  try {
+    const body = await r.json();
+    if (typeof body.detail === "string") detail = body.detail;
+  } catch {
+    // JSON 본문이 아니면 기본 문구 유지
+  }
+  throw new ApiError(r.status, detail);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
-  if (!r.ok) {
-    let detail = "요청이 실패했습니다. 잠시 후 다시 시도해 주세요.";
-    try {
-      const body = await r.json();
-      if (typeof body.detail === "string") detail = body.detail;
-    } catch {
-      // JSON 본문이 아니면 기본 문구 유지
-    }
-    throw new ApiError(r.status, detail);
-  }
+  await throwIfFailed(r);
   return r.json() as Promise<T>;
 }
 
@@ -68,6 +74,16 @@ export const api = {
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/sources/${enc(file)}`, {
       method: "PUT", body: JSON.stringify({ text }),
     }),
+  uploadSource: async (name: string, file: File, overwrite: boolean) => {
+    // 파일 본문을 원시 바이트로 보낸다. request()의 JSON 헤더를 붙이지 않는다 (서버는 Content-Type을 보지 않는다)
+    const r = await fetch(
+      `/api/projects/${enc(name)}/sources/${enc(file.name)}/upload?overwrite=${overwrite}`,
+      { method: "POST", body: file },
+    );
+    await throwIfFailed(r);
+    return r.json() as Promise<UploadResult>;
+  },
+  getStatus: () => request<AppStatus>("/api/status"),
   listSnapshots: (name: string) => request<SnapshotInfo[]>(`/api/projects/${enc(name)}/snapshots`),
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),

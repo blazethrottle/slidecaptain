@@ -19,3 +19,7 @@ button { cursor: pointer; }
 .structure-screen textarea { width: 100%; min-height: 110px; font: inherit; box-sizing: border-box; }
 .structure-screen input[type="number"] { width: 8em; }
 .structure-screen .actions { margin-top: 8px; }
+
+/* 자료 화면: 끌어다 놓기 영역과 성공 안내 (파일럿 관찰 1. 2026-09-01) */
+.sources-screen .drop-zone { border: 2px dashed #9AA5B1; border-radius: 6px; padding: 12px; margin: 8px 0; max-width: 640px; }
+.sources-screen .info { color: #1F4E79; }

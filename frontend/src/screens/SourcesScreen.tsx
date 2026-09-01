@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, messageOf, type Deck, type ProjectInfo } from "../api/client";
+import { api, ApiError, messageOf, type Deck, type ProjectInfo } from "../api/client";
 
 const REPORT_TYPES = [
   ["research", "연구분석"],
@@ -18,6 +18,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
   const [newName, setNewName] = useState("");
   const [meta, setMeta] = useState(deck.meta);
   const [notice, setNotice] = useState("");
+  const [info, setInfo] = useState("");  // 성공 안내 (오류 영역과 분리, 파일럿 관찰 1)
 
   const reload = () => {
     api.listSources(project.name).then(setFiles).catch((e) => setNotice(messageOf(e)));
@@ -58,6 +59,37 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
     }
   };
 
+  const importFiles = async (list: FileList | File[]) => {
+    const items = Array.from(list);
+    if (items.length === 0) return;
+    let added = 0;
+    let skipped = 0;
+    let last: string | null = null;
+    const failures: string[] = [];
+    for (const f of items) {
+      try {
+        try {
+          await api.uploadSource(project.name, f, false);
+        } catch (e) {
+          if (!(e instanceof ApiError) || e.status !== 409) throw e;
+          if (!window.confirm(`같은 이름의 자료 ${f.name}이(가) 이미 있습니다. 덮어쓸까요?`)) {
+            skipped += 1;
+            continue;
+          }
+          await api.uploadSource(project.name, f, true);
+        }
+        added += 1;
+        last = f.name;
+      } catch (e) {
+        failures.push(`${f.name}: ${messageOf(e)}`);
+      }
+    }
+    reload();
+    if (last !== null) await open(last);  // open이 notice를 비우므로 안내 문구는 그 뒤에 쓴다
+    setInfo(`${added}개 자료를 추가했습니다.` + (skipped > 0 ? ` 건너뜀 ${skipped}개.` : ""));
+    if (failures.length > 0) setNotice(`올리지 못한 파일: ${failures.join(" / ")}`);
+  };
+
   const saveMeta = async () => {
     const updated = { ...deck, meta };
     try {
@@ -72,6 +104,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
   return (
     <div className="sources-screen">
       {notice && <p role="alert">{notice}</p>}
+      {info && <p className="info">{info}</p>}
       <section>
         <h2>보고 정보</h2>
         <label>보고서 제목
@@ -98,6 +131,17 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
             <li key={f}><button onClick={() => open(f)}>{f}</button></li>
           ))}
         </ul>
+        <div className="drop-zone"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); void importFiles(e.dataTransfer.files); }}>
+          <p>파일을 여기에 끌어다 놓거나 아래에서 선택하세요. 지금은 .md, .txt, .csv만 되고, 생성 시 자료 합계 10만 자 한도가 적용됩니다.</p>
+          <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv"
+            onChange={(e) => {
+              const picked = e.target.files;
+              if (picked) void importFiles(picked);
+              e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
+            }} />
+        </div>
         <input aria-label="새 자료 이름" placeholder="새 자료 이름"
           value={newName} onChange={(e) => setNewName(e.target.value)} />
         <button onClick={addFile} disabled={!newName.trim()}>자료 추가</button>
