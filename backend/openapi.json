@@ -664,6 +664,24 @@
         }
       }
     },
+    "/api/status": {
+      "get": {
+        "summary": "Get Status",
+        "operationId": "get_status_api_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{name}/generate/structure": {
       "post": {
         "summary": "Generate Structure",
@@ -832,6 +850,50 @@
   },
   "components": {
     "schemas": {
+      "AppStatus": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "login": {
+            "$ref": "#/components/schemas/LoginStatus"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "last_generation_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Generation At"
+          },
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "login",
+          "checked_at"
+        ],
+        "title": "AppStatus"
+      },
       "Bullet": {
         "properties": {
           "text": {
@@ -1557,6 +1619,67 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LoginStatus": {
+        "properties": {
+          "logged_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logged In"
+          },
+          "auth_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Method"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "cli_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cli Version"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "title": "LoginStatus"
       },
       "OkResponse": {
         "properties": {

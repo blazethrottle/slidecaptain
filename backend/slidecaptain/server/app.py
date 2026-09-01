@@ -3,6 +3,9 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
+import time
+from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path, PureWindowsPath
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,6 +21,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Deck, Slots
 from slidecaptain.models.preset import Preset, apply_overrides
 from slidecaptain.models.render import RenderPlan
+from slidecaptain.pipeline.auth_status import LoginStatus, check_login
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.service import ChapterResult, GenerationService, StructureResult
 from slidecaptain.storage.file_store import (
@@ -47,6 +51,7 @@ _STATUS_BY_ERROR = [
 _SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
 _UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
 _UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+_LOGIN_CACHE_SEC = 60.0  # 새로고침마다 CLI 프로세스를 띄우지 않는다
 
 _VALIDATION_TYPE_MESSAGES = {
     "missing": "필수 값이 빠졌습니다",
@@ -77,6 +82,14 @@ class OkResponse(BaseModel):
 class UploadResult(BaseModel):
     filename: str
     chars: int
+
+
+class AppStatus(BaseModel):
+    provider: str  # "subscription" 또는 "none"
+    login: LoginStatus
+    model: str | None = None
+    last_generation_at: str | None = None  # 프로세스 메모리에만 기록, 재시작 시 초기화
+    checked_at: str
 
 
 class ExportResult(BaseModel):
@@ -111,11 +124,25 @@ def _validated_preset(deck: Deck, base: Preset | None = None) -> Preset:
 
 
 def create_app(
-    store: ProjectStore, provider: AIProvider | None = None, static_dir: Path | None = None
+    store: ProjectStore,
+    provider: AIProvider | None = None,
+    static_dir: Path | None = None,
+    login_checker: Callable[[], LoginStatus] | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Slide Captain", version="0.2.0")
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
     service = GenerationService(provider, metrics) if provider is not None else None
+    checker = login_checker or check_login
+    # 앱 상태 (계획서 2026-09-01 태스크 4): 로그인 확인 캐시와 마지막 생성 성공 시각. 파일에 남기지 않는다
+    status_state: dict = {"login": None, "login_at_mono": 0.0, "checked_at": "", "last_generation_at": None}
+
+    def _now_iso() -> str:
+        return datetime.now().astimezone().isoformat(timespec="seconds")
+
+    def _record_success(result) -> None:
+        """구조안 생성, 장별 생성, 축약이 status == "ok"로 끝나면 마지막 성공 시각을 갱신한다."""
+        if getattr(result, "status", None) == "ok":
+            status_state["last_generation_at"] = _now_iso()
 
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -268,12 +295,30 @@ def create_app(
         store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
         return UploadResult(filename=filename, chars=len(text))
 
+    @app.get("/api/status", response_model=AppStatus)
+    def get_status():
+        # 동기 함수라 스레드풀에서 실행된다: CLI 프로세스 대기가 이벤트 루프를 막지 않는다
+        now = time.monotonic()
+        if status_state["login"] is None or now - status_state["login_at_mono"] > _LOGIN_CACHE_SEC:
+            status_state["login"] = checker()
+            status_state["login_at_mono"] = now
+            status_state["checked_at"] = _now_iso()
+        return AppStatus(
+            provider="subscription" if provider is not None else "none",
+            login=status_state["login"],
+            model=getattr(provider, "model", None),
+            last_generation_at=status_state["last_generation_at"],
+            checked_at=status_state["checked_at"],
+        )
+
     @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
     async def generate_structure(name: str, req: GenerateStructureRequest):
         svc = _require_service()
         deck = store.load_deck(name)
         sources = _load_sources(name)
-        return await svc.generate_structure(deck.meta, sources, req.target_chapters, req.instructions)
+        result = await svc.generate_structure(deck.meta, sources, req.target_chapters, req.instructions)
+        _record_success(result)
+        return result
 
     @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult)
     async def generate_chapter(name: str, chapter_id: str, req: GenerateChapterRequest):
@@ -283,7 +328,9 @@ def create_app(
             raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
         preset = _preset_for(deck)
         sources = _load_sources(name)
-        return await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions)
+        result = await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions)
+        _record_success(result)
+        return result
 
     @app.post(
         "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
@@ -303,7 +350,9 @@ def create_app(
             )
         preset = _preset_for(deck)
         sources = _load_sources(name)
-        return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
+        result = await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
+        _record_success(result)
+        return result
 
     if static_dir is not None and static_dir.is_dir():
         # 빌드된 화면을 같은 주소에서 서빙한다 (결정 7). API 라우트가 먼저 등록되어 우선한다
