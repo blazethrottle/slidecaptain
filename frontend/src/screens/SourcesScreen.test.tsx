@@ -148,3 +148,13 @@ it("보고 정보의 입력 항목이 각각 한 줄을 차지한다", async () 
   expect(new Set(fields).size).toBe(fields.length);
   expect(screen.getByLabelText("새 자료 이름").closest(".field")).not.toBeNull();
 });
+
+it("자료 내용 편집 영역도 세로 배치다", async () => {
+  vi.mocked(api.listSources).mockResolvedValue(["자료.md"]);
+  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.click(await screen.findByText("자료.md"));
+  const area = await screen.findByLabelText("자료 내용");
+  expect(area.closest(".field")).not.toBeNull();
+  expect(screen.getByText("자료 저장").closest(".actions")).not.toBeNull();
+});

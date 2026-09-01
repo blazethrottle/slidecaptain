@@ -153,7 +153,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
             }} />
         </div>
         <div className="field">
-          <label>새 자료 이름 <span className="hint">(붙여넣기용 빈 자료를 만듭니다. 파일이 있으면 위에서 올리세요)</span>
+          <label>새 자료 이름 <span className="hint">(붙여넣기용 빈 자료를 만듭니다)</span>
             <input aria-label="새 자료 이름" placeholder="예: 리서치.md"
               value={newName} onChange={(e) => setNewName(e.target.value)} />
           </label>
@@ -164,9 +164,13 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
         {selected !== null && (
           <div>
             <h3>{selected}</h3>
-            <textarea aria-label="자료 내용" rows={16} value={text}
-              onChange={(e) => setText(e.target.value)} />
-            <button onClick={saveText}>자료 저장</button>
+            <div className="field">
+              <textarea aria-label="자료 내용" rows={16} value={text}
+                onChange={(e) => setText(e.target.value)} />
+            </div>
+            <div className="actions">
+              <button onClick={saveText}>자료 저장</button>
+            </div>
           </div>
         )}
       </section>

@@ -22,7 +22,7 @@ button { cursor: pointer; }
 }
 .field textarea { min-height: 110px; }
 .field input[type="number"] { width: 8em; }
-.field .hint { color: #4A5560; font-size: 0.9em; font-weight: normal; }
+.hint { color: #4A5560; font-size: 0.9em; font-weight: normal; }
 .actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: 0.85em; color: #4A5560; }

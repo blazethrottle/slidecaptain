@@ -28,4 +28,6 @@ it("장 목록은 주제와 템플릿을 별도 줄로 보여준다", () => {
   const template = screen.getAllByText("템플릿: 불릿 + 강조박스")[0];
   expect(template).toHaveClass("chapter-template");
   expect(template.previousElementSibling).toHaveTextContent("1. 가");
+  expect(template.previousElementSibling).toHaveTextContent("내용 없음");  // 상태 배지는 주제 줄에 붙는다
+  expect(screen.getAllByRole("button")[0]).toHaveAccessibleName("1. 가 내용 없음 템플릿: 불릿 + 강조박스");
 });
