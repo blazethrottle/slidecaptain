@@ -139,3 +139,12 @@ describe("자료 파일 업로드", () => {
     expect(alert).toHaveTextContent("지원하지 않는 형식입니다");
   });
 });
+
+it("보고 정보의 입력 항목이 각각 한 줄을 차지한다", async () => {
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  const fields = ["보고서 제목", "보고 유형", "피보고자"].map((l) => screen.getByLabelText(l).closest(".field"));
+  fields.forEach((f) => expect(f).not.toBeNull());
+  expect(new Set(fields).size).toBe(fields.length);
+  expect(screen.getByLabelText("새 자료 이름").closest(".field")).not.toBeNull();
+});

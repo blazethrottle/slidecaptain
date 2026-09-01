@@ -67,3 +67,9 @@ it("장을 전환하면 이전 장의 결과 패널이 사라진다", async () =
   rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" onReplace={() => {}} />);
   expect(screen.queryByText("반영")).not.toBeInTheDocument();
 });
+
+it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다", () => {
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  expect(screen.getByLabelText("재생성 지시사항").closest(".field")).not.toBeNull();
+  expect(screen.getByText("이 장 다시 생성").closest(".actions")).not.toBeNull();
+});

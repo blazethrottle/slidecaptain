@@ -115,3 +115,13 @@ describe("AI 연결 상태 한 줄", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+it("새 프로젝트의 이름과 제목 입력이 각각 한 줄을 차지한다", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([]);
+  render(<ProjectList onOpen={() => {}} />);
+  const name = screen.getByLabelText("프로젝트 이름").closest(".field");
+  const title = screen.getByLabelText("보고서 제목").closest(".field");
+  expect(name).not.toBeNull();
+  expect(title).not.toBeNull();
+  expect(name).not.toBe(title);
+});

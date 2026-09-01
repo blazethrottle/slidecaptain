@@ -40,7 +40,7 @@ export function DesignPanel({ deck, onApply }: {
     <details className="design-panel">
       <summary>디자인 값 (이 덱에만 적용)</summary>
       {FONT_FIELDS.map(([key, label, min]) => (
-        <label key={key}>{label}
+        <div className="field" key={key}><label>{label}
           {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
           <input key={`${key}:${fontValue(key)}`} aria-label={label} type="number" min={min} step={0.5}
             defaultValue={fontValue(key)}
@@ -50,10 +50,10 @@ export function DesignPanel({ deck, onApply }: {
                 onApply((d) => setPresetOverride(d, "font_roles", key, v));
               }
             }} />
-        </label>
+        </label></div>
       ))}
       {COLOR_FIELDS.map(([key, label]) => (
-        <label key={key}>{label}
+        <div className="field" key={key}><label>{label}
           {/* 값 기반 key: 언두 등으로 덱이 바뀌면 리마운트되어 표시값이 항상 덱 상태를 따른다 */}
           <input key={`${key}:${colorValue(key)}`} aria-label={label} type="color" defaultValue={`#${colorValue(key)}`}
             onBlur={(e) => {
@@ -63,7 +63,7 @@ export function DesignPanel({ deck, onApply }: {
                 onApply((d) => setPresetOverride(d, "colors", key, hex));
               }
             }} />
-        </label>
+        </label></div>
       ))}
       <p className="hint">글자 크기 하한(본문 12pt, 각주 9pt)보다 작게는 저장되지 않습니다. 프리셋 자체에 저장하는 기능은 다음 단계에서 제공합니다.</p>
     </details>

@@ -63,12 +63,16 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   return (
     <section className="generate-panel">
       <h4>AI 다시 쓰기</h4>
-      <label>지시사항 (선택)
-        <textarea aria-label="재생성 지시사항" value={instructions}
-          onChange={(e) => setInstructions(e.target.value)} />
-      </label>
-      <button onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
-      <button onClick={condense} disabled={busy || !slide}>이 장 축약</button>
+      <div className="field">
+        <label>지시사항 (선택)
+          <textarea aria-label="재생성 지시사항" value={instructions}
+            onChange={(e) => setInstructions(e.target.value)} />
+        </label>
+      </div>
+      <div className="actions">
+        <button onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
+        <button onClick={condense} disabled={busy || !slide}>이 장 축약</button>
+      </div>
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
       {error && <p role="alert">{error}</p>}
       {result && result.status === "format_error" && (

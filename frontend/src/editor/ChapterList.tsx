@@ -28,7 +28,8 @@ export function ChapterList({ deck, plan, selected, onSelect, onReorder }: {
           onDragEnd={() => { dragFrom.current = null; }}
         >
           <button aria-pressed={selected === c.id} onClick={() => onSelect(c.id)}>
-            {i + 1}. {c.topic} <small>{TEMPLATE_LABELS[c.template]}</small>
+            <span className="chapter-topic">{i + 1}. {c.topic}</span>
+            <span className="chapter-template">템플릿: {TEMPLATE_LABELS[c.template]}</span>
             {!generated.has(c.id) && <em> 내용 없음</em>}
             {warned.has(c.id) && <strong className="warn-badge"> 분량 주의</strong>}
           </button>

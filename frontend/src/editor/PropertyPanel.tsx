@@ -46,11 +46,14 @@ export function PropertyPanel({ deck, chapterId, onApply }: {
   return (
     <div className="property-panel">
       <h3>{TEMPLATE_LABELS[chapter.template]}</h3>
-      <label>장 주제
-        <input aria-label="장 주제" value={topic}
-          onChange={(e) => setTopic(e.target.value)} onBlur={commitTopic} />
-      </label>
-      <label>템플릿
+      <div className="field">
+        <label>장 주제
+          <input aria-label="장 주제" value={topic}
+            onChange={(e) => setTopic(e.target.value)} onBlur={commitTopic} />
+        </label>
+      </div>
+      <div className="field">
+        <label>템플릿
         <select aria-label="템플릿" value={chapter.template}
           onChange={(e) => {
             const to = e.target.value as TemplateName;
@@ -67,7 +70,8 @@ export function PropertyPanel({ deck, chapterId, onApply }: {
             <option key={v} value={v}>{label}</option>
           ))}
         </select>
-      </label>
+        </label>
+      </div>
       {slots?.template === "bullet_box" && bulletSection("본문 불릿", "bullets", slots.bullets ?? [])}
       {slots?.template === "summary" && bulletSection("요점", "points", slots.points ?? [])}
       {slots?.template === "compare2" && (

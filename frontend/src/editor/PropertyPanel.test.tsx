@@ -32,3 +32,12 @@ it("불릿 추가 버튼이 동작한다", async () => {
   const slots = edit(deck).slides[0].slots;
   expect(slots.template === "bullet_box" && slots.bullets).toHaveLength(2);
 });
+
+it("장 주제와 템플릿이 각각 한 줄을 차지한다", () => {
+  render(<PropertyPanel deck={deck} chapterId="c1" onApply={() => {}} />);
+  const topic = screen.getByLabelText("장 주제").closest(".field");
+  const template = screen.getByLabelText("템플릿").closest(".field");
+  expect(topic).not.toBeNull();
+  expect(template).not.toBeNull();
+  expect(topic).not.toBe(template);
+});

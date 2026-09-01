@@ -22,3 +22,10 @@ it("드래그로 순서를 바꾼다", () => {
   fireEvent.drop(items[1]);
   expect(onReorder).toHaveBeenCalledWith(0, 1);
 });
+
+it("장 목록은 주제와 템플릿을 별도 줄로 보여준다", () => {
+  render(<ChapterList deck={deck} plan={null} selected={null} onSelect={() => {}} />);
+  const template = screen.getAllByText("템플릿: 불릿 + 강조박스")[0];
+  expect(template).toHaveClass("chapter-template");
+  expect(template.previousElementSibling).toHaveTextContent("1. 가");
+});

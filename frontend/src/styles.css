@@ -13,12 +13,19 @@ button { cursor: pointer; }
 .editor-screen { display: grid; grid-template-columns: 220px 1fr 280px; gap: 12px; }
 .warn-badge { color: #B00020; }
 
-/* 구조안 폼: 목표 장수와 지시사항을 각각 한 줄로, 입력란은 넉넉하게 (파일럿 관찰 2, 3. 2026-09-01) */
-.structure-screen .field { max-width: 640px; margin: 8px 0; }
-.structure-screen .field label { display: grid; gap: 4px; }
-.structure-screen textarea { width: 100%; min-height: 110px; font: inherit; box-sizing: border-box; }
-.structure-screen input[type="number"] { width: 8em; }
-.structure-screen .actions { margin-top: 8px; }
+/* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다
+   (파일럿 관찰 2, 3은 구조안 한정이었고, 관찰 7로 전 화면에 승격. 2026-09-01) */
+.field { max-width: 640px; margin: 8px 0; }
+.field label { display: grid; gap: 4px; }
+.field input:not([type="number"]):not([type="color"]), .field select, .field textarea {
+  width: 100%; box-sizing: border-box; font: inherit;
+}
+.field textarea { min-height: 110px; }
+.field input[type="number"] { width: 8em; }
+.field .hint { color: #4A5560; font-size: 0.9em; font-weight: normal; }
+.actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.chapter-list .chapter-topic { display: block; }
+.chapter-list .chapter-template { display: block; font-size: 0.85em; color: #4A5560; }
 
 /* 자료 화면: 끌어다 놓기 영역과 성공 안내 (파일럿 관찰 1. 2026-09-01) */
 .sources-screen .drop-zone { border: 2px dashed #9AA5B1; border-radius: 6px; padding: 12px; margin: 8px 0; max-width: 640px; }

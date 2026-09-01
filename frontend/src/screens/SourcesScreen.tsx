@@ -109,21 +109,29 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
       {info && <p className="info">{info}</p>}
       <section>
         <h2>보고 정보</h2>
-        <label>보고서 제목
-          <input aria-label="보고서 제목" value={meta.title}
-            onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
-        </label>
-        <label>보고 유형
-          <select aria-label="보고 유형" value={meta.report_type}
-            onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
-            {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-          </select>
-        </label>
-        <label>피보고자
-          <input aria-label="피보고자" value={meta.audience ?? ""}
-            onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
-        </label>
-        <button onClick={saveMeta}>보고 정보 저장</button>
+        <div className="field">
+          <label>보고서 제목
+            <input aria-label="보고서 제목" value={meta.title}
+              onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
+          </label>
+        </div>
+        <div className="field">
+          <label>보고 유형
+            <select aria-label="보고 유형" value={meta.report_type}
+              onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
+              {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="field">
+          <label>피보고자
+            <input aria-label="피보고자" value={meta.audience ?? ""}
+              onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
+          </label>
+        </div>
+        <div className="actions">
+          <button onClick={saveMeta}>보고 정보 저장</button>
+        </div>
       </section>
       <section>
         <h2>입력 자료</h2>
@@ -144,9 +152,15 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
               e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
             }} />
         </div>
-        <input aria-label="새 자료 이름" placeholder="새 자료 이름"
-          value={newName} onChange={(e) => setNewName(e.target.value)} />
-        <button onClick={addFile} disabled={!newName.trim()}>자료 추가</button>
+        <div className="field">
+          <label>새 자료 이름 <span className="hint">(붙여넣기용 빈 자료를 만듭니다. 파일이 있으면 위에서 올리세요)</span>
+            <input aria-label="새 자료 이름" placeholder="예: 리서치.md"
+              value={newName} onChange={(e) => setNewName(e.target.value)} />
+          </label>
+          <div className="actions">
+            <button onClick={addFile} disabled={!newName.trim()}>자료 추가</button>
+          </div>
+        </div>
         {selected !== null && (
           <div>
             <h3>{selected}</h3>

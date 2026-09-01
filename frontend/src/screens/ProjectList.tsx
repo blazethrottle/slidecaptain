@@ -50,11 +50,21 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
       {error && <p role="alert">{error}</p>}
       <section>
         <h2>새 프로젝트</h2>
-        <input aria-label="프로젝트 이름" placeholder="프로젝트 이름"
-          value={name} onChange={(e) => setName(e.target.value)} />
-        <input aria-label="보고서 제목" placeholder="보고서 제목 (비우면 이름과 같음)"
-          value={title} onChange={(e) => setTitle(e.target.value)} />
-        <button onClick={create} disabled={!name.trim()}>만들기</button>
+        <div className="field">
+          <label>프로젝트 이름
+            <input aria-label="프로젝트 이름" placeholder="예: 9월 시장 조사"
+              value={name} onChange={(e) => setName(e.target.value)} />
+          </label>
+        </div>
+        <div className="field">
+          <label>보고서 제목
+            <input aria-label="보고서 제목" placeholder="비우면 프로젝트 이름과 같게 둡니다"
+              value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+        </div>
+        <div className="actions">
+          <button onClick={create} disabled={!name.trim()}>만들기</button>
+        </div>
       </section>
       <section>
         <h2>프로젝트</h2>
