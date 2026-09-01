@@ -13,7 +13,7 @@ vi.mock("../api/client", async (importOriginal) => {
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
 const deck: Deck = {
   schema_version: 1,
-  meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [] },
   slides: [],
 };
@@ -143,7 +143,7 @@ describe("자료 파일 업로드", () => {
 it("보고 정보의 입력 항목이 각각 한 줄을 차지한다", async () => {
   vi.mocked(api.listSources).mockResolvedValue([]);
   render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
-  const fields = ["보고서 제목", "보고 유형", "피보고자"].map((l) => screen.getByLabelText(l).closest(".field"));
+  const fields = ["보고서 제목", "보고 유형", "보고자", "피보고자"].map((l) => screen.getByLabelText(l).closest(".field"));
   fields.forEach((f) => expect(f).not.toBeNull());
   expect(new Set(fields).size).toBe(fields.length);
   expect(screen.getByLabelText("새 자료 이름").closest(".field")).not.toBeNull();
@@ -157,4 +157,17 @@ it("자료 내용 편집 영역도 세로 배치다", async () => {
   const area = await screen.findByLabelText("자료 내용");
   expect(area.closest(".field")).not.toBeNull();
   expect(screen.getByText("자료 저장").closest(".actions")).not.toBeNull();
+});
+
+it("보고자를 입력해 저장하면 meta.presenter로 반영되고 피보고자 안내가 보인다", async () => {
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  const onDeckChange = vi.fn();
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={onDeckChange} />);
+  await userEvent.type(screen.getByLabelText("보고자"), "사업개발팀");
+  await userEvent.click(screen.getByText("보고 정보 저장"));
+  expect(onDeckChange).toHaveBeenCalledWith(expect.objectContaining({
+    meta: expect.objectContaining({ presenter: "사업개발팀" }),
+  }));
+  expect(screen.getByText(/문서에 적히지 않고/)).toBeInTheDocument();
 });

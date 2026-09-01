@@ -264,11 +264,10 @@ def test_cover_metadata_fields_exempt_from_number_check():
     deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
         Chapter(id="c0", topic="표지", template="cover"),
     ]))
-    payload = {"template": "cover", "title": "검토", "subtitle": "",
-               "date": "2026-08-28", "audience": "경영진 30명"}
+    payload = {"template": "cover", "title": "검토", "subtitle": "", "date": "2026-08-28"}
     service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
     result = asyncio.run(service.generate_chapter(deck, "c0", SOURCES, Preset()))
-    assert result.unverified_numbers == []  # date와 audience는 대조 대상이 아니다 (결정 6)
+    assert result.unverified_numbers == []  # date는 대조 대상이 아니다 (결정 6)
 
 
 def test_condense_chapter_manual():
@@ -306,7 +305,7 @@ def test_chapter_numbers_verified_against_deck_title():
         meta=DeckMeta(title="2026 사업 검토"),
         structure=Structure(chapters=[Chapter(id="c1", topic="표지", template="cover")]),
     )
-    payload = {"template": "cover", "title": "2026 사업 검토", "subtitle": "", "date": "", "audience": ""}
+    payload = {"template": "cover", "title": "2026 사업 검토", "subtitle": "", "date": ""}
     service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
     result = asyncio.run(service.generate_chapter(deck, "c1", {"a.md": "연도 없음"}, Preset()))
     assert result.status == "ok"
@@ -323,3 +322,16 @@ def test_empty_refs_fall_back_to_all_sources_in_prompt():
     prompt = stub.calls[0][0]
     assert "시장 규모는 500억 원이다" in prompt
     assert "점유율은 37%다" in prompt
+
+
+def test_cover_slots_ignore_audience_and_presenter_from_ai():
+    # 표지 슬롯에는 보고자도 피보고자도 없다: 보고자는 메타에서 렌더하고 피보고자는 문서에 적지 않는다 (파일럿 관찰 6, 2026-09-01)
+    deck = Deck(meta=DeckMeta(title="검토", presenter="사업개발팀", audience="경영진"), structure=Structure(chapters=[
+        Chapter(id="c0", topic="표지", template="cover"),
+    ]))
+    payload = {"template": "cover", "title": "검토", "subtitle": "", "date": "",
+               "audience": "경영진", "presenter": "AI가 적은 값"}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(deck, "c0", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert set(result.slots.model_dump()) == {"template", "title", "subtitle", "date"}

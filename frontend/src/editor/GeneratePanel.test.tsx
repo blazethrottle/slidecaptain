@@ -11,7 +11,7 @@ vi.mock("../api/client", async (importOriginal) => {
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
 const deck: Deck = {
   schema_version: 1,
-  meta: { title: "t", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
   slides: [{ chapter_id: "c1", slots: {

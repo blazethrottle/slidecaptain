@@ -9,7 +9,7 @@ from slidecaptain.pipeline.prompts import (
     structure_response_schema,
 )
 
-META = DeckMeta(title="일본 시장 검토", report_type="strategy", audience="경영진")
+META = DeckMeta(title="일본 시장 검토", report_type="strategy", audience="경영진", presenter="사업개발팀")
 SOURCES = {"리서치.md": "시장 규모는 500억 원이다", "메모.txt": "경쟁사는 3곳"}
 
 
@@ -101,3 +101,15 @@ def test_condense_prompt_without_warnings_gives_general_instruction():
     condense = build_condense_prompt("기본", [], draft_json="{}")
     assert "간결" in condense
     assert "초과" not in condense
+
+
+def test_prompts_forbid_copying_audience_into_document_and_omit_presenter():
+    # 피보고자는 문체 기준으로만 전달하고 문서에 옮겨 적지 않게 한다. 보고자는 AI에 주지 않는다(메타에서 렌더). 파일럿 관찰 6, 2026-09-01
+    structure_prompt = build_structure_prompt(META, SOURCES)
+    deck = _deck_two_chapters()
+    chapter_prompt = build_chapter_prompt(deck, deck.structure.chapters[0], SOURCES, {}, today="2026-09-01")
+    for prompt in (structure_prompt, chapter_prompt):
+        assert "피보고자: 경영진" in prompt
+        assert "피보고자 항목 값을 표지, 제목, 호칭, 인사말에 옮겨 적지 않는다" in prompt
+        assert "사업개발팀" not in prompt
+        assert "보고 대상" not in prompt  # 종전 템플릿 안내 "표지 (제목, 부제, 날짜, 보고 대상)"의 흔적이 없어야 한다

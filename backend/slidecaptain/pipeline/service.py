@@ -33,7 +33,7 @@ _SLOTS_ADAPTER: TypeAdapter = TypeAdapter(Slots)
 
 # 자료에 있을 이유가 없는 메타성 필드: 수치 대조 수집에서 제외한다 (설계 결정 6)
 _NUMBER_EXEMPT_FIELDS: dict[str, set[str]] = {
-    "cover": {"date", "audience"},
+    "cover": {"date"},
     "divider": {"section_no"},
 }
 

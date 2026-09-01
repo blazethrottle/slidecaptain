@@ -121,7 +121,7 @@ def test_deterministic_output():
 def test_cover_and_divider_have_no_page_number_or_title_frame():
     deck = _deck(
         [
-            ("cover", CoverSlots(title="보고 제목", subtitle="부제", date="2026-08-27", audience="보고 대상")),
+            ("cover", CoverSlots(title="보고 제목", subtitle="부제", date="2026-08-27")),
             ("divider", DividerSlots(section_no="1", section_title="첫 섹션")),
             ("bullet_box", BulletBoxSlots(bullets=[Bullet(text="가")], conclusion="결론")),
         ]
@@ -369,3 +369,19 @@ def test_long_card_heading_warns_on_compare2():
     ))
     assert "left_card_heading" in _warned_slots(slide)
     assert "right_card_heading" not in _warned_slots(slide)
+
+
+def test_cover_presenter_is_rendered_from_meta():
+    # 표지의 보고자는 슬롯이 아니라 메타에서 그린다 (장 제목을 chapter.topic에서 그리는 것과 같은 선례). 파일럿 관찰 6, 2026-09-01
+    from slidecaptain.models.deck import Deck as _Deck, DeckMeta as _Meta, Slide as _Slide, Structure as _Structure
+
+    deck = _Deck(
+        meta=_Meta(title="보고 제목", presenter="사업개발팀", audience="경영진"),
+        structure=_Structure(chapters=[Chapter(id="c0", topic="표지", template="cover")]),
+        slides=[_Slide(chapter_id="c0", slots=CoverSlots(title="보고 제목", date="2026-09-01"))],
+    )
+    plan = build_render_plan(deck, PRESET, FAKE)
+    frames = {f.name: f for f in plan.slides[0].frames}
+    assert frames["c0:presenter"].paras[0].text == "사업개발팀"
+    assert not any(n.endswith(":audience") for n in frames)
+    assert "경영진" not in {p.text for f in plan.slides[0].frames for p in f.paras}

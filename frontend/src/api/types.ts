@@ -479,7 +479,11 @@ export interface components {
              */
             instructions: string;
         };
-        /** CoverSlots */
+        /**
+         * CoverSlots
+         * @description 표지 슬롯. 보고자는 슬롯이 아니라 메타(DeckMeta.presenter)에서 그리고, 피보고자는 문서에 적지 않는다
+         *     (2026-09-01 파일럿 관찰 6: 종전 audience 필드 제거. 옛 deck.json의 audience 키는 읽을 때 무시된다).
+         */
         CoverSlots: {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -498,11 +502,6 @@ export interface components {
              * @default
              */
             date: string;
-            /**
-             * Audience
-             * @default
-             */
-            audience: string;
         };
         /** CreateProjectRequest */
         CreateProjectRequest: {
@@ -549,6 +548,11 @@ export interface components {
              * @default
              */
             audience: string;
+            /**
+             * Presenter
+             * @default
+             */
+            presenter: string;
             /**
              * Preset Overrides
              * @default {}

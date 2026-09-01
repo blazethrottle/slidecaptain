@@ -23,7 +23,7 @@ const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as c
 
 const deck: Deck = {
   schema_version: 1,
-  meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
   slides: [{ chapter_id: "c1", slots: {

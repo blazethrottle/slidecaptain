@@ -15,7 +15,7 @@ const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as c
 function emptyDeck(): Deck {
   return {
     schema_version: 1,
-    meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+    meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [] },
     slides: [],
   };
@@ -44,7 +44,7 @@ it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async 
   vi.mocked(api.generateChapter)
     .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
-      slots: { template: "cover", title: "제목", subtitle: "", date: "", audience: "" } })
+      slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
     .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
       slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
@@ -113,7 +113,7 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
   vi.mocked(api.generateChapter)
     .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
-      slots: { template: "cover", title: "제목", subtitle: "", date: "", audience: "" } })
+      slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
     .mockResolvedValueOnce({ status: "format_error", slots: null, raw_text: "깨진 응답",
       warnings: [], unverified_numbers: [], format_retried: true, condensed: false });
   const onDone = vi.fn();

@@ -20,7 +20,7 @@ const preset = {
 
 const deck: Deck = {
   schema_version: 1,
-  meta: { title: "t", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [] }, slides: [],
 };
 

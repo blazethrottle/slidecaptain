@@ -6,7 +6,7 @@ import {
 function bulletDeck(): Deck {
   return {
     schema_version: 1,
-    meta: { title: "t", report_type: "research", audience: "", preset_overrides: {} },
+    meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
     slides: [{ chapter_id: "c1", slots: {
@@ -102,4 +102,16 @@ it("장 순서 이동", () => {
   ];
   const next = reorderChapters(deck, 0, 2);
   expect(next.structure.chapters.map((c) => c.topic)).toEqual(["나", "다", "가"]);
+});
+
+it("표지의 보고자 칸을 인라인 편집하면 메타의 presenter가 바뀐다", () => {
+  const deck: Deck = {
+    schema_version: 1,
+    meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
+    structure: { chapters: [{ id: "c0", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
+    slides: [{ chapter_id: "c0", slots: { template: "cover", title: "t", subtitle: "", date: "" } }],
+  };
+  const edited = applyTextEdit(deck, { chapterId: "c0", slot: "presenter", index: 0 }, "사업개발팀");
+  expect(edited.meta.presenter).toBe("사업개발팀");
+  expect(edited.slides[0].slots).toEqual(deck.slides[0].slots);  // 슬롯은 건드리지 않는다
 });

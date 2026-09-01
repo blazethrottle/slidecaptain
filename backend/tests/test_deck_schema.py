@@ -159,3 +159,20 @@ def test_table_cell_newline_rejected():
             }}],
         })
     assert "줄바꿈" in str(exc_info.value)
+
+
+def test_legacy_cover_audience_key_is_ignored_on_load():
+    # 2026-09-01 이전 deck.json의 표지 슬롯에는 audience가 있다. 읽을 때 버리고, 보고자는 메타의 presenter(기본 빈 값)다
+    data = {
+        "schema_version": SCHEMA_VERSION,
+        "meta": {"title": "t"},
+        "structure": {"chapters": [
+            {"id": "c0", "topic": "표지", "conclusion": "", "template": "cover", "source_refs": []},
+        ]},
+        "slides": [{"chapter_id": "c0", "slots": {
+            "template": "cover", "title": "t", "subtitle": "", "date": "", "audience": "경영진",
+        }}],
+    }
+    deck = Deck.model_validate(data)
+    assert not hasattr(deck.slides[0].slots, "audience")
+    assert deck.meta.presenter == ""

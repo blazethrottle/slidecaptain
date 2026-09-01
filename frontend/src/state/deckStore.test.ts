@@ -4,7 +4,7 @@ import { editorReducer, type EditorState } from "./deckStore";
 function deck(title: string): Deck {
   return {
     schema_version: 1,
-    meta: { title, report_type: "research", audience: "", preset_overrides: {} },
+    meta: { title, report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [] },
     slides: [],
   };

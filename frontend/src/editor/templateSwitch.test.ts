@@ -45,3 +45,8 @@ it("같은 템플릿이면 그대로다", () => {
   expect(r.slots).toBe(bulletSlots);
   expect(r.dropped).toEqual([]);
 });
+
+it("표지로 바꾸면 슬롯에 제목, 부제, 날짜만 남고 보고자와 피보고자 칸은 없다", () => {
+  const r = switchTemplate(bulletSlots, "cover");
+  expect(r.slots).toEqual({ template: "cover", title: "", subtitle: "", date: "" });
+});

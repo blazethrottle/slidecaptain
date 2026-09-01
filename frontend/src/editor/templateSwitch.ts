@@ -55,7 +55,7 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
       return { slots: { template: "table", columns: ["구분", "내용"], rows: [["", ""]], footnote }, dropped };
     case "cover":
       dropBullets(); dropConclusion(); dropFootnote();
-      return { slots: { template: "cover", title: "", subtitle: "", date: "", audience: "" }, dropped };
+      return { slots: { template: "cover", title: "", subtitle: "", date: "" }, dropped };
     case "divider":
       dropBullets(); dropConclusion(); dropFootnote();
       return { slots: { template: "divider", section_no: "", section_title: "" }, dropped };

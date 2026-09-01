@@ -124,7 +124,13 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
           </label>
         </div>
         <div className="field">
-          <label>피보고자
+          <label>보고자 <span className="hint">(이름 또는 부서. 표지에 표기됩니다)</span>
+            <input aria-label="보고자" value={meta.presenter ?? ""}
+              onChange={(e) => setMeta({ ...meta, presenter: e.target.value })} />
+          </label>
+        </div>
+        <div className="field">
+          <label>피보고자 <span className="hint">(문서에 적히지 않고, 문체와 상세 수준을 맞추는 데만 씁니다)</span>
             <input aria-label="피보고자" value={meta.audience ?? ""}
               onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
           </label>

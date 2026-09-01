@@ -25,11 +25,13 @@ class Card(BaseModel):
 
 
 class CoverSlots(BaseModel):
+    """표지 슬롯. 보고자는 슬롯이 아니라 메타(DeckMeta.presenter)에서 그리고, 피보고자는 문서에 적지 않는다
+    (2026-09-01 파일럿 관찰 6: 종전 audience 필드 제거. 옛 deck.json의 audience 키는 읽을 때 무시된다)."""
+
     template: Literal["cover"] = "cover"
     title: str
     subtitle: str = ""
     date: str = ""
-    audience: str = ""
 
 
 class SummarySlots(BaseModel):
@@ -106,7 +108,8 @@ class Slide(BaseModel):
 class DeckMeta(BaseModel):
     title: str
     report_type: ReportType = "research"
-    audience: str = ""
+    audience: str = ""  # 피보고자: 문체와 상세 수준의 기준으로만 쓰고 문서에 적지 않는다 (2026-09-01)
+    presenter: str = ""  # 보고자(이름 또는 부서): 표지에 표기. 장 제목처럼 슬롯이 아니라 여기서 렌더한다 (2026-09-01 추가)
     preset_overrides: dict[str, Any] = {}
 
 

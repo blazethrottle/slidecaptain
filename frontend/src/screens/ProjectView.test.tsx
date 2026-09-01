@@ -15,7 +15,7 @@ const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as c
 
 const deckWithSlide: Deck = {
   schema_version: 1,
-  meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
   slides: [{ chapter_id: "c1", slots: {
@@ -26,7 +26,7 @@ const deckWithSlide: Deck = {
 // 실제 불릿이 있어야 한다 (EditorScreen.test.tsx 픽스처와 동일 패턴)
 const deckWithEditableSlide: Deck = {
   schema_version: 1,
-  meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+  meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
   slides: [{ chapter_id: "c1", slots: {
@@ -152,7 +152,7 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
   // 구조안이 이미 있고(승인 전) 슬라이드는 아직 없는 프로젝트: 승인 즉시 순차 생성이 시작된다
   const deckWithStructure: Deck = {
     schema_version: 1,
-    meta: { title: "제목", report_type: "research", audience: "", preset_overrides: {} },
+    meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [
       { id: "c1", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
     slides: [],

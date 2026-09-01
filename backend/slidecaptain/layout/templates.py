@@ -173,7 +173,7 @@ def _footnote_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> C
     )
 
 
-def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics) -> SlidePlan:
+def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics, presenter: str) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     x = s.margin_left + s.cover_indent
     w = preset.page_width_pt - 2 * (s.margin_left + s.cover_indent)
@@ -200,10 +200,11 @@ def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics) -
             )],
         ),
         Frame(
-            name=f"{chapter.id}:audience", x=x, y=452.0, w=w / 2, h=18.0,
+            # 보고자는 메타에서 온다 (장 제목을 chapter.topic에서 그리는 것과 같은 방식). 피보고자는 그리지 않는다
+            name=f"{chapter.id}:presenter", x=x, y=452.0, w=w / 2, h=18.0,
             paras=[Para(
-                text=slots.audience, font_pt=r.body_pt, color=c.text,
-                lines=_para_lines(slots.audience, w / 2, r.body_pt, False, preset, metrics),
+                text=presenter, font_pt=r.body_pt, color=c.text,
+                lines=_para_lines(presenter, w / 2, r.body_pt, False, preset, metrics),
             )],
         ),
     ]
@@ -421,9 +422,11 @@ def _build_compare2(
     return SlidePlan(chapter_id=chapter.id, template="compare2", frames=frames, warnings=warnings)
 
 
-def build_slide(chapter: Chapter, slots, page_no: int, preset: Preset, metrics) -> SlidePlan:
+def build_slide(
+    chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = ""
+) -> SlidePlan:
     if isinstance(slots, CoverSlots):
-        return _build_cover(chapter, slots, preset, metrics)
+        return _build_cover(chapter, slots, preset, metrics, presenter)
     if isinstance(slots, DividerSlots):
         return _build_divider(chapter, slots, page_no, preset, metrics)
     if isinstance(slots, SummarySlots):

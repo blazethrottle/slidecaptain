@@ -19,13 +19,16 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
       },
     };
   }
+  if (slot === "presenter") {
+    // 표지의 보고자는 슬롯이 아니라 메타에 있다 (장 제목이 구조안에 있는 것과 같다). 2026-09-01
+    return { ...deck, meta: { ...deck.meta, presenter: text } };
+  }
   return updateSlide(deck, chapterId, (slots) => {
     switch (slots.template) {
       case "cover":
         if (slot === "cover_title") return { ...slots, title: text };
         if (slot === "subtitle") return { ...slots, subtitle: text };
         if (slot === "date") return { ...slots, date: text };
-        if (slot === "audience") return { ...slots, audience: text };
         return slots;
       case "divider":
         if (slot === "section_no") return { ...slots, section_no: text };
