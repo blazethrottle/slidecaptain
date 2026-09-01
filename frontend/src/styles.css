@@ -12,3 +12,10 @@ button { cursor: pointer; }
 
 .editor-screen { display: grid; grid-template-columns: 220px 1fr 280px; gap: 12px; }
 .warn-badge { color: #B00020; }
+
+/* 구조안 폼: 목표 장수와 지시사항을 각각 한 줄로, 입력란은 넉넉하게 (파일럿 관찰 2, 3. 2026-09-01) */
+.structure-screen .field { max-width: 640px; margin: 8px 0; }
+.structure-screen .field label { display: grid; gap: 4px; }
+.structure-screen textarea { width: 100%; min-height: 110px; font: inherit; box-sizing: border-box; }
+.structure-screen input[type="number"] { width: 8em; }
+.structure-screen .actions { margin-top: 8px; }

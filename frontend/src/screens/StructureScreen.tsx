@@ -145,19 +145,25 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       )}
       <section>
         <h2>구조안</h2>
-        <label>목표 장수 (비우면 AI가 정함)
-          <input aria-label="목표 장수" type="number" min={1} value={targetChapters}
-            onChange={(e) => setTargetChapters(e.target.value)} />
-        </label>
-        <label>지시사항
-          <textarea aria-label="지시사항" value={instructions}
-            onChange={(e) => setInstructions(e.target.value)} />
-        </label>
-        <button onClick={generate} disabled={busy}>
-          {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
-        </button>
-        {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
-        {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
+        <div className="field">
+          <label>목표 장수 (비우면 AI가 정함)
+            <input aria-label="목표 장수" type="number" min={1} value={targetChapters}
+              onChange={(e) => setTargetChapters(e.target.value)} />
+          </label>
+        </div>
+        <div className="field">
+          <label>지시사항
+            <textarea aria-label="지시사항" rows={5} value={instructions}
+              onChange={(e) => setInstructions(e.target.value)} />
+          </label>
+        </div>
+        <div className="actions">
+          <button onClick={generate} disabled={busy}>
+            {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
+          </button>
+          {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
+          {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
+        </div>
       </section>
       {draft.length > 0 && (
         <section>

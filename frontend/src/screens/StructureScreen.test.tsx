@@ -140,3 +140,15 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
   expect(calls[2][1]).toBe("c2");
   confirmSpy.mockRestore();
 });
+
+it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  const target = screen.getByLabelText("목표 장수");
+  const instructions = screen.getByLabelText("지시사항");
+  expect(instructions).toHaveAttribute("rows", "5");
+  const targetField = target.closest(".field");
+  const instructionsField = instructions.closest(".field");
+  expect(targetField).not.toBeNull();
+  expect(instructionsField).not.toBeNull();
+  expect(targetField).not.toBe(instructionsField);  // 한 줄 배치로 회귀하면 같은 조상이 되거나 null이 된다
+});
