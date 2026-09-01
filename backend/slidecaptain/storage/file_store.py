@@ -83,6 +83,21 @@ def _validate_name(name: str, kind: str) -> None:
         )
 
 
+def decode_source_bytes(data: bytes, filename: str) -> str:
+    """자료 바이트를 텍스트로 해석한다. utf-8-sig가 BOM 유무 양쪽을 흡수하고, cp949는 한국어
+    Windows 메모장의 ANSI 저장을 위한 폴백이다 (단계 3 결정 7). 파일 읽기와 업로드가 같은 규칙을 쓴다."""
+    for encoding in ("utf-8-sig", "cp949"):
+        try:
+            return data.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise InvalidSourceEncoding(
+        f"자료 파일 {filename}을 텍스트로 읽지 못했습니다. "
+        "PDF나 이미지 같은 텍스트 아닌 파일은 자료로 쓸 수 없습니다. "
+        "텍스트 파일이라면 UTF-8 인코딩으로 다시 저장해 주세요."
+    )
+
+
 def _validate_read_name(name: str) -> None:
     """읽기용 최소 검증: 탐색기로 넣은 파일(괄호 등 생성 문법 밖 이름)도 읽히도록, 폴더 탈출 방지만 확인한다."""
     stem = name.split(".")[0].upper()
@@ -113,6 +128,7 @@ class ProjectStore(Protocol):
     def list_sources(self, name: str) -> list[str]: ...
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
+    def source_exists(self, name: str, filename: str) -> bool: ...
     def exports_dir(self, name: str) -> Path: ...
     def load_global_preset(self) -> Preset: ...
     def save_global_preset(self, preset: Preset) -> None: ...
@@ -274,18 +290,13 @@ class FileProjectStore:
         path = d / "sources" / filename
         if not path.exists():
             raise SourceNotFound(f"자료 파일을 찾지 못했습니다: {filename}")
-        # utf-8-sig가 BOM 유무 양쪽을 흡수한다. cp949는 한국어 Windows 메모장의
-        # ANSI 저장을 위한 폴백이다 (단계 3 결정 7)
-        for encoding in ("utf-8-sig", "cp949"):
-            try:
-                return path.read_text(encoding=encoding)
-            except UnicodeDecodeError:
-                continue
-        raise InvalidSourceEncoding(
-            f"자료 파일 {filename}을 텍스트로 읽지 못했습니다. "
-            "PDF나 이미지 같은 텍스트 아닌 파일은 자료로 쓸 수 없습니다. "
-            "텍스트 파일이라면 UTF-8 인코딩으로 다시 저장해 주세요."
-        )
+        return decode_source_bytes(path.read_bytes(), filename)
+
+    def source_exists(self, name: str, filename: str) -> bool:
+        """앱이 만드는 이름 규칙으로 검증한 뒤 존재 여부를 돌려준다 (업로드의 덮어쓰기 판정용)."""
+        d = self._project_dir(name)
+        _validate_name(filename, "자료 파일")
+        return (d / "sources" / filename).is_file()
 
     def write_source(self, name: str, filename: str, text: str) -> None:
         d = self._project_dir(name)

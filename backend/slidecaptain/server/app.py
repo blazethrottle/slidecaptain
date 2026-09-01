@@ -3,9 +3,9 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,6 +31,7 @@ from slidecaptain.storage.file_store import (
     SnapshotNotFound,
     SourceNotFound,
     StorageError,
+    decode_source_bytes,
 )
 
 _STATUS_BY_ERROR = [
@@ -44,6 +45,8 @@ _STATUS_BY_ERROR = [
 ]
 
 _SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
+_UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
+_UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 
 _VALIDATION_TYPE_MESSAGES = {
     "missing": "필수 값이 빠졌습니다",
@@ -69,6 +72,11 @@ class SourceText(BaseModel):
 
 class OkResponse(BaseModel):
     ok: bool = True
+
+
+class UploadResult(BaseModel):
+    filename: str
+    chars: int
 
 
 class ExportResult(BaseModel):
@@ -232,6 +240,33 @@ def create_app(
     def write_source(name: str, filename: str, body: SourceText):
         store.write_source(name, filename, body.text)
         return OkResponse()
+
+    @app.post("/api/projects/{name}/sources/{filename}/upload", response_model=UploadResult)
+    async def upload_source(name: str, filename: str, request: Request, overwrite: bool = False):
+        """파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
+
+        멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
+        """
+        # 브라우저나 OS가 붙인 경로 조각은 벗기고 이름만 쓴다 (Windows 역슬래시 포함, OS 무관하게 처리)
+        filename = PureWindowsPath(filename).name
+        if Path(filename).suffix.lower() not in _UPLOAD_EXTENSIONS:
+            raise HTTPException(
+                422,
+                "지원하지 않는 형식입니다. 지금은 .md, .txt, .csv 텍스트 파일만 넣을 수 있고, "
+                "PDF와 Word는 아직 지원하지 않습니다.",
+            )
+        declared = request.headers.get("content-length")
+        if declared is not None and declared.isdigit() and int(declared) > _UPLOAD_MAX_BYTES:
+            raise HTTPException(422, "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요.")
+        data = await request.body()
+        if len(data) > _UPLOAD_MAX_BYTES:
+            raise HTTPException(422, "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요.")
+        # 이름 규칙 위반은 422, 프로젝트 부재는 404로 저장소 예외 매핑을 탄다
+        if store.source_exists(name, filename) and not overwrite:
+            raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+        text = decode_source_bytes(data, filename)  # 해석 실패는 InvalidSourceEncoding(422)
+        store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
+        return UploadResult(filename=filename, chars=len(text))
 
     @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
     async def generate_structure(name: str, req: GenerateStructureRequest):

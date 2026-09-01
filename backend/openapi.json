@@ -605,6 +605,65 @@
         }
       }
     },
+    "/api/projects/{name}/sources/{filename}/upload": {
+      "post": {
+        "summary": "Upload Source",
+        "description": "파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).\n\n멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.",
+        "operationId": "upload_source_api_projects__name__sources__filename__upload_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          },
+          {
+            "name": "overwrite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Overwrite"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{name}/generate/structure": {
       "post": {
         "summary": "Generate Structure",
@@ -2247,6 +2306,24 @@
           "rows"
         ],
         "title": "TableSlots"
+      },
+      "UploadResult": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "chars": {
+            "type": "integer",
+            "title": "Chars"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "chars"
+        ],
+        "title": "UploadResult"
       },
       "ValidationError": {
         "properties": {

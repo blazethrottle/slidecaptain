@@ -182,6 +182,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/sources/{filename}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Source
+         * @description 파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
+         *
+         *     멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
+         */
+        post: operations["upload_source_api_projects__name__sources__filename__upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/generate/structure": {
         parameters: {
             query?: never;
@@ -1084,6 +1106,13 @@ export interface components {
              */
             footnote: string;
         };
+        /** UploadResult */
+        UploadResult: {
+            /** Filename */
+            filename: string;
+            /** Chars */
+            chars: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1555,6 +1584,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_source_api_projects__name__sources__filename__upload_post: {
+        parameters: {
+            query?: {
+                overwrite?: boolean;
+            };
+            header?: never;
+            path: {
+                name: string;
+                filename: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadResult"];
                 };
             };
             /** @description Validation Error */
