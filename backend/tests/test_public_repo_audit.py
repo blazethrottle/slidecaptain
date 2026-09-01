@@ -118,6 +118,19 @@ def test_allows_synthetic_xlsx_fixture(tmp_path):
     assert result.returncode == 0
 
 
+@pytest.mark.parametrize("filename", ("sample.pdf", "sample.pptx", "sample.docx", "sample.xls"))
+def test_rejects_non_xlsx_synthetic_fixture_files(tmp_path, filename):
+    root = _repository(tmp_path)
+    path = f"backend/tests/fixtures/synthetic/{filename}"
+    _write(root, path)
+    _track(root, path)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert path in result.stdout
+
+
 def test_allows_valid_pilot_note_and_false_positive_path_names(tmp_path):
     root = _repository(tmp_path)
     paths = (
@@ -183,6 +196,52 @@ def test_history_detects_deleted_forbidden_path_and_key(tmp_path):
 
     assert current.returncode == 0
     assert history.returncode == 1
+    assert key not in history.stdout
+    assert key not in history.stderr
+
+
+def test_history_reports_deleted_key_at_its_relative_path(tmp_path):
+    root = _repository(tmp_path)
+    key = _fake_key()
+    path = "docs/deleted-key.py"
+    _write(root, path, key)
+    _track(root, path)
+    _commit(root, "add deleted key")
+    (root / "docs" / "deleted-key.py").unlink()
+    _git(root, "add", "-u")
+    _commit(root, "remove deleted key")
+
+    result = _run(root, "--history")
+
+    assert result.returncode == 1
+    assert path in result.stdout
+    assert key not in result.stdout
+    assert key not in result.stderr
+
+
+def test_history_reports_deleted_key_from_merge_at_unicode_space_path(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "README.md")
+    _track(root, "README.md")
+    _commit(root, "create merge base")
+    _git(root, "checkout", "-b", "feature")
+    key = _fake_key()
+    path = "docs/공백 경로/deleted key.py"
+    _write(root, path, key)
+    _track(root, path)
+    _commit(root, "add merged key")
+    _git(root, "checkout", "-")
+    _git(root, "merge", "--no-ff", "feature", "-m", "merge feature")
+    (root / "docs" / "공백 경로" / "deleted key.py").unlink()
+    _git(root, "add", "-u")
+    _commit(root, "remove merged key")
+
+    current = _run(root)
+    history = _run(root, "--history")
+
+    assert current.returncode == 0
+    assert history.returncode == 1
+    assert path in history.stdout
     assert key not in history.stdout
     assert key not in history.stderr
 

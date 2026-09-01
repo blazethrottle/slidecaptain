@@ -39,6 +39,7 @@ _PRIVATE_KEY_EXTENSIONS = frozenset({".key", ".pem", ".ppk", ".p12", ".pfx", ".d
 _SYNTHETIC_FIXTURE = ("backend", "tests", "fixtures", "synthetic")
 _PILOT_DIRECTORY = ("docs", "pilot")
 _PILOT_NOTE = re.compile(r"\d{4}-\d{2}-\d{2}-파일럿-관찰지\.md\Z")
+_COMMIT_HEADER = re.compile(rb"(?m)^([0-9a-f]{40})\0\n\n")
 
 
 def _bytes_pattern(*parts: bytes) -> re.Pattern[bytes]:
@@ -113,8 +114,11 @@ def _path_parts(path: str) -> tuple[str, ...]:
     return tuple(part for part in path.split("/") if part)
 
 
-def _is_synthetic_fixture(parts: tuple[str, ...]) -> bool:
-    return tuple(part.lower() for part in parts[:4]) == _SYNTHETIC_FIXTURE
+def _is_synthetic_xlsx(parts: tuple[str, ...]) -> bool:
+    return (
+        tuple(part.lower() for part in parts[:4]) == _SYNTHETIC_FIXTURE
+        and Path(parts[-1]).suffix.lower() == ".xlsx"
+    )
 
 
 def _is_allowed_pilot_note(parts: tuple[str, ...]) -> bool:
@@ -146,7 +150,7 @@ def audit_paths(paths: list[str]) -> list[Finding]:
             findings.append(Finding("금지 디렉터리", path))
         if lowered_parts[:2] == _PILOT_DIRECTORY and not _is_allowed_pilot_note(parts):
             findings.append(Finding("파일럿 원본", path))
-        if Path(path).suffix.lower() in _OFFICE_EXTENSIONS and not _is_synthetic_fixture(parts):
+        if Path(path).suffix.lower() in _OFFICE_EXTENSIONS and not _is_synthetic_xlsx(parts):
             findings.append(Finding("Office 파일", path))
         if parts and _is_secret_filename(parts[-1]):
             findings.append(Finding("비밀 파일", path))
@@ -189,6 +193,58 @@ def _unique_findings(findings: list[Finding]) -> list[Finding]:
     return list(dict.fromkeys(findings))
 
 
+def _historical_secret_findings(root: Path) -> list[Finding]:
+    paths_by_commit = _historical_paths_by_commit(root)
+    findings: list[Finding] = []
+    diff_output = _run_git(root, "log", "--all", "--format=%H%x00", "-p", "--no-ext-diff")
+    headers = list(_COMMIT_HEADER.finditer(diff_output))
+    for index, header in enumerate(headers):
+        commit = header.group(1).decode("ascii")
+        next_start = headers[index + 1].start() if index + 1 < len(headers) else len(diff_output)
+        diff = diff_output[header.end() : next_start]
+        paths = paths_by_commit.get(commit, [])
+        patches = [patch for patch in diff.split(b"\ndiff --git ") if patch]
+        if len(paths) != len(patches):
+            if _contains_secret(diff):
+                findings.extend(Finding("비밀 패턴(이력)", path) for path in paths)
+            continue
+        for path, patch in zip(paths, patches, strict=True):
+            if _contains_secret(patch):
+                findings.append(Finding("비밀 패턴(이력)", path))
+    return findings
+
+
+def _historical_paths_by_commit(root: Path) -> dict[str, list[str]]:
+    output = _run_git(root, "log", "--all", "--format=%H%x00", "--name-only", "-z")
+    chunks = output.split(b"\0")
+    paths_by_commit: dict[str, list[str]] = {}
+    current_commit: str | None = None
+    remove_format_newline = False
+    index = 0
+    while index < len(chunks):
+        chunk = chunks[index]
+        if remove_format_newline:
+            if chunk.startswith(b"\n"):
+                chunk = chunk[1:]
+            remove_format_newline = False
+        if (
+            len(chunk) == 40
+            and all(character in b"0123456789abcdef" for character in chunk)
+            and index + 1 < len(chunks)
+            and chunks[index + 1] == b""
+        ):
+            current_commit = chunk.decode("ascii")
+            paths_by_commit.setdefault(current_commit, [])
+            remove_format_newline = True
+            index += 2
+            continue
+        if current_commit is not None and chunk:
+            path = _normalise_path(chunk.decode("utf-8", "surrogateescape"))
+            paths_by_commit[current_commit].append(path)
+        index += 1
+    return paths_by_commit
+
+
 def audit_repository(root: Path, include_history: bool = False) -> list[Finding]:
     root = _repository_root(root)
     current_paths = tracked_paths(root)
@@ -196,8 +252,7 @@ def audit_repository(root: Path, include_history: bool = False) -> list[Finding]
     findings.extend(audit_contents(root, current_paths))
     if include_history:
         findings.extend(audit_paths(historical_paths(root)))
-        if _contains_secret(historical_diff(root)):
-            findings.append(Finding("비밀 패턴(이력)", ".git/history-diff"))
+        findings.extend(_historical_secret_findings(root))
     return _unique_findings(findings)
 
 
