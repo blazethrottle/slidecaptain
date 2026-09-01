@@ -8,3 +8,13 @@ backend/tests/_out/
 node_modules/
 frontend/dist/
 .superpowers/
+
+# 회사 자료(오피스 파일)가 저장소 폴더에 놓여도 개인 GitHub로 올라가지 않도록 막는다 (2026-09-01. 파일럿 중 docs/pilot과 루트에 xlsx, pptx가 놓인 것을 발견)
+docs/pilot/*.xlsx
+docs/pilot/*.docx
+docs/pilot/*.pdf
+docs/pilot/*.pptx
+/*.pptx
+/*.xlsx
+/*.docx
+/*.pdf
