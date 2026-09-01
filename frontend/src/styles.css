@@ -23,3 +23,6 @@ button { cursor: pointer; }
 /* 자료 화면: 끌어다 놓기 영역과 성공 안내 (파일럿 관찰 1. 2026-09-01) */
 .sources-screen .drop-zone { border: 2px dashed #9AA5B1; border-radius: 6px; padding: 12px; margin: 8px 0; max-width: 640px; }
 .sources-screen .info { color: #1F4E79; }
+
+/* 프로젝트 목록 상단의 AI 연결 상태 한 줄 (파일럿 관찰 5. 2026-09-01) */
+.project-list .ai-status { color: #4A5560; font-size: 0.95em; }
