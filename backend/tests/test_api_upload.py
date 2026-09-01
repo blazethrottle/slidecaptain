@@ -24,7 +24,21 @@ def _upload(client, filename: str, data: bytes, overwrite: bool = False):
         f"/api/projects/p1/sources/{filename}/upload",
         params={"overwrite": str(overwrite).lower()},
         content=data,
+        headers={"X-Requested-With": "SlideCaptain"},
     )
+
+
+def test_upload_without_app_header_is_rejected(client):
+    # 다른 사이트의 페이지가 보내는 text/plain POST(사전 확인 없는 단순 요청)를 막는다 (2026-09-01 최종 리뷰 반영)
+    r = client.post(
+        "/api/projects/p1/sources/주입.md/upload",
+        params={"overwrite": "true"},
+        content=b"injected",
+        headers={"Content-Type": "text/plain"},
+    )
+    assert r.status_code == 400
+    assert "Slide Captain 화면에서만" in r.json()["detail"]
+    assert client.get("/api/projects/p1/sources").json() == []
 
 
 def test_upload_utf8_text_round_trip(client):
@@ -121,5 +135,5 @@ def test_upload_empty_file_ok(client):
 
 def test_upload_missing_project_404(store):
     c = TestClient(create_app(store))
-    r = c.post("/api/projects/없음/sources/a.md/upload", content=b"x")
+    r = c.post("/api/projects/없음/sources/a.md/upload", content=b"x", headers={"X-Requested-With": "SlideCaptain"})
     assert r.status_code == 404

@@ -638,6 +638,22 @@
               "default": false,
               "title": "Overwrite"
             }
+          },
+          {
+            "name": "x-requested-with",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Requested-With"
+            }
           }
         ],
         "responses": {

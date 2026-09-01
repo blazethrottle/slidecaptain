@@ -1650,7 +1650,9 @@ export interface operations {
             query?: {
                 overwrite?: boolean;
             };
-            header?: never;
+            header?: {
+                "x-requested-with"?: string | null;
+            };
             path: {
                 name: string;
                 filename: string;

@@ -76,9 +76,10 @@ export const api = {
     }),
   uploadSource: async (name: string, file: File, overwrite: boolean) => {
     // 파일 본문을 원시 바이트로 보낸다. request()의 JSON 헤더를 붙이지 않는다 (서버는 Content-Type을 보지 않는다)
+    // X-Requested-With: 서버가 이 헤더를 요구해 다른 사이트에서 보내는 단순 요청을 막는다 (JSON 헤더는 붙이지 않는다)
     const r = await fetch(
       `/api/projects/${enc(name)}/sources/${enc(file.name)}/upload?overwrite=${overwrite}`,
-      { method: "POST", body: file },
+      { method: "POST", body: file, headers: { "X-Requested-With": "SlideCaptain" } },
     );
     await throwIfFailed(r);
     return r.json() as Promise<UploadResult>;

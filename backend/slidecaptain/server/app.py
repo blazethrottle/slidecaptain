@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -53,6 +53,10 @@ _STATUS_BY_ERROR = [
 _SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
 _UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
 _UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+# 업로드는 원시 본문을 받으므로 다른 사이트의 페이지가 text/plain POST(브라우저의 단순 요청)로 자료를 써 넣을 수 있다.
+# 커스텀 헤더를 요구하면 브라우저가 사전 확인(OPTIONS)을 먼저 보내고, 이 서버는 405로 답해 본 요청이 나가지 않는다
+# (2026-09-01 브랜치 최종 리뷰 반영. TrustedHost는 Host만 보므로 이 경로를 막지 못한다)
+_UPLOAD_REQUIRED_HEADER = "SlideCaptain"
 _LOGIN_CACHE_SEC = 60.0  # 새로고침마다 CLI 프로세스를 띄우지 않는다
 
 _VALIDATION_TYPE_MESSAGES = {
@@ -272,11 +276,19 @@ def create_app(
         return OkResponse()
 
     @app.post("/api/projects/{name}/sources/{filename}/upload", response_model=UploadResult)
-    async def upload_source(name: str, filename: str, request: Request, overwrite: bool = False):
+    async def upload_source(
+        name: str,
+        filename: str,
+        request: Request,
+        overwrite: bool = False,
+        x_requested_with: str | None = Header(default=None),
+    ):
         """파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
 
         멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
         """
+        if x_requested_with != _UPLOAD_REQUIRED_HEADER:
+            raise HTTPException(400, "이 요청은 Slide Captain 화면에서만 보낼 수 있습니다. 앱 화면에서 다시 시도해 주세요.")
         # 브라우저나 OS가 붙인 경로 조각은 벗기고 이름만 쓴다 (Windows 역슬래시 포함, OS 무관하게 처리)
         filename = PureWindowsPath(filename).name
         if Path(filename).suffix.lower() not in _UPLOAD_EXTENSIONS:

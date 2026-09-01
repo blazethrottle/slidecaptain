@@ -6,6 +6,7 @@ CLI 출력 가운데 로그인 여부, 방식, 계정(가린 형태)만 전달�
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -109,6 +110,7 @@ def _check_login(timeout_sec: float, cli: Path | None) -> LoginStatus:
     if not isinstance(logged_in, bool):
         # JSON이 아니거나 loggedIn 키가 없으면 "로그인 안 됨"이 아니라 "확인하지 못함"이다 (2026-09-01 리뷰 반영)
         stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+        stderr = re.sub(r"[\w.+-]+@[\w-]+\.[\w.-]+", "<이메일>", stderr)  # 오류 문구에 계정이 실리지 않게 한다
         detail = f": {stderr[:200]}" if stderr else ""
         why = "응답에 로그인 여부(loggedIn)가 없습니다" if data is not None else "응답을 해석하지 못했습니다"
         return LoginStatus(

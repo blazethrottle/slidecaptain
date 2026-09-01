@@ -36,7 +36,9 @@ it("자료 파일 업로드는 파일 본문을 그대로 보내고 JSON 헤더�
   expect(url).toBe(`/api/projects/p1/sources/${encodeURIComponent("리서치.md")}/upload?overwrite=true`);
   expect(init.method).toBe("POST");
   expect(init.body).toBe(file);
-  expect(new Headers(init.headers ?? {}).has("Content-Type")).toBe(false);
+  const headers = new Headers(init.headers ?? {});
+  expect(headers.has("Content-Type")).toBe(false);
+  expect(headers.get("X-Requested-With")).toBe("SlideCaptain");  // 서버가 요구하는 앱 식별 헤더
 });
 
 it("업로드 오류 응답의 detail도 ApiError로 만든다", async () => {
