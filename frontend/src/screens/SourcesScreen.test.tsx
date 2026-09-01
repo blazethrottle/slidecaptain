@@ -60,6 +60,8 @@ describe("자료 파일 업로드", () => {
   const a = new File(["aaa"], "a.md", { type: "text/markdown" });
   const b = new File(["bbb"], "b.txt", { type: "text/plain" });
 
+  afterEach(() => vi.restoreAllMocks());  // window.confirm 스파이가 실패한 테스트에서 다음 테스트로 새지 않게 한다
+
   function renderScreen() {
     return render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
   }
@@ -113,8 +115,10 @@ describe("자료 파일 업로드", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     renderScreen();
     await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [a]);
-    expect(await screen.findByText(/건너뜀 1개/)).toBeInTheDocument();
+    expect(await screen.findByText("추가한 자료가 없습니다. 건너뜀 1개.")).toBeInTheDocument();
     expect(api.uploadSource).toHaveBeenCalledTimes(1);
+    expect(api.readSource).not.toHaveBeenCalled();  // 추가한 파일이 없으면 열지 않는다
+    expect(screen.queryByRole("alert")).toBeNull();
     confirmSpy.mockRestore();
   });
 

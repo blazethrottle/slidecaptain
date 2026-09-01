@@ -3,10 +3,12 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
+import threading
 import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -85,11 +87,11 @@ class UploadResult(BaseModel):
 
 
 class AppStatus(BaseModel):
-    provider: str  # "subscription" 또는 "none"
+    provider: Literal["subscription", "none"]
     login: LoginStatus
     model: str | None = None
     last_generation_at: str | None = None  # 프로세스 메모리에만 기록, 재시작 시 초기화
-    checked_at: str
+    checked_at: str = Field(description="로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)")
 
 
 class ExportResult(BaseModel):
@@ -135,6 +137,7 @@ def create_app(
     checker = login_checker or check_login
     # 앱 상태 (계획서 2026-09-01 태스크 4): 로그인 확인 캐시와 마지막 생성 성공 시각. 파일에 남기지 않는다
     status_state: dict = {"login": None, "login_at_mono": 0.0, "checked_at": "", "last_generation_at": None}
+    status_lock = threading.Lock()  # 동기 라우트가 스레드풀에서 겹쳐도 CLI를 한 번만 띄운다
 
     def _now_iso() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -298,11 +301,15 @@ def create_app(
     @app.get("/api/status", response_model=AppStatus)
     def get_status():
         # 동기 함수라 스레드풀에서 실행된다: CLI 프로세스 대기가 이벤트 루프를 막지 않는다
-        now = time.monotonic()
-        if status_state["login"] is None or now - status_state["login_at_mono"] > _LOGIN_CACHE_SEC:
-            status_state["login"] = checker()
-            status_state["login_at_mono"] = now
-            status_state["checked_at"] = _now_iso()
+        with status_lock:
+            now = time.monotonic()
+            if status_state["login"] is None or now - status_state["login_at_mono"] > _LOGIN_CACHE_SEC:
+                try:
+                    status_state["login"] = checker()
+                except Exception as e:  # 주입된 checker가 던져도 표시용 조회는 200으로 답한다
+                    status_state["login"] = LoginStatus(error=f"로그인 상태를 확인하는 중 오류가 났습니다: {e}")
+                status_state["login_at_mono"] = now
+                status_state["checked_at"] = _now_iso()
         return AppStatus(
             provider="subscription" if provider is not None else "none",
             login=status_state["login"],

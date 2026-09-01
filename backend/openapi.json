@@ -854,6 +854,10 @@
         "properties": {
           "provider": {
             "type": "string",
+            "enum": [
+              "subscription",
+              "none"
+            ],
             "title": "Provider"
           },
           "login": {
@@ -883,7 +887,8 @@
           },
           "checked_at": {
             "type": "string",
-            "title": "Checked At"
+            "title": "Checked At",
+            "description": "로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)"
           }
         },
         "type": "object",

@@ -91,6 +91,21 @@ describe("AI 연결 상태 한 줄", () => {
     expect(line).toHaveTextContent("2.1.247");
   });
 
+  it("방식이나 계정이 비어 있으면 대체 문구를 쓰고, CLI 버전이 없으면 접미사를 붙이지 않는다", async () => {
+    vi.mocked(api.getStatus).mockResolvedValueOnce({
+      ...LOGGED_IN, login: { logged_in: true, auth_method: null, account: null, cli_version: null, error: null },
+    });
+    const first = render(<ProjectList onOpen={() => {}} />);
+    expect(await screen.findByText(/로그인됨 \(방식 미상, 계정 미상\)/)).toBeInTheDocument();
+    first.unmount();
+    vi.mocked(api.getStatus).mockResolvedValueOnce({
+      ...LOGGED_IN, login: { logged_in: null, auth_method: null, account: null, cli_version: null, error: "원인" },
+    });
+    render(<ProjectList onOpen={() => {}} />);
+    const line = await screen.findByText(/확인하지 못했습니다/);
+    expect(line).toHaveTextContent("AI 연결: 확인하지 못했습니다 (원인).");
+  });
+
   it("상태 조회가 실패해도 목록은 보이고 별도 문구만 남긴다", async () => {
     vi.mocked(api.listProjects).mockResolvedValue([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok" }]);
     vi.mocked(api.getStatus).mockRejectedValue(new Error("network"));

@@ -88,9 +88,13 @@ def decode_source_bytes(data: bytes, filename: str) -> str:
     Windows 메모장의 ANSI 저장을 위한 폴백이다 (단계 3 결정 7). 파일 읽기와 업로드가 같은 규칙을 쓴다."""
     for encoding in ("utf-8-sig", "cp949"):
         try:
-            return data.decode(encoding)
+            text = data.decode(encoding)
         except UnicodeDecodeError:
             continue
+        # read_text()가 하던 universal newline 변환을 그대로 유지한다 (CRLF와 CR을 LF로).
+        # 2026-09-01 리뷰 반영: 바이트 디코딩으로 바꾸면서 빠졌던 부분. 없으면 CRLF 자료에 \r이 남아
+        # 글자 수 집계와 AI 프롬프트 원문에 섞인다
+        return text.replace("\r\n", "\n").replace("\r", "\n")
     raise InvalidSourceEncoding(
         f"자료 파일 {filename}을 텍스트로 읽지 못했습니다. "
         "PDF나 이미지 같은 텍스트 아닌 파일은 자료로 쓸 수 없습니다. "

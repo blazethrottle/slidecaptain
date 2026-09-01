@@ -278,14 +278,20 @@ export interface components {
     schemas: {
         /** AppStatus */
         AppStatus: {
-            /** Provider */
-            provider: string;
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "subscription" | "none";
             login: components["schemas"]["LoginStatus"];
             /** Model */
             model?: string | null;
             /** Last Generation At */
             last_generation_at?: string | null;
-            /** Checked At */
+            /**
+             * Checked At
+             * @description 로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)
+             */
             checked_at: string;
         };
         /** Bullet */

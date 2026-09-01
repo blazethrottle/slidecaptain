@@ -62,6 +62,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
   const importFiles = async (list: FileList | File[]) => {
     const items = Array.from(list);
     if (items.length === 0) return;
+    setInfo("");  // 지난 안내가 남아 있지 않게 한다
     let added = 0;
     let skipped = 0;
     let last: string | null = null;
@@ -72,7 +73,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
           await api.uploadSource(project.name, f, false);
         } catch (e) {
           if (!(e instanceof ApiError) || e.status !== 409) throw e;
-          if (!window.confirm(`같은 이름의 자료 ${f.name}이(가) 이미 있습니다. 덮어쓸까요?`)) {
+          if (!window.confirm(`같은 이름의 자료가 이미 있습니다: ${f.name}. 덮어쓸까요?`)) {
             skipped += 1;
             continue;
           }
@@ -86,7 +87,8 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
     }
     reload();
     if (last !== null) await open(last);  // open이 notice를 비우므로 안내 문구는 그 뒤에 쓴다
-    setInfo(`${added}개 자료를 추가했습니다.` + (skipped > 0 ? ` 건너뜀 ${skipped}개.` : ""));
+    const summary = added > 0 ? `${added}개 자료를 추가했습니다.` : "추가한 자료가 없습니다.";
+    setInfo(summary + (skipped > 0 ? ` 건너뜀 ${skipped}개.` : ""));
     if (failures.length > 0) setNotice(`올리지 못한 파일: ${failures.join(" / ")}`);
   };
 

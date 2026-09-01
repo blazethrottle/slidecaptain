@@ -127,6 +127,27 @@ def test_status_records_last_success_after_condense(store):
     assert client.get("/api/status").json()["last_generation_at"] is not None
 
 
+def test_status_records_last_success_after_chapter_generation(store):
+    client = TestClient(create_app(
+        store, provider=StubProvider([ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")]),
+        login_checker=_checker(LOGGED_IN),
+    ))
+    _project_with_structure(client)
+    r = client.post("/api/projects/p1/generate/chapter/c1", json={"instructions": ""})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    assert client.get("/api/status").json()["last_generation_at"] is not None
+
+
+def test_status_survives_checker_exception(store):
+    def broken() -> LoginStatus:
+        raise RuntimeError("checker 고장")
+    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=broken))
+    r = client.get("/api/status")
+    assert r.status_code == 200
+    assert r.json()["login"]["logged_in"] is None
+    assert "checker 고장" in r.json()["login"]["error"]
+
+
 def test_status_not_updated_when_generation_fails(store):
     client = TestClient(create_app(
         store, provider=StubProvider([ProviderCallFailed("호출 실패")]), login_checker=_checker(LOGGED_IN),

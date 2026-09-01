@@ -59,8 +59,8 @@
 ## 태스크 4: AI 연결 상태 한 줄
 
 백엔드 `pipeline/auth_status.py`(신규):
-- `resolve_cli_path() -> Path | None`: 환경 변수 `SLIDECAPTAIN_CLAUDE_CLI` → SDK 동봉 CLI(`claude_agent_sdk/_bundled/claude.exe` 또는 `claude`) → `shutil.which("claude.exe")`(Windows) → `shutil.which("claude")` 순서. `which` 결과가 `.cmd`나 `.bat`이면 채택하지 않는다(리뷰 발견 2: npm 설치본의 배치 셰도는 `shell=False`로 실행할 수 없다. SDK의 `_find_cli`와 같은 방어). 생성 파이프라인이 실제로 쓰는 것이 동봉 CLI이므로 동봉을 먼저 본다.
-- `check_login(timeout_sec=10) -> LoginStatus`: `[cli, "auth", "status"]`를 `subprocess.run`으로 실행해 표준 출력의 JSON(`loggedIn`, `authMethod`, `email`)을 읽는다. `LoginStatus { logged_in: bool | None, auth_method: str | None, account: str | None, cli_version: str | None, error: str | None }`. CLI 부재, 실행 실패(`OSError` 전반), 시간 초과, 0이 아닌 종료 코드, JSON 해석 실패는 모두 `logged_in=None`과 한국어 `error`로 보고한다(예외로 서버를 멈추지 않는다). `account`는 `mask_email`로 가린다(앞 2자 + `***` + `@도메인`).
+- `resolve_cli_path() -> Path | None`: 환경 변수 `SLIDECAPTAIN_CLAUDE_CLI` → SDK 동봉 CLI(`claude_agent_sdk/_bundled/claude.exe` 또는 `claude`) → `shutil.which("claude.exe")`(Windows) → `shutil.which("claude")` 순서. `which` 결과가 `.cmd`나 `.bat`이면 채택하지 않는다(리뷰 발견 2. 근거 정정 2026-09-01: 배치 파일도 `shell=False`로 실행은 되지만, SDK는 인자가 cmd.exe에서 재해석되는 위험 때문에 이를 거부하므로, 표시용이 생성 파이프라인과 다른 CLI를 채택해 "로그인됨인데 생성은 실패"하는 불일치가 생기지 않도록 같은 기준을 따른다). 생성 파이프라인이 실제로 쓰는 것이 동봉 CLI이므로 동봉을 먼저 본다.
+- `check_login(timeout_sec=10) -> LoginStatus`: `[cli, "auth", "status"]`를 `subprocess.run`으로 실행해 표준 출력의 JSON(`loggedIn`, `authMethod`, `email`)을 읽는다. `LoginStatus { logged_in: bool | None, auth_method: str | None, account: str | None, cli_version: str | None, error: str | None }`. CLI 부재, 실행 실패(`OSError` 전반), 시간 초과, JSON 해석 실패, JSON에 `loggedIn` 불리언이 없는 경우는 모두 `logged_in=None`과 한국어 `error`로 보고한다(예외로 서버를 멈추지 않는다. 2026-09-01 구현 리뷰 반영: 종료 코드가 0이 아니어도 JSON이 있으면 해석한다. 로그아웃 상태가 0이 아닌 코드로 끝날 수 있기 때문이다. `loggedIn` 키 부재를 "로그인 안 됨"으로 읽으면 사용자에게 불필요한 재로그인을 지시하게 되므로 "확인 불가"로 보낸다). `account`는 `mask_email`로 가린다(앞 2자 + `***` + `@도메인`).
 - 자격 증명 파일은 읽지 않는다(토큰이 들어 있다). CLI 출력의 위 3개 필드 외에는 전달하지 않는다.
 
 `app.py`:
@@ -93,7 +93,7 @@
 | 발견 | 반영 |
 |---|---|
 | 1 `python-multipart` 미선언 | 멀티파트를 버리고 원시 바이트 본문 업로드로 변경(의존성 추가 없음) |
-| 2 CLI 탐색 순서가 `.cmd` 셰도를 못 막음 | 동봉 CLI 우선, `which` 결과의 `.cmd`와 `.bat` 배제, `OSError` 전반을 "확인 불가"로 처리 |
+| 2 CLI 탐색 순서가 `.cmd` 셰도를 못 막음 | 동봉 CLI 우선, `which` 결과의 `.cmd`와 `.bat` 배제, `OSError` 전반을 "확인 불가"로 처리 (배제 근거 문장은 2026-09-01 구현 리뷰에서 정정: 위 태스크 4 본문) |
 | 3 축약 라우트가 성공 시각 갱신에서 빠짐 | 세 라우트 모두 갱신 |
 | 4 확장자 대소문자 | 소문자 정규화, `.MD` 테스트 추가 |
 | 5 목록 화면 기존 테스트의 모의 누락 | `getStatus` 모의를 기존 테스트에 추가 |

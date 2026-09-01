@@ -31,7 +31,7 @@ def test_resolve_prefers_bundled_cli_over_path(tmp_path, monkeypatch):
 
 
 def test_resolve_skips_cmd_shim(tmp_path, monkeypatch):
-    # npm 설치본의 claude.cmd 셰도는 shell=False로 실행할 수 없으므로 채택하지 않는다
+    # npm 설치본의 claude.cmd 셰도는 SDK가 거부하는 CLI라 표시용도 같은 기준으로 채택하지 않는다 (2026-09-01 근거 정정)
     monkeypatch.delenv("SLIDECAPTAIN_CLAUDE_CLI", raising=False)
     monkeypatch.setattr(auth_status, "_bundled_cli_path", lambda: tmp_path / "missing" / "claude.exe")
     monkeypatch.setattr(
@@ -104,7 +104,7 @@ def test_check_login_when_cli_hangs(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_status.subprocess, "run", run)
     status = check_login(cli=tmp_path / "claude.exe", timeout_sec=3)
     assert status.logged_in is None
-    assert "응답이 없습니다" in status.error
+    assert "응답하지 않았습니다" in status.error
 
 
 def test_check_login_when_output_is_not_json(tmp_path, monkeypatch):
@@ -112,3 +112,28 @@ def test_check_login_when_output_is_not_json(tmp_path, monkeypatch):
     status = check_login(cli=tmp_path / "claude.exe")
     assert status.logged_in is None
     assert "해석하지 못했습니다" in status.error
+    assert status.cli_version == "Some banner text"  # 해석 실패 시 CLI 버전(--version 출력)을 동봉한다
+
+
+def test_check_login_when_logged_in_key_missing(tmp_path, monkeypatch):
+    # 형식이 바뀐 JSON은 "로그인 안 됨"이 아니라 "확인하지 못함"으로 보고해야 한다 (2026-09-01 리뷰 반영)
+    monkeypatch.setattr(auth_status.subprocess, "run", _fake_run(stdout=b'{"status": "authenticated"}'))
+    status = check_login(cli=tmp_path / "claude.exe")
+    assert status.logged_in is None
+    assert "loggedIn" in status.error
+
+
+def test_check_login_tolerates_non_string_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth_status.subprocess, "run",
+                        _fake_run(stdout=b'{"loggedIn": true, "authMethod": 7, "email": 12}'))
+    status = check_login(cli=tmp_path / "claude.exe")
+    assert status.logged_in is True
+    assert status.auth_method is None
+    assert status.account is None
+
+
+def test_check_login_when_env_override_points_to_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setenv("SLIDECAPTAIN_CLAUDE_CLI", str(tmp_path / "없는파일.exe"))
+    status = check_login()
+    assert status.logged_in is None
+    assert "SLIDECAPTAIN_CLAUDE_CLI" in status.error

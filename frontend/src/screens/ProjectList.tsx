@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, messageOf, type AppStatus, type ProjectInfo } from "../api/client";
 
 /** 상태 응답을 한 줄 문구로 바꾼다 (계획서 2026-09-01 태스크 4, 파일럿 관찰 5). */
-export function describeStatus(status: AppStatus): string {
+function describeStatus(status: AppStatus): string {
   const { login } = status;
   if (login.logged_in === true) {
     const last = status.last_generation_at
@@ -46,7 +46,7 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   return (
     <main className="project-list">
       <h1>Slide Captain</h1>
-      <p className="ai-status">{statusLine}</p>
+      <p className="ai-status" role="status">{statusLine}</p>
       {error && <p role="alert">{error}</p>}
       <section>
         <h2>새 프로젝트</h2>

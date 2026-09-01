@@ -1,7 +1,5 @@
 """자료 파일 업로드 API (원시 바이트 본문) 테스트. 계획서 2026-09-01 태스크 2."""
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -89,8 +87,8 @@ def test_upload_invalid_name_422(client):
     assert client.get("/api/projects/p1/sources").json() == []
 
 
-@pytest.mark.skipif(os.name != "nt", reason="역슬래시 경로 분리는 Windows에서만 일어난다")
 def test_upload_strips_windows_path_prefix(client):
+    # PureWindowsPath를 쓰므로 실행 OS와 무관하게 역슬래시도 분리자로 처리된다
     r = _upload(client, "sub%5Cx.md", b"x")
     assert r.status_code == 200
     assert r.json()["filename"] == "x.md"
@@ -102,6 +100,17 @@ def test_upload_binary_garbage_422(client):
     assert r.status_code == 422
     assert "텍스트로 읽지 못했습니다" in r.json()["detail"]
     assert client.get("/api/projects/p1/sources").json() == []
+
+
+def test_upload_crlf_is_normalized_like_read_text(client, tmp_path):
+    # read_text()의 universal newline과 같은 동작: CRLF 파일을 올려도 \r이 남지 않는다 (2026-09-01 리뷰 반영)
+    r = _upload(client, "메모장CRLF.txt", "첫 줄\r\n둘째 줄\r셋째 줄".encode("utf-8"))
+    assert r.status_code == 200
+    assert r.json()["chars"] == len("첫 줄\n둘째 줄\n셋째 줄")
+    assert client.get("/api/projects/p1/sources/메모장CRLF.txt").json()["text"] == "첫 줄\n둘째 줄\n셋째 줄"
+    # 탐색기로 넣은 CRLF 파일을 읽는 기존 경로도 같다
+    (tmp_path / "projects" / "p1" / "sources" / "외부.md").write_bytes(b"a\r\nb")
+    assert client.get("/api/projects/p1/sources/외부.md").json()["text"] == "a\nb"
 
 
 def test_upload_empty_file_ok(client):
