@@ -667,8 +667,9 @@ export interface components {
             /**
              * Valign
              * @default top
+             * @enum {string}
              */
-            valign: string;
+            valign: "top" | "middle";
         };
         /** GenerateChapterRequest */
         GenerateChapterRequest: {

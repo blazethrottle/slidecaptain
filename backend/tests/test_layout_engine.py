@@ -385,3 +385,16 @@ def test_cover_presenter_is_rendered_from_meta():
     assert frames["c0:presenter"].paras[0].text == "사업개발팀"
     assert not any(n.endswith(":audience") for n in frames)
     assert "경영진" not in {p.text for f in plan.slides[0].frames for p in f.paras}
+
+
+def test_frame_valign_accepts_only_top_and_middle():
+    # 미리보기가 그릴 수 있는 값만 허용한다 (bottom 을 넣으면 라이터만 그리는 불일치가 생긴다. 2026-09-02 태스크 B)
+    from pydantic import ValidationError
+
+    from slidecaptain.models.render import Frame
+
+    Frame(name="x:y", x=0, y=0, w=10, h=10, valign="middle")
+    with pytest.raises(ValidationError):
+        Frame(name="x:y", x=0, y=0, w=10, h=10, valign="bottom")
+    with pytest.raises(ValidationError):
+        Frame(name="x:y", x=0, y=0, w=10, h=10, valign="center")
