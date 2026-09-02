@@ -126,3 +126,26 @@ def test_sample_deck_json_not_modified_by_export(tmp_path):
     before = deck_path.read_bytes()
     export_deck(deck_path, tmp_path / "exports")
     assert deck_path.read_bytes() == before
+
+
+def test_every_text_shape_anchor_matches_render_plan_valign(exported):
+    # 세로 정렬 진본은 렌더 계획이다. 채움 프레임(자동도형)이 python-pptx 기본값 ctr 을 상속해 미리보기와 어긋났던
+    # 결함의 회귀 단언 (2026-09-02 Critical 묶음 태스크 B)
+    from slidecaptain.layout.engine import build_render_plan
+    from slidecaptain.metrics.font_metrics import FontMetrics
+    from slidecaptain.models.deck import Deck
+    from slidecaptain.models.preset import Preset, apply_overrides
+
+    deck = Deck.model_validate_json(SAMPLE.read_text(encoding="utf-8"))
+    plan = build_render_plan(deck, apply_overrides(Preset(), deck.meta.preset_overrides), FontMetrics.load_default())
+    anchor_by_valign = {"top": "t", "middle": "ctr"}
+    checked = 0
+    for plan_slide, slide in zip(plan.slides, exported.slides, strict=True):
+        shapes = {s.name: s for s in slide.shapes}
+        for frame in plan_slide.frames:
+            if frame.table is not None:
+                continue
+            bodyPr = shapes[frame.name].text_frame._txBody.find(qn("a:bodyPr"))
+            assert (bodyPr.get("anchor") or "t") == anchor_by_valign[frame.valign], frame.name
+            checked += 1
+    assert checked >= 10  # 견본 덱의 텍스트 도형 전부를 실제로 검사했는지 (빈 순회 방지)
