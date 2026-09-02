@@ -117,7 +117,7 @@ def test_prompts_forbid_copying_audience_into_document_and_omit_presenter():
 
 
 def test_contract_block_uses_korean_labels_for_cover_and_divider_keys():
-    # 표지·간지 계약 키에 한글 라벨이 없으면 영문 키가 그대로 프롬프트에 노출된다 (계획서 적대 리뷰 F2, 2026-09-03)
+    # 표지와 간지 계약 키에 한글 라벨이 없으면 영문 키가 그대로 프롬프트에 노출된다 (계획서 적대 리뷰 F2, 2026-09-03)
     deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="표지", template="cover")]))
     prompt = build_chapter_prompt(
         deck, deck.structure.chapters[0], SOURCES,

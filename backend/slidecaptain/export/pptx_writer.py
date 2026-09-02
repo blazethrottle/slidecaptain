@@ -22,7 +22,7 @@ EMU_PER_PT = 12700
 
 _ALIGN = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}
 # 세로 정렬은 렌더 계획 값을 항상 명시한다. 자동도형(add_shape)의 기본값은 ctr, 텍스트박스는 top 이라
-# 명시하지 않으면 채움·테두리 프레임만 PowerPoint 에서 중앙 정렬되어 미리보기와 어긋난다 (2026-09-02 태스크 B)
+# 명시하지 않으면 채움과 테두리 프레임만 PowerPoint 에서 중앙 정렬되어 미리보기와 어긋난다 (2026-09-02 태스크 B)
 _ANCHOR = {"top": MSO_ANCHOR.TOP, "middle": MSO_ANCHOR.MIDDLE}
 
 

@@ -174,7 +174,7 @@ def test_style_comes_from_plan_not_literal(tmp_path):
 
 # ---- 세로 정렬: 라이터는 렌더 계획의 valign 을 항상 bodyPr anchor 로 기록한다 (2026-09-02 Critical 묶음 태스크 B) ----
 # 배경: python-pptx 자동도형(add_shape)의 기본 bodyPr 은 anchor="ctr" 이고 텍스트박스(add_textbox)는 속성이 없어 top 이다.
-# 라이터가 anchor 를 명시하지 않으면 채움·테두리 프레임만 PowerPoint 에서 세로 중앙이 되어 미리보기(top)와 어긋난다.
+# 라이터가 anchor 를 명시하지 않으면 채움과 테두리 프레임만 PowerPoint 에서 세로 중앙이 되어 미리보기(top)와 어긋난다.
 
 _ANCHOR_BY_VALIGN = {"top": "t", "middle": "ctr"}
 
@@ -195,7 +195,7 @@ def test_every_text_shape_anchor_matches_frame_valign(saved):
 
 
 def test_boxed_frame_is_top_anchored_not_autoshape_default(saved):
-    # 채움·테두리가 있는 결론 박스는 자동도형이라 기본값이 ctr 인데, 렌더 계획(top)이 이겨야 한다
+    # 채움과 테두리가 있는 결론 박스는 자동도형이라 기본값이 ctr 인데, 렌더 계획(top)이 이겨야 한다
     conclusion = next(s for s in saved.slides[0].shapes if s.name == "ch01:conclusion")
     assert _anchor_of(conclusion) == "t"
 

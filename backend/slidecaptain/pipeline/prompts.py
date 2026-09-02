@@ -132,6 +132,8 @@ _ITEM_COUNT_KEYS = {"points_max_lines", "bullets_max_lines", "card_bullets_max_l
 
 def _contract_block(contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
     if not contract:
+        # 모든 템플릿이 계약을 가지므로(표지와 간지도 2026-09-02 부터) 서비스 경로에서는 도달하지 않는다.
+        # 계약 없이 호출하는 테스트와 외부 호출자를 위한 폴백으로만 남긴다 (구현 리뷰 R3)
         return "분량 한도: 이 템플릿은 짧은 텍스트만 담는다. 각 칸은 한 줄로 쓴다"
     lines = []
     for key, value in contract.items():

@@ -400,7 +400,7 @@ def test_frame_valign_accepts_only_top_and_middle():
         Frame(name="x:y", x=0, y=0, w=10, h=10, valign="center")
 
 
-# ---- 표지·간지 넘침 경고 (2026-09-02 Critical 묶음 태스크 C) ----
+# ---- 표지와 간지 넘침 경고 (2026-09-02 Critical 묶음 태스크 C) ----
 # 다른 템플릿의 제목, 각주, 카드 소제목은 _fixed_height_warning 으로 잡는데 표지와 간지만 경고 함수가 없어
 # 제목이 4줄이어도 경고 0건이었다. 자동 맞춤을 꺼 두었으므로 PowerPoint 에서 글자가 상자 밖으로 흘러넘쳤다.
 
