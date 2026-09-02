@@ -398,3 +398,27 @@ def test_frame_valign_accepts_only_top_and_middle():
         Frame(name="x:y", x=0, y=0, w=10, h=10, valign="bottom")
     with pytest.raises(ValidationError):
         Frame(name="x:y", x=0, y=0, w=10, h=10, valign="center")
+
+
+# ---- 표지·간지 넘침 경고 (2026-09-02 Critical 묶음 태스크 C) ----
+# 다른 템플릿의 제목, 각주, 카드 소제목은 _fixed_height_warning 으로 잡는데 표지와 간지만 경고 함수가 없어
+# 제목이 4줄이어도 경고 0건이었다. 자동 맞춤을 꺼 두었으므로 PowerPoint 에서 글자가 상자 밖으로 흘러넘쳤다.
+
+
+def test_cover_multiline_title_and_subtitle_warn():
+    deck = _deck([("cover", CoverSlots(
+        title=" ".join(["가" * 25] * 4), subtitle=" ".join(["가" * 55] * 3), date="2026-09-02"))])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert {w.slot for w in slide.warnings} == {"cover_title", "subtitle"}
+
+
+def test_cover_single_line_fields_do_not_warn():
+    deck = _deck([("cover", CoverSlots(title="시장 진입 검토", subtitle="부제", date="2026-09-02"))])
+    deck.meta.presenter = "사업개발팀"
+    assert build_render_plan(deck, PRESET, METRICS).slides[0].warnings == []
+
+
+def test_divider_multiline_title_warns():
+    deck = _deck([("divider", DividerSlots(section_no="1", section_title=" ".join(["가" * 30] * 4)))])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert {w.slot for w in slide.warnings} == {"section_title"}

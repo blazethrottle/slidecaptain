@@ -12,7 +12,7 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from slidecaptain.layout.templates import build_slide
-from slidecaptain.metrics.capacity import capacity_contract, hangul_chars_per_line
+from slidecaptain.metrics.capacity import capacity_contract, char_hints
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Slots, Structure
 from slidecaptain.models.preset import Preset
@@ -217,7 +217,7 @@ class GenerationService:
             capacity_contract(chapter.template, preset),
             today=date.today().isoformat(),
             instructions=instructions,
-            chars_per_line=hangul_chars_per_line(preset, self.metrics.face(False)),
+            char_hints=char_hints(chapter.template, preset, self.metrics),
         )
 
     def _slots_parser(self, chapter: Chapter) -> Callable[[Any], Any]:
