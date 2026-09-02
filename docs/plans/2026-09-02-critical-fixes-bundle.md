@@ -18,9 +18,9 @@
 
 **변경**
 
-- `_fill_text_frame` 에서 `tf.vertical_anchor` 를 `frame.valign` 에 따라 **항상** 명시한다 (`top` → `MSO_ANCHOR.TOP`, `middle` → `MIDDLE`, `bottom` → `BOTTOM`). 자동도형과 텍스트박스 모두.
+- `_fill_text_frame` 에서 `tf.vertical_anchor` 를 `frame.valign` 에 따라 **항상** 명시한다 (`top` → `MSO_ANCHOR.TOP`, `middle` → `MSO_ANCHOR.MIDDLE`). 자동도형과 텍스트박스 모두.
 - `Frame.valign` 의 타입을 `str` 에서 `Literal["top", "middle"]` 로 좁힌다 (잘못된 값이 조용히 top 으로 그려지는 일을 막는다). `bottom` 은 넣지 않는다: 미리보기(`Preview.tsx`)가 `middle` 만 처리하므로 `bottom` 을 허용하면 라이터만 아래 정렬을 그리는 새 불일치가 생긴다 (적대 리뷰 F3). OpenAPI 와 프런트 타입을 재생성한다 (`Preview.tsx` 의 `f.valign === "middle"` 비교는 그대로 성립한다).
-- 설계서 5.4 에 따라 이 묶음에서는 정합만 회복한다 (전부 top). 결론 박스를 세로 중앙에 둘지는 별도 결정이며, 원하면 `_conclusion_box_frame` 에 `valign="middle"` 을 주는 것만으로 미리보기와 PPTX 가 함께 따라간다.
+- 설계서 5.4 에 따라 이 묶음에서는 정합만 회복한다 (전부 top). 결론 박스를 세로 중앙에 둘지는 별도 결정이며, 원하면 `_conclusion_box_frame` 에 `valign` 매개변수를 추가해 `middle` 을 넘기는 것으로 미리보기와 PPTX 가 함께 따라간다 (현재 그 함수에는 매개변수가 없다. 적대 리뷰 F7).
 - 표 셀은 `graphicFrame` 이라 별개다 (셀 세로 정렬 기본 top, 미리보기도 top. 이번 범위 밖).
 
 **테스트 (실패부터)**: `tests/test_pptx_writer.py` 에 (1) 채움 프레임과 채움 없는 프레임 모두 `a:bodyPr anchor="t"` 이 기록된다 (지금은 채움 프레임이 `ctr` 라 실패), (2) `valign="middle"` 프레임은 `anchor="ctr"` 이 기록된다, (3) `tests/test_regression.py` 계열의 견본 내보내기에서 모든 텍스트 도형의 anchor 가 렌더 계획 valign 과 일치한다. `tests/test_deck_schema.py` 또는 `test_layout_engine.py` 에 `Frame(valign="center")` 가 거부된다는 단언을 추가한다.
@@ -48,7 +48,7 @@
 - compare2 카드 기하(카드 폭, 카드 높이, 불릿 가용 높이, 안쪽 폭)를 `capacity.py` 의 파생 함수 한 곳에 두고 `_build_compare2()` 와 `capacity_contract()` 가 같은 함수를 호출하게 한다.
 - 계약값은 0 이상으로 자른다. 음수 계약은 프리셋 기하가 성립하지 않는다는 뜻이므로 프리셋 검증(단계 5A A 의 "프리셋 유한값 검증" 항목) 에서 막을 문제이고, 이 묶음은 프롬프트에 음수가 나가는 것만 막는다.
 - 환산 안내를 실측대로 고친다: 본문 한 줄은 불릿 들여쓰기를 뺀 폭으로 계산(75 → 73자), 카드 안 한 줄은 "그 절반" 대신 실제 값(33자)을 계산해 넘긴다. 프롬프트 문구 "최대 N줄" 을 "최대 N줄 (한 줄짜리 항목 N개 기준)" 으로 바꿔 AI 가 줄 수와 항목 수를 같은 것으로 읽게 한다.
-- 전달 경로 (적대 리뷰 F1 반영): 단일 값 `chars_per_line` 을 **칸별 힌트 맵**으로 바꾼다. `capacity.py` 에 `char_hints(template, preset, face) -> dict[str, int]` 를 두어 템플릿별로 라벨과 글자 수를 돌려준다 (bullet_box·summary: `{"본문 한 줄": 73}`, compare2: `{"카드 안 한 줄": 33, "카드 소제목": 35}`, table: `{"본문 한 줄": 73}`, cover: `{"표지 제목": 30, "부제": 60}`, divider: `{"섹션 제목": 35}`). `_contract_block(contract, char_hints)` 는 `- 환산 안내: 본문 한 줄은 한글 약 73자` 처럼 맵을 한 줄로 이어 붙인다. `build_chapter_prompt` 의 `chars_per_line` 인자는 `char_hints` 로 대체하고 `service._chapter_prompt` 가 새 함수를 호출한다. 기존 `hangul_chars_per_line` 은 본문 값 계산에 그대로 쓰되 들여쓰기를 뺀다.
+- 전달 경로 (적대 리뷰 F1 반영): 단일 값 `chars_per_line` 을 **칸별 힌트 맵**으로 바꾼다. `capacity.py` 에 `char_hints(template, preset, face) -> dict[str, int]` 를 두어 템플릿별로 라벨과 글자 수를 돌려준다 (bullet_box 와 summary: `{"본문 한 줄": 73}`, compare2: `{"카드 안 한 줄": 33, "카드 소제목": 35}`, table: `{"본문 한 줄": 73}`, cover: `{"표지 제목": 30, "부제": 60}`, divider: `{"섹션 제목": 35}`). `_contract_block(contract, char_hints)` 는 `- 환산 안내: 본문 한 줄은 한글 약 73자` 처럼 맵을 한 줄로 이어 붙인다. `build_chapter_prompt` 의 `chars_per_line` 인자는 `char_hints` 로 대체하고 `service._chapter_prompt` 가 새 함수를 호출한다. 기존 `hangul_chars_per_line` 은 본문 값 계산에 그대로 쓰되 들여쓰기를 뺀다.
 
 **테스트 (실패부터)**
 
@@ -74,7 +74,7 @@
 
 ## 실행 순서
 
-태스크 B (라이터, 가장 작음) → 타입 재생성(`scripts/dump_openapi.py` → `npm run generate-types` → `tsc --noEmit`) → 태스크 A (계약과 프롬프트) → 태스크 C (표지·간지) → 문서 정정 → 독립 리뷰(커밋별 + 브랜치) → 수정 반영 → main 머지(fast-forward) → push → `codex/phase-5a` 에 main 병합.
+태스크 B (라이터, 가장 작음) → 타입 재생성(`scripts/dump_openapi.py` → `npm run generate-types` → `tsc --noEmit`) → 태스크 A (계약과 프롬프트) → 태스크 C (표지와 간지) → 문서 정정 → 독립 리뷰(커밋별 + 브랜치) → 수정 반영 → main 머지(fast-forward) → push → `codex/phase-5a` 에 main 병합.
 
 문서 정정: 설계서 5.1 (계약의 정의를 "한 줄짜리 항목 개수 기준 하한" 으로 명시), 7.1 (라이터가 세로 정렬을 항상 명시), 로드맵 이월표에 A, B, C 등재(처리 완료)와 진행 상태 항목 추가. 회사 PC 리뷰(2026-09-02 01:14)가 이월표에 반영되지 않았던 사실과 이 묶음이 그 대체 경로임을 로드맵에 적는다.
 
@@ -83,3 +83,27 @@
 - 회사 PC 리뷰의 Critical 3건과 여기서 재발견한 3건이 다를 수 있다. 특히 C 는 추정이다.
 - 계약을 14줄로 줄이면 AI 가 더 짧게 쓰므로 축약 호출은 줄지만 장 수가 늘 수 있다. 밀도 3단계(단계 5B 이월)가 이 값을 조정할 자리다.
 - 한 줄 항목 기준 하한은 여러 줄 불릿이 섞인 장에서 실제 가용량보다 보수적이다. 실사용에서 "더 넣을 수 있는데 계약이 막는다" 는 관찰이 나오면 계약을 "줄 수 합계 + 항목 수" 두 값으로 나누는 안을 검토한다.
+
+## 적대 리뷰 반영 (2026-09-03, 판정 "수정 후 승인", 발견 7건)
+
+| 발견 | 반영 |
+|---|---|
+| F1 [수정] 표지 글자 수 안내를 프롬프트에 넣을 전달 경로가 없음 (`_contract_block` 은 단일 값만 받음) | 채택. `char_hints(template, preset, metrics)` 칸별 힌트 맵을 신설하고 `build_chapter_prompt` 의 `chars_per_line` 을 `char_hints` 로 대체 (태스크 A "전달 경로" 항목) |
+| F2 [수정] 표지·간지 계약 키의 한글 라벨 부재 | 채택. `_CONTRACT_LABELS` 에 5개 키 추가, 영문 키 노출을 막는 테스트 추가 |
+| F3 [참고] `bottom` 을 허용하면 미리보기가 처리하지 못해 새 불일치 | 채택. `Frame.valign` 을 `Literal["top", "middle"]` 로 좁힘 |
+| F4 [참고] 보고자 경고는 생성 게이트에서 관측되지 않음 | 계획서에 사유를 기록해 방어 코드 추가를 막음. 코드 변경 없음 |
+| F5 [참고] 카드 소제목 아래 실제 간격 6pt 대 계산 8pt (안전한 방향) | 이 묶음에 넣지 않고 이월표에 사소 항목으로 등재 |
+| F6 [참고] 태스크 C 가 원래 Critical 3건 중 하나인지 불확실, 커밋을 태스크 단위로 분리해 둘 것 | 태스크 B 는 독립 커밋. 태스크 A 와 C 는 같은 기하 함수 리팩터(`capacity.py`, `templates.py`)를 공유해 **한 커밋으로 묶었다** (분리하면 두 번 구현해야 함). C 를 되돌려야 하면 커밋 단위가 아니라 코드 단위로 걷어낸다. 회사 PC 대조는 그대로 과제 |
+| F7 [참고] "valign=middle 을 주는 것만으로" 서술이 낙관적 (매개변수가 없음) | 문구 정정 |
+
+리뷰가 예고한 회귀(기존 단언 18 → 14, 75 → 73, 프롬프트 인자 변경)는 전부 그대로 발생했고 계획대로 갱신했다. 리뷰가 검증하지 못한 것 중 프런트 타입 재생성은 구현 단계에서 실행해 `valign: "top" | "middle"` 로 뽑히는 것을 확인했다. PowerPoint 실제 화면 확인, 회사 PC 리뷰 원문 대조, AI 실호출로 축약 호출 감소 확인은 남은 과제다.
+
+## 구현 독립 리뷰 반영 (2026-09-03, 커밋별 리뷰와 브랜치 최종 리뷰 겸임, 판정 "수정 후 머지", 발견 3건)
+
+| 발견 | 반영 |
+|---|---|
+| R1 [수정] 계획서가 요구한 설계서와 로드맵 정정이 리뷰 대상 커밋에 없음 (작업 트리에만 있었다) | 이 문서와 함께 docs 커밋으로 반영 |
+| R2 [참고] 커밋 메시지 2건과 주석 5곳에 중점(U+00B7) 사용 (프로젝트 관례는 문서 전체가 중점을 쓰지 않음) | 주석 5곳과 문서의 중점을 접속사와 쉼표로 교체. 커밋 메시지는 이력 재작성을 피하기 위해 그대로 둔다 |
+| R3 [참고] `_contract_block` 의 빈 계약 폴백이 서비스 경로에서 도달 불가능해짐 | 도달 조건을 주석으로 명시 (테스트와 외부 호출자용 폴백으로 유지) |
+
+리뷰어의 TDD 검증: 신규 테스트 전부가 옛 코드(671a7ca)에서 실패함을 워크트리로 확인했다. 재현 4종(견본 덱 도형 23개 anchor 전수 일치, 4개 템플릿 계약 경계에서 경고가 정확히 갈림, 표지와 간지 다줄 경고, 6개 템플릿 프롬프트 문구)도 통과했다. 최종: 백엔드 333, 프런트 76 통과.
