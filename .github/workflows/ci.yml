@@ -7,6 +7,11 @@ on:
 permissions:
   contents: read
 
+# Windows 러너의 콘솔은 cp1252 라 한글 출력(감사기, OpenAPI 덤프)이 UnicodeEncodeError 로 죽는다 (CI 실측 2026-09-03).
+# Python UTF-8 모드는 표준 입출력과 기본 파일 인코딩을 UTF-8 로 고정한다
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   verify:
     name: ${{ matrix.os }}

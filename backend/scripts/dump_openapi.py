@@ -17,5 +17,6 @@ with tempfile.TemporaryDirectory() as tmp:
     schema = create_app(FileProjectStore(tmp)).openapi()
 
 out = Path(__file__).resolve().parent.parent / "openapi.json"
-out.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+# newline="\n": Windows 에서도 LF 로 써서 CI 의 생성 파일 무변경 확인이 줄바꿈 때문에 흔들리지 않게 한다
+out.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 print(f"기록 완료: {out}")
