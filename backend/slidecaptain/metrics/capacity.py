@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from slidecaptain.metrics.line_breaker import break_paragraph
 from slidecaptain.models.deck import Bullet
-from slidecaptain.models.preset import Preset, Spacing
+from slidecaptain.models.preset import Preset, Spacing, content_box
 
 
 def line_height_pt(font_pt: float, line_spacing: float) -> float:
@@ -74,18 +74,11 @@ def measure_bullets(
 
 
 def _content_geometry(preset: Preset) -> dict[str, float]:
-    """레이아웃 엔진(Task 6)과 공유하는 파생 좌표. 수식의 진본은 여기 한 곳이다."""
-    s = preset.spacing
-    content_top = s.margin_top + s.title_height + s.title_gap
-    footnote_top = preset.page_height_pt - s.margin_bottom - s.footnote_height
-    content_bottom = footnote_top - s.footnote_gap
-    content_width = preset.page_width_pt - s.margin_left - s.margin_right
-    return {
-        "content_top": content_top,
-        "content_bottom": content_bottom,
-        "content_width": content_width,
-        "footnote_top": footnote_top,
-    }
+    """레이아웃 엔진(Task 6)과 공유하는 파생 좌표. 수식의 진본은 `models/preset.py`의 `content_box`다
+
+    (2026-09-04 태스크 A3: Preset의 안전 검증이 같은 산식으로 내용 높이를 확인해야 둘이 어긋나지 않는다).
+    """
+    return content_box(preset)
 
 
 def card_geometry(preset: Preset) -> dict[str, float]:

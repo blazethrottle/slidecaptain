@@ -86,3 +86,54 @@ def test_bullet_marker_override():
     p = apply_overrides(Preset(), {"bullet_marker": {"char": "-"}})
     assert p.bullet_marker.char == "-"
     assert p.bullet_marker.font == "Arial"
+
+
+def test_default_preset_passes_safety_validation():
+    # 하한과 상한이 추가된 뒤에도 기본 프리셋은 그대로 유효하다 (회귀)
+    Preset()
+
+
+def test_rejects_nan_page_width():
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"page_width_pt": float("nan")})
+
+
+def test_rejects_inf_page_width():
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"page_width_pt": float("inf")})
+
+
+def test_rejects_inf_safety_ratio():
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"spacing": {"safety_ratio": float("inf")}})
+
+
+def test_rejects_negative_page_width_pt():
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"page_width_pt": -10.0})
+
+
+def test_rejects_zero_safety_ratio():
+    # safety_ratio 0은 모든 줄바꿈을 무한히 쪼갠다
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"spacing": {"safety_ratio": 0.0}})
+
+
+def test_rejects_content_width_collapsing_margins():
+    # 여백 합이 페이지 폭을 거의 다 먹으면 내용 폭이 100pt 아래로 무너진다
+    with pytest.raises(ValidationError) as exc:
+        Preset.model_validate({"spacing": {"margin_left": 460.0, "margin_right": 460.0}})
+    assert "내용 폭" in str(exc.value)
+
+
+def test_rejects_content_height_collapsing_title_height():
+    # title_height=1000은 필드 하한(>0)은 통과하지만 내용 높이를 음수로 만든다 (실측)
+    with pytest.raises(ValidationError) as exc:
+        Preset.model_validate({"spacing": {"title_height": 1000.0}})
+    assert "내용 높이" in str(exc.value)
+
+
+def test_rejects_content_height_collapsing_footnote_height():
+    with pytest.raises(ValidationError) as exc:
+        Preset.model_validate({"spacing": {"footnote_height": 500.0}})
+    assert "내용 높이" in str(exc.value)

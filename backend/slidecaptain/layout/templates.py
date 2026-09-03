@@ -295,8 +295,17 @@ def _build_summary(
 
 
 def _table_col_widths(slots: TableSlots, frame_w: float, preset: Preset, metrics) -> list[float]:
-    """열 폭은 열 내용의 최대 실측 폭에 비례 배분하되, 최소 폭을 보장하고 합을 프레임 폭에 맞춘다."""
+    """열 폭은 열 내용의 최대 실측 폭에 비례 배분하되, 최소 폭을 보장하고 합을 프레임 폭에 맞춘다.
+
+    열이 많으면 `table_min_col_width`(기본 60pt) 그대로는 열 수 * 최소 폭이 프레임 폭을 넘을 수 있다
+    (실측 n=40 -> -1480pt). 그래서 최소 폭 자체를 `frame_w / n`으로도 낮춘다(그러면 열 수만큼 채워도
+    프레임 폭을 넘지 않는다). 그래도 비례 배분 뒤 보정으로 합이 넘치면, 넘친 만큼을 한 열에서 몰아
+    빼지 않고 최소 폭을 넘는 여유(slack)에 비례해 여러 열에서 나눠 회수한다: 최소 폭이 frame_w/n
+    이하이므로 여유의 합은 항상 초과분 이상이라, 회수 뒤에도 모든 열이 최소 폭 이상으로 남는다.
+    """
     s, r = preset.spacing, preset.font_roles
+    n = len(slots.columns)
+    min_w = min(s.table_min_col_width, frame_w / n)
     raw: list[float] = []
     for col_idx, col_name in enumerate(slots.columns):
         header_w = metrics.face(True).width_pt(col_name, r.table_pt)  # 머리글은 굵은 글꼴
@@ -306,12 +315,12 @@ def _table_col_widths(slots: TableSlots, frame_w: float, preset: Preset, metrics
         )
         raw.append(max(header_w, cell_w) + 2 * s.table_cell_pad_x)
     scale = frame_w / sum(raw)
-    widths = [max(w * scale, s.table_min_col_width) for w in raw]
-    # 최소 폭 보정으로 합이 넘치면 넘친 만큼 가장 넓은 열에서 회수한다
+    widths = [max(w * scale, min_w) for w in raw]
     excess = sum(widths) - frame_w
     if excess > 0:
-        widest_idx = widths.index(max(widths))
-        widths[widest_idx] -= excess
+        slack = [w - min_w for w in widths]
+        total_slack = sum(slack)
+        widths = [w - excess * (sl / total_slack) for w, sl in zip(widths, slack)]
     return widths
 
 

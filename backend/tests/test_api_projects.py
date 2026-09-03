@@ -1,3 +1,5 @@
+import json
+
 from fastapi.testclient import TestClient
 
 from slidecaptain.server.app import create_app
@@ -71,6 +73,19 @@ def test_put_deck_bad_preset_overrides_422(client):
     r = client.put("/api/projects/p1/deck", json=deck)
     assert r.status_code == 422
     assert "하한" in r.json()["detail"]
+
+
+def test_put_deck_inf_preset_override_422(client):
+    # httpx의 json= 은 allow_nan=False라 Infinity를 직접 보낼 수 없으므로 본문을 직접 인코딩한다
+    # (표준 json.dumps 기본값은 Infinity를 쓰고, 서버의 json.loads는 그것을 그대로 받는다. 실측)
+    client.post("/api/projects", json={"name": "p1"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["meta"]["preset_overrides"] = {"page_width_pt": float("inf")}
+    body = json.dumps(deck)
+    r = client.put(
+        "/api/projects/p1/deck", content=body, headers={"Content-Type": "application/json"}
+    )
+    assert r.status_code == 422
 
 
 def test_preset_get_put_and_render_uses_it(client):

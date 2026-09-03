@@ -76,3 +76,34 @@ def test_header_bold_and_filled(saved):
     table = next(s for s in saved.slides[0].shapes if s.name == "ch01:table").table
     header_run = table.cell(0, 0).text_frame.paragraphs[0].runs[0]
     assert header_run.font.bold is True
+
+
+def _many_columns_deck(n_cols: int) -> Deck:
+    return Deck(
+        meta=DeckMeta(title="열 많은 표"),
+        structure=Structure(
+            chapters=[Chapter(id="ch01", topic="열 회귀", template="table")]
+        ),
+        slides=[
+            Slide(
+                chapter_id="ch01",
+                slots=TableSlots(
+                    columns=[f"열{i}" for i in range(n_cols)],
+                    rows=[[f"값{i}" for i in range(n_cols)]],
+                ),
+            )
+        ],
+    )
+
+
+@pytest.mark.parametrize("n_cols", [15, 20, 40])
+def test_many_column_table_writes_without_crashing(tmp_path, n_cols):
+    # 열 폭이 음수면 python-pptx가 EMU 범위 오류로 죽는다 (실측: n=40 -> ValueError, EMU 음수)
+    metrics = FontMetrics.from_bundled()
+    plan = build_render_plan(_many_columns_deck(n_cols), PRESET, metrics)
+    out = tmp_path / f"table-{n_cols}.pptx"
+    write_pptx(plan, out)
+    presentation = Presentation(str(out))
+    table = next(s for s in presentation.slides[0].shapes if s.has_table).table
+    assert len(table.columns) == n_cols
+    assert all(col.width > 0 for col in table.columns)

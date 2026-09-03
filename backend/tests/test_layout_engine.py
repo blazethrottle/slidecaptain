@@ -186,6 +186,27 @@ def test_table_column_widths_sum_to_frame_width():
     assert min(widths) >= PRESET.spacing.table_min_col_width
 
 
+@pytest.mark.parametrize("n_cols", [5, 15, 20, 40])
+def test_table_column_widths_stay_positive_with_many_columns(n_cols):
+    # 열이 많아지면 최소 폭 보정의 초과분이 한 열에서만 빠져 음수가 났다 (실측 n=40 -> -1480pt)
+    deck = _deck(
+        [
+            (
+                "table",
+                TableSlots(
+                    columns=[f"열{i}" for i in range(n_cols)],
+                    rows=[[f"값{i}" for i in range(n_cols)]],
+                ),
+            )
+        ]
+    )
+    plan = build_render_plan(deck, PRESET, FAKE)
+    widths = _frame(plan.slides[0], ":table").table.col_widths_pt
+    assert len(widths) == n_cols
+    assert all(w > 0 for w in widths)
+    assert sum(widths) == pytest.approx(860.0, abs=1e-6)
+
+
 def test_conclusion_overflow_warns():
     # 결론 박스는 높이 고정(56pt)이라 2줄을 넘으면 경고가 남는다
     long_conclusion = "결론 문장이 지나치게 길어서 박스 용량을 넘는다 " * 20

@@ -1468,46 +1468,55 @@
         "properties": {
           "cover_title_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Cover Title Pt",
             "default": 28.0
           },
           "section_title_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Section Title Pt",
             "default": 24.0
           },
           "title_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Title Pt",
             "default": 20.0
           },
           "subtitle_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Subtitle Pt",
             "default": 14.0
           },
           "body_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Body Pt",
             "default": 12.0
           },
           "box_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Box Pt",
             "default": 12.0
           },
           "table_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Table Pt",
             "default": 12.0
           },
           "footnote_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Footnote Pt",
             "default": 9.0
           },
           "page_number_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Page Number Pt",
             "default": 9.0
           }
@@ -1865,11 +1874,13 @@
           },
           "page_width_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Page Width Pt",
             "default": 960.0
           },
           "page_height_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Page Height Pt",
             "default": 540.0
           },
@@ -2131,136 +2142,164 @@
         "properties": {
           "margin_left": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Margin Left",
             "default": 50.0
           },
           "margin_right": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Margin Right",
             "default": 50.0
           },
           "margin_top": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Margin Top",
             "default": 36.0
           },
           "margin_bottom": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Margin Bottom",
             "default": 34.0
           },
           "title_height": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Title Height",
             "default": 40.0
           },
           "title_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Title Gap",
             "default": 16.0
           },
           "footnote_height": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Footnote Height",
             "default": 24.0
           },
           "footnote_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Footnote Gap",
             "default": 8.0
           },
           "box_height": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Box Height",
             "default": 56.0
           },
           "box_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Box Gap",
             "default": 8.0
           },
           "box_padding": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Box Padding",
             "default": 10.0
           },
           "summary_box_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Summary Box Gap",
             "default": 12.0
           },
           "line_spacing": {
             "type": "number",
+            "minimum": 0.5,
             "title": "Line Spacing",
             "default": 1.4
           },
           "bullet_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Bullet Gap",
             "default": 6.0
           },
           "bullet_indent": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Bullet Indent",
             "default": 18.0
           },
           "card_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Card Gap",
             "default": 20.0
           },
           "card_heading_height": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Card Heading Height",
             "default": 24.0
           },
           "card_heading_gap": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Card Heading Gap",
             "default": 8.0
           },
           "cover_indent": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Cover Indent",
             "default": 30.0
           },
           "table_min_col_width": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Table Min Col Width",
             "default": 60.0
           },
           "table_cell_pad_x": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Table Cell Pad X",
             "default": 6.0
           },
           "table_cell_pad_y": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Table Cell Pad Y",
             "default": 3.0
           },
           "page_number_width": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Page Number Width",
             "default": 60.0
           },
           "page_number_height": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Page Number Height",
             "default": 16.0
           },
           "page_number_bottom": {
             "type": "number",
+            "minimum": 0.0,
             "title": "Page Number Bottom",
             "default": 28.0
           },
           "safety_ratio": {
             "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
             "title": "Safety Ratio",
             "default": 0.97
           },
           "border_width_pt": {
             "type": "number",
+            "exclusiveMinimum": 0.0,
             "title": "Border Width Pt",
             "default": 0.75
           }
