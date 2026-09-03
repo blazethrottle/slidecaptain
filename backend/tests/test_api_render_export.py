@@ -1,20 +1,13 @@
 import json
+import threading
 
-import pytest
 from fastapi.testclient import TestClient
 
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.file_store import FileProjectStore
 
+# client, store 픽스처는 backend/tests/conftest.py 참조 (A2에서 통합, 기본 헤더 X-Requested-With 포함)
 
-@pytest.fixture
-def store(tmp_path):
-    return FileProjectStore(tmp_path / "projects")
-
-
-@pytest.fixture
-def client(store):
-    return TestClient(create_app(store))
+_APP_HEADERS = {"X-Requested-With": "SlideCaptain"}
 
 
 def _project_with_slide(client):
@@ -77,7 +70,7 @@ def _corrupt_overrides_on_disk(store):
 
 
 def test_render_plan_with_hand_edited_bad_overrides_422(store):
-    client = TestClient(create_app(store), raise_server_exceptions=False)
+    client = TestClient(create_app(store), raise_server_exceptions=False, headers=_APP_HEADERS)
     _project_with_slide(client)
     _corrupt_overrides_on_disk(store)
     r = client.get("/api/projects/p1/render-plan")
@@ -86,12 +79,43 @@ def test_render_plan_with_hand_edited_bad_overrides_422(store):
 
 
 def test_export_with_hand_edited_bad_overrides_422(store):
-    client = TestClient(create_app(store), raise_server_exceptions=False)
+    client = TestClient(create_app(store), raise_server_exceptions=False, headers=_APP_HEADERS)
     _project_with_slide(client)
     _corrupt_overrides_on_disk(store)
     r = client.post("/api/projects/p1/export")
     assert r.status_code == 422
     assert "프리셋" in r.json()["detail"]
+
+
+def test_concurrent_export_requests_all_succeed_with_distinct_versions(client, store):
+    # A2가 export_project 라우트를 store.locked(name) 안에서 돌리므로, A1이 재현했던
+    # "넷 다 v001을 돌려받고 파일 3개가 유실"되는 경합이 API 층에서도 사라져야 한다
+    _project_with_slide(client)
+    results: list = []
+    errors: list[Exception] = []
+    results_lock = threading.Lock()
+
+    def worker() -> None:
+        try:
+            r = client.post("/api/projects/p1/export")
+            with results_lock:
+                results.append(r)
+        except Exception as e:  # noqa: BLE001 - 실패하면 아래 단언에서 드러난다
+            with results_lock:
+                errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert all(r.status_code == 200 for r in results)
+    paths = {r.json()["path"] for r in results}
+    assert len(paths) == 4
+    for p in paths:
+        assert (store.exports_dir("p1") / p.split("\\")[-1].split("/")[-1]).exists()
 
 
 def test_measure_returns_plan_without_saving(client):

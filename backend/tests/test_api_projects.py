@@ -1,14 +1,8 @@
-import pytest
 from fastapi.testclient import TestClient
 
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.file_store import FileProjectStore
 
-
-@pytest.fixture
-def client(tmp_path):
-    store = FileProjectStore(tmp_path / "projects")
-    return TestClient(create_app(store))
+# client, store 픽스처는 backend/tests/conftest.py 참조 (A2에서 통합, 기본 헤더 X-Requested-With 포함)
 
 
 def test_create_and_list_projects(client):
@@ -142,15 +136,55 @@ def test_foreign_host_header_rejected(client):
     assert r.status_code == 400
 
 
-def test_recovery_flow_over_api(tmp_path):
-    store = FileProjectStore(tmp_path / "projects")
-    api = TestClient(create_app(store))
+def test_recovery_flow_over_api(store):
+    api = TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"})
     api.post("/api/projects", json={"name": "p1", "title": "제목"})
     deck = api.get("/api/projects/p1/deck").json()
     api.put("/api/projects/p1/deck", json=deck)  # 스냅샷 생성
-    (tmp_path / "projects" / "p1" / "deck.json").unlink()
+    (store.root / "p1" / "deck.json").unlink()
     assert api.get("/api/projects").json()[0]["status"] == "needs_recovery"
     snaps = api.get("/api/projects/p1/snapshots").json()
     r = api.post(f"/api/projects/p1/snapshots/{snaps[0]['id']}/restore")
     assert r.status_code == 200
     assert api.get("/api/projects/p1/deck").status_code == 200
+
+
+def test_get_deck_returns_quoted_etag(client):
+    client.post("/api/projects", json={"name": "p1"})
+    r = client.get("/api/projects/p1/deck")
+    etag = r.headers["etag"]
+    assert etag.startswith('"') and etag.endswith('"')
+    assert len(etag) == 66  # 큰따옴표 2개 + SHA-256 16진수 64자
+
+
+def test_put_deck_with_matching_if_match_succeeds_and_returns_new_etag(client):
+    client.post("/api/projects", json={"name": "p1", "title": "제목"})
+    r = client.get("/api/projects/p1/deck")
+    etag = r.headers["etag"]
+    deck = r.json()
+    deck["meta"]["title"] = "고친 제목"
+    r2 = client.put("/api/projects/p1/deck", json=deck, headers={"If-Match": etag})
+    assert r2.status_code == 200
+    assert r2.headers["etag"] != etag
+    assert client.get("/api/projects/p1/deck").json()["meta"]["title"] == "고친 제목"
+
+
+def test_put_deck_with_stale_if_match_conflict_412(client):
+    client.post("/api/projects", json={"name": "p1", "title": "제목"})
+    stale_etag = '"' + "0" * 64 + '"'
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["meta"]["title"] = "다른 창에서 편집"
+    r = client.put("/api/projects/p1/deck", json=deck, headers={"If-Match": stale_etag})
+    assert r.status_code == 412
+    assert "먼저 저장" in r.json()["detail"]
+    # 충돌이면 파일이 그대로다
+    assert client.get("/api/projects/p1/deck").json()["meta"]["title"] == "제목"
+
+
+def test_put_deck_without_if_match_succeeds_regardless_of_current_content(client):
+    client.post("/api/projects", json={"name": "p1"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["meta"]["title"] = "헤더 없이 저장"
+    r = client.put("/api/projects/p1/deck", json=deck)  # If-Match 미포함
+    assert r.status_code == 200
+    assert client.get("/api/projects/p1/deck").json()["meta"]["title"] == "헤더 없이 저장"

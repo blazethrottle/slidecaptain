@@ -1,9 +1,9 @@
-import pytest
 from fastapi.testclient import TestClient
 
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.file_store import FileProjectStore
+
+# store 픽스처는 backend/tests/conftest.py 참조
 
 STRUCTURE_PAYLOAD = {"chapters": [
     {"topic": "표지", "conclusion": "", "template": "cover", "source_refs": []},
@@ -27,13 +27,10 @@ class StubProvider:
         return item
 
 
-@pytest.fixture
-def store(tmp_path):
-    return FileProjectStore(tmp_path / "projects")
-
-
 def _client(store, responses) -> TestClient:
-    return TestClient(create_app(store, provider=StubProvider(responses)))
+    return TestClient(
+        create_app(store, provider=StubProvider(responses)), headers={"X-Requested-With": "SlideCaptain"}
+    )
 
 
 def _project_with_structure(client):
@@ -97,7 +94,7 @@ def test_provider_failure_returns_503(store):
 
 
 def test_generate_without_provider_returns_503(store):
-    client = TestClient(create_app(store))  # provider 없음: 기존 시그니처 호환
+    client = TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"})  # provider 없음: 기존 시그니처 호환
     client.post("/api/projects", json={"name": "p1"})
     r = client.post("/api/projects/p1/generate/structure", json={})
     assert r.status_code == 503

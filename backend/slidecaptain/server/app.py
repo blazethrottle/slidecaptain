@@ -9,8 +9,9 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from typing import Literal
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +28,7 @@ from slidecaptain.pipeline.auth_status import LoginStatus, check_login
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.service import ChapterResult, GenerationService, StructureResult
 from slidecaptain.storage.file_store import (
+    DeckConflict,
     InvalidName,
     InvalidSourceEncoding,
     ProjectExists,
@@ -47,16 +49,21 @@ _STATUS_BY_ERROR = [
     (SnapshotNotFound, 404),
     (SourceNotFound, 404),
     (ProjectExists, 409),
+    (DeckConflict, 412),  # StorageError보다 앞에 둔다: 목록은 첫 매치를 쓰므로 뒤에 두면 400으로 샌다
     (StorageError, 400),
 ]
 
 _SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
 _UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
 _UPLOAD_MAX_BYTES = 5 * 1024 * 1024
-# 업로드는 원시 본문을 받으므로 다른 사이트의 페이지가 text/plain POST(브라우저의 단순 요청)로 자료를 써 넣을 수 있다.
-# 커스텀 헤더를 요구하면 브라우저가 사전 확인(OPTIONS)을 먼저 보내고, 이 서버는 405로 답해 본 요청이 나가지 않는다
-# (2026-09-01 브랜치 최종 리뷰 반영. TrustedHost는 Host만 보므로 이 경로를 막지 못한다)
-_UPLOAD_REQUIRED_HEADER = "SlideCaptain"
+# 상태를 바꾸는 모든 /api/ 요청(POST, PUT, DELETE 등)은 이 값을 X-Requested-With로 보내야 한다
+# (아래 상태 변경 요청 보호 미들웨어). 이 헤더는 브라우저의 단순 요청 허용 목록 밖이라, 다른 Origin의
+# 페이지가 붙이면 사전 확인(OPTIONS)이 먼저 가고 이 서버는 CORS 헤더를 내지 않으므로 본 요청이 나가지
+# 않는다 (2026-09-01 브랜치 최종 리뷰 반영. 2026-09-04 A2에서 업로드 전용 검사를 공통 미들웨어로 확장.
+# TrustedHost는 Host만 보므로 이 경로를 막지 못한다)
+_APP_HEADER_VALUE = "SlideCaptain"
+_PROTECTION_MESSAGE = "이 요청은 Slide Captain 화면에서만 보낼 수 있습니다."
+_ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost"}
 _LOGIN_CACHE_SEC = 60.0  # 새로고침마다 CLI 프로세스를 띄우지 않는다
 
 _VALIDATION_TYPE_MESSAGES = {
@@ -154,6 +161,23 @@ def create_app(
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
+    @app.middleware("http")
+    async def require_app_header(request: Request, call_next):
+        """상태 변경 요청 보호 (계획서 A2, 가정 3). GET, HEAD, OPTIONS와 /api/ 밖 경로는 그대로 둔다.
+
+        여기서 HTTPException을 던지지 않고 JSONResponse를 직접 돌려주는 이유: 사용자 미들웨어는
+        예외 처리기(@app.exception_handler) 바깥에 있어 던지면 500이 된다 (적대 리뷰 실측).
+        나중에 add_middleware로 등록한 것이 먼저 실행되므로, 이 미들웨어는 TrustedHostMiddleware보다
+        바깥에서 돈다: 나쁜 Host와 헤더 없음이 겹치면 이 403이 먼저 나간다.
+        """
+        if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path.startswith("/api/"):
+            if request.headers.get("x-requested-with") != _APP_HEADER_VALUE:
+                return JSONResponse(status_code=403, content={"detail": _PROTECTION_MESSAGE})
+            origin = request.headers.get("origin")
+            if origin is not None and urlparse(origin).hostname not in _ALLOWED_ORIGIN_HOSTS:
+                return JSONResponse(status_code=403, content={"detail": _PROTECTION_MESSAGE})
+        return await call_next(request)
+
     @app.exception_handler(StorageError)
     async def storage_error_handler(request, exc: StorageError):
         status = next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls))
@@ -221,13 +245,23 @@ def create_app(
         return store.create_project(req.name, req.title)
 
     @app.get("/api/projects/{name}/deck", response_model=Deck)
-    def get_deck(name: str):
-        return store.load_deck(name)
+    def get_deck(name: str, response: Response):
+        deck, etag = store.load_deck_with_etag(name)
+        response.headers["ETag"] = f'"{etag}"'
+        return deck
 
     @app.put("/api/projects/{name}/deck", response_model=OkResponse)
-    def put_deck(name: str, deck: Deck, snapshot: bool = True):
+    def put_deck(
+        name: str,
+        deck: Deck,
+        response: Response,
+        snapshot: bool = True,
+        if_match: str | None = Header(default=None),
+    ):
         _preset_for(deck)
-        store.save_deck(name, deck, snapshot=snapshot)
+        expected_etag = if_match.strip('"') if if_match is not None else None
+        etag = store.save_deck(name, deck, snapshot=snapshot, expected_etag=expected_etag)
+        response.headers["ETag"] = f'"{etag}"'
         return OkResponse()
 
     @app.post("/api/projects/{name}/snapshots", response_model=OkResponse, status_code=201)
@@ -249,9 +283,12 @@ def create_app(
 
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str):
-        deck = store.load_deck(name)
-        _preset_for(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
-        path = export_deck_data(deck, store.exports_dir(name), global_preset=store.load_global_preset())
+        # 잠금 안에서 읽기부터 내보내기까지 한 단위로 묶는다: 잠금 밖이면 동시 내보내기의
+        # 스캔과 이동이 겹쳐 같은 버전 번호를 돌려주고 파일이 조용히 유실된다 (A1 재현 실측)
+        with store.locked(name):
+            deck = store.load_deck(name)
+            _preset_for(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
+            path = export_deck_data(deck, store.exports_dir(name), global_preset=store.load_global_preset())
         return ExportResult(path=str(path))
 
     @app.get("/api/projects/{name}/snapshots", response_model=list[SnapshotInfo])
@@ -259,10 +296,15 @@ def create_app(
         return store.list_snapshots(name)
 
     @app.post("/api/projects/{name}/snapshots/{snapshot_id}/restore", response_model=Deck)
-    def restore_snapshot(name: str, snapshot_id: str):
-        # A1에서 restore_snapshot이 (Deck, etag) 튜플을 돌려주도록 확장됐다.
-        # 헤더로 새 ETag를 싣는 것은 A2 소관이라 여기서는 시그니처 호환만 맞춘다.
-        deck, _etag = store.restore_snapshot(name, snapshot_id)
+    def restore_snapshot(
+        name: str,
+        snapshot_id: str,
+        response: Response,
+        if_match: str | None = Header(default=None),
+    ):
+        expected_etag = if_match.strip('"') if if_match is not None else None
+        deck, etag = store.restore_snapshot(name, snapshot_id, expected_etag=expected_etag)
+        response.headers["ETag"] = f'"{etag}"'
         return deck
 
     @app.get("/api/projects/{name}/sources", response_model=list[str])
@@ -284,14 +326,12 @@ def create_app(
         filename: str,
         request: Request,
         overwrite: bool = False,
-        x_requested_with: str | None = Header(default=None),
     ):
         """파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
 
         멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
+        표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는 하지 않는다.
         """
-        if x_requested_with != _UPLOAD_REQUIRED_HEADER:
-            raise HTTPException(400, "이 요청은 Slide Captain 화면에서만 보낼 수 있습니다. 앱 화면에서 다시 시도해 주세요.")
         # 브라우저나 OS가 붙인 경로 조각은 벗기고 이름만 쓴다 (Windows 역슬래시 포함, OS 무관하게 처리)
         filename = PureWindowsPath(filename).name
         if Path(filename).suffix.lower() not in _UPLOAD_EXTENSIONS:
@@ -306,11 +346,14 @@ def create_app(
         data = await request.body()
         if len(data) > _UPLOAD_MAX_BYTES:
             raise HTTPException(422, "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요.")
-        # 이름 규칙 위반은 422, 프로젝트 부재는 404로 저장소 예외 매핑을 탄다
-        if store.source_exists(name, filename) and not overwrite:
-            raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
         text = decode_source_bytes(data, filename)  # 해석 실패는 InvalidSourceEncoding(422)
-        store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
+        # 확인(source_exists)과 쓰기를 잠금 안에서 함께 수행한다: 잠금 밖이면 같은 새 이름의
+        # 두 업로드가 둘 다 확인을 통과해 나중 것이 조용히 덮어쓸 수 있다 (적대 리뷰 재현)
+        with store.locked(name):
+            # 이름 규칙 위반은 422, 프로젝트 부재는 404로 저장소 예외 매핑을 탄다
+            if store.source_exists(name, filename) and not overwrite:
+                raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+            store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
         return UploadResult(filename=filename, chars=len(text))
 
     @app.get("/api/status", response_model=AppStatus)

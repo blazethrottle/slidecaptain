@@ -2,13 +2,15 @@
 
 from datetime import datetime
 
-import pytest
 from fastapi.testclient import TestClient
 
 from slidecaptain.pipeline.auth_status import LoginStatus
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.file_store import FileProjectStore
+
+# store 픽스처는 backend/tests/conftest.py 참조
+
+_APP_HEADERS = {"X-Requested-With": "SlideCaptain"}
 
 STRUCTURE_PAYLOAD = {"chapters": [
     {"topic": "표지", "conclusion": "", "template": "cover", "source_refs": []},
@@ -49,11 +51,6 @@ def _checker(status: LoginStatus):
     return check
 
 
-@pytest.fixture
-def store(tmp_path):
-    return FileProjectStore(tmp_path / "projects")
-
-
 def _project_with_structure(client):
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
@@ -67,7 +64,7 @@ def _project_with_structure(client):
 
 def test_status_reports_login_provider_and_no_generation_yet(store):
     checker = _checker(LOGGED_IN)
-    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=checker))
+    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=checker), headers=_APP_HEADERS)
     r = client.get("/api/status")
     assert r.status_code == 200
     body = r.json()
@@ -82,12 +79,15 @@ def test_status_reports_login_provider_and_no_generation_yet(store):
 
 
 def test_status_exposes_provider_model_when_present(store):
-    client = TestClient(create_app(store, provider=StubProviderWithModel([]), login_checker=_checker(LOGGED_IN)))
+    client = TestClient(
+        create_app(store, provider=StubProviderWithModel([]), login_checker=_checker(LOGGED_IN)),
+        headers=_APP_HEADERS,
+    )
     assert client.get("/api/status").json()["model"] == "sonnet"
 
 
 def test_status_without_provider(store):
-    client = TestClient(create_app(store, login_checker=_checker(LOGGED_IN)))
+    client = TestClient(create_app(store, login_checker=_checker(LOGGED_IN)), headers=_APP_HEADERS)
     body = client.get("/api/status").json()
     assert body["provider"] == "none"
     assert body["model"] is None
@@ -95,7 +95,7 @@ def test_status_without_provider(store):
 
 def test_status_caches_login_check(store):
     checker = _checker(LOGGED_IN)
-    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=checker))
+    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=checker), headers=_APP_HEADERS)
     client.get("/api/status")
     client.get("/api/status")
     assert len(checker.calls) == 1
@@ -105,7 +105,7 @@ def test_status_records_last_success_after_structure_generation(store):
     client = TestClient(create_app(
         store, provider=StubProvider([ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")]),
         login_checker=_checker(LOGGED_IN),
-    ))
+    ), headers=_APP_HEADERS)
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
     assert client.post("/api/projects/p1/generate/structure", json={"target_chapters": 2}).json()["status"] == "ok"
@@ -118,7 +118,7 @@ def test_status_records_last_success_after_condense(store):
     client = TestClient(create_app(
         store, provider=StubProvider([ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")]),
         login_checker=_checker(LOGGED_IN),
-    ))
+    ), headers=_APP_HEADERS)
     _project_with_structure(client)
     body = {"slots": {"template": "bullet_box",
                       "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
@@ -131,7 +131,7 @@ def test_status_records_last_success_after_chapter_generation(store):
     client = TestClient(create_app(
         store, provider=StubProvider([ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")]),
         login_checker=_checker(LOGGED_IN),
-    ))
+    ), headers=_APP_HEADERS)
     _project_with_structure(client)
     r = client.post("/api/projects/p1/generate/chapter/c1", json={"instructions": ""})
     assert r.status_code == 200 and r.json()["status"] == "ok"
@@ -141,7 +141,7 @@ def test_status_records_last_success_after_chapter_generation(store):
 def test_status_survives_checker_exception(store):
     def broken() -> LoginStatus:
         raise RuntimeError("checker 고장")
-    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=broken))
+    client = TestClient(create_app(store, provider=StubProvider([]), login_checker=broken), headers=_APP_HEADERS)
     r = client.get("/api/status")
     assert r.status_code == 200
     assert r.json()["login"]["logged_in"] is None
@@ -151,7 +151,7 @@ def test_status_survives_checker_exception(store):
 def test_status_not_updated_when_generation_fails(store):
     client = TestClient(create_app(
         store, provider=StubProvider([ProviderCallFailed("호출 실패")]), login_checker=_checker(LOGGED_IN),
-    ))
+    ), headers=_APP_HEADERS)
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
     r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 2})

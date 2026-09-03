@@ -1,20 +1,19 @@
 """자료 파일 업로드 API (원시 바이트 본문) 테스트. 계획서 2026-09-01 태스크 2."""
 
+import threading
+
 import pytest
 from fastapi.testclient import TestClient
 
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.file_store import FileProjectStore
 
-
-@pytest.fixture
-def store(tmp_path):
-    return FileProjectStore(tmp_path / "projects")
+# store 픽스처는 backend/tests/conftest.py 참조. client는 프로젝트 p1을 미리 만드는 이 파일만의
+# 확장이라 conftest의 것을 그대로 쓰지 않는다 (A2에서 기본 헤더 X-Requested-With만 conftest와 통일).
 
 
 @pytest.fixture
 def client(store):
-    c = TestClient(create_app(store))
+    c = TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"})
     assert c.post("/api/projects", json={"name": "p1", "title": "검토"}).status_code in (200, 201)
     return c
 
@@ -28,15 +27,18 @@ def _upload(client, filename: str, data: bytes, overwrite: bool = False):
     )
 
 
-def test_upload_without_app_header_is_rejected(client):
-    # 다른 사이트의 페이지가 보내는 text/plain POST(사전 확인 없는 단순 요청)를 막는다 (2026-09-01 최종 리뷰 반영)
-    r = client.post(
+def test_upload_without_app_header_is_rejected(client, store):
+    # 다른 사이트의 페이지가 보내는 text/plain POST(사전 확인 없는 단순 요청)를 막는다 (2026-09-01 최종 리뷰
+    # 반영. 2026-09-04 A2에서 이 검사가 공통 미들웨어로 옮겨가며 상태 코드가 400에서 403으로 바뀌었다).
+    # client 픽스처는 이제 기본 헤더가 붙으므로, 헤더를 아예 안 보내는 클라이언트를 따로 만든다
+    bare = TestClient(create_app(store))
+    r = bare.post(
         "/api/projects/p1/sources/주입.md/upload",
         params={"overwrite": "true"},
         content=b"injected",
         headers={"Content-Type": "text/plain"},
     )
-    assert r.status_code == 400
+    assert r.status_code == 403
     assert "Slide Captain 화면에서만" in r.json()["detail"]
     assert client.get("/api/projects/p1/sources").json() == []
 
@@ -137,3 +139,24 @@ def test_upload_missing_project_404(store):
     c = TestClient(create_app(store))
     r = c.post("/api/projects/없음/sources/a.md/upload", content=b"x", headers={"X-Requested-With": "SlideCaptain"})
     assert r.status_code == 404
+
+
+def test_concurrent_upload_same_new_name_only_one_succeeds(client):
+    # source_exists 확인과 write_source가 잠금 밖에서 쪼개져 있으면 같은 새 이름의 두 업로드가
+    # 둘 다 확인을 통과할 수 있다 (적대 리뷰 재현). A2가 store.locked(name) 안에서 묶는다
+    results: list[int] = []
+    results_lock = threading.Lock()
+
+    def worker(data: bytes) -> None:
+        r = _upload(client, "동시.md", data)
+        with results_lock:
+            results.append(r.status_code)
+
+    threads = [threading.Thread(target=worker, args=(b"v1",)), threading.Thread(target=worker, args=(b"v2",))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert sorted(results) == [200, 409]
+    assert client.get("/api/projects/p1/sources").json() == ["동시.md"]

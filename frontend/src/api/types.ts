@@ -196,6 +196,7 @@ export interface paths {
          * @description 파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
          *
          *     멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
+         *     표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는 하지 않는다.
          */
         post: operations["upload_source_api_projects__name__sources__filename__upload_post"];
         delete?: never;
@@ -1330,7 +1331,9 @@ export interface operations {
             query?: {
                 snapshot?: boolean;
             };
-            header?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
             path: {
                 name: string;
             };
@@ -1522,7 +1525,9 @@ export interface operations {
     restore_snapshot_api_projects__name__snapshots__snapshot_id__restore_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
             path: {
                 name: string;
                 snapshot_id: string;
@@ -1655,9 +1660,7 @@ export interface operations {
             query?: {
                 overwrite?: boolean;
             };
-            header?: {
-                "x-requested-with"?: string | null;
-            };
+            header?: never;
             path: {
                 name: string;
                 filename: string;

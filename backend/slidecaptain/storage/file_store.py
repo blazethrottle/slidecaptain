@@ -29,6 +29,11 @@ from slidecaptain.models.preset import Preset
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 _SNAPSHOT_RE = re.compile(r"^deck-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
+# save_deck과 restore_snapshot이 같은 문구를 축자 중복으로 썼다 (A1 리뷰 minor, A2에서 상수로 묶는다)
+_DECK_CONFLICT_MESSAGE = (
+    "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
+    "화면을 새로고침한 뒤 다시 편집해 주세요."
+)
 
 
 class StorageError(Exception):
@@ -331,10 +336,7 @@ class FileProjectStore:
             if expected_etag is not None:
                 current = hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
                 if current != expected_etag:
-                    raise DeckConflict(
-                        "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
-                        "화면을 새로고침한 뒤 다시 편집해 주세요."
-                    )
+                    raise DeckConflict(_DECK_CONFLICT_MESSAGE)
             if snapshot:
                 self._snapshot_current(d)
             return self._write_deck(d, deck)
@@ -366,10 +368,7 @@ class FileProjectStore:
                 deck_path = d / "deck.json"
                 current = hashlib.sha256(deck_path.read_bytes()).hexdigest() if deck_path.exists() else None
                 if current != expected_etag:
-                    raise DeckConflict(
-                        "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
-                        "화면을 새로고침한 뒤 다시 편집해 주세요."
-                    )
+                    raise DeckConflict(_DECK_CONFLICT_MESSAGE)
             _validate_name(snapshot_id, "스냅샷")
             path = d / "snapshots" / f"{snapshot_id}.json"
             if not path.exists():
