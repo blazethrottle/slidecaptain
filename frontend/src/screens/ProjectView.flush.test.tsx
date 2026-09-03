@@ -174,3 +174,39 @@ it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이�
   expect(screen.getAllByRole("alert")).toHaveLength(1);
   expect(document.querySelector(".sources-screen")).not.toBeNull();  // 탭은 바뀌지 않았다
 });
+
+it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
+  // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck)
+    .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."))
+    .mockRejectedValue(new Error("서버 중단"));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await userEvent.click(screen.getByText("보고 정보 저장"));  // 412: leaveScreen 을 거치지 않는 경로
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  const title2 = await screen.findByLabelText("보고서 제목");
+  await waitFor(() => expect(title2).toHaveValue("제목"));
+  await userEvent.clear(title2);
+  await userEvent.type(title2, "다시 고침");
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 이번 실패는 412 가 아니다
+  expect(await screen.findByText("이동을 중단했습니다", { exact: false })).toBeInTheDocument();
+  expect(document.querySelector(".sources-screen")).not.toBeNull();
+});
+
+it("편집 탭이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  await openEditorAndEdit("둘");
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 플러시 → 412 → 편집기 충돌
+  expect(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
+  // 편집기의 정답은 재시도가 아니라 되돌리기이므로 "다시 시도" 를 권하는 일반 배너는 생략한다
+  expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
+  expect(document.querySelector(".editor-screen")).not.toBeNull();
+});

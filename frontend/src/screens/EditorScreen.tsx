@@ -9,16 +9,17 @@ import { applyTextEdit, reorderChapters } from "../editor/slotOps";
 import { useDeckEditor, type Timings } from "../state/useDeckEditor";
 
 export function EditorScreen({
-  project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, timings,
+  project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, timings,
 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 탭 전환 전에 플러시하도록
   onDirtyChange?: (dirty: boolean) => void;  // 저장 대기/저장 중/저장 실패이면 참 (부모의 beforeunload 경고용)
+  onConflictHint?: () => void;  // 412 를 만났음을 부모에 알린다. 배너는 이 화면이 직접 띄우므로 부모는 일반 배너만 생략한다
   timings?: Timings;
 }) {
-  const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings);
+  const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint);
   const chapters = editor.deck.structure.chapters;
   const [chapterId, setChapterId] = useState<string | null>(chapters[0]?.id ?? null);
   const [selected, setSelected] = useState<FrameRef | null>(null);

@@ -12,6 +12,7 @@ export function useDeckEditor(
   initialDeck: Deck,
   onDeckChange: (d: Deck) => void,
   timings: Timings = DEFAULT_TIMINGS,
+  onConflict?: () => void,  // 412 를 만난 그 자리에서 동기로 알린다 (부모가 일반 실패 배너를 생략하는 힌트. 묶음 최종 리뷰 2)
 ) {
   const [state, dispatch] = useReducer(editorReducer, {
     past: [], present: initialDeck, future: [],
@@ -28,6 +29,8 @@ export function useDeckEditor(
   const [conflict, setConflict] = useState(false);
   const conflictRef = useRef(conflict);
   conflictRef.current = conflict;
+  const onConflictRef = useRef(onConflict);
+  onConflictRef.current = onConflict;
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
@@ -65,7 +68,10 @@ export function useDeckEditor(
       // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01)
       return doPut(residual);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 412) setConflict(true);
+      if (e instanceof ApiError && e.status === 412) {
+        setConflict(true);
+        onConflictRef.current?.();
+      }
       setSaveError(messageOf(e));
       // 실패한 내용을 그 사이에 되돌려 화면이 마지막 저장본과 같아졌으면 서버와 화면이 일치하므로 '저장됨' 이 맞다.
       // 이 경우 덱이 바뀌지 않아 자동 저장 효과가 다시 돌지 않으므로 여기서 표시를 정한다
@@ -116,7 +122,10 @@ export function useDeckEditor(
   // 플러시: 진행 중 저장이 끝난 뒤 잔여 편집까지 즉시 저장한다 (결정 1. 내보내기와 화면 이탈 전에 부모가 부른다)
   // 성공 여부를 반환해, 저장 실패 시 내보내기나 이탈을 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
   const flushSave = useCallback(async (): Promise<boolean> => {
-    if (conflict) return false;  // 충돌 상태에서는 시도하지 않는다: reloadFromServer로 먼저 해소해야 한다
+    if (conflict) {  // 충돌 상태에서는 시도하지 않는다: reloadFromServer로 먼저 해소해야 한다
+      onConflictRef.current?.();
+      return false;
+    }
     await saveChain.current;
     if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
     return true;

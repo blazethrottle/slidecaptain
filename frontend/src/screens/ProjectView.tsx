@@ -77,13 +77,15 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     if (!flushScreen.current) return true;
     setLeaving(true);
     try {
+      // 이번 플러시 동안 생긴 충돌만 본다: 저장 버튼처럼 leaveScreen 밖에서 켜진 값이 새어 들어와
+      // 무관한 실패의 배너까지 삼키지 않게 호출 직전에 재설정한다 (묶음 최종 리뷰 1)
+      justConflicted.current = false;
       const flushed = await flushScreen.current();
       if (flushed) {
         setDirty(false);
       } else if (!justConflicted.current) {
         setError(`마지막 편집을 저장하지 못해 ${action} 중단했습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.`);
       }
-      justConflicted.current = false;
       return flushed;
     } finally {
       setLeaving(false);
@@ -184,6 +186,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       {!showRecovery && tab === "editor" && hasSlides && (
         <EditorScreen project={project} deck={deck} onDeckChange={setDeck}
           onEditorReady={(f) => { flushScreen.current = f; }}
+          onConflictHint={() => { justConflicted.current = true; }}
           onDirtyChange={setDirty} />
       )}
     </main>
