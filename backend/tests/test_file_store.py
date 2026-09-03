@@ -537,3 +537,13 @@ def test_write_source_exact_same_name_still_overwrites(store):
     store.write_source("p1", "report.md", "원본")
     store.write_source("p1", "report.md", "덮어씀")  # 대소문자까지 완전히 같은 이름은 덮어쓴다
     assert store.read_source("p1", "report.md") == "덮어씀"
+
+
+def test_casefold_conflict_detects_nfd_named_existing_file(store):
+    # 리뷰 A4-F1: 탐색기가 NFD 로 만든 기존 파일과 대소문자만 다른 NFC 이름은 정규화 없이 비교하면 놓친다
+    import unicodedata
+    store.create_project("p1")
+    nfd = unicodedata.normalize("NFD", "보고서A.md")
+    (store.root / "p1" / "sources" / nfd).write_text("x", encoding="utf-8")
+    with pytest.raises(SourceConflict):
+        store.write_source("p1", "보고서a.md", "y")

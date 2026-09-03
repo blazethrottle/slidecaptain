@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 BODY_MIN_PT = 12.0
 FOOTNOTE_MIN_PT = 9.0
-_MIN_CONTENT_PT = 100.0  # 표, 카드, 불릿 영역이 실제로 그려질 수 있는 내용 폭과 높이의 하한 (설계서 3.3)
+_MIN_CONTENT_PT = 100.0  # 표, 카드, 불릿 영역이 실제로 그려질 수 있는 내용 폭과 높이의 하한 (5A A 계획서 태스크 A3)
 
 HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
 

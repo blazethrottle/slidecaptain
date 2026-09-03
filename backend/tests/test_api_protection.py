@@ -29,6 +29,12 @@ def test_post_with_app_header_passes_protection(client):
     assert r.status_code == 201
 
 
+def test_bad_host_without_app_header_is_403_first(bare_client):
+    # 보호 미들웨어가 TrustedHost 보다 바깥이라 나쁜 Host 와 헤더 없음이 겹치면 403 이 먼저다 (계획서 A2, 리뷰 A2-F1)
+    r = bare_client.post("/api/projects/p1/snapshots", headers={"Host": "evil.example.com"})
+    assert r.status_code == 403
+
+
 def test_get_passes_without_app_header(bare_client):
     assert bare_client.get("/api/projects").status_code == 200
 

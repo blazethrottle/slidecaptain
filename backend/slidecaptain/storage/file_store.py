@@ -95,11 +95,14 @@ def _nfc(value: str) -> str:
 def _casefold_conflict(dir_path: Path, filename: str) -> str | None:
     """filename과 정확히 같지 않지만 대소문자만 다른 기존 파일이 있으면 그 실제 이름을 돌려준다.
     판정은 casefold()로 하므로 파일 시스템의 대소문자 구분 여부와 무관하게 같은 규칙이 적용된다."""
-    target = filename.casefold()
+    target = _nfc(filename).casefold()
     for p in dir_path.iterdir():
-        if not p.is_file() or p.name.startswith(".") or p.name == filename:
+        if not p.is_file() or p.name.startswith("."):
             continue
-        if p.name.casefold() == target:
+        existing = _nfc(p.name)  # 탐색기가 NFD 로 만든 이름도 같은 규칙으로 비교한다 (리뷰 A4-F1)
+        if existing == _nfc(filename):
+            continue
+        if existing.casefold() == target:
             return p.name
     return None
 
