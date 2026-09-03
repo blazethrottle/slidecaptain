@@ -45,9 +45,27 @@ async function throwIfFailed(r: Response): Promise<void> {
   throw new ApiError(r.status, detail);
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...init });
+// 저장본 식별값(ETag): 프로젝트 이름을 키로 마지막으로 본 값을 기억해, 다음 PUT/POST에 If-Match로 실어 보낸다
+// (서버가 그사이 다른 창에서 저장됐으면 412로 막는다). 모듈 전역이라 테스트 사이에는 resetEtags()로 비운다
+const etags = new Map<string, string>();
+
+export function resetEtags(): void {
+  etags.clear();
+}
+
+async function request<T>(path: string, init?: RequestInit, opts?: { etagKey?: string }): Promise<T> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Requested-With": "SlideCaptain",  // 서버가 요구하는 앱 식별 헤더 (다른 사이트의 단순 요청 차단)
+  };
+  const known = opts?.etagKey ? etags.get(opts.etagKey) : undefined;
+  if (known) headers["If-Match"] = known;
+  const r = await fetch(path, { ...init, headers });
   await throwIfFailed(r);
+  if (opts?.etagKey) {
+    const etag = r.headers.get("ETag");
+    if (etag) etags.set(opts.etagKey, etag);
+  }
   return r.json() as Promise<T>;
 }
 
@@ -57,11 +75,11 @@ export const api = {
   listProjects: () => request<ProjectInfo[]>("/api/projects"),
   createProject: (name: string, title: string) =>
     request<ProjectInfo>("/api/projects", { method: "POST", body: JSON.stringify({ name, title }) }),
-  getDeck: (name: string) => request<Deck>(`/api/projects/${enc(name)}/deck`),
+  getDeck: (name: string) => request<Deck>(`/api/projects/${enc(name)}/deck`, undefined, { etagKey: name }),
   putDeck: (name: string, deck: Deck, snapshot: boolean) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/deck?snapshot=${snapshot}`, {
       method: "PUT", body: JSON.stringify(deck),
-    }),
+    }, { etagKey: name }),
   measure: (deck: Deck) =>
     request<RenderPlan>("/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
   getPreset: () => request<Preset>("/api/preset"),
@@ -89,7 +107,7 @@ export const api = {
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),
   restoreSnapshot: (name: string, id: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }),
+    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
   exportDeck: (name: string) =>
     request<{ path: string }>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
   generateStructure: (name: string, req: { target_chapters?: number | null; instructions?: string }) =>

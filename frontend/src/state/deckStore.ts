@@ -4,7 +4,8 @@ export type EditorState = { past: Deck[]; present: Deck; future: Deck[] };
 export type EditorAction =
   | { type: "edit"; deck: Deck }
   | { type: "undo" }
-  | { type: "redo" };
+  | { type: "redo" }
+  | { type: "reset"; deck: Deck };  // 충돌(412) 복구: 되돌리기 이력을 비우고 서버 덱으로 교체한다
 
 const LIMIT = 100;
 
@@ -33,6 +34,9 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         present: state.future[0],
         future: state.future.slice(1),
       };
+    }
+    case "reset": {
+      return { past: [], present: action.deck, future: [] };
     }
   }
 }

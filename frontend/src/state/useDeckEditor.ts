@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api, messageOf, type Deck, type RenderPlan } from "../api/client";
+import { api, ApiError, messageOf, type Deck, type RenderPlan } from "../api/client";
 import { editorReducer } from "./deckStore";
 
 export type SaveState = "저장됨" | "저장 대기" | "저장 중" | "저장 실패";
@@ -23,6 +23,11 @@ export function useDeckEditor(
   const [measureTick, setMeasureTick] = useState(0);  // 재실측 요청: 디바운스 실측 효과를 다시 돌린다
   const [saveState, setSaveState] = useState<SaveState>("저장됨");
   const [saveError, setSaveError] = useState("");
+  // 충돌(412): 다른 창이나 프로그램이 먼저 저장했다. 자동으로 덮어쓰지 않고 자동 저장을 멈춘 채
+  // 사용자가 reloadFromServer로 서버 내용을 받아들이길 기다린다 (2026-09-03 저장 안전성 묶음 A5)
+  const [conflict, setConflict] = useState(false);
+  const conflictRef = useRef(conflict);
+  conflictRef.current = conflict;
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
@@ -60,6 +65,7 @@ export function useDeckEditor(
       // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01)
       return doPut(residual);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 412) setConflict(true);
       setSaveError(messageOf(e));
       // 실패한 내용을 그 사이에 되돌려 화면이 마지막 저장본과 같아졌으면 서버와 화면이 일치하므로 '저장됨' 이 맞다.
       // 이 경우 덱이 바뀌지 않아 자동 저장 효과가 다시 돌지 않으므로 여기서 표시를 정한다
@@ -100,22 +106,25 @@ export function useDeckEditor(
       if (inFlight.current === 0) setSaveState("저장됨");
       return;
     }
+    // 충돌 상태에서는 자동 저장을 멈춘다: 사용자가 서버 내용으로 되돌리기 전까지는 다시 시도하지 않는다
+    if (conflict) return;
     setSaveState("저장 대기");
     const t = setTimeout(() => { void saveNow(deck); }, timings.saveMs);
     return () => clearTimeout(t);
-  }, [deck, saveNow, timings.saveMs]);
+  }, [deck, saveNow, timings.saveMs, conflict]);
 
   // 플러시: 진행 중 저장이 끝난 뒤 잔여 편집까지 즉시 저장한다 (결정 1. 내보내기와 화면 이탈 전에 부모가 부른다)
   // 성공 여부를 반환해, 저장 실패 시 내보내기나 이탈을 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
   const flushSave = useCallback(async (): Promise<boolean> => {
+    if (conflict) return false;  // 충돌 상태에서는 시도하지 않는다: reloadFromServer로 먼저 해소해야 한다
     await saveChain.current;
     if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
     return true;
-  }, [saveNow]);
+  }, [saveNow, conflict]);
 
   // 언마운트 플러시: 탭 전환이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
   useEffect(() => () => {
-    if (deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
+    if (!conflictRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);
 
   const apply = useCallback((edit: (d: Deck) => Deck) => {
@@ -130,11 +139,31 @@ export function useDeckEditor(
   const undo = useCallback(() => dispatch({ type: "undo" }), []);
   const redo = useCallback(() => dispatch({ type: "redo" }), []);
 
+  // 충돌 복구: 서버 덱을 다시 읽어 되돌리기 이력을 비우고, 다음 저장은 스냅샷을 남기며(새 편집 세션),
+  // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다)
+  const reloadFromServer = useCallback(async (): Promise<void> => {
+    try {
+      const serverDeck = await api.getDeck(projectName);
+      dispatch({ type: "reset", deck: serverDeck });
+      savedDeck.current = serverDeck;
+      firstSave.current = true;
+      snapshotNext.current = false;
+      setSaveError("");
+      setConflict(false);
+      setSaveState("저장됨");
+      onDeckChangeRef.current(serverDeck);
+    } catch (e) {
+      setSaveError(messageOf(e));
+    }
+  }, [projectName]);
+
+  const retrySave = flushSave;  // 저장 실패 뒤 재시도 버튼의 별칭
+
   return {
-    deck, plan, saveState, saveError, measureError,
+    deck, plan, saveState, saveError, measureError, conflict,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
-    apply, replace, undo, redo, flushSave, remeasure,
+    apply, replace, undo, redo, flushSave, remeasure, reloadFromServer, retrySave,
   };
 }

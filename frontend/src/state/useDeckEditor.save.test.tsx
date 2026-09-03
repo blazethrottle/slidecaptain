@@ -9,7 +9,7 @@ import { useDeckEditor } from "./useDeckEditor";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn() } };
+  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn() } };
 });
 
 const S = deckWith(["하나"]);
@@ -110,6 +110,52 @@ it("저장 실패 뒤에도 다음 편집은 저장을 시도한다 (체인이 �
   await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(result.current.saveState).toBe("저장됨"));
   expect(bulletsOf(vi.mocked(api.putDeck).mock.calls[1][1])).toEqual(["셋"]);
+});
+
+it("PUT이 412를 돌려주면 conflict가 참이고, 이후 편집에는 PUT이 나가지 않으며 flushSave는 false다 (A5)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창에서 먼저 저장되었습니다."));
+  const { result } = renderHook(() =>
+    useDeckEditor("p1", S, stableNoop, { measureMs: 0, saveMs: 0 }));
+  await act(async () => { result.current.apply(() => E1); });
+  await waitFor(() => expect(result.current.conflict).toBe(true));
+  expect(api.putDeck).toHaveBeenCalledTimes(1);
+  await act(async () => { result.current.apply(() => E2); });  // 충돌 상태에서 추가 편집
+  await sleep(20);
+  expect(api.putDeck).toHaveBeenCalledTimes(1);  // 자동 저장이 더 나가지 않는다
+  expect(await result.current.flushSave()).toBe(false);
+  expect(api.putDeck).toHaveBeenCalledTimes(1);
+});
+
+it("reloadFromServer는 서버 덱을 읽어 되돌리고 저장됨으로 만들며 부모에도 알린다 (A5)", async () => {
+  const serverDeck = deckWith(["서버본"]);
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창에서 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  const onDeckChange = vi.fn();
+  const { result } = renderHook(() =>
+    useDeckEditor("p1", S, onDeckChange, { measureMs: 0, saveMs: 0 }));
+  await act(async () => { result.current.apply(() => E1); });
+  await waitFor(() => expect(result.current.conflict).toBe(true));
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.deck).toBe(serverDeck);
+  expect(result.current.saveState).toBe("저장됨");
+  expect(result.current.canUndo).toBe(false);
+  expect(result.current.conflict).toBe(false);
+  expect(onDeckChange).toHaveBeenLastCalledWith(serverDeck);
+});
+
+it("retrySave는 flushSave의 별칭이라 저장 실패 뒤 다시 부르면 PUT을 재시도한다 (A5)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.putDeck).mockRejectedValueOnce(new Error("일시 오류")).mockResolvedValue({ ok: true });
+  const { result } = renderHook(() =>
+    useDeckEditor("p1", S, stableNoop, { measureMs: 0, saveMs: 0 }));
+  await act(async () => { result.current.apply(() => E1); });
+  await waitFor(() => expect(result.current.saveState).toBe("저장 실패"));
+  expect(api.putDeck).toHaveBeenCalledTimes(1);
+  await act(async () => { await result.current.retrySave(); });
+  expect(api.putDeck).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(result.current.saveState).toBe("저장됨"));
 });
 
 it("flushSave 는 진행 중 저장이 끝난 뒤 잔여 편집까지 올리고 성공 여부를 돌려준다", async () => {

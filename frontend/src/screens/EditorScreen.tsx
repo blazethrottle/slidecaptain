@@ -8,11 +8,14 @@ import { PropertyPanel } from "../editor/PropertyPanel";
 import { applyTextEdit, reorderChapters } from "../editor/slotOps";
 import { useDeckEditor, type Timings } from "../state/useDeckEditor";
 
-export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEditorReady, timings }: {
+export function EditorScreen({
+  project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, timings,
+}: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 탭 전환 전에 플러시하도록
+  onDirtyChange?: (dirty: boolean) => void;  // 저장 대기/저장 중/저장 실패이면 참 (부모의 beforeunload 경고용)
   timings?: Timings;
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings);
@@ -26,6 +29,17 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
     // 탭 전환 플러시가 이미 사라진 편집기를 가리켜 무의미해진다 (2026-08-29 최종 리뷰 발견)
     return () => onEditorReady?.(null);
   }, [onEditorReady, editor.flushSave]);
+
+  useEffect(() => {
+    onDirtyChange?.(editor.saveState !== "저장됨");
+  }, [editor.saveState, onDirtyChange]);
+
+  // 되돌린 서버 덱(reloadFromServer)에 지금 보고 있는 장이 없으면 첫 장으로 되돌아간다
+  useEffect(() => {
+    if (chapterId !== null && !chapters.some((c) => c.id === chapterId)) {
+      setChapterId(chapters[0]?.id ?? null);
+    }
+  }, [chapters, chapterId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -54,7 +68,18 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
           onReorder={(from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
       </aside>
       <section className="editor-center">
-        {editor.saveError && <p role="alert">{editor.saveError}</p>}
+        {editor.saveError && (
+          <p role="alert">
+            {editor.saveError}{" "}
+            {editor.conflict ? (
+              <button onClick={() => void editor.reloadFromServer()}>서버 내용으로 되돌리기</button>
+            ) : (
+              editor.saveState === "저장 실패" && (
+                <button onClick={() => void editor.retrySave()}>다시 저장</button>
+              )
+            )}
+          </p>
+        )}
         {editor.measureError && (
           <p role="alert">{editor.measureError}{" "}
             <button onClick={editor.remeasure}>다시 그리기</button>

@@ -34,3 +34,13 @@ it("과거는 100개로 제한된다", () => {
   for (let i = 1; i <= 150; i += 1) s = editorReducer(s, { type: "edit", deck: deck(String(i)) });
   expect(s.past).toHaveLength(100);
 });
+
+it("reset은 과거와 미래를 비우고 present를 새 덱으로 교체한다 (충돌 복구용)", () => {
+  let s = init(deck("a"));
+  s = editorReducer(s, { type: "edit", deck: deck("b") });
+  s = editorReducer(s, { type: "undo" });  // past: [a], present: a는 아님(되돌리기로 a), future: [b]
+  s = editorReducer(s, { type: "reset", deck: deck("서버") });
+  expect(s.present.meta.title).toBe("서버");
+  expect(s.past).toHaveLength(0);
+  expect(s.future).toHaveLength(0);
+});
