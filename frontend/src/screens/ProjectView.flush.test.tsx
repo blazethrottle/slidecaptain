@@ -3,9 +3,15 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
+
+function dispatchBeforeUnload(): boolean {
+  const ev = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(ev);
+  return ev.defaultPrevented;
+}
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -87,4 +93,49 @@ it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (
   expect(api.listSnapshots).not.toHaveBeenCalled();  // 복구 화면은 아직 열리지 않았다
   d.resolve({ ok: true });
   await waitFor(() => expect(api.listSnapshots).toHaveBeenCalled());
+});
+
+// 창 닫기 경고 (FC-15): 편집 탭과 자료 탭 양쪽의 미저장 상태에 beforeunload를 건다 (2026-09-03 A5)
+it("편집 탭에서 미저장 상태면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  await openEditorAndEdit("셋");
+  expect(dispatchBeforeUnload()).toBe(true);  // 아직 저장 대기
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
+  expect(dispatchBeforeUnload()).toBe(false);
+});
+
+it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  expect(dispatchBeforeUnload()).toBe(false);  // 아직 아무것도 고치지 않았다
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  expect(dispatchBeforeUnload()).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  expect(dispatchBeforeUnload()).toBe(false);
+});
+
+// 충돌 배너 (2026-09-03 A5): 구조안, 자료, 복구 화면의 412는 ProjectView 배너의
+// "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 탭 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
+it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValueOnce(deckWith(["하나"])).mockResolvedValue(deckWith(["서버본"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await userEvent.click(screen.getByText("보고 정보 저장"));
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
+  await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
 });

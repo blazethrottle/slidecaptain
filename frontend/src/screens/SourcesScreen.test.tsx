@@ -171,3 +171,94 @@ it("보고자를 입력해 저장하면 meta.presenter로 반영되고 피보고
   }));
   expect(screen.getByText(/문서에 적히지 않고/)).toBeInTheDocument();
 });
+
+describe("보고 정보 플러시와 충돌 (A5)", () => {
+  it("마운트 시 저장됨(false)을 알리고, 입력을 바꾸면 true를, 저장하면 다시 false를 알린다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const onDirtyChange = vi.fn();
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onDirtyChange={onDirtyChange} />);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(false));
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    await userEvent.click(screen.getByText("보고 정보 저장"));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it("부모에 플러시 함수를 등록하고, 언마운트 시 등록을 해제한다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const onScreenReady = vi.fn();
+    const { unmount } = render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onScreenReady={onScreenReady} />);
+    await waitFor(() => expect(onScreenReady).toHaveBeenCalledWith(expect.any(Function)));
+    unmount();
+    expect(onScreenReady).toHaveBeenLastCalledWith(null);
+  });
+
+  it("저장 버튼 없이 부모가 플러시를 부르면 최신 입력을 저장한다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    let flush: (() => Promise<boolean>) | null = null;
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onScreenReady={(f) => { flush = f; }} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    expect(api.putDeck).not.toHaveBeenCalled();
+    const ok = await flush!();
+    expect(ok).toBe(true);
+    expect(api.putDeck).toHaveBeenCalledWith(
+      "p1", expect.objectContaining({ meta: expect.objectContaining({ title: "제목고침" }) }), false);
+  });
+
+  it("입력을 바꾸지 않았으면 플러시를 불러도 PUT이 없다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    let flush: (() => Promise<boolean>) | null = null;
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onScreenReady={(f) => { flush = f; }} />);
+    await waitFor(() => expect(flush).not.toBeNull());
+    expect(await flush!()).toBe(true);
+    expect(api.putDeck).not.toHaveBeenCalled();
+  });
+
+  it("저장 중에는 입력과 저장 버튼을 잠근다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const { promise, resolve } = (() => {
+      let r!: (v: { ok: boolean }) => void;
+      const p = new Promise<{ ok: boolean }>((res) => { r = res; });
+      return { promise: p, resolve: r };
+    })();
+    vi.mocked(api.putDeck).mockReturnValue(promise);
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await userEvent.click(screen.getByText("보고 정보 저장"));
+    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeDisabled());
+    expect(screen.getByText("보고 정보 저장")).toBeDisabled();
+    resolve({ ok: true });
+    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).not.toBeDisabled());
+  });
+
+  it("저장 버튼 클릭 직후 부모가 플러시를 불러도 PUT은 1회다 (직렬화)", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    let flush: (() => Promise<boolean>) | null = null;
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onScreenReady={(f) => { flush = f; }} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await userEvent.click(screen.getByText("보고 정보 저장"));
+    const flushed = await flush!();  // 버튼 저장이 아직 착지하기 전에 곧장 플러시를 부른다
+    expect(flushed).toBe(true);
+    await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(1));
+  });
+
+  it("저장이 412면 onConflict를 부른다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.putDeck).mockRejectedValue(
+      new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+    const onConflict = vi.fn();
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onConflict={onConflict} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await userEvent.click(screen.getByText("보고 정보 저장"));
+    await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  });
+});

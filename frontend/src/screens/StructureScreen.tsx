@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  api, messageOf,
+  api, ApiError, messageOf,
   type Chapter, type ChapterResult, type Deck, type ProjectInfo, type TemplateName,
 } from "../api/client";
 import { TEMPLATE_LABELS } from "../editor/labels";
@@ -14,12 +14,13 @@ function nextChapterId(chapters: Chapter[]): string {
   return `c${max + 1}`;
 }
 
-export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange }: {
+export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onDone: () => void;
   onBusyChange?: (busy: boolean) => void;  // 승인 중 순차 생성 진행을 부모(ProjectView)에 알려 다른 탭 진입을 막는다
+  onConflict?: () => void;  // 승인 루프의 putDeck이 412를 받으면 부모가 배너를 띄운다
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
   const [draftGenerated, setDraftGenerated] = useState(false);  // AI 재생성 초안 여부 (결정 15: 승인 시 전면 교체)
@@ -122,7 +123,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           continue;
         }
         current = { ...current, slides: [...current.slides, { chapter_id: chapter.id, slots: result.slots }] };
-        await api.putDeck(project.name, current, false);
+        try {
+          await api.putDeck(project.name, current, false);
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 412) {
+            setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
+            onConflict?.();
+            return;  // 낡은 덱 위에 더 쌓지 않는다: 나머지 장은 시도하지 않는다 (바깥 finally가 busy를 해제한다)
+          }
+          throw e;  // 그 외 오류는 기존처럼 바깥 catch가 처리한다
+        }
         onDeckChange(current);
         setNumbers((n) => [...new Set([...n, ...result.unverified_numbers])]);
         setProgress((p) => ({ ...p, [chapter.id]: "완료" }));

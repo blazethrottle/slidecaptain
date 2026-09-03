@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, type Deck } from "../api/client";
+import { api, ApiError, type Deck } from "../api/client";
 import { StructureScreen } from "./StructureScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -139,6 +139,34 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
   expect(calls).toHaveLength(3);
   expect(calls[2][1]).toBe("c2");
   confirmSpy.mockRestore();
+});
+
+it("승인 루프의 putDeck이 412면 그 장을 실패로 표시하고 onConflict를 부르며 멈춘다 (A5)", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck)
+    .mockResolvedValueOnce({ ok: true })  // 최초 승인 반영 (snapshot true)
+    .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.generateChapter).mockResolvedValue({
+    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    format_retried: false, condensed: false,
+    slots: { template: "cover", title: "제목", subtitle: "", date: "" },
+  });
+  const onConflict = vi.fn();
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone}
+    onConflict={onConflict} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  const row = screen.getByLabelText("1번 장 주제").closest("tr")!;
+  expect(within(row).getByText("실패", { exact: false })).toBeInTheDocument();
+  expect(onDone).not.toHaveBeenCalled();
+  // c1(표지)에서 멈췄으므로 c2(본문)의 생성 호출은 없다
+  expect(api.generateChapter).toHaveBeenCalledTimes(1);
 });
 
 it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {

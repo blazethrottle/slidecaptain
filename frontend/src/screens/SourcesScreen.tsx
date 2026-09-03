@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type ProjectInfo } from "../api/client";
 
 const REPORT_TYPES = [
@@ -7,18 +7,76 @@ const REPORT_TYPES = [
   ["strategy", "전략기획"],
 ] as const;
 
-export function SourcesScreen({ project, deck, onDeckChange }: {
+// 보고 정보 4필드만 비교한다: preset_overrides는 이 화면이 건드리지 않는 필드라 비교에 넣으면
+// 다른 탭이 남긴 변경과 무관하게 흔들릴 수 있다
+function metaEqual(a: Deck["meta"], b: Deck["meta"]): boolean {
+  return a.title === b.title && a.report_type === b.report_type
+    && a.presenter === b.presenter && a.audience === b.audience;
+}
+
+export function SourcesScreen({
+  project, deck, onDeckChange, onDirtyChange, onScreenReady, onConflict,
+}: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
+  onDirtyChange?: (dirty: boolean) => void;  // 보고 정보가 저장본과 다르면 참 (부모의 beforeunload 경고용)
+  onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 탭 전환 전에 플러시하도록
+  onConflict?: () => void;  // 저장이 412를 받으면 부모가 배너를 띄운다
 }) {
   const [files, setFiles] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [newName, setNewName] = useState("");
   const [meta, setMeta] = useState(deck.meta);
+  const metaRef = useRef(meta);
+  metaRef.current = meta;
+  const savedMeta = useRef(deck.meta);       // 마지막으로 서버에 실제 반영된 보고 정보
+  const [saving, setSaving] = useState(false);
+  const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));  // 버튼 저장과 플러시를 한 줄로 직렬화
   const [notice, setNotice] = useState("");
   const [info, setInfo] = useState("");  // 성공 안내 (오류 영역과 분리, 파일럿 관찰 1)
+
+  useEffect(() => {
+    onDirtyChange?.(!metaEqual(meta, savedMeta.current));
+  }, [meta, onDirtyChange]);
+
+  const doSaveMeta = useCallback(async (target: Deck["meta"]): Promise<boolean> => {
+    setSaving(true);
+    try {
+      const updated = { ...deck, meta: target };
+      await api.putDeck(project.name, updated, false);
+      savedMeta.current = target;
+      onDeckChange(updated);
+      setNotice("보고 정보를 저장했습니다.");
+      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current));
+      return true;
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 412) {
+        onConflict?.();
+      } else {
+        setNotice(messageOf(e));
+      }
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }, [project.name, deck, onDeckChange, onDirtyChange, onConflict]);
+
+  // 진행 중 저장 뒤에 이어 붙는다: 버튼 클릭 직후 탭을 바꿔도 같은 내용을 낡은 ETag로 다시 보내지 않는다
+  const flushMeta = useCallback((): Promise<boolean> => {
+    const next = saveChain.current.then(() => {
+      if (metaEqual(metaRef.current, savedMeta.current)) return true;  // 저장할 것이 없다
+      return doSaveMeta(metaRef.current);
+    });
+    saveChain.current = next.catch(() => false);
+    return next;
+  }, [doSaveMeta]);
+
+  useEffect(() => {
+    onScreenReady?.(flushMeta);
+    return () => onScreenReady?.(null);  // 다음 화면이 이 화면의 낡은 플러시를 들고 있지 않게 한다
+  }, [onScreenReady, flushMeta]);
 
   const reload = () => {
     api.listSources(project.name).then(setFiles).catch((e) => setNotice(messageOf(e)));
@@ -92,16 +150,7 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
     if (failures.length > 0) setNotice(`올리지 못한 파일: ${failures.join(" / ")}`);
   };
 
-  const saveMeta = async () => {
-    const updated = { ...deck, meta };
-    try {
-      await api.putDeck(project.name, updated, false);
-      onDeckChange(updated);
-      setNotice("보고 정보를 저장했습니다.");
-    } catch (e) {
-      setNotice(messageOf(e));
-    }
-  };
+  const saveMeta = () => { void flushMeta(); };
 
   return (
     <div className="sources-screen">
@@ -111,13 +160,13 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
         <h2>보고 정보</h2>
         <div className="field">
           <label>보고서 제목
-            <input aria-label="보고서 제목" value={meta.title}
+            <input aria-label="보고서 제목" value={meta.title} disabled={saving}
               onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>보고 유형
-            <select aria-label="보고 유형" value={meta.report_type}
+            <select aria-label="보고 유형" value={meta.report_type} disabled={saving}
               onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
               {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
@@ -125,18 +174,18 @@ export function SourcesScreen({ project, deck, onDeckChange }: {
         </div>
         <div className="field">
           <label>보고자 <span className="hint">(이름 또는 부서. 표지에 표기됩니다)</span>
-            <input aria-label="보고자" value={meta.presenter ?? ""}
+            <input aria-label="보고자" value={meta.presenter ?? ""} disabled={saving}
               onChange={(e) => setMeta({ ...meta, presenter: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>피보고자 <span className="hint">(문서에 적히지 않고, 문체와 상세 수준을 맞추는 데만 씁니다)</span>
-            <input aria-label="피보고자" value={meta.audience ?? ""}
+            <input aria-label="피보고자" value={meta.audience ?? ""} disabled={saving}
               onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
           </label>
         </div>
         <div className="actions">
-          <button onClick={saveMeta}>보고 정보 저장</button>
+          <button onClick={saveMeta} disabled={saving}>보고 정보 저장</button>
         </div>
       </section>
       <section>

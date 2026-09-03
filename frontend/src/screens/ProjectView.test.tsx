@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, type Deck, type Preset, type RenderPlan } from "../api/client";
+import { api, ApiError, type Deck, type Preset, type RenderPlan } from "../api/client";
 import { ProjectView } from "./ProjectView";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -174,4 +174,54 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
   // 구조안 탭 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
   expect(screen.getByRole("button", { name: "구조안" })).not.toBeDisabled();
+});
+
+// 충돌 배너 (2026-09-03 A5): 구조안과 복구 화면의 412는 ProjectView 배너의 "서버 내용 다시 읽기"로 회복한다
+// (자료 탭 경로는 ProjectView.flush.test.tsx)
+it("구조안 승인 루프에서 412를 받으면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+  const deckWithStructure: Deck = {
+    schema_version: 1,
+    meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
+    structure: { chapters: [
+      { id: "c1", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
+    slides: [],
+  };
+  const serverDeck: Deck = { ...deckWithStructure, meta: { ...deckWithStructure.meta, title: "서버본" } };
+  vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithStructure).mockResolvedValue(serverDeck);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck)
+    .mockResolvedValueOnce({ ok: true })  // 승인 반영 (snapshot true)
+    .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.generateChapter).mockResolvedValue({
+    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    format_retried: false, condensed: false,
+    slots: { template: "cover", title: "제목", subtitle: "", date: "" },
+  });
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText("서버본")).toBeInTheDocument();  // h1 제목이 서버 덱으로 갱신됨
+});
+
+it("스냅샷 복구가 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+  const serverDeck: Deck = { ...deckWithSlide, meta: { ...deckWithSlide.meta, title: "서버본" } };
+  vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithSlide).mockResolvedValue(serverDeck);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listSnapshots).mockResolvedValue([
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+  vi.mocked(api.restoreSnapshot).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByText("스냅샷 복구"));
+  await userEvent.click(await screen.findByText("이 시점으로 복원"));
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText("서버본")).toBeInTheDocument();
 });

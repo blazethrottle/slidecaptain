@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, messageOf, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, type ProjectInfo, type SnapshotInfo } from "../api/client";
 
-export function RecoveryScreen({ project, onBack }: {
+export function RecoveryScreen({ project, onBack, onConflict }: {
   project: ProjectInfo;
   onBack: () => void;
+  onConflict?: () => void;  // 복원이 412를 받으면 부모(ProjectView)가 배너를 띄운다
 }) {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [error, setError] = useState("");
@@ -23,7 +24,11 @@ export function RecoveryScreen({ project, onBack }: {
       await api.restoreSnapshot(project.name, id);
       onBack();  // 목록으로 돌아가면 상태가 새로 읽힌다
     } catch (e) {
-      setError(messageOf(e));
+      if (e instanceof ApiError && e.status === 412) {
+        onConflict?.();  // 전용 UI 없이 ProjectView 배너의 "서버 내용 다시 읽기"로 회복한다
+      } else {
+        setError(messageOf(e));
+      }
     }
   };
 
