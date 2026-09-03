@@ -37,6 +37,7 @@ from slidecaptain.storage.file_store import (
     ProjectStore,
     SnapshotInfo,
     SnapshotNotFound,
+    SourceConflict,
     SourceNotFound,
     StorageError,
     decode_source_bytes,
@@ -50,6 +51,7 @@ _STATUS_BY_ERROR = [
     (SourceNotFound, 404),
     (ProjectExists, 409),
     (DeckConflict, 412),  # StorageError보다 앞에 둔다: 목록은 첫 매치를 쓰므로 뒤에 두면 400으로 샌다
+    (SourceConflict, 409),  # 마찬가지로 StorageError보다 앞에 둔다
     (StorageError, 400),
 ]
 

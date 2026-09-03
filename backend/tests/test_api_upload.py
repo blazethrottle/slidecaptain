@@ -96,6 +96,17 @@ def test_upload_duplicate_409_then_overwrite(client):
     assert client.get("/api/projects/p1/sources/a.md").json()["text"] == "v2"
 
 
+def test_upload_case_only_conflict_409_even_with_overwrite_true(client):
+    # A4: overwrite=true는 정확히 같은 이름에만 적용된다. 대소문자만 다른 이름은 overwrite로도
+    # 우회할 수 없다 (write_source의 casefold 검사가 overwrite 플래그와 무관하게 걸린다)
+    assert _upload(client, "report.md", b"v1").status_code == 200
+    r = _upload(client, "Report.md", b"v2", overwrite=True)
+    assert r.status_code == 409
+    assert "report.md" in r.json()["detail"]
+    assert client.get("/api/projects/p1/sources/report.md").json()["text"] == "v1"
+    assert client.get("/api/projects/p1/sources").json() == ["report.md"]
+
+
 def test_upload_invalid_name_422(client):
     # 이름 규칙: 첫 글자가 한글, 영문, 숫자여야 한다 (설계서 3.1)
     r = _upload(client, "..md", b"x")

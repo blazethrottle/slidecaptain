@@ -85,3 +85,24 @@ def test_restore_with_stale_if_match_conflict_412(client):
     assert "먼저 저장" in r.json()["detail"]
     # 충돌이면 v2 그대로다 (복원되지 않는다)
     assert client.get("/api/projects/p1/deck").json()["meta"]["title"] == "v2"
+
+
+# -- A4: 이름 안전: NFC 정규화와 대소문자 충돌 --------------------------------
+
+
+def test_put_source_case_only_conflict_409_and_original_kept(client):
+    client.post("/api/projects", json={"name": "p1"})
+    assert client.put("/api/projects/p1/sources/report.md", json={"text": "원본"}).status_code == 200
+    r = client.put("/api/projects/p1/sources/Report.md", json={"text": "덮어쓰기 시도"})
+    assert r.status_code == 409
+    assert "report.md" in r.json()["detail"]
+    assert client.get("/api/projects/p1/sources/report.md").json()["text"] == "원본"
+    assert client.get("/api/projects/p1/sources").json() == ["report.md"]
+
+
+def test_put_source_exact_same_name_overwrites(client):
+    client.post("/api/projects", json={"name": "p1"})
+    assert client.put("/api/projects/p1/sources/report.md", json={"text": "원본"}).status_code == 200
+    r = client.put("/api/projects/p1/sources/report.md", json={"text": "덮어씀"})
+    assert r.status_code == 200
+    assert client.get("/api/projects/p1/sources/report.md").json()["text"] == "덮어씀"

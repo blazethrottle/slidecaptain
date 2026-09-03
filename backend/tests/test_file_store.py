@@ -1,4 +1,6 @@
+import sys
 import threading
+import unicodedata
 
 import pytest
 
@@ -12,6 +14,7 @@ from slidecaptain.storage.file_store import (
     ProjectExists,
     ProjectNotFound,
     SnapshotNotFound,
+    SourceConflict,
     SourceNotFound,
     StorageError,
 )
@@ -456,3 +459,81 @@ def test_locked_is_reentrant(store):
         with store.locked("p1"):  # 재진입 가능해야 라우트가 잠근 채 저장소 메서드를 불러도 된다
             store.save_deck("p1", _deck("재진입 안쪽 저장"))
     assert store.load_deck("p1").meta.title == "재진입 안쪽 저장"
+
+
+# -- A4: 이름 안전: NFC 정규화와 대소문자 충돌 --------------------------------
+
+
+def test_create_project_accepts_nfd_name_and_stores_nfc(store):
+    # Finder로 만든 한글 이름 폴더는 NFD라 _NAME_RE의 [가-힣]에 걸리지 않아야 한다 (재현)
+    nfd_name = unicodedata.normalize("NFD", "한글이름")
+    assert nfd_name != "한글이름"  # 이 파이썬 환경에서 정말 다른 바이트 시퀀스인지 확인
+    info = store.create_project(nfd_name)
+    assert info.name == "한글이름"
+    assert unicodedata.is_normalized("NFC", info.name)
+
+
+def test_list_projects_returns_nfc_names(store):
+    nfd_name = unicodedata.normalize("NFD", "한글이름")
+    store.create_project(nfd_name)
+    names = [i.name for i in store.list_projects()]
+    assert names == ["한글이름"]
+    assert unicodedata.is_normalized("NFC", names[0])
+
+
+def test_load_and_save_deck_accept_nfd_project_name(store):
+    # NFC로 만든 프로젝트를 NFD 이름으로 다시 요청해도 같은 프로젝트로 해석된다
+    store.create_project("한글이름")
+    nfd_name = unicodedata.normalize("NFD", "한글이름")
+    deck = store.load_deck(nfd_name)
+    assert deck.meta.title == "한글이름"
+    deck.meta.title = "고친 제목"
+    store.save_deck(nfd_name, deck)
+    assert store.load_deck("한글이름").meta.title == "고친 제목"
+
+
+def test_write_source_accepts_nfd_filename_and_stores_nfc(store):
+    store.create_project("p1")
+    nfd_filename = unicodedata.normalize("NFD", "자료이름.md")
+    store.write_source("p1", nfd_filename, "본문")
+    assert store.list_sources("p1") == ["자료이름.md"]
+    assert store.read_source("p1", "자료이름.md") == "본문"
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="APFS가 NFD 폴더를 NFC 이름으로 열어도 같은 폴더로 해석하는 동작은 macOS 전용 (실측 근거, 가정 확인)",
+)
+def test_load_deck_opens_real_nfd_folder_on_macos(tmp_path):
+    # Finder가 실제로 만든 것과 같은 모양(NFD 폴더 이름)을 파일 시스템에 직접 재현한다
+    root = tmp_path / "projects"
+    root.mkdir()
+    nfd_dir_name = unicodedata.normalize("NFD", "한글폴더")
+    project_dir = root / nfd_dir_name
+    (project_dir / "sources").mkdir(parents=True)
+    (project_dir / "snapshots").mkdir()
+    (project_dir / "exports").mkdir()
+    deck = Deck(meta=DeckMeta(title="Finder생성"))
+    (project_dir / "deck.json").write_text(deck.model_dump_json(), encoding="utf-8")
+
+    store = FileProjectStore(root)
+    loaded = store.load_deck("한글폴더")  # NFC 이름으로 요청
+    assert loaded.meta.title == "Finder생성"
+
+
+def test_write_source_case_only_conflict_rejected(store):
+    store.create_project("p1")
+    store.write_source("p1", "report.md", "원본")
+    with pytest.raises(SourceConflict) as exc_info:
+        store.write_source("p1", "Report.md", "덮어쓰기 시도")
+    assert "report.md" in str(exc_info.value)
+    # 거부됐으니 원본 파일과 목록이 그대로다
+    assert store.read_source("p1", "report.md") == "원본"
+    assert store.list_sources("p1") == ["report.md"]
+
+
+def test_write_source_exact_same_name_still_overwrites(store):
+    store.create_project("p1")
+    store.write_source("p1", "report.md", "원본")
+    store.write_source("p1", "report.md", "덮어씀")  # 대소문자까지 완전히 같은 이름은 덮어쓴다
+    assert store.read_source("p1", "report.md") == "덮어씀"

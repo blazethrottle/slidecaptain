@@ -16,6 +16,7 @@ import re
 import shutil
 import tempfile
 import threading
+import unicodedata
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,11 @@ class SourceNotFound(StorageError):
     pass
 
 
+class SourceConflict(StorageError):
+    """대소문자만 다른 자료 이름이 이미 있을 때 (A4가 409로 매핑한다). 정확히 같은 이름은
+    이 예외 없이 덮어쓴다 (자료 저장 버튼의 의미)."""
+
+
 class InvalidSourceEncoding(StorageError):
     pass
 
@@ -78,6 +84,24 @@ class ProjectInfo(BaseModel):
 class SnapshotInfo(BaseModel):
     id: str  # 파일 이름에서 확장자를 뺀 것 (예: deck-20260828-153000-123456)
     saved_at: str
+
+
+def _nfc(value: str) -> str:
+    """Finder가 만드는 NFD(자모 분리) 이름을 이 앱이 다루는 NFC(완성형)로 맞춘다 (A4, 가정: macOS APFS는
+    NFD로 만든 폴더를 NFC 이름으로 열어도 같은 폴더로 해석한다). 이름을 받는 모든 공개 메서드 진입에서 쓴다."""
+    return unicodedata.normalize("NFC", value)
+
+
+def _casefold_conflict(dir_path: Path, filename: str) -> str | None:
+    """filename과 정확히 같지 않지만 대소문자만 다른 기존 파일이 있으면 그 실제 이름을 돌려준다.
+    판정은 casefold()로 하므로 파일 시스템의 대소문자 구분 여부와 무관하게 같은 규칙이 적용된다."""
+    target = filename.casefold()
+    for p in dir_path.iterdir():
+        if not p.is_file() or p.name.startswith(".") or p.name == filename:
+            continue
+        if p.name.casefold() == target:
+            return p.name
+    return None
 
 
 def _validate_name(name: str, kind: str) -> None:
@@ -178,7 +202,9 @@ class FileProjectStore:
     @contextmanager
     def locked(self, name: str):
         """프로젝트별 재진입 잠금. 같은 스레드가 안에서 다시 잠가도(라우트가 잠근 채 저장소
-        메서드를 불러도) 막히지 않는다. 같은 프로세스 안의 겹친 요청만 막는다 (설계상 범위, 가정 4)."""
+        메서드를 불러도) 막히지 않는다. 같은 프로세스 안의 겹친 요청만 막는다 (설계상 범위, 가정 4).
+        NFC로 정규화한 뒤 잠그므로, 같은 프로젝트를 NFC와 NFD 양쪽 이름으로 부르는 호출도 같은 잠금을 쓴다."""
+        name = _nfc(name)
         lock = self._lock_for(name)
         lock.acquire()
         try:
@@ -243,6 +269,7 @@ class FileProjectStore:
     # -- 프로젝트 ----------------------------------------------------------
 
     def create_project(self, name: str, title: str = "") -> ProjectInfo:
+        name = _nfc(name)
         _validate_name(name, "프로젝트")
         if name in ("preset.json", "preset.json.tmp"):
             # preset.json.tmp는 구 고정 임시 파일명(현재는 .preset-<무작위>.tmp)과의 충돌 방지용으로
@@ -279,7 +306,7 @@ class FileProjectStore:
             if snapshots:  # deck.json은 사라졌지만 복구 지점이 남은 프로젝트
                 mtime = datetime.fromtimestamp(snapshots[-1].stat().st_mtime).astimezone()
                 infos.append(ProjectInfo(
-                    name=d.name,
+                    name=_nfc(d.name),
                     title="(deck.json 없음: 스냅샷 복구가 필요합니다)",
                     updated_at=mtime.isoformat(timespec="seconds"),
                     status="needs_recovery",
@@ -287,6 +314,7 @@ class FileProjectStore:
         return infos
 
     def _info(self, d: Path) -> ProjectInfo:
+        # d.name은 실제 폴더 이름(Finder가 만든 것이면 NFD일 수 있다)이라 응답 직전에 NFC로 맞춘다 (A4).
         deck_path = d / "deck.json"
         status: Literal["ok", "needs_recovery"] = "ok"
         try:
@@ -296,12 +324,13 @@ class FileProjectStore:
             status = "needs_recovery"
         mtime = datetime.fromtimestamp(deck_path.stat().st_mtime).astimezone()
         return ProjectInfo(
-            name=d.name, title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status
+            name=_nfc(d.name), title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status
         )
 
     # -- 덱 ---------------------------------------------------------------
 
     def load_deck(self, name: str) -> Deck:
+        name = _nfc(name)
         d = self._project_dir(name)
         try:
             return Deck.model_validate_json((d / "deck.json").read_text(encoding="utf-8"))
@@ -313,10 +342,12 @@ class FileProjectStore:
 
     def deck_etag(self, name: str) -> str:
         """deck.json 바이트의 SHA-256 16진수(따옴표 없음)."""
+        name = _nfc(name)
         d = self._project_dir(name)
         return hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
 
     def load_deck_with_etag(self, name: str) -> tuple[Deck, str]:
+        name = _nfc(name)
         d = self._project_dir(name)
         data = (d / "deck.json").read_bytes()
         try:
@@ -331,6 +362,7 @@ class FileProjectStore:
     def save_deck(
         self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
     ) -> str:
+        name = _nfc(name)
         with self.locked(name):
             d = self._project_dir(name)
             if expected_etag is not None:
@@ -343,12 +375,14 @@ class FileProjectStore:
 
     def snapshot_now(self, name: str) -> None:
         """의미 시점 스냅샷 (단계 4 결정 1): 내보내기 직전 등 명시적 복구 지점."""
+        name = _nfc(name)
         with self.locked(name):
             self._snapshot_current(self._project_dir(name))
 
     # -- 스냅샷 ------------------------------------------------------------
 
     def list_snapshots(self, name: str) -> list[SnapshotInfo]:
+        name = _nfc(name)
         d = self._project_dir_any(name)
         infos = []
         for p in sorted((d / "snapshots").glob("deck-*.json")):
@@ -362,6 +396,7 @@ class FileProjectStore:
     def restore_snapshot(
         self, name: str, snapshot_id: str, expected_etag: str | None = None
     ) -> tuple[Deck, str]:
+        name = _nfc(name)
         with self.locked(name):
             d = self._project_dir_any(name)
             if expected_etag is not None:
@@ -386,15 +421,18 @@ class FileProjectStore:
     # -- 입력 자료 ----------------------------------------------------------
 
     def list_sources(self, name: str) -> list[str]:
+        name = _nfc(name)
         d = self._project_dir(name)
         return sorted(
-            p.name
+            _nfc(p.name)
             for p in (d / "sources").iterdir()
             # 점으로 시작하는 이름 제외: ".tmp-" 저장 잔재와 숨김 파일
             if p.is_file() and not p.name.startswith(".")
         )
 
     def read_source(self, name: str, filename: str) -> str:
+        name = _nfc(name)
+        filename = _nfc(filename)
         d = self._project_dir(name)
         _validate_read_name(filename)
         path = d / "sources" / filename
@@ -404,14 +442,26 @@ class FileProjectStore:
 
     def source_exists(self, name: str, filename: str) -> bool:
         """앱이 만드는 이름 규칙으로 검증한 뒤 존재 여부를 돌려준다 (업로드의 덮어쓰기 판정용)."""
+        name = _nfc(name)
+        filename = _nfc(filename)
         d = self._project_dir(name)
         _validate_name(filename, "자료 파일")
         return (d / "sources" / filename).is_file()
 
     def write_source(self, name: str, filename: str, text: str) -> None:
+        name = _nfc(name)
+        filename = _nfc(filename)
         _validate_name(filename, "자료 파일")
         with self.locked(name):
             d = self._project_dir(name)
+            # 대소문자만 다른 기존 파일이 있으면 거부한다 (A4). 정확히 같은 이름은 여기 걸리지 않고
+            # 아래에서 그대로 덮어쓴다 (자료 저장 버튼의 의미).
+            conflict = _casefold_conflict(d / "sources", filename)
+            if conflict is not None:
+                raise SourceConflict(
+                    f"대소문자만 다른 자료가 이미 있습니다: {conflict}. "
+                    "같은 이름으로 저장하거나 다른 이름을 써 주세요."
+                )
             # 접두사 + 무작위 문자열 + "-파일명" 형태(.tmp-<무작위>-<이름>): 정식 자료명
             # "a.md.tmp"와의 충돌을 피하면서도 동시 저장끼리 임시 경로가 겹치지 않는다
             self._atomic_write(d / "sources", filename, text.encode("utf-8"), prefix=".tmp-", suffix="-" + filename)
@@ -419,6 +469,7 @@ class FileProjectStore:
     # -- 내보내기 -----------------------------------------------------------
 
     def exports_dir(self, name: str) -> Path:
+        name = _nfc(name)
         return self._project_dir(name) / "exports"
 
     # -- 전역 프리셋 --------------------------------------------------------
