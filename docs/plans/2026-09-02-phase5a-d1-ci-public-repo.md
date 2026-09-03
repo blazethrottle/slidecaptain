@@ -280,6 +280,8 @@ git commit -m "ci: Windows와 macOS 자동 검증을 추가한다"
 
 **실행 중 보정 (2026-09-03, Mac Mini)**: `frontend/package.json` 의 `engines.node` 는 정확 고정(`22.17.1`)이 아니라 하한(`>=22.17.1`)으로 둔다. CI 와 `.nvmrc` 는 22.17.1 을 쓰지만 주 개발 환경인 Mac Mini 는 Node 24.14.1 이라 정확 고정이면 매 설치마다 경고가 난다. 로컬 수용 검증은 fnm 으로 22.17.1 을 따로 설치해 그 버전으로 수행했다(프런트 76건 통과, 빌드 성공). OpenAPI 와 프런트 타입의 무변경 확인은 작업공간이 main 클론의 editable 설치를 빌려 쓰는 동안은 의미가 없어 main 병합 뒤에 수행한다.
 
+**원격 검증 기록 (2026-09-03)**: 독립 리뷰(판정 "수정 후 승인")는 workflow 내용을 승인하되 원격 증거가 없어 완료 판정을 보류했다. push 뒤 3회 실행: 1회차 33715222120 은 macOS 성공, Windows 실패(`test_invalid_utf8_index_path_is_reported_without_crashing` 이 바이트 인자를 subprocess 에 넘겨 UnicodeDecodeError. Windows 는 인자를 유니코드로 강제하므로 `--index-info` 표준 입력으로 바꿈, 3d93b63). 2회차 33715429123 은 Windows 실패(OpenAPI 덤프의 한글 print 가 cp1252 콘솔에서 UnicodeEncodeError. workflow 에 `PYTHONUTF8=1`, 덤프 파일 쓰기에 `newline="\n"`, f92f55f). 3회차 33715658646 은 커밋 f92f55f 에서 Windows 와 macOS 모두 성공. 두 실패 모두 제품 코드가 아니라 테스트 픽스처와 스크립트의 플랫폼 가정이었다.
+
 **Step 6: Controller review, push, and remote GREEN**
 
 After the task review approves the commit, the controller pushes `codex/phase-5a` and waits for the workflow attached to that exact commit.
@@ -335,6 +337,8 @@ git status --short --branch
 ```
 
 Expected: 문서 외 예상하지 못한 변경이 없고 감사기가 통과한다.
+
+**수행 기록 (2026-09-03)**: 이력 감사 0건, 6de6de0 이후 신규 추적 14건 전부 계획 범위 안(사람 확인). 로드맵 진행 상태에 D1 완료 항목, 이월표에 `.gitattributes` 정비와 공개 경계 처리 완료, 감사기 재작업 완료와 파일명 규칙 이월 행을 적었다.
 
 **Step 4: Commit and push after review**
 
