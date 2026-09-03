@@ -81,7 +81,7 @@ it("저장 중 되돌리기로 저장본과 같아진 뒤 그 PUT 이 실패하�
   await act(async () => { result.current.undo(); });   // 화면은 다시 S = 저장본
   await act(async () => { d1.reject(new ApiError(500, "일시 실패")); });
   await waitFor(() => expect(result.current.saveState).toBe("저장됨"));
-  expect(result.current.error).toBe("일시 실패");        // 서버 문제 자체는 알린다
+  expect(result.current.saveError).toBe("일시 실패");    // 서버 문제 자체는 알린다
   expect(api.putDeck).toHaveBeenCalledTimes(1);          // 되돌린 상태는 저장본과 같으므로 재저장하지 않는다
   expect(await result.current.flushSave()).toBe(true);
 });

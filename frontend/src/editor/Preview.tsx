@@ -16,11 +16,12 @@ function isWarned(slide: SlidePlan, slot: string): boolean {
   return slide.warnings.some((w) => w.slot === slot || w.slot.startsWith(`${slot}_`));
 }
 
-export function Preview({ slide, style, pageW, pageH, selected, onSelect, onCommitText }: {
+export function Preview({ slide, style, pageW, pageH, editable = true, selected, onSelect, onCommitText }: {
   slide: SlidePlan;
   style: Style;
   pageW: number;
   pageH: number;
+  editable?: boolean;  // 거짓이면 계획이 낡은 것이다: 흐리게 그리고 편집을 열지 않는다 (프레임 선택은 된다)
   selected: FrameRef | null;
   onSelect: (ref: FrameRef | null) => void;
   onCommitText: (ref: TextRef, text: string) => void;
@@ -49,7 +50,9 @@ export function Preview({ slide, style, pageW, pageH, selected, onSelect, onComm
   const startEdit = (ref: TextRef, text: string) => {
     const frame = { chapterId: ref.chapterId, slot: ref.slot };
     if (selected?.chapterId === frame.chapterId && selected.slot === frame.slot) {
-      setEditing({ ref, text, origin: text });
+      // 낡은 계획의 인덱스로 편집을 열면 다른 문단을 덮어쓴다 (2026-09-03 FC-05). 이미 열려 있는 편집창은
+      // 다른 곳을 클릭할 때 브라우저가 textarea 의 blur 를 먼저 일으켜 덱이 바뀌기 전 상태로 확정되므로 안전하다
+      if (editable) setEditing({ ref, text, origin: text });
     } else {
       onSelect(frame);
     }
@@ -121,7 +124,7 @@ export function Preview({ slide, style, pageW, pageH, selected, onSelect, onComm
 
   return (
     <div ref={holder} className="preview-holder">
-      <div className="preview-canvas"
+      <div className={editable ? "preview-canvas" : "preview-canvas stale"}
         style={{
           width: pageW, height: pageH, position: "relative", background: "#ffffff",
           transform: `scale(${scale})`, transformOrigin: "top left",

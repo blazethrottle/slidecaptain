@@ -93,3 +93,15 @@ it("표 칸을 편집하면 행과 열이 담긴 참조로 반영된다", async 
   expect(onCommitText).toHaveBeenCalledWith(
     { chapterId: "c1", slot: "table", row: 0, col: 1 }, "새 값");
 });
+
+it("editable 이 거짓이면 stale 표시가 붙고 선택된 프레임의 문단을 클릭해도 입력이 열리지 않는다 (2026-09-03 FC-05)", async () => {
+  const onSelect = vi.fn();
+  render(<Preview slide={slide} style={style} pageW={960} pageH={540} editable={false}
+    selected={{ chapterId: "c1", slot: "bullets" }} onSelect={onSelect} onCommitText={() => {}} />);
+  expect(document.querySelector(".preview-canvas")).toHaveClass("stale");
+  await userEvent.click(screen.getByText("첫 불릿"));
+  expect(screen.queryByLabelText("내용 수정")).toBeNull();
+  // 프레임 선택은 그대로 된다: 선택되지 않은 제목 프레임을 클릭하면 알린다
+  await userEvent.click(screen.getByText("장 제목"));
+  expect(onSelect).toHaveBeenCalledWith({ chapterId: "c1", slot: "title" });
+});
