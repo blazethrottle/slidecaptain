@@ -38,7 +38,8 @@
 - `python scripts/audit_public_repo.py`는 현재 저장소 루트를 자동으로 찾는다.
 - `python scripts/audit_public_repo.py --root <임시 Git 저장소>`는 테스트용 저장소를 검사한다.
 - 기본 입력 목록은 `git ls-files -z` 결과만 사용한다. 무시된 파일과 추적되지 않은 파일은 검사 대상이 아니다.
-- `.venv`, `node_modules`, `dist`, `.superpowers`, `.worktrees`, `projects`, `uploads`, `exports`, `snapshots`가 독립된 경로 구성 요소인 추적 파일은 거절한다. `distribution.md`처럼 일부 글자만 같은 정상 파일은 거절하지 않는다.
+- 도구 폴더 `.venv`, `node_modules`, `.superpowers`, `.worktrees`, `__pycache__`는 경로 어디에 있든 거절한다. 런타임 데이터 폴더 `projects`, `uploads`, `exports`, `snapshots`, `dist`는 저장소 루트 바로 아래일 때만 거절하고, 빌드 산출 폴더 `frontend/dist`는 예외로 함께 거절한다. `distribution.md`처럼 일부 글자만 같은 정상 파일과 `frontend/src/pages/projects/List.tsx`처럼 하위 경로에 같은 이름이 나오는 정상 파일은 거절하지 않는다. (2026-09-03 정정: 구 문구 "독립된 경로 구성 요소이면 어디서든 거절"은 재작업 이전 리뷰가 실측한 오탐을 만들었다)
+- 리뷰 원문 기록은 저장소 밖(스크래치 폴더, 인계 폴더)에 두는 것이 관례이며, `docs/reviews/` 아래의 추적 파일은 그 원문이 저장소에 들어오는 것을 막는 방어 규칙으로 거절한다. (2026-09-03 명문화: 재작업이 신설한 규칙인데 문서 근거가 없었다)
 - `docs/pilot/` 아래에서는 최상위의 `YYYY-MM-DD-파일럿-관찰지.md` 형식만 허용하고, `raw/`, `tmp/`, 텍스트, CSV, 이미지, 추출 자료를 포함한 나머지 파일은 확장자와 관계없이 거절한다.
 - `.pptx`, `.docx`, `.pdf`, `.xls`, `.xlsx`는 대소문자와 관계없이 거절한다. 단, `backend/tests/fixtures/synthetic/` 아래의 `.xlsx`만 허용한다.
 - `.env`, `.env.*`, 개인 키 확장자, basename이 `credential` 또는 `credentials`, `secret` 또는 `secrets`인 파일을 거절한다. `secretary.ts`처럼 일부 글자만 같은 정상 파일과 `.env.example`은 경로 규칙에서 허용하되 내용 검사는 그대로 받는다.
@@ -80,7 +81,6 @@ Expected: `scripts/audit_public_repo.py`가 아직 없어 실패한다.
 - `Finding(rule: str, path: str)` 불변 데이터 구조
 - `tracked_paths(root: Path) -> list[str]`
 - `historical_paths(root: Path) -> list[str]`
-- `historical_diff(root: Path) -> bytes`
 - `audit_paths(paths: list[str]) -> list[Finding]`
 - `audit_contents(root: Path, paths: list[str]) -> list[Finding]`
 - `audit_repository(root: Path, include_history: bool = False) -> list[Finding]`
@@ -112,6 +112,13 @@ Expected: 모든 테스트와 실제 저장소 감사가 통과하고 출력에 
 git add scripts/audit_public_repo.py backend/tests/test_public_repo_audit.py
 git commit -m "feat: 공개 저장소 추적 파일을 감사한다"
 ```
+
+**재작업과 리뷰 기록 (2026-09-02 ~ 09-03, Mac Mini)**
+
+- 최초 구현(be6fb96, c238f3c)의 독립 리뷰가 미탐 4계열(PKCS8 헤더, 신형 키 접두어와 YAML 콜론 대입, 파일명 규칙, 잘못된 UTF-8 경로 크래시)과 오탐 2계열(환경변수 조회식과 CI 문법, 하위 경로의 `projects` 등 폴더명)을 실측해 재작업했다(8afb53b). 위 계약 문구 두 곳(금지 폴더 판정 기준, `historical_diff` 유닛)은 그 재작업이 계획서와 달리 한 편차이며, 리뷰가 둘 다 타당하다고 판정해 계약을 고쳤다.
+- 재작업 리뷰(2026-09-03, 판정 "수정 후 승인")가 새 미탐 1건을 찾았다: 오탐을 줄이며 환경변수 이름의 대소문자 구분을 켰더니 pydantic Settings 관례인 소문자 이름(`anthropic_api_key = "..."`)의 실제 값을 놓쳤다. 값 형태 제한이 오탐을 막는 실질 조건이라 대소문자 무시를 복원해도 오탐 회피 테스트가 그대로 통과함을 리뷰어와 구현자가 각각 검증했다. AKIA 양성 테스트와 한계 문서화(확장자 없는 zip 시그니처 오피스 파일, 중첩 빌드 폴더 관례)도 함께 반영했다(65476b2). 감사 테스트 54건 → 58건.
+- 이월(이 태스크 범위 밖, 로드맵 이월표 등재는 태스크 4의 문서 커밋에서): `_is_secret_filename`이 `google-credentials.json`, `secret_key.py`, `.secrets`처럼 앞뒤에 글자가 붙은 이름을 잡지 않는다(계약은 정확한 basename만 요구). 테스트 공백: 추적 중이지만 작업트리에서 삭제된 파일의 경로 규칙, 미추적 도구 폴더가 있을 때의 오탐 없음.
+- 검증 환경 주의: 이 작업공간(worktree)은 가상환경이 없어 main 클론의 `backend/.venv`로 실행한다. 그 editable 설치가 main 클론의 패키지를 가리키므로 백엔드 전체 테스트는 main 병합 전에는 `capacity`, `prompts`, `openapi` 4건이 어긋난다(감사기와 무관). main 병합 뒤 재실행해 확인한다.
 
 ---
 
