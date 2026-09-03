@@ -11,6 +11,8 @@
   이 오탐은 허용한다.
 - 내용 검사는 작업트리 바이트를 읽는다. HEAD 에 커밋된 키를 작업트리에서만
   지우면 기본 검사는 통과하고 ``--history`` 가 잡는다.
+- Office 파일 검사는 확장자 기반이다. 확장자 없이 zip 시그니처(``PK``)만 가진
+  오피스 파일(잘못 저장된 pptx 등)은 잡지 못한다.
 """
 
 from __future__ import annotations
@@ -38,6 +40,8 @@ _TOOL_DIRECTORIES = frozenset(
     {".venv", "node_modules", ".superpowers", ".worktrees", "__pycache__"}
 )
 _ROOT_DATA_DIRECTORIES = frozenset({"projects", "uploads", "exports", "snapshots", "dist"})
+# 빌드 산출 폴더는 정확한 2단계 접두어로만 비교한다. 새 하위 패키지가 자기 빌드 산출 폴더를 갖게 되면
+# (예: backend/dist) 여기에 그 조합을 추가해야 잡힌다 (2026-09-03 리뷰 발견 5)
 _NESTED_FORBIDDEN_DIRECTORIES = frozenset({("frontend", "dist")})
 _REVIEW_DIRECTORY = ("docs", "reviews")
 _OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".pdf", ".xls", ".xlsx"})
@@ -73,6 +77,9 @@ _ENVIRONMENT_ASSIGNMENT = _bytes_pattern(
     b"[\"']?\\s*[=:]\\s*[\"']?(",
     _KEY_BODY,
     b")",
+    # 이름은 대소문자를 가리지 않는다: pydantic Settings 관례(anthropic_api_key)로 선언된 실제 값도 잡는다.
+    # 오탐(조회식, CI 문법, 자리표시자)은 값 형태 제한과 _PLACEHOLDER_VALUE 가 막는다 (2026-09-03 리뷰 반영)
+    flags=re.IGNORECASE,
 )
 _PLACEHOLDER_VALUE = re.compile(rb"your|example|placeholder|changeme|dummy", re.IGNORECASE)
 

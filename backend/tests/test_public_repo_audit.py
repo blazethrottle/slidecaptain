@@ -288,6 +288,20 @@ def test_rejects_private_key_headers_including_pkcs8(tmp_path, modifier):
     assert "비밀 패턴: key.txt" in result.stdout
 
 
+def test_rejects_aws_access_key_id(tmp_path):
+    # 리뷰 발견 6 (2026-09-03): 다른 패턴은 전부 양성 테스트가 있는데 AKIA 만 없었다
+    root = _repository(tmp_path)
+    key = "AKIA" + "IOSFODNN7EXAMPLE"
+    _write(root, "notes.md", f"aws {key}\n")
+    _track(root, "notes.md")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: notes.md" in result.stdout
+    assert key not in result.stdout
+
+
 @pytest.mark.parametrize(
     "prefix",
     (
@@ -336,6 +350,21 @@ def test_rejects_literal_environment_assignments(tmp_path, template):
 
     assert result.returncode == 1
     assert "비밀 패턴: config.txt" in result.stdout
+    assert _key_body() not in result.stdout
+
+
+@pytest.mark.parametrize("name", ("anthropic_api_key", "github_token", "Openai_Api_Key"))
+def test_rejects_lowercase_environment_assignments(tmp_path, name):
+    # 재작업 리뷰 발견 (2026-09-03): 오탐을 줄이며 이름의 대소문자 구분을 켰더니 pydantic Settings 관례인
+    # 소문자 스네이크케이스 이름에 담긴 실제 비밀값을 놓쳤다. 값 형태(20자 이상)가 오탐을 막는 실질 조건이다
+    root = _repository(tmp_path)
+    _write(root, "config.py", f'{name} = "{_key_body()}"\n')
+    _track(root, "config.py")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: config.py" in result.stdout
     assert _key_body() not in result.stdout
 
 
