@@ -33,3 +33,5 @@
 - 리뷰와 검증에서 나온 발견은 로드맵의 이월표 또는 방치 확정 문단에 반영한다. 사이드 문서에만 남기지 않는다
 - 문서를 정정할 때는 날짜와 사유를 남긴다. 하위 문서가 상위 문서를 출처 표기만 달고 조용히 재정의하는 것을 금지한다 (2026-08-28 가설 리뷰에서 실증된 실패 유형)
 - 생성 텍스트에 엠대시(U+2014)와 중점(U+00B7)을 쓰지 않는다
+- 상태 변경 API(POST, PUT, DELETE)는 `X-Requested-With: SlideCaptain` 헤더를 요구한다. 새 라우트와 새 클라이언트 호출은 이 규약을 따르고, 백엔드 API 테스트는 `backend/tests/conftest.py` 의 `client` 픽스처(기본 헤더 포함)를 쓴다 (2026-09-04 단계 5A A)
+- worktree(`~/Projects/slidecaptain-5a` 등)에서 백엔드 테스트를 돌릴 때는 `PYTHONPATH=<worktree>/backend` 를 앞에 붙인다. main 클론의 가상환경을 빌려 쓰면 editable 설치가 main 클론 패키지를 가리켜 worktree 코드가 검증되지 않는다 (2026-09-04 실측)
