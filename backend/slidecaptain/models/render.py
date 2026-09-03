@@ -40,7 +40,9 @@ class Frame(BaseModel):
     border: str | None = None
     paras: list[Para] = []
     table: TablePlan | None = None
-    valign: str = "top"
+    # 세로 정렬. 미리보기가 그릴 수 있는 값만 허용하고, 라이터는 이 값을 모든 텍스트 도형에 항상 명시한다
+    # (2026-09-02 Critical 묶음 태스크 B: 채움 프레임이 python-pptx 자동도형 기본값 ctr 을 상속해 미리보기와 어긋났다)
+    valign: Literal["top", "middle"] = "top"
 
 
 class CapacityWarning(BaseModel):

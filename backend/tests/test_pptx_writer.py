@@ -170,3 +170,43 @@ def test_style_comes_from_plan_not_literal(tmp_path):
     prs = Presentation(str(out))
     shapes = {s.name: s for slide in prs.slides for s in slide.shapes}
     assert shapes[bordered_frame.name].line.width.pt == pytest.approx(2.0)
+
+
+# ---- 세로 정렬: 라이터는 렌더 계획의 valign 을 항상 bodyPr anchor 로 기록한다 (2026-09-02 Critical 묶음 태스크 B) ----
+# 배경: python-pptx 자동도형(add_shape)의 기본 bodyPr 은 anchor="ctr" 이고 텍스트박스(add_textbox)는 속성이 없어 top 이다.
+# 라이터가 anchor 를 명시하지 않으면 채움과 테두리 프레임만 PowerPoint 에서 세로 중앙이 되어 미리보기(top)와 어긋난다.
+
+_ANCHOR_BY_VALIGN = {"top": "t", "middle": "ctr"}
+
+
+def _anchor_of(shape) -> str:
+    bodyPr = shape.text_frame._txBody.find(qn("a:bodyPr"))
+    return bodyPr.get("anchor") or "t"  # 속성 부재 = PowerPoint 기본값 top
+
+
+def test_every_text_shape_anchor_matches_frame_valign(saved):
+    plan = _simple_plan()
+    for plan_slide, slide in zip(plan.slides, saved.slides):
+        shapes = {s.name: s for s in slide.shapes}
+        for frame in plan_slide.frames:
+            if frame.table is not None:
+                continue
+            assert _anchor_of(shapes[frame.name]) == _ANCHOR_BY_VALIGN[frame.valign], frame.name
+
+
+def test_boxed_frame_is_top_anchored_not_autoshape_default(saved):
+    # 채움과 테두리가 있는 결론 박스는 자동도형이라 기본값이 ctr 인데, 렌더 계획(top)이 이겨야 한다
+    conclusion = next(s for s in saved.slides[0].shapes if s.name == "ch01:conclusion")
+    assert _anchor_of(conclusion) == "t"
+
+
+def test_middle_valign_is_written_explicitly_for_boxed_and_plain_frames(tmp_path):
+    plan = _simple_plan()
+    plan.slides[0].frames[2].valign = "middle"  # 채움 있는 결론 박스
+    plan.slides[0].frames[0].valign = "middle"  # 채움 없는 제목 텍스트박스 (기본값에 기대지 않는다)
+    out = tmp_path / "middle.pptx"
+    write_pptx(plan, out)
+    prs = Presentation(str(out))
+    shapes = {s.name: s for s in prs.slides[0].shapes}
+    assert _anchor_of(shapes["ch01:conclusion"]) == "ctr"
+    assert _anchor_of(shapes["ch01:title"]) == "ctr"

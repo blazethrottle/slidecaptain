@@ -1581,6 +1581,10 @@
           },
           "valign": {
             "type": "string",
+            "enum": [
+              "top",
+              "middle"
+            ],
             "title": "Valign",
             "default": "top"
           }

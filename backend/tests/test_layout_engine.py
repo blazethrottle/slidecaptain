@@ -385,3 +385,40 @@ def test_cover_presenter_is_rendered_from_meta():
     assert frames["c0:presenter"].paras[0].text == "사업개발팀"
     assert not any(n.endswith(":audience") for n in frames)
     assert "경영진" not in {p.text for f in plan.slides[0].frames for p in f.paras}
+
+
+def test_frame_valign_accepts_only_top_and_middle():
+    # 미리보기가 그릴 수 있는 값만 허용한다 (bottom 을 넣으면 라이터만 그리는 불일치가 생긴다. 2026-09-02 태스크 B)
+    from pydantic import ValidationError
+
+    from slidecaptain.models.render import Frame
+
+    Frame(name="x:y", x=0, y=0, w=10, h=10, valign="middle")
+    with pytest.raises(ValidationError):
+        Frame(name="x:y", x=0, y=0, w=10, h=10, valign="bottom")
+    with pytest.raises(ValidationError):
+        Frame(name="x:y", x=0, y=0, w=10, h=10, valign="center")
+
+
+# ---- 표지와 간지 넘침 경고 (2026-09-02 Critical 묶음 태스크 C) ----
+# 다른 템플릿의 제목, 각주, 카드 소제목은 _fixed_height_warning 으로 잡는데 표지와 간지만 경고 함수가 없어
+# 제목이 4줄이어도 경고 0건이었다. 자동 맞춤을 꺼 두었으므로 PowerPoint 에서 글자가 상자 밖으로 흘러넘쳤다.
+
+
+def test_cover_multiline_title_and_subtitle_warn():
+    deck = _deck([("cover", CoverSlots(
+        title=" ".join(["가" * 25] * 4), subtitle=" ".join(["가" * 55] * 3), date="2026-09-02"))])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert {w.slot for w in slide.warnings} == {"cover_title", "subtitle"}
+
+
+def test_cover_single_line_fields_do_not_warn():
+    deck = _deck([("cover", CoverSlots(title="시장 진입 검토", subtitle="부제", date="2026-09-02"))])
+    deck.meta.presenter = "사업개발팀"
+    assert build_render_plan(deck, PRESET, METRICS).slides[0].warnings == []
+
+
+def test_divider_multiline_title_warns():
+    deck = _deck([("divider", DividerSlots(section_no="1", section_title=" ".join(["가" * 30] * 4)))])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert {w.slot for w in slide.warnings} == {"section_title"}

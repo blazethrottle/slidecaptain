@@ -51,6 +51,11 @@ _SLOTS_BY_TEMPLATE = {
 }
 
 _CONTRACT_LABELS = {
+    "cover_title_max_lines": "표지 제목",
+    "subtitle_max_lines": "부제",
+    "date_max_lines": "날짜",
+    "section_no_max_lines": "섹션 번호",
+    "section_title_max_lines": "섹션 제목",
     "points_max_lines": "요점 목록 전체",
     "bullets_max_lines": "불릿 전체",
     "conclusion_max_lines": "결론 박스",
@@ -120,18 +125,27 @@ def structure_response_schema() -> dict:
     }
 
 
-def _contract_block(contract: dict[str, int], chars_per_line: int | None = None) -> str:
+# 줄 수 한도가 "한 줄짜리 항목 개수 기준 하한" 으로 정의된 키 (capacity.items_that_fit). AI 가 줄 수와 항목 수를
+# 같은 것으로 읽게 문구에 개수를 함께 적는다 (2026-09-02 Critical 묶음 태스크 A)
+_ITEM_COUNT_KEYS = {"points_max_lines", "bullets_max_lines", "card_bullets_max_lines"}
+
+
+def _contract_block(contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
     if not contract:
+        # 모든 템플릿이 계약을 가지므로(표지와 간지도 2026-09-02 부터) 서비스 경로에서는 도달하지 않는다.
+        # 계약 없이 호출하는 테스트와 외부 호출자를 위한 폴백으로만 남긴다 (구현 리뷰 R3)
         return "분량 한도: 이 템플릿은 짧은 텍스트만 담는다. 각 칸은 한 줄로 쓴다"
-    lines = "\n".join(
-        f"- {_CONTRACT_LABELS.get(key, key)}: 최대 {value}줄" for key, value in contract.items()
-    )
+    lines = []
+    for key, value in contract.items():
+        suffix = f" (한 줄짜리 항목 {value}개 기준)" if key in _ITEM_COUNT_KEYS else ""
+        unit = "행" if key == "rows_max_single_line" else "줄"
+        lines.append(f"- {_CONTRACT_LABELS.get(key, key)}: 최대 {value}{unit}{suffix}")
     hint = (
-        f"\n- 환산 안내: 본문 한 줄은 한글 약 {chars_per_line}자 분량이다 (2단 비교 카드 안에서는 그 절반)"
-        if chars_per_line
+        "\n- 환산 안내 (한 줄 분량): " + ", ".join(f"{name} 약 {n}자" for name, n in char_hints.items())
+        if char_hints
         else ""
     )
-    return "분량 한도 (실제 폰트 폭으로 실측한 줄수 기준. 초과하면 재생성을 요구한다):\n" + lines + hint
+    return "분량 한도 (실제 폰트 폭으로 실측한 줄수 기준. 초과하면 재생성을 요구한다):\n" + "\n".join(lines) + hint
 
 
 def build_chapter_prompt(
@@ -141,7 +155,7 @@ def build_chapter_prompt(
     contract: dict[str, int],
     today: str,
     instructions: str = "",
-    chars_per_line: int | None = None,
+    char_hints: dict[str, int] | None = None,
 ) -> str:
     structure_lines = "\n".join(
         f"- [{ch.id}] {ch.topic} ({ch.template}): {ch.conclusion}"
@@ -166,7 +180,7 @@ def build_chapter_prompt(
 - 이 장의 결론: {chapter.conclusion or "미정 (자료에서 도출)"}
 - 템플릿: {chapter.template}
 
-{_contract_block(contract, chars_per_line)}
+{_contract_block(contract, char_hints)}
 
 {STYLE_RULES}
 {extra}{sources_part}"""

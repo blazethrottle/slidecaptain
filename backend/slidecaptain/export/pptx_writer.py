@@ -12,7 +12,7 @@ from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.lang import MSO_LANGUAGE_ID
 from pptx.enum.shapes import MSO_SHAPE
-from pptx.enum.text import MSO_AUTO_SIZE, PP_ALIGN
+from pptx.enum.text import MSO_ANCHOR, MSO_AUTO_SIZE, PP_ALIGN
 from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
@@ -21,6 +21,9 @@ from slidecaptain.models.render import Frame, Para, RenderPlan, RenderStyle, Tab
 EMU_PER_PT = 12700
 
 _ALIGN = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}
+# 세로 정렬은 렌더 계획 값을 항상 명시한다. 자동도형(add_shape)의 기본값은 ctr, 텍스트박스는 top 이라
+# 명시하지 않으면 채움과 테두리 프레임만 PowerPoint 에서 중앙 정렬되어 미리보기와 어긋난다 (2026-09-02 태스크 B)
+_ANCHOR = {"top": MSO_ANCHOR.TOP, "middle": MSO_ANCHOR.MIDDLE}
 
 
 def _emu(pt: float) -> Emu:
@@ -61,6 +64,7 @@ def _apply_bullet(paragraph, para: Para, style: RenderStyle) -> None:
 def _fill_text_frame(tf, frame: Frame, style: RenderStyle) -> None:
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.NONE
+    tf.vertical_anchor = _ANCHOR[frame.valign]
     pad = _emu(style.box_padding_pt) if (frame.fill or frame.border) else 0
     tf.margin_left = pad
     tf.margin_right = pad

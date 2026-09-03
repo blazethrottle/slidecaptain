@@ -54,11 +54,18 @@ export function EditorScreen({ project, deck: initialDeck, onDeckChange, onEdito
           onReorder={(from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
       </aside>
       <section className="editor-center">
-        {editor.error && <p role="alert">{editor.error}</p>}
+        {editor.saveError && <p role="alert">{editor.saveError}</p>}
+        {editor.measureError && (
+          <p role="alert">{editor.measureError}{" "}
+            <button onClick={editor.remeasure}>다시 그리기</button>
+          </p>
+        )}
         {slide && editor.plan ? (
           // 2026-08-29 태스크 11 리뷰 이월: 장 전환 시 편집창 잔존 방지 리마운트
+          // 낡은 계획(덱이 바뀐 뒤 새 계획이 오기 전)으로는 편집을 열지 않는다 (2026-09-03 FC-05)
           <Preview key={slide.chapter_id} slide={slide} style={editor.plan.style}
             pageW={editor.plan.page_width_pt} pageH={editor.plan.page_height_pt}
+            editable={!editor.planStale}
             selected={selected} onSelect={setSelected} onCommitText={commitText} />
         ) : (
           <p>이 장은 아직 내용이 없습니다. 구조안 탭에서 생성해 주세요.</p>

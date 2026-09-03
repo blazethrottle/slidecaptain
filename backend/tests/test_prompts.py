@@ -49,12 +49,13 @@ def test_chapter_prompt_contains_structure_contract_and_report_info():
     prompt = build_chapter_prompt(
         deck, deck.structure.chapters[0], {"리서치.md": SOURCES["리서치.md"]},
         {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-08-28",
-        instructions="숫자 근거 강조", chars_per_line=75,
+        instructions="숫자 근거 강조", char_hints={"본문 한 줄": 73},
     )
     assert "[c1] 시장 현황" in prompt
     assert "[c2] 경쟁 구도" in prompt  # 덱 전체 구조가 맥락으로 들어간다
-    assert "최대 11줄" in prompt
-    assert "약 75자" in prompt  # 줄당 자수 환산 안내 (적대 리뷰 반영)
+    assert "최대 11줄 (한 줄짜리 항목 11개 기준)" in prompt  # 줄 수와 항목 수를 같은 것으로 읽게 한다 (2026-09-02 태스크 A)
+    assert "본문 한 줄 약 73자" in prompt  # 줄당 자수 환산 안내는 칸별 힌트 맵에서 온다
+    assert "그 절반" not in prompt  # 종전의 어림 안내는 실측값으로 대체됐다
     assert "숫자 근거 강조" in prompt
     assert "2026-08-28" in prompt  # 보고 정보 블록의 오늘 날짜 (결정 12)
     assert "경영진" in prompt
@@ -113,3 +114,23 @@ def test_prompts_forbid_copying_audience_into_document_and_omit_presenter():
         assert "피보고자 항목 값을 표지, 제목, 호칭, 인사말에 옮겨 적지 않는다" in prompt
         assert "사업개발팀" not in prompt
         assert "보고 대상" not in prompt  # 종전 템플릿 안내 "표지 (제목, 부제, 날짜, 보고 대상)"의 흔적이 없어야 한다
+
+
+def test_contract_block_uses_korean_labels_for_cover_and_divider_keys():
+    # 표지와 간지 계약 키에 한글 라벨이 없으면 영문 키가 그대로 프롬프트에 노출된다 (계획서 적대 리뷰 F2, 2026-09-03)
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="표지", template="cover")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"cover_title_max_lines": 1, "subtitle_max_lines": 1, "date_max_lines": 1},
+        today="2026-09-02", char_hints={"표지 제목": 30, "부제": 60},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 표지 제목: 최대 1줄" in prompt
+    assert "- 부제: 최대 1줄" in prompt
+    assert "표지 제목 약 30자" in prompt and "부제 약 60자" in prompt
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="간지", template="divider")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"section_no_max_lines": 1, "section_title_max_lines": 1}, today="2026-09-02",
+    )
+    assert "- 섹션 제목: 최대 1줄" in prompt and "_max_lines" not in prompt

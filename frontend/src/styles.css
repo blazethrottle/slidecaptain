@@ -9,6 +9,7 @@ button { cursor: pointer; }
 .frame.warned { outline: 2px solid #B00020; }
 .frame.selected.warned { outline: 2px dashed #B00020; }
 .inline-editor { position: absolute; left: 10%; top: 40%; width: 80%; min-height: 60px; font: inherit; }
+.preview-canvas.stale { opacity: 0.55; }  /* 낡은 계획: 새 계획이 올 때까지 편집이 열리지 않는다 */
 
 .editor-screen { display: grid; grid-template-columns: 220px 1fr 280px; gap: 12px; }
 .warn-badge { color: #B00020; }
