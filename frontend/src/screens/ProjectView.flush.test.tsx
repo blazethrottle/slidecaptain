@@ -105,6 +105,23 @@ it("편집 탭에서 미저장 상태면 beforeunload를 막고, 플러시가 �
   expect(dispatchBeforeUnload()).toBe(false);
 });
 
+// 구형 브라우저 호환: preventDefault만으로는 확인 대화가 안 뜨는 구현이 있어 returnValue도 함께 설정한다
+// (A5b 리뷰 발견 5). jsdom의 Event.returnValue getter는 defaultPrevented의 별칭이라 실제 DOM
+// 디스패치로는 문자열 대입 여부를 관측할 수 없으므로, 등록된 리스너를 직접 붙잡아 평범한 객체로 불러 확인한다
+it("beforeunload 핸들러는 dirty일 때 returnValue를 빈 문자열로 설정한다 (A5b 리뷰)", async () => {
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  const addSpy = vi.spyOn(window, "addEventListener");
+  await openEditorAndEdit("넷");
+  const call = addSpy.mock.calls.filter(([type]) => type === "beforeunload").at(-1);
+  expect(call).toBeDefined();
+  const handler = call![1] as (e: { preventDefault: () => void; returnValue: unknown }) => void;
+  const fakeEvent = { preventDefault: vi.fn(), returnValue: undefined as unknown };
+  handler(fakeEvent);
+  expect(fakeEvent.preventDefault).toHaveBeenCalled();
+  expect(fakeEvent.returnValue).toBe("");
+  addSpy.mockRestore();
+});
+
 it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
@@ -138,4 +155,22 @@ it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
   await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
+});
+
+it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이동 중단 배너는 중복으로 뜨지 않는다 (A5b 리뷰)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 저장 버튼 없이 탭 전환(leaveScreen 경유)
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  // leaveScreen의 일반 이동 중단 문구는 onConflict가 이미 배너를 띄운 경우 생략한다(중복 안내 방지)
+  expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(document.querySelector(".sources-screen")).not.toBeNull();  // 탭은 바뀌지 않았다
 });

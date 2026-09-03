@@ -19,6 +19,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const [dirty, setDirty] = useState(false);            // 편집 탭 또는 자료 탭에 저장하지 않은 변경이 있다 (beforeunload 경고용)
   const [hasConflict, setHasConflict] = useState(false);  // 다른 창이나 프로그램이 먼저 저장해 412를 받았다
   const flushScreen = useRef<null | (() => Promise<boolean>)>(null);
+  // leaveScreen이 flush 실패의 일반 배너를 띄우기 전에 확인한다: onConflict가 이미 그 실패를
+  // 설명했으면(플러시 도중 412) 중복 배너를 생략한다 (A5b 리뷰 발견 3)
+  const justConflicted = useRef(false);
 
   useEffect(() => {
     if (project.status === "ok") {
@@ -30,7 +33,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   // 착지한 저장은 leaveScreen이 dirty를 내리므로 여기서는 자식이 보고하는 상태를 그대로 반영한다
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (dirty) e.preventDefault();
+      // returnValue도 함께 설정한다: preventDefault만으로는 확인 대화를 띄우지 않는
+      // 구형 구현이 있다 (A5b 리뷰 발견 5)
+      if (dirty) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -75,9 +80,10 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       const flushed = await flushScreen.current();
       if (flushed) {
         setDirty(false);
-      } else {
+      } else if (!justConflicted.current) {
         setError(`마지막 편집을 저장하지 못해 ${action} 중단했습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.`);
       }
+      justConflicted.current = false;
       return flushed;
     } finally {
       setLeaving(false);
@@ -113,7 +119,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
 
   // 구조안, 자료, 복구 화면의 412는 전용 UI 없이 이 배너의 "서버 내용 다시 읽기"로 회복한다.
   // 편집 탭의 충돌은 EditorScreen 자체의 되돌리기 버튼이 처리하므로 onConflict를 넘기지 않는다
-  const onConflict = () => setHasConflict(true);
+  const onConflict = () => { justConflicted.current = true; setHasConflict(true); };
   const reloadDeck = () => {
     setHasConflict(false);
     setDirty(false);  // 서버 내용으로 자식 화면을 다시 마운트하므로 미저장 변경이 없다
@@ -157,6 +163,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       {showRecovery && (
         <RecoveryScreen project={project} onConflict={onConflict} onBack={() => {
           setShowRecovery(false);
+          // 412로 뜬 배너를 이 경로에서도 내린다: 아래에서 덱을 새로 읽으므로 이미 해소된
+          // 상황이고, 그렇지 않으면 배너가 영구히 남는다 (A5b 리뷰 발견 2)
+          setHasConflict(false);
           // 복원본을 다시 읽을 때까지 덱을 내린다: 옛 덱으로 편집기가 재마운트되어
           // 다음 자동 저장이 복원 결과를 덮어쓰는 사고를 막는다 (2026-08-29 적대 리뷰 반영)
           setDeck(null);

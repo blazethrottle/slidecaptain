@@ -169,6 +169,25 @@ it("승인 루프의 putDeck이 412면 그 장을 실패로 표시하고 onConfl
   expect(api.generateChapter).toHaveBeenCalledTimes(1);
 });
 
+it("최초 승인 반영의 putDeck이 412면 생성을 시작하지 않고 onConflict를 부른다 (A5b 리뷰)", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  const onConflict = vi.fn();
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone}
+    onConflict={onConflict} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  expect(onDone).not.toHaveBeenCalled();
+  expect(api.generateChapter).not.toHaveBeenCalled();  // 어떤 장도 시도되지 않았다
+});
+
 it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
   const target = screen.getByLabelText("목표 장수");

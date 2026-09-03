@@ -139,6 +139,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       }
       if (!failed) onDone();
     } catch (e) {
+      // 최초 승인 반영(line 101)의 412도 여기로 떨어진다: 아직 어떤 장도 시도하지 않았으므로
+      // 별도 장 표시 없이 onConflict만 알린다 (A5b 리뷰 발견 1)
+      if (e instanceof ApiError && e.status === 412) onConflict?.();
       setError(messageOf(e));
     } finally {
       setBusy(false);

@@ -225,3 +225,27 @@ it("스냅샷 복구가 412면 배너가 뜨고, 다시 읽기를 누르면 최�
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   expect(await screen.findByText("서버본")).toBeInTheDocument();
 });
+
+it("스냅샷 복구가 412인 채로 '목록으로'를 눌러 나가도 충돌 배너가 남지 않는다 (A5b 리뷰)", async () => {
+  const serverDeck: Deck = { ...deckWithSlide, meta: { ...deckWithSlide.meta, title: "서버본" } };
+  vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithSlide).mockResolvedValue(serverDeck);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listSnapshots).mockResolvedValue([
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+  vi.mocked(api.restoreSnapshot).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByText("스냅샷 복구"));
+  await userEvent.click(await screen.findByText("이 시점으로 복원"));
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
+    .toBeInTheDocument();
+  // 배너의 "서버 내용 다시 읽기" 대신 RecoveryScreen 자체의 "목록으로"로 나간다(헤더에도 같은 이름의
+  // 버튼이 있어 .recovery-screen 안으로 한정한다): 덱은 새로 읽히지만 이 경로가 hasConflict를
+  // 내리지 않으면 이미 해소된 배너가 영구히 남는다
+  const recovery = within(document.querySelector(".recovery-screen") as HTMLElement);
+  await userEvent.click(recovery.getByRole("button", { name: "목록으로" }));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  await screen.findByText("서버본");
+  expect(screen.queryByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeNull();
+});
