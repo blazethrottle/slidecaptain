@@ -15,7 +15,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const [exporting, setExporting] = useState(false);
   const [showRecovery, setShowRecovery] = useState(false);
   const [generating, setGenerating] = useState(false);  // 구조안 승인 후 장별 순차 생성 진행 중 (쓰기 포크 차단)
-  const [leaving, setLeaving] = useState(false);        // 편집기 이탈 전 플러시 진행 중 (목록으로, 스냅샷 복구 잠금)
+  const [leaving, setLeaving] = useState(false);        // 편집기 이탈 전 플러시 진행 중: 모든 이탈 경로 버튼을 잠근다
   const flushEditor = useRef<null | (() => Promise<boolean>)>(null);
 
   useEffect(() => {
@@ -106,16 +106,17 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>목록으로</button>
         <h1>{deck.meta.title}</h1>
         <nav>
-          <button aria-pressed={tab === "sources"} disabled={generating}
+          <button aria-pressed={tab === "sources"} disabled={generating || leaving}
             onClick={() => switchTab("sources")}
             title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>자료</button>
-          <button aria-pressed={tab === "structure"} onClick={() => switchTab("structure")}>구조안</button>
-          <button aria-pressed={tab === "editor"} disabled={!hasSlides || generating}
+          <button aria-pressed={tab === "structure"} disabled={leaving}
+            onClick={() => switchTab("structure")}>구조안</button>
+          <button aria-pressed={tab === "editor"} disabled={!hasSlides || generating || leaving}
             onClick={() => switchTab("editor")}
             title={generating
               ? "AI 생성이 끝나면 이동할 수 있습니다"
               : hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
-          <button onClick={doExport} disabled={!hasSlides || exporting || generating}
+          <button onClick={doExport} disabled={!hasSlides || exporting || generating || leaving}
             title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>PPTX 내보내기</button>
           <button onClick={openRecovery} disabled={generating || leaving}
             title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>스냅샷 복구</button>

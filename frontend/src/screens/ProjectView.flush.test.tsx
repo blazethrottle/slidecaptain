@@ -56,6 +56,11 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
   await userEvent.click(screen.getByRole("button", { name: "목록으로" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(1));
   expect(screen.queryByText("목록 화면")).toBeNull();  // 착지 전에는 나가지 않는다
+  // 이탈 처리 중에는 다른 이탈 경로도 잠근다: 두 leaveEditor 가 겹치면 먼저 끝난 쪽이 화면을 내린 뒤
+  // 나중 쪽의 setTab 이 사라진 컴포넌트에 떨어진다 (브랜치 리뷰 발견 7, 2026-09-03)
+  for (const name of ["자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구", "목록으로"]) {
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+  }
   d.resolve({ ok: true });
   expect(await screen.findByText("목록 화면")).toBeInTheDocument();
 });
