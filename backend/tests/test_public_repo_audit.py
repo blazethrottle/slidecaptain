@@ -493,16 +493,11 @@ def test_invalid_utf8_index_path_is_reported_without_crashing(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
+    # 잘못된 UTF-8 경로는 인자가 아니라 표준 입력으로 심는다: Windows 의 subprocess 는 인자를 유니코드로
+    # 강제 변환하므로 바이트 인자에서 죽는다 (CI 실측 2026-09-03). --index-info 는 어느 플랫폼에서든 바이트를 받는다
     subprocess.run(
-        [
-            b"git",
-            b"-C",
-            os.fsencode(root),
-            b"update-index",
-            b"--add",
-            b"--cacheinfo",
-            f"100644,{blob},".encode("ascii") + b"projects/caf\xe9.txt",
-        ],
+        ["git", "-C", str(root), "update-index", "--add", "--index-info"],
+        input=f"100644 blob {blob}\t".encode("ascii") + b"projects/caf\xe9.txt\n",
         check=True,
         capture_output=True,
     )
