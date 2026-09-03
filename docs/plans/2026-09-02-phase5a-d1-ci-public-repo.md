@@ -276,6 +276,8 @@ git add .github/workflows/ci.yml .nvmrc frontend/package.json frontend/package-l
 git commit -m "ci: Windows와 macOS 자동 검증을 추가한다"
 ```
 
+**실행 중 보정 (2026-09-03, Mac Mini)**: `frontend/package.json` 의 `engines.node` 는 정확 고정(`22.17.1`)이 아니라 하한(`>=22.17.1`)으로 둔다. CI 와 `.nvmrc` 는 22.17.1 을 쓰지만 주 개발 환경인 Mac Mini 는 Node 24.14.1 이라 정확 고정이면 매 설치마다 경고가 난다. 로컬 수용 검증은 fnm 으로 22.17.1 을 따로 설치해 그 버전으로 수행했다(프런트 76건 통과, 빌드 성공). OpenAPI 와 프런트 타입의 무변경 확인은 작업공간이 main 클론의 editable 설치를 빌려 쓰는 동안은 의미가 없어 main 병합 뒤에 수행한다.
+
 **Step 6: Controller review, push, and remote GREEN**
 
 After the task review approves the commit, the controller pushes `codex/phase-5a` and waits for the workflow attached to that exact commit.
