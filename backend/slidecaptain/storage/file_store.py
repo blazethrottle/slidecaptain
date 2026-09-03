@@ -10,9 +10,13 @@ projects/<프로젝트명>/
 - 저장마다 직전 deck.json을 스냅샷으로 보존 (복구 경로)
 """
 
+import hashlib
 import os
 import re
 import shutil
+import tempfile
+import threading
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
@@ -41,6 +45,10 @@ class ProjectNotFound(StorageError):
 
 class ProjectExists(StorageError):
     pass
+
+
+class DeckConflict(StorageError):
+    """expected_etag가 저장소의 현재 내용과 어긋날 때 (A2가 412로 매핑한다)."""
 
 
 class SnapshotNotFound(StorageError):
@@ -124,11 +132,18 @@ class ProjectStore(Protocol):
 
     def list_projects(self) -> list[ProjectInfo]: ...
     def create_project(self, name: str, title: str = "") -> ProjectInfo: ...
+    def locked(self, name: str) -> AbstractContextManager[None]: ...
     def load_deck(self, name: str) -> Deck: ...
-    def save_deck(self, name: str, deck: Deck, snapshot: bool = True) -> None: ...
+    def deck_etag(self, name: str) -> str: ...
+    def load_deck_with_etag(self, name: str) -> tuple[Deck, str]: ...
+    def save_deck(
+        self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
+    ) -> str: ...
     def snapshot_now(self, name: str) -> None: ...
     def list_snapshots(self, name: str) -> list[SnapshotInfo]: ...
-    def restore_snapshot(self, name: str, snapshot_id: str) -> Deck: ...
+    def restore_snapshot(
+        self, name: str, snapshot_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]: ...
     def list_sources(self, name: str) -> list[str]: ...
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
@@ -142,8 +157,50 @@ class FileProjectStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self._locks: dict[str, threading.RLock] = {}
+        self._locks_guard = threading.Lock()  # _locks 딕셔너리 자체의 동시 접근 보호 (전역 잠금)
+
+    # -- 잠금 ---------------------------------------------------------------
+
+    def _lock_for(self, name: str) -> threading.RLock:
+        with self._locks_guard:
+            lock = self._locks.get(name)
+            if lock is None:
+                lock = threading.RLock()
+                self._locks[name] = lock
+            return lock
+
+    @contextmanager
+    def locked(self, name: str):
+        """프로젝트별 재진입 잠금. 같은 스레드가 안에서 다시 잠가도(라우트가 잠근 채 저장소
+        메서드를 불러도) 막히지 않는다. 같은 프로세스 안의 겹친 요청만 막는다 (설계상 범위, 가정 4)."""
+        lock = self._lock_for(name)
+        lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
 
     # -- 내부 공통 ---------------------------------------------------------
+
+    def _atomic_write(self, dir_path: Path, filename: str, data: bytes, *, prefix: str, suffix: str) -> None:
+        """같은 폴더에 고유 이름의 임시 파일을 만들어 쓰고 닫은 뒤 os.replace로 교체한다.
+        NamedTemporaryFile의 무작위 이름이 동시 호출끼리 같은 임시 경로를 다투는 경합을 없앤다.
+        with 블록으로 쓰기를 마쳐 닫은 뒤 교체해야 한다 (Windows는 자기 핸들이 열려 있어도 교체가 실패한다).
+        """
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=dir_path, prefix=prefix, suffix=suffix, delete=False) as f:
+                tmp_path = Path(f.name)
+                f.write(data)
+            os.replace(tmp_path, dir_path / filename)
+        except Exception:
+            if tmp_path is not None and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass  # 삭제 실패가 원래 예외를 가리면 안 된다
+            raise
 
     def _project_dir(self, name: str) -> Path:
         _validate_name(name, "프로젝트")
@@ -160,10 +217,11 @@ class FileProjectStore:
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
         return d
 
-    def _write_deck(self, project_dir: Path, deck: Deck) -> None:
-        tmp = project_dir / "deck.json.tmp"
-        tmp.write_text(deck.model_dump_json(indent=2), encoding="utf-8")
-        os.replace(tmp, project_dir / "deck.json")
+    def _write_deck(self, project_dir: Path, deck: Deck) -> str:
+        """deck.json을 원자적으로 쓰고 그 바이트의 SHA-256 16진수(ETag)를 돌려준다."""
+        data = deck.model_dump_json(indent=2).encode("utf-8")
+        self._atomic_write(project_dir, "deck.json", data, prefix=".deck-", suffix=".tmp")
+        return hashlib.sha256(data).hexdigest()
 
     def _snapshot_current(self, project_dir: Path) -> None:
         src = project_dir / "deck.json"
@@ -182,18 +240,26 @@ class FileProjectStore:
     def create_project(self, name: str, title: str = "") -> ProjectInfo:
         _validate_name(name, "프로젝트")
         if name in ("preset.json", "preset.json.tmp"):
+            # preset.json.tmp는 구 고정 임시 파일명(현재는 .preset-<무작위>.tmp)과의 충돌 방지용으로
+            # 계속 막는다: 과거에 이 이름으로 만든 프로젝트가 남아 있을 수 있어 이름 자체를 계속 예약해 둔다.
             raise InvalidName(
                 f"프로젝트 이름으로 쓸 수 없습니다: {name!r}. "
                 "전역 프리셋 파일과 이름이 겹칩니다. 다른 이름을 지어 주세요."
             )
-        d = self.root / name
-        if d.exists():
-            raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}")
-        (d / "sources").mkdir(parents=True)
-        (d / "snapshots").mkdir()
-        (d / "exports").mkdir()
-        self._write_deck(d, Deck(meta=DeckMeta(title=title or name)))
-        return self._info(d)
+        with self.locked(name):
+            d = self.root / name
+            if d.exists():
+                raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}")
+            try:
+                (d / "sources").mkdir(parents=True)
+            except FileExistsError as e:
+                # exists() 확인과 mkdir 사이의 경합 백스톱: 잠금이 있으면 같은 이름끼리는 직렬화되므로
+                # 이론상 드물지만, 새는 순간 500 대신 사용자에게 뜻이 통하는 오류로 바꾼다
+                raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}") from e
+            (d / "snapshots").mkdir()
+            (d / "exports").mkdir()
+            self._write_deck(d, Deck(meta=DeckMeta(title=title or name)))
+            return self._info(d)
 
     def list_projects(self) -> list[ProjectInfo]:
         infos = []
@@ -240,15 +306,43 @@ class FileProjectStore:
                 f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
             ) from e
 
-    def save_deck(self, name: str, deck: Deck, snapshot: bool = True) -> None:
+    def deck_etag(self, name: str) -> str:
+        """deck.json 바이트의 SHA-256 16진수(따옴표 없음)."""
         d = self._project_dir(name)
-        if snapshot:
-            self._snapshot_current(d)
-        self._write_deck(d, deck)
+        return hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
+
+    def load_deck_with_etag(self, name: str) -> tuple[Deck, str]:
+        d = self._project_dir(name)
+        data = (d / "deck.json").read_bytes()
+        try:
+            deck = Deck.model_validate_json(data)
+        except (ValueError, ValidationError) as e:
+            raise StorageError(
+                f"프로젝트 {name}의 deck.json을 읽지 못했습니다. "
+                f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
+            ) from e
+        return deck, hashlib.sha256(data).hexdigest()
+
+    def save_deck(
+        self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
+    ) -> str:
+        with self.locked(name):
+            d = self._project_dir(name)
+            if expected_etag is not None:
+                current = hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
+                if current != expected_etag:
+                    raise DeckConflict(
+                        "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
+                        "화면을 새로고침한 뒤 다시 편집해 주세요."
+                    )
+            if snapshot:
+                self._snapshot_current(d)
+            return self._write_deck(d, deck)
 
     def snapshot_now(self, name: str) -> None:
         """의미 시점 스냅샷 (단계 4 결정 1): 내보내기 직전 등 명시적 복구 지점."""
-        self._snapshot_current(self._project_dir(name))
+        with self.locked(name):
+            self._snapshot_current(self._project_dir(name))
 
     # -- 스냅샷 ------------------------------------------------------------
 
@@ -263,19 +357,32 @@ class FileProjectStore:
             infos.append(SnapshotInfo(id=p.stem, saved_at=ts.isoformat(timespec="seconds")))
         return infos
 
-    def restore_snapshot(self, name: str, snapshot_id: str) -> Deck:
-        d = self._project_dir_any(name)
-        _validate_name(snapshot_id, "스냅샷")
-        path = d / "snapshots" / f"{snapshot_id}.json"
-        if not path.exists():
-            raise SnapshotNotFound(f"스냅샷을 찾지 못했습니다: {snapshot_id}")
-        try:
-            deck = Deck.model_validate_json(path.read_text(encoding="utf-8"))
-        except (ValueError, ValidationError) as e:
-            raise StorageError(f"스냅샷 {snapshot_id}을 읽지 못했습니다. 다른 스냅샷을 골라 주세요. 원인: {e}") from e
-        self._snapshot_current(d)  # 복원 직전 상태도 스냅샷으로 남긴다
-        self._write_deck(d, deck)
-        return deck
+    def restore_snapshot(
+        self, name: str, snapshot_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]:
+        with self.locked(name):
+            d = self._project_dir_any(name)
+            if expected_etag is not None:
+                deck_path = d / "deck.json"
+                current = hashlib.sha256(deck_path.read_bytes()).hexdigest() if deck_path.exists() else None
+                if current != expected_etag:
+                    raise DeckConflict(
+                        "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
+                        "화면을 새로고침한 뒤 다시 편집해 주세요."
+                    )
+            _validate_name(snapshot_id, "스냅샷")
+            path = d / "snapshots" / f"{snapshot_id}.json"
+            if not path.exists():
+                raise SnapshotNotFound(f"스냅샷을 찾지 못했습니다: {snapshot_id}")
+            try:
+                deck = Deck.model_validate_json(path.read_text(encoding="utf-8"))
+            except (ValueError, ValidationError) as e:
+                raise StorageError(
+                    f"스냅샷 {snapshot_id}을 읽지 못했습니다. 다른 스냅샷을 골라 주세요. 원인: {e}"
+                ) from e
+            self._snapshot_current(d)  # 복원 직전 상태도 스냅샷으로 남긴다
+            etag = self._write_deck(d, deck)
+            return deck, etag
 
     # -- 입력 자료 ----------------------------------------------------------
 
@@ -303,12 +410,12 @@ class FileProjectStore:
         return (d / "sources" / filename).is_file()
 
     def write_source(self, name: str, filename: str, text: str) -> None:
-        d = self._project_dir(name)
         _validate_name(filename, "자료 파일")
-        # 접두사형 임시 이름: 정식 자료명 "a.md.tmp"와의 충돌을 피한다
-        tmp = d / "sources" / (".tmp-" + filename)
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, d / "sources" / filename)
+        with self.locked(name):
+            d = self._project_dir(name)
+            # 접두사 + 무작위 문자열 + "-파일명" 형태(.tmp-<무작위>-<이름>): 정식 자료명
+            # "a.md.tmp"와의 충돌을 피하면서도 동시 저장끼리 임시 경로가 겹치지 않는다
+            self._atomic_write(d / "sources", filename, text.encode("utf-8"), prefix=".tmp-", suffix="-" + filename)
 
     # -- 내보내기 -----------------------------------------------------------
 
@@ -330,6 +437,5 @@ class FileProjectStore:
             ) from e
 
     def save_global_preset(self, preset: Preset) -> None:
-        tmp = self.root / "preset.json.tmp"
-        tmp.write_text(preset.model_dump_json(indent=2), encoding="utf-8")
-        os.replace(tmp, self.root / "preset.json")
+        data = preset.model_dump_json(indent=2).encode("utf-8")
+        self._atomic_write(self.root, "preset.json", data, prefix=".preset-", suffix=".tmp")

@@ -1,9 +1,10 @@
 import json
+import threading
 from pathlib import Path
 
 from pptx import Presentation
 
-from slidecaptain.export.exporter import export_deck
+from slidecaptain.export.exporter import export_deck, export_deck_data
 from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
@@ -13,6 +14,7 @@ from slidecaptain.models.deck import (
     Slide,
     Structure,
 )
+from slidecaptain.storage.file_store import FileProjectStore
 
 
 def _write_deck(path: Path, title: str = "내보내기 테스트") -> Deck:
@@ -94,3 +96,39 @@ def test_preset_overrides_from_meta_applied(tmp_path):
     prs = Presentation(str(out))
     title_shape = next(s for s in prs.slides[0].shapes if s.name == "ch01:title")
     assert title_shape.text_frame.paragraphs[0].runs[0].font.size.pt == 22.0
+
+
+def test_concurrent_export_under_store_lock_creates_all_versions(tmp_path):
+    # 잠금 없이 부르면 스캔과 이동 사이의 경합으로 넷 다 v001을 돌려받는다(재현 실측).
+    # store.locked(name) 안에서 부르면 저장소 잠금이 내보내기 호출을 직렬화한다 (A2가 실제 라우트에서 이렇게 부른다).
+    store = FileProjectStore(tmp_path / "projects")
+    store.create_project("p1", title="동시 내보내기")
+    deck = _write_deck(tmp_path / "deck.json", title="동시 내보내기")
+    out_dir = store.exports_dir("p1")
+
+    results: list[Path] = []
+    errors: list[Exception] = []
+    results_lock = threading.Lock()
+
+    def worker() -> None:
+        try:
+            with store.locked("p1"):
+                path = export_deck_data(deck, out_dir)
+            with results_lock:
+                results.append(path)
+        except Exception as e:  # noqa: BLE001 - 실패하면 아래 단언에서 드러난다
+            with results_lock:
+                errors.append(e)
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    names = sorted(p.name for p in results)
+    assert names == [f"동시 내보내기_v{n:03d}.pptx" for n in range(1, 5)]
+    for p in results:
+        assert p.exists()
+        Presentation(str(p))  # 각각 python-pptx로 정상 열린다

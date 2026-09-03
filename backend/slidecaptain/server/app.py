@@ -260,7 +260,10 @@ def create_app(
 
     @app.post("/api/projects/{name}/snapshots/{snapshot_id}/restore", response_model=Deck)
     def restore_snapshot(name: str, snapshot_id: str):
-        return store.restore_snapshot(name, snapshot_id)
+        # A1에서 restore_snapshot이 (Deck, etag) 튜플을 돌려주도록 확장됐다.
+        # 헤더로 새 ETag를 싣는 것은 A2 소관이라 여기서는 시그니처 호환만 맞춘다.
+        deck, _etag = store.restore_snapshot(name, snapshot_id)
+        return deck
 
     @app.get("/api/projects/{name}/sources", response_model=list[str])
     def list_sources(name: str):
