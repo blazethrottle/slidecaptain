@@ -1,3 +1,4 @@
+import importlib.util
 import os
 import subprocess
 import sys
@@ -43,9 +44,12 @@ def _commit(root: Path, message: str) -> None:
     _git(root, "commit", "-m", message)
 
 
-def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _run(
+    root: Path, *args: str, environment_overrides: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["PYTHONIOENCODING"] = "utf-8"
+    environment.update(environment_overrides or {})
     return subprocess.run(
         [sys.executable, str(AUDIT_SCRIPT), "--root", str(root), *args],
         capture_output=True,
@@ -57,6 +61,22 @@ def _run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def _fake_key() -> str:
     return "sk" + "-" + ("a" * 48)
+
+
+def _key_body() -> str:
+    return "Ab1_Cd2-Ef3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3ab"
+
+
+def _private_key_header(modifier: str) -> str:
+    return "-----BEGIN " + modifier + "PRIVATE" + " KEY-----"
+
+
+def _load_audit_module():
+    specification = importlib.util.spec_from_file_location("audit_public_repo", AUDIT_SCRIPT)
+    module = importlib.util.module_from_spec(specification)
+    sys.modules[specification.name] = module
+    specification.loader.exec_module(module)
+    return module
 
 
 def test_allows_safe_tracked_python_and_markdown_files(tmp_path):
@@ -254,3 +274,220 @@ def test_non_git_root_is_operational_error(tmp_path):
 
     assert result.returncode == 2
     assert "Git" in result.stderr
+
+
+@pytest.mark.parametrize("modifier", ("", "RSA ", "EC ", "OPENSSH ", "ENCRYPTED "))
+def test_rejects_private_key_headers_including_pkcs8(tmp_path, modifier):
+    root = _repository(tmp_path)
+    _write(root, "key.txt", _private_key_header(modifier) + "\n")
+    _track(root, "key.txt")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: key.txt" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    (
+        ("sk", "-proj-"),
+        ("sk", "-svcacct-"),
+        ("sk", "-ant-api03-"),
+        ("sk", "-"),
+        ("gh", "p_"),
+        ("gh", "o_"),
+        ("gh", "u_"),
+        ("gh", "s_"),
+        ("gh", "r_"),
+        ("github", "_pat_11ABCDEFG_"),
+    ),
+)
+def test_rejects_expanded_key_prefixes(tmp_path, prefix):
+    root = _repository(tmp_path)
+    key = "".join(prefix) + _key_body()
+    _write(root, "notes.md", f"token {key}\n")
+    _track(root, "notes.md")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: notes.md" in result.stdout
+    assert key not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "template",
+    (
+        "{name}={value}\n",
+        "export {name}={value}\n",
+        "{name}: {value}\n",
+        '{name} = "{value}"\n',
+        '"{name}": "{value}"\n',
+    ),
+)
+def test_rejects_literal_environment_assignments(tmp_path, template):
+    root = _repository(tmp_path)
+    name = "ANTHROPIC" + "_API_KEY"
+    _write(root, "config.txt", template.format(name=name, value=_key_body()))
+    _track(root, "config.txt")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: config.txt" in result.stdout
+    assert _key_body() not in result.stdout
+
+
+def test_allows_environment_lookups_ci_syntax_and_placeholders(tmp_path):
+    root = _repository(tmp_path)
+    samples = {
+        "config.py": 'OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")\n',
+        "settings.py": "anthropic_api_key = settings.anthropic_api_key\n",
+        "ci_nospace.yml": "GITHUB_TOKEN=${{secrets.GITHUB_TOKEN}}\n",
+        "ci_space.yml": "GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+        "readme.md": "export AWS_ACCESS_KEY_ID=<your-access-key-id>\n",
+        "placeholder.env.example": "OPENAI_API_KEY=your-openai-api-key-here\n",
+        "task.txt": "task-abcdefghijklmnopqrstuvwxyz0123\n",
+        "skhynix.txt": "SK-hynix-semiconductor-fab-2026-report\n",
+    }
+    for path, content in samples.items():
+        _write(root, path, content)
+    _track(root, *samples)
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "directory", (".venv", "node_modules", ".superpowers", ".worktrees", "__pycache__")
+)
+def test_forbids_tool_directories_at_any_depth(tmp_path, directory):
+    root = _repository(tmp_path)
+    path = f"backend/{directory}/nested/file.txt"
+    _write(root, path)
+    _git(root, "add", "-f", "--", path)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"금지 디렉터리: {path}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "uploads/sample.txt",
+        "exports/sample.txt",
+        "snapshots/sample.json",
+        "dist/bundle.js",
+        "Uploads/upper.txt",
+        "frontend/dist/index.html",
+    ),
+)
+def test_forbids_runtime_data_directories_at_root_and_frontend_dist(tmp_path, path):
+    root = _repository(tmp_path)
+    _write(root, path)
+    _track(root, path)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"금지 디렉터리: {path}" in result.stdout
+
+
+def test_allows_runtime_directory_names_below_root(tmp_path):
+    root = _repository(tmp_path)
+    paths = (
+        "frontend/src/pages/projects/List.tsx",
+        "src/projects/list.ts",
+        "frontend/src/screens/uploads/Panel.tsx",
+        "docs/dist",
+        "distribution/notes.md",
+        "backend/app/uploads.py",
+        "build/dist.txt",
+        "docs/reviewers.md",
+        "docs/review-guide.md",
+    )
+    for path in paths:
+        _write(root, path)
+    _track(root, *paths)
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "docs/reviews/2026-09-02-review.md",
+        "docs/reviews/nested/notes.txt",
+        "Docs/Reviews/upper.md",
+    ),
+)
+def test_rejects_review_records_under_docs_reviews(tmp_path, path):
+    root = _repository(tmp_path)
+    _write(root, path)
+    _track(root, path)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"리뷰 기록: {path}" in result.stdout
+
+
+def test_missing_git_executable_is_operational_error(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "app.py")
+    _track(root, "app.py")
+    empty_path = tmp_path / "empty-path"
+    empty_path.mkdir()
+
+    result = _run(root, environment_overrides={"PATH": str(empty_path)})
+
+    assert result.returncode == 2
+    assert "git" in result.stderr.lower()
+    assert "Traceback" not in result.stderr
+
+
+def test_invalid_utf8_index_path_is_reported_without_crashing(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "README.md")
+    _track(root, "README.md")
+    blob = subprocess.run(
+        ["git", "-C", str(root), "hash-object", "-w", "README.md"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    subprocess.run(
+        [
+            b"git",
+            b"-C",
+            os.fsencode(root),
+            b"update-index",
+            b"--add",
+            b"--cacheinfo",
+            f"100644,{blob},".encode("ascii") + b"projects/caf\xe9.txt",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "금지 디렉터리: projects/caf" in result.stdout
+    assert result.stderr == ""
+
+
+def test_module_omits_unused_historical_diff_and_documents_binary_history_limit():
+    module = _load_audit_module()
+
+    assert hasattr(module, "historical_paths")
+    assert not hasattr(module, "historical_diff")
+    assert "Binary files" in (module.__doc__ or "")

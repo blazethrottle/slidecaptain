@@ -1,4 +1,17 @@
-"""Audit tracked files before publishing this repository."""
+"""Audit tracked files before publishing this repository.
+
+알려진 한계:
+
+- 바이너리 파일 안에 든 키는 기본 검사가 파일 바이트를 직접 읽으므로 잡지만,
+  ``--history`` 는 ``git log -p`` 출력만 보고 바이너리 변경은 그 출력에
+  "Binary files differ" 로만 나오므로 놓친다. 삭제된 바이너리 안에 있던 키는
+  이력 검사로 드러나지 않는다.
+- ``sk-`` 뒤에 영숫자와 밑줄, 붙임표가 20자 이상 이어지면 키로 본다. 그래서
+  ``sk-`` 뒤에 16진수 해시가 오는 문자열도 잡힌다. 실제 키와 구분할 수 없으므로
+  이 오탐은 허용한다.
+- 내용 검사는 작업트리 바이트를 읽는다. HEAD 에 커밋된 키를 작업트리에서만
+  지우면 기본 검사는 통과하고 ``--history`` 가 잡는다.
+"""
 
 from __future__ import annotations
 
@@ -21,19 +34,12 @@ class GitAuditError(RuntimeError):
     pass
 
 
-_FORBIDDEN_DIRECTORIES = frozenset(
-    {
-        ".venv",
-        "node_modules",
-        "dist",
-        ".superpowers",
-        ".worktrees",
-        "projects",
-        "uploads",
-        "exports",
-        "snapshots",
-    }
+_TOOL_DIRECTORIES = frozenset(
+    {".venv", "node_modules", ".superpowers", ".worktrees", "__pycache__"}
 )
+_ROOT_DATA_DIRECTORIES = frozenset({"projects", "uploads", "exports", "snapshots", "dist"})
+_NESTED_FORBIDDEN_DIRECTORIES = frozenset({("frontend", "dist")})
+_REVIEW_DIRECTORY = ("docs", "reviews")
 _OFFICE_EXTENSIONS = frozenset({".pptx", ".docx", ".pdf", ".xls", ".xlsx"})
 _PRIVATE_KEY_EXTENSIONS = frozenset({".key", ".pem", ".ppk", ".p12", ".pfx", ".der"})
 _SYNTHETIC_FIXTURE = ("backend", "tests", "fixtures", "synthetic")
@@ -42,39 +48,48 @@ _PILOT_NOTE = re.compile(r"\d{4}-\d{2}-\d{2}-파일럿-관찰지\.md\Z")
 _COMMIT_HEADER = re.compile(rb"(?m)^([0-9a-f]{40})\0\n\n")
 
 
-def _bytes_pattern(*parts: bytes) -> re.Pattern[bytes]:
-    return re.compile(b"".join(parts), re.IGNORECASE)
+def _bytes_pattern(*parts: bytes, flags: int = 0) -> re.Pattern[bytes]:
+    return re.compile(b"".join(parts), flags)
 
 
+_KEY_BODY = b"[A-Za-z0-9_-]{20,}"
 _SECRET_PATTERNS = (
-    _bytes_pattern(b"\\b", b"sk", b"-", b"ant", b"-", b"[A-Za-z0-9_-]{20,}"),
-    _bytes_pattern(b"\\b", b"sk", b"-", b"[A-Za-z0-9]{20,}"),
-    _bytes_pattern(b"\\b", b"ghp", b"_", b"[A-Za-z0-9]{20,}"),
-    _bytes_pattern(b"\\b", b"github", b"_pat", b"_", b"[A-Za-z0-9_]{20,}"),
-    _bytes_pattern(b"\\b", b"AKIA", b"[A-Z0-9]{16}\\b"),
-    _bytes_pattern(b"-----BEGIN ", b"[A-Z ]+", b"PRIVATE KEY-----"),
-    _bytes_pattern(
-        b"\\b(?:",
-        b"OPENAI",
-        b"_API_KEY|",
-        b"ANTHROPIC",
-        b"_API_KEY|",
-        b"GITHUB",
-        b"_TOKEN|",
-        b"AWS",
-        b"_ACCESS_KEY_ID)\\s*=\\s*[^\\s]{16,}",
-    ),
+    _bytes_pattern(b"\\b", b"sk", b"-", b"(?:proj-|svcacct-|ant-[a-z0-9]+-)?", _KEY_BODY),
+    _bytes_pattern(b"\\b", b"gh", b"[pousr]", b"_", _KEY_BODY),
+    _bytes_pattern(b"\\b", b"github", b"_pat", b"_", _KEY_BODY),
+    _bytes_pattern(b"\\b", b"AKIA", b"[A-Z0-9]{16}\\b", flags=re.IGNORECASE),
+    _bytes_pattern(b"-----BEGIN ", b"(?:[A-Z ]+ )?", b"PRIVATE KEY-----", flags=re.IGNORECASE),
 )
+_ENVIRONMENT_ASSIGNMENT = _bytes_pattern(
+    b"\\b(?:",
+    b"OPENAI",
+    b"_API_KEY|",
+    b"ANTHROPIC",
+    b"_API_KEY|",
+    b"GITHUB",
+    b"_TOKEN|",
+    b"AWS",
+    b"_ACCESS_KEY_ID)",
+    b"[\"']?\\s*[=:]\\s*[\"']?(",
+    _KEY_BODY,
+    b")",
+)
+_PLACEHOLDER_VALUE = re.compile(rb"your|example|placeholder|changeme|dummy", re.IGNORECASE)
 
 
 def _run_git(root: Path, *arguments: str) -> bytes:
-    result = subprocess.run(
-        ["git", "-C", str(root), *arguments],
-        capture_output=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), *arguments],
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise GitAuditError(
+            "git 실행 파일을 찾지 못했습니다. Git 을 설치하고 PATH 에 추가한 뒤 다시 실행하세요."
+        ) from error
     if result.returncode != 0:
-        raise GitAuditError
+        raise GitAuditError("Git 저장소를 검사하지 못했습니다.")
     return result.stdout
 
 
@@ -105,13 +120,21 @@ def historical_paths(root: Path) -> list[str]:
     return _nul_paths(_run_git(root, "log", "--all", "--name-only", "-z", "--pretty=format:"))
 
 
-def historical_diff(root: Path) -> bytes:
-    """Return text diffs for every reachable commit without printing them."""
-    return _run_git(root, "log", "--all", "-p", "--format=", "--no-ext-diff")
-
-
 def _path_parts(path: str) -> tuple[str, ...]:
     return tuple(part for part in path.split("/") if part)
+
+
+def _is_forbidden_directory(lowered_parts: tuple[str, ...]) -> bool:
+    directories = lowered_parts[:-1]
+    if any(part in _TOOL_DIRECTORIES for part in directories):
+        return True
+    if directories and directories[0] in _ROOT_DATA_DIRECTORIES:
+        return True
+    return directories[:2] in _NESTED_FORBIDDEN_DIRECTORIES
+
+
+def _is_review_record(lowered_parts: tuple[str, ...]) -> bool:
+    return len(lowered_parts) > 2 and lowered_parts[:2] == _REVIEW_DIRECTORY
 
 
 def _is_synthetic_xlsx(parts: tuple[str, ...]) -> bool:
@@ -146,8 +169,10 @@ def audit_paths(paths: list[str]) -> list[Finding]:
     for path in paths:
         parts = _path_parts(path)
         lowered_parts = tuple(part.lower() for part in parts)
-        if any(part in _FORBIDDEN_DIRECTORIES for part in lowered_parts):
+        if _is_forbidden_directory(lowered_parts):
             findings.append(Finding("금지 디렉터리", path))
+        if _is_review_record(lowered_parts):
+            findings.append(Finding("리뷰 기록", path))
         if lowered_parts[:2] == _PILOT_DIRECTORY and not _is_allowed_pilot_note(parts):
             findings.append(Finding("파일럿 원본", path))
         if Path(path).suffix.lower() in _OFFICE_EXTENSIONS and not _is_synthetic_xlsx(parts):
@@ -158,7 +183,12 @@ def audit_paths(paths: list[str]) -> list[Finding]:
 
 
 def _contains_secret(content: bytes) -> bool:
-    return any(pattern.search(content) is not None for pattern in _SECRET_PATTERNS)
+    if any(pattern.search(content) is not None for pattern in _SECRET_PATTERNS):
+        return True
+    return any(
+        _PLACEHOLDER_VALUE.search(match.group(1)) is None
+        for match in _ENVIRONMENT_ASSIGNMENT.finditer(content)
+    )
 
 
 def _working_file(root: Path, relative_path: str) -> Path | None:
@@ -262,10 +292,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--history", action="store_true", help="도달 가능한 커밋 이력도 검사")
     arguments = parser.parse_args(argv)
     root = arguments.root if arguments.root is not None else Path.cwd()
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     try:
         findings = audit_repository(root, include_history=arguments.history)
-    except GitAuditError:
-        print("Git 저장소를 검사하지 못했습니다.", file=sys.stderr)
+    except GitAuditError as error:
+        print(str(error) or "Git 저장소를 검사하지 못했습니다.", file=sys.stderr)
         return 2
     for finding in findings:
         print(f"{finding.rule}: {finding.path}")
