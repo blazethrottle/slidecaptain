@@ -22,11 +22,12 @@ Desktop.ini
 *.swp
 *.swo
 
-# 런타임 프로젝트 데이터 (앱이 만드는 폴더. 저장소 안에 두더라도 올리지 않는다)
-projects/
-uploads/
-exports/
-snapshots/
+# 런타임 프로젝트 데이터 (앱이 만드는 폴더. 저장소 안에 두더라도 올리지 않는다).
+# 저장소 루트 바로 아래만 무시한다: 하위 경로의 같은 이름(frontend/src/pages/projects/ 등)은 정상 소스다 (감사기와 같은 기준)
+/projects/
+/uploads/
+/exports/
+/snapshots/
 
 # 인증정보 (예시 파일만 허용)
 .env

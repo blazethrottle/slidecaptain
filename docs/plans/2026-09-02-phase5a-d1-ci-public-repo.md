@@ -193,6 +193,8 @@ git commit -m "chore: Windows와 macOS Git 규칙을 고정한다"
 
 ---
 
+**리뷰 기록 (2026-09-03, 판정 "수정 후 승인" → 반영)**: `.gitignore` 의 런타임 폴더 4개(`projects/` 등)가 루트에 고정되지 않아 `frontend/src/pages/projects/List.tsx` 같은 하위 경로까지 무시했다(감사기 `_ROOT_DATA_DIRECTORIES` 는 루트 기준). `/projects/` 형태로 앵커링하고 하위 경로 4건이 추적 가능하다는 테스트를 추가했다. `.sh` 와 `.command` 의 명시 규칙은 기본 규칙과 eol 결과가 같아 지워도 테스트가 못 잡았으므로, `text` 속성이 `auto` 가 아니라 `set` 인지 검사하는 테스트를 추가했다(규칙 제거 시 실제 실패 확인). 테스트 26 → 34. 리뷰어가 `git ls-files -z` 로 전수 확인한 결과 새 규칙에 걸리는 기존 추적 파일은 0건이다(`xargs` 로 파이프하면 한글 파일명이 이스케이프되어 거짓 양성이 나오므로 `-z` 를 쓸 것).
+
 ### Task 3: Windows와 macOS GitHub Actions
 
 **Files:**

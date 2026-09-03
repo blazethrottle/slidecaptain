@@ -68,6 +68,12 @@ def test_ignores_local_and_confidential_paths(path):
         "backend/tests/fixtures/synthetic/sample.xlsx",
         "backend/slidecaptain/__init__.py",
         "README.md",
+        # 런타임 데이터 폴더 이름은 저장소 루트 바로 아래일 때만 무시한다 (감사기 _ROOT_DATA_DIRECTORIES 와 같은 기준).
+        # 하위 경로의 같은 이름은 정상 소스다 (D1 태스크 2 리뷰 발견 1, 2026-09-03)
+        "frontend/src/pages/projects/List.tsx",
+        "backend/uploads/handler.py",
+        "backend/tests/fixtures/exports/sample.json",
+        "docs/snapshots/readme.md",
     ],
 )
 def test_keeps_allowed_paths_trackable(path):
@@ -87,6 +93,21 @@ def test_keeps_allowed_paths_trackable(path):
 )
 def test_eol_attribute_by_file_type(path, expected):
     assert _attr("eol", path) == expected
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        ("SlideCaptain실행.bat", "set"),
+        ("scripts/run.command", "set"),
+        ("scripts/run.sh", "set"),
+        ("README.md", "auto"),  # 기본 규칙(text=auto)만 받는 파일과의 대조
+    ],
+)
+def test_script_files_are_declared_text_explicitly(path, expected):
+    # 셸과 배치 파일의 명시 규칙(`*.sh text eol=lf` 등)은 기본 규칙 `* text=auto eol=lf` 와 eol 결과가 같아
+    # eol 검사만으로는 지워져도 잡히지 않았다 (D1 태스크 2 리뷰 발견 4). text 속성이 auto 가 아니라 set 인지로 잡는다
+    assert _attr("text", path) == expected
 
 
 def test_bundled_font_is_binary_not_text():
