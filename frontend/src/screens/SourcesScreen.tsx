@@ -141,6 +141,10 @@ export function SourcesScreen({
   const importFiles = async (list: FileList | File[]) => {
     const items = Array.from(list);
     if (items.length === 0) return;
+    // 업로드가 이미 진행 중이면 겹쳐 시작하지 않는다: 먼저 응답한 쪽의 finally가 onBusyChange(false)를
+    // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 탭 전환 방지)을 풀어 버리는 경합을 막는다
+    // (B4 리뷰 F1). 파일 입력은 uploading 동안 disabled로도 막지만, 이 확인이 실제 방지선이다
+    if (uploading) return;
     setInfo("");  // 지난 안내가 남아 있지 않게 한다
     setTruncationNotice("");
     setUploading(true);
@@ -182,7 +186,15 @@ export function SourcesScreen({
       const xlsxDetails = xlsxResults.map(
         (r) => `${r.filename}: 시트 ${r.sheets.toLocaleString()}개, 셀 ${r.cells.toLocaleString()}개`,
       );
-      const extraNotes = results.flatMap((r) => otherNotes(r.notes));
+      // 여러 파일이 각각 note를 남기면 파일명 없이 이어붙어 어느 파일 것인지 구분되지 않았다(B4 리뷰
+      // F2). note를 남긴 파일이 둘 이상일 때만 파일명을 접두해 구분한다(한 파일뿐이면 출처가 하나라
+      // 모호하지 않으므로 접두하지 않는다)
+      const notesByFile = results
+        .map((r) => ({ filename: r.filename, notes: otherNotes(r.notes) }))
+        .filter((r) => r.notes.length > 0);
+      const extraNotes = notesByFile.length > 1
+        ? notesByFile.map((r) => `${r.filename}: ${r.notes.join("; ")}`)
+        : notesByFile.flatMap((r) => r.notes);
       const summary = added > 0 ? `${added}개 자료를 추가했습니다.` : "추가한 자료가 없습니다.";
       let infoText = summary + (skipped > 0 ? ` 건너뜀 ${skipped}개.` : "");
       if (xlsxDetails.length > 0) infoText += " " + xlsxDetails.join(" / ");
@@ -241,7 +253,7 @@ export function SourcesScreen({
       </section>
       <section>
         <h2>입력 자료</h2>
-        <p>완성된 리서치 자료(마크다운, 텍스트)를 넣어 주세요. 탐색기로 프로젝트 폴더의 sources에 파일을 넣어도 됩니다.</p>
+        <p>완성된 리서치 자료(마크다운, 텍스트, CSV, 엑셀)를 넣어 주세요. 탐색기로 프로젝트 폴더의 sources에 파일을 넣어도 됩니다.</p>
         <ul>
           {files.map((f) => (
             <li key={f}><button onClick={() => open(f)}>{f}</button></li>
@@ -256,6 +268,7 @@ export function SourcesScreen({
             에는 추출본만 갑니다. 같은 이름의 기존 자료가 있으면 엑셀 추출본으로 교체됩니다.
           </p>
           <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
+            disabled={uploading}
             onChange={(e) => {
               const picked = e.target.files;
               if (picked) void importFiles(picked);

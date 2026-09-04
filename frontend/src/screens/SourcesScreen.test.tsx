@@ -183,6 +183,40 @@ describe("자료 파일 업로드", () => {
     expect(notice).toHaveTextContent("손익.xlsx");
     expect(notice).not.toHaveTextContent("매출.xlsx");
   });
+
+  // 여러 XLSX가 각각 "계산값 없음" 같은 잘림 아닌 note를 가지면 파일명 없이 이어붙어 어느 파일 것인지
+  // 구분되지 않았다(B4 리뷰 F2). 두 파일 모두 note가 있을 때만 파일명을 접두해 구분한다
+  it("두 XLSX가 각각 계산값 없음 note를 가지면 안내에 파일명을 구분해 붙인다", async () => {
+    const x1 = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    const x2 = new File(["PK"], "손익.xlsx", { type: XLSX_MIME });
+    vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["매출.xlsx.md", "손익.xlsx.md"]);
+    vi.mocked(api.uploadSource)
+      .mockResolvedValueOnce({
+        filename: "매출.xlsx", chars: 100, sheets: 1, cells: 10, truncated: false, notes: ["계산값 없음: 2곳"],
+      })
+      .mockResolvedValueOnce({
+        filename: "손익.xlsx", chars: 200, sheets: 1, cells: 20, truncated: false, notes: ["계산값 없음: 1곳"],
+      });
+    vi.mocked(api.readSource).mockResolvedValue({ text: "추출본" });
+    renderScreen();
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [x1, x2]);
+    const info = await screen.findByText(/계산값 없음/);
+    expect(info).toHaveTextContent("매출.xlsx: 계산값 없음: 2곳");
+    expect(info).toHaveTextContent("손익.xlsx: 계산값 없음: 1곳");
+  });
+
+  it("한 파일만 계산값 없음 note를 가지면 파일명 없이 그대로 보인다(단일 출처라 모호하지 않다)", async () => {
+    const x1 = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["매출.xlsx.md"]);
+    vi.mocked(api.uploadSource).mockResolvedValueOnce({
+      filename: "매출.xlsx", chars: 100, sheets: 1, cells: 10, truncated: false, notes: ["계산값 없음: 2곳"],
+    });
+    vi.mocked(api.readSource).mockResolvedValue({ text: "추출본" });
+    renderScreen();
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [x1]);
+    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 1개, 셀 10개 계산값 없음: 2곳"))
+      .toBeInTheDocument();
+  });
 });
 
 // 업로드 중 잠금 신호 (계획서 B4 가정 7): onBusyChange는 부모의 탭 잠금, onDirtyChange는 부모의
@@ -249,6 +283,47 @@ describe("업로드 중 잠금과 dirty (B4)", () => {
     unmount();
     resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
     await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  // 업로드가 끝나기 전에 같은 입력으로 겹쳐 시작하면, 먼저 응답한 쪽의 finally가 아직 진행 중인 첫
+  // 업로드의 잠금을 풀어 버리는 경합이 있었다(B4 리뷰 F1: FC-17 업로드 중 탭 전환 방지를 무력화한다).
+  // 파일 입력은 uploading 동안 잠기고, importFiles 자체도 재진입을 막는다
+  it("업로드 진행 중에는 파일 입력이 잠기고, 겹쳐 선택해도 두 번째 업로드는 시작되지 않는다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const { promise, resolve } = pendingUpload();
+    vi.mocked(api.uploadSource).mockReturnValue(promise);
+    const onBusyChange = vi.fn();
+    const a = new File(["aaa"], "a.md", { type: "text/markdown" });
+    const b = new File(["bbb"], "b.md", { type: "text/markdown" });
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} onBusyChange={onBusyChange} />);
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), a);
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(true));
+    expect(screen.getByLabelText("자료 파일 선택")).toBeDisabled();
+    // 실제로는 disabled가 파일 선택 창을 막지만, 그것과 무관하게 재진입 자체를 막는지 직접 확인한다
+    fireEvent.change(screen.getByLabelText("자료 파일 선택"), { target: { files: [b] } });
+    await Promise.resolve();
+    expect(api.uploadSource).toHaveBeenCalledTimes(1);  // b는 시작되지 않았다
+    resolve({ filename: "a.md", chars: 3, sheets: null, cells: null, truncated: false, notes: [] });
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+    expect(api.uploadSource).toHaveBeenCalledTimes(1);  // a가 끝난 뒤에도 겹친 시도(b)는 되살아나지 않는다
+    expect(screen.getByLabelText("자료 파일 선택")).not.toBeDisabled();
+  });
+
+  it("업로드 진행 중 겹쳐서 끌어다 놓아도 두 번째 업로드는 시작되지 않는다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const { promise, resolve } = pendingUpload();
+    vi.mocked(api.uploadSource).mockReturnValue(promise);
+    const a = new File(["aaa"], "a.md", { type: "text/markdown" });
+    const b = new File(["bbb"], "b.md", { type: "text/markdown" });
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+    const zone = screen.getByText(/끌어다 놓거나/).closest(".drop-zone")!;
+    fireEvent.drop(zone, { dataTransfer: { files: [a], types: ["Files"] } });
+    await waitFor(() => expect(api.uploadSource).toHaveBeenCalledTimes(1));
+    fireEvent.drop(zone, { dataTransfer: { files: [b], types: ["Files"] } });
+    await Promise.resolve();
+    expect(api.uploadSource).toHaveBeenCalledTimes(1);  // 겹친 드롭(b)은 무시된다
+    resolve({ filename: "a.md", chars: 3, sheets: null, cells: null, truncated: false, notes: [] });
+    await waitFor(() => expect(api.uploadSource).toHaveBeenCalledTimes(1));
   });
 });
 

@@ -31,6 +31,9 @@ button { cursor: pointer; }
 /* 자료 화면: 끌어다 놓기 영역과 성공 안내 (파일럿 관찰 1. 2026-09-01) */
 .sources-screen .drop-zone { border: 2px dashed #9AA5B1; border-radius: 6px; padding: 12px; margin: 8px 0; max-width: 640px; }
 .sources-screen .info { color: #1F4E79; }
+/* 잘림 알림은 성공 안내(.info)와 시각적으로 구분한다: 오류는 아니지만 놓치면 안 되는 경고다
+   (B4 리뷰 F3, 계획서 B4) */
+.sources-screen .info.truncation { color: #8A5A00; }
 
 /* 프로젝트 목록 상단의 AI 연결 상태 한 줄 (파일럿 관찰 5. 2026-09-01) */
 .project-list .ai-status { color: #4A5560; font-size: 0.95em; }
