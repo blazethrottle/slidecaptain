@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck } from "../api/client";
+import { api, ApiError, type Deck, type UploadResult } from "../api/client";
 import { SourcesScreen } from "./SourcesScreen";
+
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -145,6 +147,108 @@ describe("자료 파일 업로드", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("보고서.pdf");
     expect(alert).toHaveTextContent("지원하지 않는 형식입니다");
+  });
+
+  // XLSX 업로드 결과 표시 (계획서 B4)
+  it("XLSX 파일을 올리면 시트와 셀 수와 잘린 자리를 알려준다", async () => {
+    vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["매출.xlsx.md"]);
+    vi.mocked(api.uploadSource).mockResolvedValue({
+      filename: "매출.xlsx", chars: 500, sheets: 3, cells: 1204, truncated: true,
+      notes: ["(한계: 60,000자 초과분 생략. 시트 손익 행 412부터)", "계산값 없음: 2곳"],
+    });
+    vi.mocked(api.readSource).mockResolvedValue({ text: "# XLSX 추출: 매출.xlsx" });
+    const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    renderScreen();
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
+    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 3개, 셀 1,204개 계산값 없음: 2곳"))
+      .toBeInTheDocument();
+    expect(await screen.findByText("일부가 잘렸습니다: 매출.xlsx (60,000자 초과분 생략. 시트 손익 행 412부터)"))
+      .toBeInTheDocument();
+  });
+
+  it("두 파일 중 하나만 잘린 응답은 그 파일만 잘림 알림에 나온다", async () => {
+    const x1 = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    const x2 = new File(["PK"], "손익.xlsx", { type: XLSX_MIME });
+    vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["매출.xlsx.md", "손익.xlsx.md"]);
+    vi.mocked(api.uploadSource)
+      .mockResolvedValueOnce({ filename: "매출.xlsx", chars: 100, sheets: 1, cells: 10, truncated: false, notes: [] })
+      .mockResolvedValueOnce({
+        filename: "손익.xlsx", chars: 900, sheets: 2, cells: 500, truncated: true,
+        notes: ["(한계: 시트 31개 이후 생략)"],
+      });
+    vi.mocked(api.readSource).mockResolvedValue({ text: "추출본" });
+    renderScreen();
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [x1, x2]);
+    const notice = await screen.findByText(/일부가 잘렸습니다/);
+    expect(notice).toHaveTextContent("손익.xlsx");
+    expect(notice).not.toHaveTextContent("매출.xlsx");
+  });
+});
+
+// 업로드 중 잠금 신호 (계획서 B4 가정 7): onBusyChange는 부모의 탭 잠금, onDirtyChange는 부모의
+// beforeunload 경고에 각각 쓰인다. 둘 다 진행 중에는 true, 착지하면 false로 돌아가되 서로를 덮지 않는다
+describe("업로드 중 잠금과 dirty (B4)", () => {
+  const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
+  const deck: Deck = {
+    schema_version: 1,
+    meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
+    structure: { chapters: [] },
+    slides: [],
+  };
+
+  function pendingUpload() {
+    let resolve!: (v: UploadResult) => void;
+    const promise = new Promise<UploadResult>((res) => { resolve = res; });
+    return { promise, resolve };
+  }
+
+  it("업로드 진행 중에는 onBusyChange(true)와 onDirtyChange(true)를, 착지하면 각각 false를 부른다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const { promise, resolve } = pendingUpload();
+    vi.mocked(api.uploadSource).mockReturnValue(promise);
+    const onBusyChange = vi.fn();
+    const onDirtyChange = vi.fn();
+    const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onBusyChange={onBusyChange} onDirtyChange={onDirtyChange} />);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(false));
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(true));
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it("업로드가 끝나도 보고 정보가 미저장이면 onDirtyChange는 계속 true다(두 신호가 서로 덮지 않는다)", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.uploadSource).mockResolvedValue({
+      filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [],
+    });
+    const onDirtyChange = vi.fn();
+    const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} onDirtyChange={onDirtyChange} />);
+    await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(false));
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
+    await waitFor(() => expect(api.uploadSource).toHaveBeenCalled());
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("언마운트된 뒤 업로드가 응답해도 오류 없이 무시하고 onBusyChange(false)는 부른다", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    const { promise, resolve } = pendingUpload();
+    vi.mocked(api.uploadSource).mockReturnValue(promise);
+    const onBusyChange = vi.fn();
+    const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    const { unmount } = render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}}
+      onBusyChange={onBusyChange} />);
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(true));
+    unmount();
+    resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
+    await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
   });
 });
 

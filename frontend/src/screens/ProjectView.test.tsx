@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck, type Preset, type RenderPlan } from "../api/client";
+import { api, ApiError, type Deck, type Preset, type RenderPlan, type UploadResult } from "../api/client";
+import { deferred } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -8,8 +9,17 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
-    getPreset: vi.fn(), generateChapter: vi.fn() } };
+    getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn() } };
 });
+
+// 업로드 잠금과 beforeunload 테스트가 공용으로 쓰는 XLSX 픽스처와 헬퍼 (계획서 B4)
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function dispatchBeforeUnload(): boolean {
+  const ev = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(ev);
+  return ev.defaultPrevented;
+}
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
 
@@ -248,4 +258,66 @@ it("스냅샷 복구가 412인 채로 '목록으로'를 눌러 나가도 충돌 
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   await screen.findByText("서버본");
   expect(screen.queryByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeNull();
+});
+
+// 업로드 중 화면 잠금 (계획서 B4 가정 7): 업로드가 응답하기 전까지는 자료 탭 안의 일이라도 탭 5개
+// 전부와 목록으로와 내보내기와 스냅샷 복구를 잠가야 FC-17(업로드 중 탭 전환)이 막힌다
+it("자료 업로드가 진행 중이면 탭 버튼과 목록으로와 내보내기와 스냅샷 복구가 잠기고, 착지 뒤 풀린다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  const d = deferred<UploadResult>();
+  vi.mocked(api.uploadSource).mockReturnValue(d.promise);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+  await userEvent.upload(await screen.findByLabelText("자료 파일 선택"), xlsx);
+  await waitFor(() => expect(api.uploadSource).toHaveBeenCalled());
+  for (const name of ["목록으로", "자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구"]) {
+    expect(screen.getByRole("button", { name })).toBeDisabled();
+  }
+  d.resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
+  await waitFor(() => expect(screen.getByRole("button", { name: "목록으로" })).not.toBeDisabled());
+  for (const name of ["자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구"]) {
+    expect(screen.getByRole("button", { name })).not.toBeDisabled();
+  }
+});
+
+// beforeunload 조건 dirty || uploading || generating (계획서 B4)
+it("자료 업로드 진행 중에는 beforeunload가 막히고, 끝나도 미저장 보고 정보가 있으면 계속 막힌다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  const d = deferred<UploadResult>();
+  vi.mocked(api.uploadSource).mockReturnValue(d.promise);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  expect(dispatchBeforeUnload()).toBe(false);  // 아직 아무 일도 없다
+  const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+  await userEvent.upload(await screen.findByLabelText("자료 파일 선택"), xlsx);
+  await waitFor(() => expect(api.uploadSource).toHaveBeenCalled());
+  expect(dispatchBeforeUnload()).toBe(true);  // 업로드 진행 중
+  // 업로드가 끝나기 전에 보고 정보도 고쳐 둔다: 두 신호(업로드, 미저장 보고 정보)가 서로 덮지 않는지 확인한다
+  await userEvent.clear(screen.getByLabelText("보고서 제목"));
+  await userEvent.type(screen.getByLabelText("보고서 제목"), "새 제목");
+  d.resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
+  await waitFor(() => expect(screen.getByRole("button", { name: "목록으로" })).not.toBeDisabled());
+  expect(dispatchBeforeUnload()).toBe(true);  // 업로드는 끝났지만 보고 정보가 아직 미저장이다
+});
+
+// 종전에는 dirty만 검사해 순차 생성 중 창을 닫아도 경고가 없었다 (계획서 B4 가정 7, 1차 리뷰)
+it("장별 순차 생성이 진행 중이면 beforeunload가 막힌다", async () => {
+  const deckWithStructure: Deck = {
+    schema_version: 1,
+    meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
+    structure: { chapters: [
+      { id: "c1", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
+    slides: [],
+  };
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithStructure);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter).mockImplementation(() => new Promise(() => {}));  // 절대 응답하지 않는 생성 호출
+  render(<ProjectView project={project} onBack={() => {}} />);
+  expect(dispatchBeforeUnload()).toBe(false);
+  await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toBeDisabled());
+  expect(dispatchBeforeUnload()).toBe(true);
 });

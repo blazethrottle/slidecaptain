@@ -19,6 +19,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const [generating, setGenerating] = useState(false);  // 구조안 승인 후 장별 순차 생성 진행 중 (쓰기 포크 차단)
   const [leaving, setLeaving] = useState(false);        // 화면 이탈 전 플러시 진행 중: 모든 이탈 경로 버튼을 잠근다
   const [dirty, setDirty] = useState(false);            // 편집 탭 또는 자료 탭에 저장하지 않은 변경이 있다 (beforeunload 경고용)
+  // 자료 탭의 XLSX 업로드가 진행 중이다(계획서 B4 가정 7). generating과 합치지 않는다: 구조안 탭은
+  // 생성 중에는 잠그지 않는 예외가 있는데, 업로드는 자료 탭 안의 일이라 구조안 탭까지 잠가야 FC-17이 막힌다
+  const [uploading, setUploading] = useState(false);
   const [hasConflict, setHasConflict] = useState(false);  // 다른 창이나 프로그램이 먼저 저장해 412를 받았다
   // AI 전송 고지 대화 상자 (계획서 B3): 열려 있는 동안 사용자의 선택을 담을 resolve 함수를 들고 있는다.
   // null이 아니면 대화 상자가 열려 있다는 뜻이라 다른 상태와 함께 잠금 조건에도 쓴다
@@ -46,17 +49,19 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     setConsentResolve(null);
   };
 
-  // 편집 탭이나 자료 탭에 저장하지 않은 변경이 있으면 창 닫기(새로고침 포함)를 막는다.
-  // 착지한 저장은 leaveScreen이 dirty를 내리므로 여기서는 자식이 보고하는 상태를 그대로 반영한다
+  // 편집 탭이나 자료 탭에 저장하지 않은 변경이 있거나, 업로드나 순차 생성이 진행 중이면 창 닫기(새로고침
+  // 포함)를 막는다. 착지한 저장은 leaveScreen이 dirty를 내리므로 여기서는 자식이 보고하는 상태를 그대로
+  // 반영한다. generating을 넣은 것은 이번 묶음의 보강이다: 종전에는 순차 생성 중 창을 닫아도 경고가
+  // 없었다(계획서 B4 가정 7, 1차 리뷰)
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       // returnValue도 함께 설정한다: preventDefault만으로는 확인 대화를 띄우지 않는
       // 구형 구현이 있다 (A5b 리뷰 발견 5)
-      if (dirty) { e.preventDefault(); e.returnValue = ""; }
+      if (dirty || uploading || generating) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [dirty, uploading, generating]);
 
   if (project.status === "needs_recovery") {
     return (
@@ -160,24 +165,34 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
         </p>
       )}
       <header>
-        <button onClick={goBack} disabled={generating || leaving || dialogOpen}
-          title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>목록으로</button>
+        <button onClick={goBack} disabled={generating || uploading || leaving || dialogOpen}
+          title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+            : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>목록으로</button>
         <h1>{deck.meta.title}</h1>
         <nav>
-          <button aria-pressed={tab === "sources"} disabled={generating || leaving || dialogOpen}
+          <button aria-pressed={tab === "sources"} disabled={generating || uploading || leaving || dialogOpen}
             onClick={() => switchTab("sources")}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>자료</button>
-          <button aria-pressed={tab === "structure"} disabled={leaving || dialogOpen}
-            onClick={() => switchTab("structure")}>구조안</button>
-          <button aria-pressed={tab === "editor"} disabled={!hasSlides || generating || leaving || dialogOpen}
+            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>자료</button>
+          {/* 구조안 탭은 generating으로는 잠그지 않는 예외지만(진행 표시가 그 화면에 있다), 업로드는
+              자료 탭 안의 일이라 여기까지 잠가야 FC-17이 막힌다(계획서 B4 가정 7) */}
+          <button aria-pressed={tab === "structure"} disabled={uploading || leaving || dialogOpen}
+            onClick={() => switchTab("structure")}
+            title={uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>구조안</button>
+          <button aria-pressed={tab === "editor"}
+            disabled={!hasSlides || generating || uploading || leaving || dialogOpen}
             onClick={() => switchTab("editor")}
             title={generating
               ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
               : hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
-          <button onClick={doExport} disabled={!hasSlides || exporting || generating || leaving || dialogOpen}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>PPTX 내보내기</button>
-          <button onClick={openRecovery} disabled={generating || leaving || dialogOpen}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다" : undefined}>스냅샷 복구</button>
+          <button onClick={doExport}
+            disabled={!hasSlides || exporting || generating || uploading || leaving || dialogOpen}
+            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>PPTX 내보내기</button>
+          <button onClick={openRecovery} disabled={generating || uploading || leaving || dialogOpen}
+            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>스냅샷 복구</button>
         </nav>
       </header>
       {dialogOpen && (
@@ -199,7 +214,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       {!showRecovery && tab === "sources" && (
         <SourcesScreen project={project} deck={deck} onDeckChange={setDeck}
           onScreenReady={(f) => { flushScreen.current = f; }}
-          onDirtyChange={setDirty} onConflict={onConflict} />
+          onDirtyChange={setDirty} onConflict={onConflict} onBusyChange={setUploading} />
       )}
       {!showRecovery && tab === "structure" && (
         <StructureScreen project={project} deck={deck} onDeckChange={setDeck}
