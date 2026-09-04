@@ -258,6 +258,14 @@ def test_delete_upload_removes_file_and_is_idempotent(store):
     store.delete_upload("p1", "a.xlsx")  # 이미 없는 파일도 조용히 넘어간다(멱등, 계획서 B2)
 
 
+def test_read_upload_returns_none_when_missing_and_bytes_when_present(store):
+    # overwrite 재업로드 실패 시 이전 원본으로 되돌리기 위한 백업용 (B2 리뷰 F1)
+    store.create_project("p1")
+    assert store.read_upload("p1", "a.xlsx") is None
+    store.write_upload("p1", "a.xlsx", b"v1")
+    assert store.read_upload("p1", "a.xlsx") == b"v1"
+
+
 def test_global_preset_default_when_missing(tmp_path):
     store = FileProjectStore(tmp_path / "projects")
     assert store.load_global_preset() == Preset()

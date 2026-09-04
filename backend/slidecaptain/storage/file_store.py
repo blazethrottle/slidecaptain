@@ -123,6 +123,12 @@ def _validate_name(name: str, kind: str) -> None:
         )
 
 
+def validate_name(name: str, kind: str) -> None:
+    """이름 규칙 검증의 공개 진입점. 라우트가 무거운 처리(XLSX 추출 등)를 시작하기 전에 미리
+    검사할 때 쓴다 (계획서 B2 리뷰 F3). 규칙 자체는 _validate_name과 같다."""
+    _validate_name(name, kind)
+
+
 def decode_source_bytes(data: bytes, filename: str) -> str:
     """자료 바이트를 텍스트로 해석한다. utf-8-sig가 BOM 유무 양쪽을 흡수하고, cp949는 한국어
     Windows 메모장의 ANSI 저장을 위한 폴백이다 (단계 3 결정 7). 파일 읽기와 업로드가 같은 규칙을 쓴다."""
@@ -181,6 +187,7 @@ class ProjectStore(Protocol):
     def write_source(self, name: str, filename: str, text: str) -> None: ...
     def source_exists(self, name: str, filename: str) -> bool: ...
     def write_upload(self, name: str, filename: str, data: bytes) -> None: ...
+    def read_upload(self, name: str, filename: str) -> bytes | None: ...
     def delete_upload(self, name: str, filename: str) -> None: ...
     def exports_dir(self, name: str) -> Path: ...
     def load_global_preset(self) -> Preset: ...
@@ -491,6 +498,19 @@ class FileProjectStore:
                     "같은 이름으로 저장하거나 다른 이름을 써 주세요."
                 )
             self._atomic_write(uploads_dir, filename, data, prefix=".tmp-", suffix="-" + filename)
+
+    def read_upload(self, name: str, filename: str) -> bytes | None:
+        """uploads/의 원본 바이트를 읽는다. 파일이 없으면 None을 돌려준다(예외가 아니다: 없는
+        것이 정상 경로인 신규 업로드에도 쓰인다). overwrite 재업로드 중 추출본 쓰기가 실패했을 때
+        이전 원본으로 되돌리기 위한 백업용이다 (계획서 B2 리뷰 F1)."""
+        name = _nfc(name)
+        filename = _nfc(filename)
+        d = self._project_dir(name)
+        _validate_name(filename, "자료 파일")
+        path = d / "uploads" / filename
+        if not path.is_file():
+            return None
+        return path.read_bytes()
 
     def delete_upload(self, name: str, filename: str) -> None:
         """write_upload 직후 write_source가 실패했을 때 원본만 남는 상태를 만들지 않기 위한

@@ -5,6 +5,7 @@
 
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
@@ -42,6 +43,7 @@ from slidecaptain.storage.file_store import (
     SourceNotFound,
     StorageError,
     decode_source_bytes,
+    validate_name,
 )
 
 _STATUS_BY_ERROR = [
@@ -65,8 +67,10 @@ _UPLOAD_TOO_LARGE_MESSAGE = "파일이 너무 큽니다(5MB 한도). 필요한 �
 _XLSX_UPLOAD_TOO_LARGE_MESSAGE = "엑셀 파일이 너무 큽니다(20MB 한도). 필요한 부분만 발췌해 주세요."
 _XLSX_FILENAME_TOO_LONG_MESSAGE = (
     # 추출본 이름은 <원본 파일명>.md 이고 이름 규칙 상한이 80자라, 원본이 78자 이상이면 추출본
-    # 이름이 넘친다. 원본 이름 자체를 거절한다(계획서 B2)
-    "파일 이름이 너무 깁니다. 72자 이내로 줄여 주세요."
+    # 이름이 넘친다. 원본 이름 자체를 거절한다(계획서 B2). 72자는 확장자(.xlsx, 5자)를 뺀
+    # 길이다: 문구에 이를 명시하지 않으면 확장자까지 포함해 72자로 줄여 필요 이상 짧아질 수
+    # 있다 (B2 리뷰 F4)
+    "파일 이름이 너무 깁니다. 확장자(.xlsx)를 빼고 72자 이내로 줄여 주세요."
 )
 _XLS_UNSUPPORTED_MESSAGE = "구버전 엑셀(xls)은 지원하지 않습니다. 엑셀에서 xlsx로 다시 저장해 주세요."
 _UNSUPPORTED_EXTENSION_MESSAGE = (
@@ -368,11 +372,19 @@ def create_app(
         if not is_xlsx and suffix not in _TEXT_UPLOAD_EXTENSIONS:
             raise HTTPException(422, _UNSUPPORTED_EXTENSION_MESSAGE)
 
+        if is_xlsx:
+            # macOS Finder가 주는 NFD(자모 분리) 한글 파일명도 다른 이름 처리 진입점(A4)과 같은
+            # 관례로 여기서 NFC(완성형)로 맞춘다: 정규화 전에 아래 길이와 패턴 검사를 하면 코드
+            # 포인트 수가 늘어나 실제로는 규칙 이내인 이름이 잘못 거절된다 (계획서 B2 리뷰 F2)
+            filename = unicodedata.normalize("NFC", filename)
         extract_name = filename + _XLSX_EXTRACT_SUFFIX if is_xlsx else None
-        # 두 이름(원본, 추출본)을 먼저 계산하고 검증한다: 추출본 이름이 이름 규칙 상한(80자)을
-        # 넘으면 무거운 추출을 시작하기 전에 원본 이름 자체를 거절한다 (계획서 B2)
-        if extract_name is not None and len(extract_name) > 80:
-            raise HTTPException(422, _XLSX_FILENAME_TOO_LONG_MESSAGE)
+        # 두 이름(원본, 추출본)을 먼저 계산하고 검증한다: 무거운 추출(openpyxl)을 시작하기 전에
+        # 이름 규칙 위반(정규식, Windows 예약어 등)과 추출본 이름 80자 상한을 모두 거절한다
+        # (계획서 B2, 리뷰 F3)
+        if is_xlsx:
+            validate_name(filename, "자료 파일")
+            if len(extract_name) > 80:
+                raise HTTPException(422, _XLSX_FILENAME_TOO_LONG_MESSAGE)
 
         max_bytes = _XLSX_UPLOAD_MAX_BYTES if is_xlsx else _UPLOAD_MAX_BYTES
         too_large_message = _XLSX_UPLOAD_TOO_LARGE_MESSAGE if is_xlsx else _UPLOAD_TOO_LARGE_MESSAGE
@@ -396,12 +408,21 @@ def create_app(
             with store.locked(name):
                 if store.source_exists(name, extract_name) and not overwrite:
                     raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+                # 되돌리기용으로 기존 원본을 먼저 백업한다: 신규 업로드면 None이라 실패 시 지우면
+                # 되지만, 이미 정상이던 원본을 overwrite 하던 중이면 그냥 지우면 "새 원본만 지운
+                # 것"이 아니라 "이전에 있던 정상 원본까지 함께 사라지는" 데이터 손실이 된다
+                # (계획서 B2 리뷰 F1)
+                previous_upload = store.read_upload(name, filename)
                 store.write_upload(name, filename, data)
                 try:
                     store.write_source(name, extract_name, extraction.text)
                 except Exception:
-                    # 추출본 쓰기가 실패하면 원본만 남는 상태를 만들지 않는다 (계획서 B2)
-                    store.delete_upload(name, filename)
+                    # 추출본 쓰기가 실패하면 원본만 남는 상태를 만들지 않는다 (계획서 B2): 신규
+                    # 업로드였으면 지우고, 기존 원본을 덮어쓰던 중이었으면 그 이전 바이트로 복원한다
+                    if previous_upload is None:
+                        store.delete_upload(name, filename)
+                    else:
+                        store.write_upload(name, filename, previous_upload)
                     raise
             return UploadResult(
                 filename=filename,

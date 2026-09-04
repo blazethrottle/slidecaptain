@@ -1,6 +1,7 @@
 """자료 파일 업로드 API (원시 바이트 본문) 테스트. 계획서 2026-09-01 태스크 2, 2026-09-04 B2로 XLSX 확장."""
 
 import threading
+import unicodedata
 from io import BytesIO
 
 import pytest
@@ -306,6 +307,54 @@ def test_upload_xlsx_rolls_back_upload_if_extract_write_fails(client, tmp_path, 
         _upload(client, "실패.xlsx", data)
     # 추출본 쓰기가 실패했으니 원본만 uploads/에 남으면 안 된다 (계획서 B2)
     assert not (tmp_path / "projects" / "p1" / "uploads" / "실패.xlsx").exists()
+
+
+def test_upload_xlsx_overwrite_restores_previous_original_if_extract_write_fails(client, tmp_path, monkeypatch):
+    # 이미 정상 원본이 있는 상태에서 overwrite 재업로드 중 추출본 쓰기가 실패하면, 롤백이 방금
+    # 덮어쓴 새 원본만 지우는 게 아니라 "이전에 이미 있던 정상 원본"까지 함께 지워서는 안 된다
+    # (B2 리뷰 F1)
+    data1 = _make_xlsx("s", {"A1": "v1"})
+    data2 = _make_xlsx("s", {"A1": "v2"})
+    assert _upload(client, "매출.xlsx", data1).status_code == 200
+    upload_path = tmp_path / "projects" / "p1" / "uploads" / "매출.xlsx"
+    assert upload_path.read_bytes() == data1
+
+    def _boom(self, name, filename, text):
+        raise RuntimeError("디스크 꽉 참(가짜 실패)")
+
+    monkeypatch.setattr(FileProjectStore, "write_source", _boom)
+    with pytest.raises(RuntimeError):
+        _upload(client, "매출.xlsx", data2, overwrite=True)
+    # 이전 원본이 사라지지 않고 그대로 복원돼 있어야 한다
+    assert upload_path.exists()
+    assert upload_path.read_bytes() == data1
+
+
+def test_upload_xlsx_nfd_korean_filename_within_limit_is_accepted(client):
+    # macOS Finder가 주는 NFD(자모 분리) 한글 파일명은 실제로는 이름 규칙 이내(77자)인데도,
+    # 정규화 전 코드포인트 수로 재면 상한(80자)을 넘어 잘못 거절됐다 (B2 리뷰 F2)
+    nfc_name = ("가" * 72) + ".xlsx"
+    assert len(nfc_name) == 77
+    nfd_name = unicodedata.normalize("NFD", nfc_name)
+    assert len(nfd_name) > 80  # 자모가 분리되며 코드포인트 수가 늘어난다
+    data = _make_xlsx("s", {"A1": "x"})
+    r = _upload(client, nfd_name, data)
+    assert r.status_code == 200
+    # 저장은 다른 이름 처리 진입점(A4)과 같은 관례로 NFC 이름을 쓴다
+    assert client.get("/api/projects/p1/sources").json() == [f"{nfc_name}.md"]
+
+
+def test_upload_xlsx_invalid_name_rejected_before_extraction(client, monkeypatch):
+    # 이름 정규식과 Windows 예약어 검증도 80자 규칙과 같은 이유로 무거운 추출(openpyxl) 전에
+    # 끝나야 한다 (B2 리뷰 F3). extract_xlsx가 불리면 검증이 추출 뒤로 밀린 것이므로 실패시킨다
+    def _boom(*args, **kwargs):
+        raise AssertionError("extract_xlsx가 이름 검증보다 먼저 불려서는 안 된다 (B2 리뷰 F3)")
+
+    monkeypatch.setattr(app_module, "extract_xlsx", _boom)
+    data = _make_xlsx("s", {"A1": "x"})
+    r = _upload(client, "CON.xlsx", data)  # Windows 예약어 (_validate_name이 걸러낸다)
+    assert r.status_code == 422
+    assert client.get("/api/projects/p1/sources").json() == []
 
 
 def test_generated_route_reads_xlsx_extract_as_source(client, store):
