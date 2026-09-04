@@ -152,6 +152,18 @@ def test_calc_cache_value_shown_when_xml_patched():
     assert not any("계산값 없음" in n for n in result.notes)
 
 
+def test_formula_source_text_is_escaped_like_string_values():
+    """수식 원문에 파이프 문자가 있으면(TEXTJOIN 등 흔한 패턴) 문자열 값과 같은 이스케이프
+    규칙을 적용한다 (B1 리뷰 formula-text-unescaped-pipe: 계산값과 하이퍼링크 표시 텍스트는
+    이스케이프되는데 수식 원문만 그대로 삽입돼 " | " 토큰 구분자와 구별되지 않았다)."""
+
+    def build(wb: openpyxl.Workbook) -> None:
+        wb.active["A1"] = '=TEXTJOIN("|",TRUE,A1:A5)'
+
+    result = extract_xlsx(xlsx_fixtures.workbook_bytes(build), "수식이스케이프.xlsx")
+    assert 'A==TEXTJOIN("\\|",TRUE,A1:A5) → (계산값 없음)' in result.text
+
+
 # -- 숨김 시트 -------------------------------------------------------------------------
 
 
@@ -319,6 +331,32 @@ def test_char_cap_truncates_mid_row_keeping_whole_tokens():
     assert "GR=200" not in result.text  # 마지막 열은 잘린다
     assert any("열 생략(글자 수 한도)" in n for n in result.notes)
     assert any("자 초과분 생략" in n and "행 1부터" in n for n in result.notes)
+    # 살아남은 셀 수가 cells 필드에 반영된다 (B1 리뷰 cells-undercount-charcap: 이 경로가
+    # total_value_cells를 갱신하지 않고 바로 break해 0을 돌려주고 있었다)
+    assert result.cells > 0
+
+
+def test_char_cap_mid_sheet_drops_later_sheet_from_count_and_notes():
+    """글자 수 상한이 첫 시트 도중에 걸리면, 아직 처리되지 않은 이후 시트는 시트 수 집계에서
+    빠지고 그 이름이 notes에 남는다 (B1 리뷰 sheets-silent-drop: 이전에는 sheets 필드와
+    "시트 수" 머리글이 트렁케이션 전 개수를 그대로 보고하고 생략 사실이 어디에도 남지 않았다)."""
+
+    def build(wb: openpyxl.Workbook) -> None:
+        ws = wb.active
+        ws.title = "s1"
+        for col in range(1, 51):
+            ws.cell(row=1, column=col, value=col)
+        wb.create_sheet("s2")["A1"] = "다른시트값"
+
+    limits = XlsxLimits(max_value_cells=10_000, max_chars=100)
+    result = extract_xlsx(xlsx_fixtures.workbook_bytes(build), "다중시트글자수.xlsx", limits)
+
+    assert result.truncated is True
+    assert result.sheets == 1
+    assert "시트 수: 1개" in result.text
+    assert "다른시트값" not in result.text
+    assert "## 시트: s2" not in result.text
+    assert any("이후 시트 생략" in n and "s2" in n for n in result.notes)
 
 
 def test_declared_size_cap_rejects_before_load():

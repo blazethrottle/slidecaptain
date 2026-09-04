@@ -138,6 +138,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
     calc_missing = 0
     newline_replacements = 0
     stopped = False
+    processed_sheet_names: list[str] = []
 
     for ws in included_sheets:
         if stopped:
@@ -149,6 +150,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
         calc_missing += sheet_calc_missing
         newline_replacements += sheet_newlines
         sheet_name = _clean_sheet_name(ws.title)
+        processed_sheet_names.append(sheet_name)
 
         block_lines = [f"## 시트: {sheet_name} ({value_range_desc}, 값 셀 {sheet_value_cells}개)"]
         if merges:
@@ -178,6 +180,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
                 kept, skipped_cols = _fit_tokens(tokens, budget)
                 if kept:
                     body_lines.append(prefix + " | ".join(kept))
+                    total_value_cells += len(kept)
                 if skipped_cols:
                     notes.append(f"행 {row_no}에서 {', '.join(skipped_cols)}열 생략(글자 수 한도)")
                 note = f"(한계: {limits.max_chars:,}자 초과분 생략. 시트 {sheet_name} 행 {row_no}부터)"
@@ -190,6 +193,12 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
             body_len += len(full_line) + 1
             total_value_cells += row_cell_count
 
+    if stopped:
+        remaining_sheets = included_sheets[len(processed_sheet_names) :]
+        if remaining_sheets:
+            remaining_names = [_clean_sheet_name(w.title) for w in remaining_sheets]
+            notes.append("(한계: 이후 시트 생략: " + ", ".join(remaining_names) + ")")
+
     if calc_missing:
         notes.append(f"계산값 없음: {calc_missing}곳")
     if newline_replacements:
@@ -198,7 +207,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
     header_lines = [
         f"# XLSX 추출: {filename}",
         f"추출 시각: {datetime.now().astimezone().isoformat(timespec='seconds')}",
-        f"시트 수: {len(included_sheets)}개",
+        f"시트 수: {len(processed_sheet_names)}개",
     ]
     if notes:
         header_lines.append("적용된 한계와 참고:")
@@ -208,7 +217,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
 
     return XlsxExtraction(
         text=text,
-        sheets=len(included_sheets),
+        sheets=len(processed_sheet_names),
         cells=total_value_cells,
         truncated=truncated,
         notes=notes,
@@ -245,7 +254,9 @@ def _scan_sheet(ws, vws):
                 else:
                     calc_text, nl = _format_value(calc_value, cell.number_format)
                     newline_replacements += nl
-                value_text = f"{cell.value} → {calc_text}"
+                formula_text, formula_nl = _format_string(cell.value)
+                newline_replacements += formula_nl
+                value_text = f"{formula_text} → {calc_text}"
             elif cell.hyperlink is not None:
                 display, nl = _format_value(cell.value, cell.number_format)
                 newline_replacements += nl
