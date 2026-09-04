@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.141",
     "uvicorn>=0.30",
     "claude-agent-sdk==0.2.145",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
