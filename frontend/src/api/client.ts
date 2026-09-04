@@ -1,3 +1,4 @@
+import { ensureConsent } from "./aiGate";
 import type { components } from "./types";
 
 export type Deck = components["schemas"]["Deck"];
@@ -29,6 +30,14 @@ export class ApiError extends Error {
   }
 }
 
+// AI 전송 고지 관문(계획서 B3)에서 사용자가 취소했을 때 던진다. status 0은 서버 응답이 아니라
+// 요청 자체가 나가지 않았음을 나타낸다. 화면은 이 오류를 role="alert" 배너가 아닌 안내 문구로 보인다.
+export class AiConsentDeclined extends ApiError {
+  constructor() {
+    super(0, "AI 전송을 취소했습니다.");
+  }
+}
+
 export function messageOf(e: unknown): string {
   return e instanceof ApiError ? e.message : "서버에 연결하지 못했습니다. 앱을 다시 시작해 주세요.";
 }
@@ -53,10 +62,13 @@ export function resetEtags(): void {
   etags.clear();
 }
 
-async function request<T>(path: string, init?: RequestInit, opts?: { etagKey?: string }): Promise<T> {
+async function request<T>(
+  path: string, init?: RequestInit, opts?: { etagKey?: string; headers?: Record<string, string> },
+): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Requested-With": "SlideCaptain",  // 서버가 요구하는 앱 식별 헤더 (다른 사이트의 단순 요청 차단)
+    ...opts?.headers,
   };
   const known = opts?.etagKey ? etags.get(opts.etagKey) : undefined;
   if (known) headers["If-Match"] = known;
@@ -110,16 +122,24 @@ export const api = {
     request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
   exportDeck: (name: string) =>
     request<{ path: string }>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
-  generateStructure: (name: string, req: { target_chapters?: number | null; instructions?: string }) =>
-    request<StructureResult>(`/api/projects/${enc(name)}/generate/structure`, {
+  // AI 전송 3종은 관문(aiGate)을 거친다: 동의가 없으면 요청을 내보내지 않고 AiConsentDeclined를
+  // 던지고, 있으면 X-AI-Consent 헤더를 붙여 서버의 428 검사를 통과한다 (계획서 B3, 가정 5)
+  generateStructure: async (name: string, req: { target_chapters?: number | null; instructions?: string }) => {
+    if (!(await ensureConsent())) throw new AiConsentDeclined();
+    return request<StructureResult>(`/api/projects/${enc(name)}/generate/structure`, {
       method: "POST", body: JSON.stringify(req),
-    }),
-  generateChapter: (name: string, chapterId: string, instructions = "") =>
-    request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}`, {
+    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+  },
+  generateChapter: async (name: string, chapterId: string, instructions = "") => {
+    if (!(await ensureConsent())) throw new AiConsentDeclined();
+    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}`, {
       method: "POST", body: JSON.stringify({ instructions }),
-    }),
-  condenseChapter: (name: string, chapterId: string, slots: Slots, instructions = "") =>
-    request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}/condense`, {
+    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+  },
+  condenseChapter: async (name: string, chapterId: string, slots: Slots, instructions = "") => {
+    if (!(await ensureConsent())) throw new AiConsentDeclined();
+    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}/condense`, {
       method: "POST", body: JSON.stringify({ slots, instructions }),
-    }),
+    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+  },
 };

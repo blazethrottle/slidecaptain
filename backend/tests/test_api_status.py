@@ -10,7 +10,7 @@ from slidecaptain.server.app import create_app
 
 # store 픽스처는 backend/tests/conftest.py 참조
 
-_APP_HEADERS = {"X-Requested-With": "SlideCaptain"}
+_APP_HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
 
 STRUCTURE_PAYLOAD = {"chapters": [
     {"topic": "표지", "conclusion": "", "template": "cover", "source_refs": []},

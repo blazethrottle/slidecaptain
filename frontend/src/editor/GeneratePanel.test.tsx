@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, type ChapterResult, type Deck } from "../api/client";
+import { AiConsentDeclined, api, type ChapterResult, type Deck } from "../api/client";
 import { GeneratePanel } from "./GeneratePanel";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -66,6 +66,24 @@ it("장을 전환하면 이전 장의 결과 패널이 사라진다", async () =
   expect(await screen.findByText("반영")).toBeInTheDocument();
   rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" onReplace={() => {}} />);
   expect(screen.queryByText("반영")).not.toBeInTheDocument();
+});
+
+// AI 전송 고지 취소 (계획서 B3): 취소는 실패가 아니므로 role=alert가 아닌 안내 문구로 보인다
+it("재생성에서 AI 전송을 취소하면 알림이 아닌 안내 문구를 보인다", async () => {
+  vi.mocked(api.generateChapter).mockRejectedValue(new AiConsentDeclined());
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
+  expect(notice.closest('[role="alert"]')).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("축약에서 AI 전송을 취소해도 알림이 아닌 안내 문구를 보인다", async () => {
+  vi.mocked(api.condenseChapter).mockRejectedValue(new AiConsentDeclined());
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 축약"));
+  const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
+  expect(notice.closest('[role="alert"]')).toBeNull();
 });
 
 it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다", () => {

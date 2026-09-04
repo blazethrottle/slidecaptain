@@ -27,10 +27,11 @@ class StubProvider:
         return item
 
 
+_APP_HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
+
+
 def _client(store, responses) -> TestClient:
-    return TestClient(
-        create_app(store, provider=StubProvider(responses)), headers={"X-Requested-With": "SlideCaptain"}
-    )
+    return TestClient(create_app(store, provider=StubProvider(responses)), headers=_APP_HEADERS)
 
 
 def _project_with_structure(client):
@@ -94,7 +95,7 @@ def test_provider_failure_returns_503(store):
 
 
 def test_generate_without_provider_returns_503(store):
-    client = TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"})  # provider 없음: 기존 시그니처 호환
+    client = TestClient(create_app(store), headers=_APP_HEADERS)  # provider 없음: 기존 시그니처 호환
     client.post("/api/projects", json={"name": "p1"})
     r = client.post("/api/projects/p1/generate/structure", json={})
     assert r.status_code == 503
@@ -134,3 +135,57 @@ def test_sources_over_total_limit_422(store):
     r = client.post("/api/projects/p1/generate/structure", json={})
     assert r.status_code == 422
     assert "발췌" in r.json()["detail"]
+
+
+# AI 전송 고지 관문 (계획서 B3, 가정 5): 생성 3종은 X-AI-Consent 헤더가 없으면 428이고 프로바이더가
+# 호출되지 않는다. 헤더는 있으나 표식 헤더(X-Requested-With)가 없으면 A2 보호 미들웨어의 403이 먼저다.
+
+
+def test_generate_structure_without_ai_consent_header_428(store):
+    # 프로바이더 응답을 넣지 않는다: 428이 먼저면 프로바이더가 아예 호출되지 않으므로 큐가 비어도 통과한다
+    client = TestClient(
+        create_app(store, provider=StubProvider([])), headers={"X-Requested-With": "SlideCaptain"}
+    )
+    client.post("/api/projects", json={"name": "p1"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
+    r = client.post("/api/projects/p1/generate/structure", json={})
+    assert r.status_code == 428
+    assert "AI 전송 확인" in r.json()["detail"]
+
+
+def test_generate_chapter_without_ai_consent_header_428(store):
+    client = TestClient(
+        create_app(store, provider=StubProvider([])), headers={"X-Requested-With": "SlideCaptain"}
+    )
+    _project_with_structure(client)
+    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    assert r.status_code == 428
+
+
+def test_condense_chapter_without_ai_consent_header_428(store):
+    client = TestClient(
+        create_app(store, provider=StubProvider([])), headers={"X-Requested-With": "SlideCaptain"}
+    )
+    _project_with_structure(client)
+    body = {"slots": {"template": "bullet_box",
+                      "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
+                      "conclusion": "성장 지속", "footnote": ""}}
+    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    assert r.status_code == 428
+
+
+def test_generate_structure_with_ai_consent_header_passes(store):
+    # 헤더가 있으면 종전대로 200이다 (관문 자체는 통과를 막지 않는다)
+    client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
+    client.post("/api/projects", json={"name": "p1", "title": "검토"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
+    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    assert r.status_code == 200
+
+
+def test_generate_without_any_marker_headers_is_403_not_428(store):
+    # 표식 헤더(X-Requested-With)까지 없으면 A2 보호 미들웨어의 403이 428보다 먼저다 (계획서 B3)
+    client = TestClient(create_app(store, provider=StubProvider([])))
+    client.post("/api/projects", json={"name": "p1"})
+    r = client.post("/api/projects/p1/generate/structure", json={})
+    assert r.status_code == 403

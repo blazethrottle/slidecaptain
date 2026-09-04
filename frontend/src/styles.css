@@ -34,3 +34,13 @@ button { cursor: pointer; }
 
 /* 프로젝트 목록 상단의 AI 연결 상태 한 줄 (파일럿 관찰 5. 2026-09-01) */
 .project-list .ai-status { color: #4A5560; font-size: 0.95em; }
+
+/* AI 전송 고지 대화 상자: 화면 전체를 덮는 오버레이로 뒤 화면의 클릭을 막는다 (계획서 B3, 가정 5) */
+.ai-consent-overlay {
+  position: fixed; inset: 0; background: rgba(32, 32, 32, 0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.ai-consent-dialog {
+  background: #FFFFFF; border-radius: 8px; padding: 20px; max-width: 560px; width: 90%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}

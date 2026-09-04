@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck } from "../api/client";
+import { AiConsentDeclined, api, ApiError, type Deck } from "../api/client";
 import { StructureScreen } from "./StructureScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -186,6 +186,40 @@ it("최초 승인 반영의 putDeck이 412면 생성을 시작하지 않고 onCo
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
   expect(onDone).not.toHaveBeenCalled();
   expect(api.generateChapter).not.toHaveBeenCalled();  // 어떤 장도 시도되지 않았다
+});
+
+// AI 전송 고지 취소 (계획서 B3): 취소는 실패가 아니므로 role=alert가 아닌 안내 문구로 보인다
+it("구조안 생성에서 AI 전송을 취소하면 알림이 아닌 안내 문구를 보인다", async () => {
+  vi.mocked(api.generateStructure).mockRejectedValue(new AiConsentDeclined());
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
+  expect(notice.closest('[role="alert"]')).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("승인 루프에서 첫 장을 취소하면 남은 장은 관문을 다시 묻지 않고 취소로 표시되며 onDone을 부르지 않는다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter).mockRejectedValue(new AiConsentDeclined());
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => {
+    const row1 = screen.getByLabelText("1번 장 주제").closest("tr")!;
+    const row2 = screen.getByLabelText("2번 장 주제").closest("tr")!;
+    expect(within(row1).getByText("취소", { exact: false })).toBeInTheDocument();
+    expect(within(row2).getByText("취소", { exact: false })).toBeInTheDocument();
+  });
+  // 취소한 장 이후로는 관문(generateChapter)을 다시 부르지 않는다: 1회만 호출됐어야 한다
+  expect(api.generateChapter).toHaveBeenCalledTimes(1);
+  expect(onDone).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {

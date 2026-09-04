@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  api, messageOf, type ChapterResult, type Deck, type ProjectInfo,
+  AiConsentDeclined, api, messageOf, type ChapterResult, type Deck, type ProjectInfo,
 } from "../api/client";
+
+// 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
+const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
 
 export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   project: ProjectInfo;
@@ -13,6 +16,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ChapterResult | null>(null);
   const [error, setError] = useState("");
+  const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
   const chapterIdRef = useRef(chapterId);
   chapterIdRef.current = chapterId;
@@ -21,6 +25,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   useEffect(() => {
     setResult(null);
     setError("");
+    setCancelNotice("");
     setBusy(false);
   }, [chapterId]);
 
@@ -28,6 +33,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
     const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     setBusy(true);
     setError("");
+    setCancelNotice("");
     setResult(null);
     try {
       const res = await call();
@@ -35,7 +41,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
       setResult(res);
     } catch (e) {
       if (chapterIdRef.current !== requestedChapterId) return;
-      setError(messageOf(e));
+      if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+      else setError(messageOf(e));
     } finally {
       if (chapterIdRef.current === requestedChapterId) setBusy(false);
     }
@@ -75,6 +82,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
       </div>
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
       {error && <p role="alert">{error}</p>}
+      {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {result && result.status === "format_error" && (
         <div role="alert">
           <p>AI 응답을 형식에 맞게 읽지 못했습니다. 원문을 확인하고 다시 시도해 주세요.</p>

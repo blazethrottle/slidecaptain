@@ -727,6 +727,22 @@
               "type": "string",
               "title": "Name"
             }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
+            }
           }
         ],
         "requestBody": {
@@ -785,6 +801,22 @@
               "type": "string",
               "title": "Chapter Id"
             }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
+            }
           }
         ],
         "requestBody": {
@@ -842,6 +874,22 @@
             "schema": {
               "type": "string",
               "title": "Chapter Id"
+            }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
             }
           }
         ],

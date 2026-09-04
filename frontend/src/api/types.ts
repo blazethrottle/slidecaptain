@@ -1723,7 +1723,9 @@ export interface operations {
     generate_structure_api_projects__name__generate_structure_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-ai-consent"?: string | null;
+            };
             path: {
                 name: string;
             };
@@ -1758,7 +1760,9 @@ export interface operations {
     generate_chapter_api_projects__name__generate_chapter__chapter_id__post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-ai-consent"?: string | null;
+            };
             path: {
                 name: string;
                 chapter_id: string;
@@ -1794,7 +1798,9 @@ export interface operations {
     condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-ai-consent"?: string | null;
+            };
             path: {
                 name: string;
                 chapter_id: string;

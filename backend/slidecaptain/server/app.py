@@ -84,6 +84,10 @@ _UNSUPPORTED_EXTENSION_MESSAGE = (
 # TrustedHost는 Host만 보므로 이 경로를 막지 못한다)
 _APP_HEADER_VALUE = "SlideCaptain"
 _PROTECTION_MESSAGE = "이 요청은 Slide Captain 화면에서만 보낼 수 있습니다."
+# AI 전송 고지 관문 (계획서 B3, 가정 5): 생성 3종(구조안, 장 생성과 재생성, 축약)은 이 헤더가 없으면
+# 428로 거절한다. 이 검사는 화면 코드가 헤더 부착 자체를 잊는 사고만 막는 안전망이지, 헤더를
+# 하드코딩해 동의 절차를 우회하는 코드 버그까지는 막지 못한다 (계획서 명시)
+_AI_CONSENT_REQUIRED_MESSAGE = "AI 전송 확인이 필요합니다. 화면의 안내를 확인한 뒤 다시 시도해 주세요."
 _ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost"}
 _LOGIN_CACHE_SEC = 60.0  # 새로고침마다 CLI 프로세스를 띄우지 않는다
 
@@ -149,6 +153,12 @@ class GenerateChapterRequest(BaseModel):
 class CondenseChapterRequest(BaseModel):
     slots: Slots  # 화면이 들고 있는 현재 슬롯 (미저장 수정 포함. 설계 결정 13)
     instructions: str = ""
+
+
+def _require_ai_consent(x_ai_consent: str | None) -> None:
+    """생성 3종 라우트 공통 관문 (계획서 B3). 헤더가 없거나 값이 다르면 428로 거절한다."""
+    if x_ai_consent != _APP_HEADER_VALUE:
+        raise HTTPException(428, _AI_CONSENT_REQUIRED_MESSAGE)
 
 
 def _validated_preset(deck: Deck, base: Preset | None = None) -> Preset:
@@ -464,7 +474,10 @@ def create_app(
         )
 
     @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
-    async def generate_structure(name: str, req: GenerateStructureRequest):
+    async def generate_structure(
+        name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None)
+    ):
+        _require_ai_consent(x_ai_consent)
         svc = _require_service()
         deck = store.load_deck(name)
         sources = _load_sources(name)
@@ -473,7 +486,11 @@ def create_app(
         return result
 
     @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult)
-    async def generate_chapter(name: str, chapter_id: str, req: GenerateChapterRequest):
+    async def generate_chapter(
+        name: str, chapter_id: str, req: GenerateChapterRequest,
+        x_ai_consent: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
         svc = _require_service()
         deck = store.load_deck(name)
         if all(ch.id != chapter_id for ch in deck.structure.chapters):
@@ -488,7 +505,11 @@ def create_app(
         "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
         response_model=ChapterResult,
     )
-    async def condense_chapter(name: str, chapter_id: str, req: CondenseChapterRequest):
+    async def condense_chapter(
+        name: str, chapter_id: str, req: CondenseChapterRequest,
+        x_ai_consent: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
         svc = _require_service()
         deck = store.load_deck(name)
         chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)

@@ -1,11 +1,15 @@
 import { useState } from "react";
 import {
-  api, ApiError, messageOf,
+  AiConsentDeclined, api, ApiError, messageOf,
   type Chapter, type ChapterResult, type Deck, type ProjectInfo, type TemplateName,
 } from "../api/client";
 import { TEMPLATE_LABELS } from "../editor/labels";
 
-type Progress = Record<string, "대기" | "생성 중" | "완료" | "실패">;
+// 취소는 실패가 아니다 (계획서 B3): AI 전송 고지를 취소하면 "취소"로 표시하고 role=alert 배너를
+// 띄우지 않는다. 이 문구는 GeneratePanel의 취소 안내와 같다
+const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
+
+type Progress = Record<string, "대기" | "생성 중" | "완료" | "실패" | "취소">;
 
 function nextChapterId(chapters: Chapter[]): string {
   const max = chapters
@@ -28,6 +32,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [instructions, setInstructions] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   const [rawText, setRawText] = useState("");
   const [numbers, setNumbers] = useState<string[]>([]);
   const [progress, setProgress] = useState<Progress>({});
@@ -36,6 +41,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setBusy(true);
     onBusyChange?.(true);
     setError("");
+    setCancelNotice("");
     setRawText("");
     try {
       const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
@@ -51,7 +57,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         setNumbers(result.unverified_numbers);
       }
     } catch (e) {
-      setError(messageOf(e));
+      if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+      else setError(messageOf(e));
     } finally {
       setBusy(false);
       onBusyChange?.(false);
@@ -96,6 +103,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setBusy(true);
     onBusyChange?.(true);
     setError("");
+    setCancelNotice("");
     try {
       let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
       await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
@@ -104,12 +112,27 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
       setProgress(Object.fromEntries(targets.map((c) => [c.id, "대기"])));
       let failed = false;
+      // 승인 루프에서 한 번 취소하면 이 지역 플래그로 남은 장은 관문(ensureConsent)을 다시 묻지
+      // 않고 즉시 취소로 표시한다: generateChapter 자체를 부르지 않아야 대화 상자가 장마다
+      // 반복되지 않는다 (계획서 B3, 1차 리뷰)
+      let cancelledLoop = false;
       for (const chapter of targets) {
+        if (cancelledLoop) {
+          setProgress((p) => ({ ...p, [chapter.id]: "취소" }));
+          continue;
+        }
         setProgress((p) => ({ ...p, [chapter.id]: "생성 중" }));
         let result: ChapterResult;
         try {
           result = await api.generateChapter(project.name, chapter.id);
         } catch (e) {
+          if (e instanceof AiConsentDeclined) {
+            cancelledLoop = true;
+            setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+            setProgress((p) => ({ ...p, [chapter.id]: "취소" }));
+            failed = true;
+            continue;
+          }
           setError(messageOf(e));
           setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
           failed = true;
@@ -152,6 +175,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   return (
     <div className="structure-screen">
       {error && <p role="alert">{error}</p>}
+      {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
       {numbers.length > 0 && (
         <p className="number-warning">자료에서 찾지 못한 수치가 있습니다: {numbers.join(", ")}. 반영 전에 확인해 주세요.</p>

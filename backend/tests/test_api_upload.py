@@ -372,7 +372,8 @@ def test_generated_route_reads_xlsx_extract_as_source(client, store):
 
     provider = _CapturingProvider()
     gen_client = TestClient(
-        create_app(store, provider=provider), headers={"X-Requested-With": "SlideCaptain"}
+        create_app(store, provider=provider),
+        headers={"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"},
     )
     gr = gen_client.post("/api/projects/p1/generate/structure", json={})
     assert gr.status_code == 200
