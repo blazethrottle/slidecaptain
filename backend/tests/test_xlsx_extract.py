@@ -342,7 +342,7 @@ def test_char_cap_truncates_mid_row_keeping_whole_tokens():
 
 def test_char_cap_mid_sheet_header_reflects_actual_body_not_full_sheet():
     """B 묶음 최종 리뷰 major B-1 재현: 글자 수 상한이 시트 도중에 걸리면 그 시트 머리글의
-    값 범위·값 셀 수는 잘리기 전 시트 전체가 아니라 실제로 본문에 남은 값 기준이어야 한다."""
+    값 범위와 값 셀 수는 잘리기 전 시트 전체가 아니라 실제로 본문에 남은 값 기준이어야 한다."""
 
     def build(wb: openpyxl.Workbook) -> None:
         ws = wb.active
@@ -361,7 +361,7 @@ def test_char_cap_mid_sheet_header_reflects_actual_body_not_full_sheet():
 
 def test_value_cell_cap_mid_sheet_header_reflects_actual_body_not_full_sheet():
     """값 셀 상한이 시트 도중에 걸릴 때도 머리글이 잘리기 전 전체 수치가 아니라 실제로 본문에
-    남은 값 범위·개수를 반영해야 한다(B 묶음 최종 리뷰 major B-1)."""
+    남은 값 범위와 개수를 반영해야 한다(B 묶음 최종 리뷰 major B-1)."""
 
     def build(wb: openpyxl.Workbook) -> None:
         ws = wb.active

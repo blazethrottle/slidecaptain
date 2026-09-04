@@ -38,7 +38,7 @@ export function AiConsentDialog({ onConfirm, onCancel }: {
   }, []);
 
   // 포커스 트랩: role="dialog" aria-modal="true" 선언만으로는 Tab이 배경 요소로 새는 것을
-  // 막지 못한다(B 묶음 최종 리뷰 major F-2). 대화 상자 안 포커스 가능 요소는 확인·취소 두
+  // 막지 못한다(B 묶음 최종 리뷰 major F-2). 대화 상자 안 포커스 가능 요소는 확인과 취소 두
   // 버튼뿐이라 라이브러리 없이 둘 사이만 순환시킨다.
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") { onCancel(); return; }
