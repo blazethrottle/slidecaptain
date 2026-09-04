@@ -193,10 +193,13 @@ export interface paths {
         put?: never;
         /**
          * Upload Source
-         * @description 파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
+         * @description 파일 본문을 원시 바이트로 받아 저장한다 (계획서 2026-09-01 태스크 2, 2026-09-04 B2로 XLSX 확장).
          *
-         *     멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
-         *     표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는 하지 않는다.
+         *     텍스트(.md/.txt/.csv)는 UTF-8로 해석해 sources/에만 저장한다. XLSX는 원본을 uploads/에
+         *     그대로 보존하고, openpyxl로 추출한 UTF-8 텍스트를 sources/<원본 파일명>.md 로 저장한다
+         *     (설계서 3.1, 가정 1). 멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면
+         *     충분하고, 파싱 의존성이 필요 없다. 표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는
+         *     하지 않는다.
          */
         post: operations["upload_source_api_projects__name__sources__filename__upload_post"];
         delete?: never;
@@ -1166,6 +1169,14 @@ export interface components {
             filename: string;
             /** Chars */
             chars: number;
+            /** Sheets */
+            sheets: number | null;
+            /** Cells */
+            cells: number | null;
+            /** Truncated */
+            truncated: boolean;
+            /** Notes */
+            notes: string[];
         };
         /** ValidationError */
         ValidationError: {

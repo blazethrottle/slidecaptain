@@ -68,7 +68,9 @@ describe("자료 파일 업로드", () => {
 
   it("파일 선택으로 2개를 올리면 순서대로 업로드하고 목록을 다시 불러온 뒤 마지막 파일을 연다", async () => {
     vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["a.md", "b.txt"]);
-    vi.mocked(api.uploadSource).mockResolvedValue({ filename: "x", chars: 3 });
+    vi.mocked(api.uploadSource).mockResolvedValue({
+      filename: "x", chars: 3, sheets: null, cells: null, truncated: false, notes: [],
+    });
     vi.mocked(api.readSource).mockResolvedValue({ text: "bbb" });
     renderScreen();
     await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [a, b]);
@@ -83,7 +85,9 @@ describe("자료 파일 업로드", () => {
 
   it("끌어다 놓기로도 업로드한다", async () => {
     vi.mocked(api.listSources).mockResolvedValue([]);
-    vi.mocked(api.uploadSource).mockResolvedValue({ filename: "c.csv", chars: 1 });
+    vi.mocked(api.uploadSource).mockResolvedValue({
+      filename: "c.csv", chars: 1, sheets: null, cells: null, truncated: false, notes: [],
+    });
     renderScreen();
     const zone = screen.getByText(/끌어다 놓거나/).closest(".drop-zone")!;
     const c = new File(["x"], "c.csv", { type: "text/csv" });
@@ -96,7 +100,9 @@ describe("자료 파일 업로드", () => {
     vi.mocked(api.readSource).mockResolvedValue({ text: "aaa" });
     vi.mocked(api.uploadSource)
       .mockRejectedValueOnce(new ApiError(409, "같은 이름의 자료가 이미 있습니다: a.md"))
-      .mockResolvedValueOnce({ filename: "a.md", chars: 3 });
+      .mockResolvedValueOnce({
+        filename: "a.md", chars: 3, sheets: null, cells: null, truncated: false, notes: [],
+      });
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderScreen();
     await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [a]);
@@ -127,7 +133,9 @@ describe("자료 파일 업로드", () => {
     vi.mocked(api.readSource).mockResolvedValue({ text: "aaa" });
     const pdf = new File(["%PDF"], "보고서.pdf", { type: "application/pdf" });
     vi.mocked(api.uploadSource)
-      .mockResolvedValueOnce({ filename: "a.md", chars: 3 })
+      .mockResolvedValueOnce({
+        filename: "a.md", chars: 3, sheets: null, cells: null, truncated: false, notes: [],
+      })
       .mockRejectedValueOnce(new ApiError(422, "지원하지 않는 형식입니다. PDF와 Word는 아직 지원하지 않습니다."));
     renderScreen();
     // 파일 선택 입력은 accept 필터가 PDF를 거르지만, 끌어다 놓기는 거르지 않아 서버 422가 실제로 발생하는 경로다

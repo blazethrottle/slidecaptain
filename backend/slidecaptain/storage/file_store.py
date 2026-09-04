@@ -180,6 +180,8 @@ class ProjectStore(Protocol):
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
     def source_exists(self, name: str, filename: str) -> bool: ...
+    def write_upload(self, name: str, filename: str, data: bytes) -> None: ...
+    def delete_upload(self, name: str, filename: str) -> None: ...
     def exports_dir(self, name: str) -> Path: ...
     def load_global_preset(self) -> Preset: ...
     def save_global_preset(self, preset: Preset) -> None: ...
@@ -293,6 +295,7 @@ class FileProjectStore:
                 raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}") from e
             (d / "snapshots").mkdir()
             (d / "exports").mkdir()
+            (d / "uploads").mkdir()  # 원본 업로드 보존 (계획서 B2, sources/는 AI 입력용 추출본만 둔다)
             self._write_deck(d, Deck(meta=DeckMeta(title=title or name)))
             return self._info(d)
 
@@ -468,6 +471,35 @@ class FileProjectStore:
             # 접두사 + 무작위 문자열 + "-파일명" 형태(.tmp-<무작위>-<이름>): 정식 자료명
             # "a.md.tmp"와의 충돌을 피하면서도 동시 저장끼리 임시 경로가 겹치지 않는다
             self._atomic_write(d / "sources", filename, text.encode("utf-8"), prefix=".tmp-", suffix="-" + filename)
+
+    def write_upload(self, name: str, filename: str, data: bytes) -> None:
+        """원본 업로드 바이트를 uploads/에 그대로 보존한다 (계획서 B2). write_source와 같은
+        규약을 쓴다: NFC 정규화, 이름 검증, 대소문자만 다른 기존 파일은 SourceConflict로 거부,
+        원자적 쓰기. uploads/가 없는 옛 프로젝트(B2 이전에 만든 프로젝트)는 처음 쓸 때 만든다
+        (exists 확인 뒤 mkdir을 하면 그 사이 경합이 생기므로 exist_ok=True로 한 번에 처리한다)."""
+        name = _nfc(name)
+        filename = _nfc(filename)
+        _validate_name(filename, "자료 파일")
+        with self.locked(name):
+            d = self._project_dir(name)
+            uploads_dir = d / "uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            conflict = _casefold_conflict(uploads_dir, filename)
+            if conflict is not None:
+                raise SourceConflict(
+                    f"대소문자만 다른 자료가 이미 있습니다: {conflict}. "
+                    "같은 이름으로 저장하거나 다른 이름을 써 주세요."
+                )
+            self._atomic_write(uploads_dir, filename, data, prefix=".tmp-", suffix="-" + filename)
+
+    def delete_upload(self, name: str, filename: str) -> None:
+        """write_upload 직후 write_source가 실패했을 때 원본만 남는 상태를 만들지 않기 위한
+        되돌리기용이다 (계획서 B2). 파일이 이미 없으면 조용히 넘어간다(멱등)."""
+        name = _nfc(name)
+        filename = _nfc(filename)
+        with self.locked(name):
+            d = self._project_dir(name)
+            (d / "uploads" / filename).unlink(missing_ok=True)
 
     # -- 내보내기 -----------------------------------------------------------
 

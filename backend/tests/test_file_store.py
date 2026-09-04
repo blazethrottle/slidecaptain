@@ -1,3 +1,4 @@
+import shutil
 import sys
 import threading
 import unicodedata
@@ -38,6 +39,7 @@ def test_create_project_builds_folder_layout(store):
     assert (root / "sources").is_dir()
     assert (root / "snapshots").is_dir()
     assert (root / "exports").is_dir()
+    assert (root / "uploads").is_dir()  # 원본 업로드 보존 (계획서 B2)
 
 
 def test_create_duplicate_project_rejected(store):
@@ -207,6 +209,53 @@ def test_read_source_binary_rejected_with_guidance(store):
     with pytest.raises(InvalidSourceEncoding) as exc_info:
         store.read_source("p1", "그림.png")
     assert "텍스트" in str(exc_info.value)
+
+
+def test_write_upload_round_trip(store):
+    store.create_project("p1")
+    data = b"\x50\x4b\x03\x04\x00\x00fake-xlsx-bytes"
+    store.write_upload("p1", "매출.xlsx", data)
+    assert (store.root / "p1" / "uploads" / "매출.xlsx").read_bytes() == data
+    # uploads/는 sources/와 별개다: AI 입력(list_sources)에는 나타나지 않는다 (계획서 B2)
+    assert store.list_sources("p1") == []
+
+
+def test_write_upload_creates_missing_uploads_dir_for_old_project(store):
+    # B2 이전에 만든 프로젝트는 uploads/가 없다. 처음 쓸 때 만든다(exists 확인 뒤 mkdir을 하면
+    # 그 사이 경합이 생기므로 exist_ok=True로 한 번에 처리한다. 계획서 B2)
+    store.create_project("p1")
+    shutil.rmtree(store.root / "p1" / "uploads")
+    store.write_upload("p1", "a.xlsx", b"x")
+    assert (store.root / "p1" / "uploads" / "a.xlsx").read_bytes() == b"x"
+
+
+def test_write_upload_case_only_conflict_rejected(store):
+    store.create_project("p1")
+    store.write_upload("p1", "report.xlsx", b"v1")
+    with pytest.raises(SourceConflict):
+        store.write_upload("p1", "Report.xlsx", b"v2")
+    assert (store.root / "p1" / "uploads" / "report.xlsx").read_bytes() == b"v1"
+
+
+def test_write_upload_exact_same_name_overwrites(store):
+    store.create_project("p1")
+    store.write_upload("p1", "report.xlsx", b"v1")
+    store.write_upload("p1", "report.xlsx", b"v2")
+    assert (store.root / "p1" / "uploads" / "report.xlsx").read_bytes() == b"v2"
+
+
+def test_write_upload_invalid_name_rejected(store):
+    store.create_project("p1")
+    with pytest.raises(InvalidName):
+        store.write_upload("p1", "..\\밖으로.xlsx", b"x")
+
+
+def test_delete_upload_removes_file_and_is_idempotent(store):
+    store.create_project("p1")
+    store.write_upload("p1", "a.xlsx", b"x")
+    store.delete_upload("p1", "a.xlsx")
+    assert not (store.root / "p1" / "uploads" / "a.xlsx").exists()
+    store.delete_upload("p1", "a.xlsx")  # 이미 없는 파일도 조용히 넘어간다(멱등, 계획서 B2)
 
 
 def test_global_preset_default_when_missing(tmp_path):

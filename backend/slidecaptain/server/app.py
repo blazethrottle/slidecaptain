@@ -27,6 +27,7 @@ from slidecaptain.models.render import RenderPlan
 from slidecaptain.pipeline.auth_status import LoginStatus, check_login
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.service import ChapterResult, GenerationService, StructureResult
+from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.storage.file_store import (
     DeckConflict,
     InvalidName,
@@ -56,8 +57,22 @@ _STATUS_BY_ERROR = [
 ]
 
 _SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
-_UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
+_TEXT_UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
 _UPLOAD_MAX_BYTES = 5 * 1024 * 1024
+_XLSX_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 엑셀 원본은 텍스트보다 큰 것이 흔하다 (계획서 B2, 가정 4)
+_XLSX_EXTRACT_SUFFIX = ".md"  # 추출본 이름: <원본 파일명>.md (설계서 3.1 정정)
+_UPLOAD_TOO_LARGE_MESSAGE = "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요."
+_XLSX_UPLOAD_TOO_LARGE_MESSAGE = "엑셀 파일이 너무 큽니다(20MB 한도). 필요한 부분만 발췌해 주세요."
+_XLSX_FILENAME_TOO_LONG_MESSAGE = (
+    # 추출본 이름은 <원본 파일명>.md 이고 이름 규칙 상한이 80자라, 원본이 78자 이상이면 추출본
+    # 이름이 넘친다. 원본 이름 자체를 거절한다(계획서 B2)
+    "파일 이름이 너무 깁니다. 72자 이내로 줄여 주세요."
+)
+_XLS_UNSUPPORTED_MESSAGE = "구버전 엑셀(xls)은 지원하지 않습니다. 엑셀에서 xlsx로 다시 저장해 주세요."
+_UNSUPPORTED_EXTENSION_MESSAGE = (
+    "지원하지 않는 형식입니다. 지금은 .md, .txt, .csv, .xlsx를 넣을 수 있고, "
+    "PDF와 Word, 구버전 xls는 아직 지원하지 않습니다."
+)
 # 상태를 바꾸는 모든 /api/ 요청(POST, PUT, DELETE 등)은 이 값을 X-Requested-With로 보내야 한다
 # (아래 상태 변경 요청 보호 미들웨어). 이 헤더는 브라우저의 단순 요청 허용 목록 밖이라, 다른 Origin의
 # 페이지가 붙이면 사전 확인(OPTIONS)이 먼저 가고 이 서버는 CORS 헤더를 내지 않으므로 본 요청이 나가지
@@ -97,6 +112,13 @@ class OkResponse(BaseModel):
 class UploadResult(BaseModel):
     filename: str
     chars: int
+    # 엑셀 추출 요약(계획서 B2). 텍스트 업로드는 None/False/빈 목록을 채워 넣는다: 기본값을 주면
+    # 필수가 아니게 되어 OpenAPI가 옵셔널로 내보내고 프런트가 undefined를 다뤄야 한다. 항상 채워
+    # 보내므로 필드 자체는 필수로 둔다
+    sheets: int | None
+    cells: int | None
+    truncated: bool
+    notes: list[str]
 
 
 class AppStatus(BaseModel):
@@ -329,25 +351,67 @@ def create_app(
         request: Request,
         overwrite: bool = False,
     ):
-        """파일 본문을 원시 바이트로 받아 텍스트로 해석해 자료로 저장한다 (계획서 2026-09-01 태스크 2).
+        """파일 본문을 원시 바이트로 받아 저장한다 (계획서 2026-09-01 태스크 2, 2026-09-04 B2로 XLSX 확장).
 
-        멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면 충분하고, 파싱 의존성이 필요 없다.
-        표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는 하지 않는다.
+        텍스트(.md/.txt/.csv)는 UTF-8로 해석해 sources/에만 저장한다. XLSX는 원본을 uploads/에
+        그대로 보존하고, openpyxl로 추출한 UTF-8 텍스트를 sources/<원본 파일명>.md 로 저장한다
+        (설계서 3.1, 가정 1). 멀티파트를 쓰지 않는 이유: 파일 1개씩만 받으므로 원시 본문이면
+        충분하고, 파싱 의존성이 필요 없다. 표식 헤더 검사는 A2에서 공통 미들웨어로 옮겨 여기서는
+        하지 않는다.
         """
         # 브라우저나 OS가 붙인 경로 조각은 벗기고 이름만 쓴다 (Windows 역슬래시 포함, OS 무관하게 처리)
         filename = PureWindowsPath(filename).name
-        if Path(filename).suffix.lower() not in _UPLOAD_EXTENSIONS:
-            raise HTTPException(
-                422,
-                "지원하지 않는 형식입니다. 지금은 .md, .txt, .csv 텍스트 파일만 넣을 수 있고, "
-                "PDF와 Word는 아직 지원하지 않습니다.",
-            )
+        suffix = Path(filename).suffix.lower()
+        if suffix == ".xls":
+            raise HTTPException(422, _XLS_UNSUPPORTED_MESSAGE)
+        is_xlsx = suffix == ".xlsx"
+        if not is_xlsx and suffix not in _TEXT_UPLOAD_EXTENSIONS:
+            raise HTTPException(422, _UNSUPPORTED_EXTENSION_MESSAGE)
+
+        extract_name = filename + _XLSX_EXTRACT_SUFFIX if is_xlsx else None
+        # 두 이름(원본, 추출본)을 먼저 계산하고 검증한다: 추출본 이름이 이름 규칙 상한(80자)을
+        # 넘으면 무거운 추출을 시작하기 전에 원본 이름 자체를 거절한다 (계획서 B2)
+        if extract_name is not None and len(extract_name) > 80:
+            raise HTTPException(422, _XLSX_FILENAME_TOO_LONG_MESSAGE)
+
+        max_bytes = _XLSX_UPLOAD_MAX_BYTES if is_xlsx else _UPLOAD_MAX_BYTES
+        too_large_message = _XLSX_UPLOAD_TOO_LARGE_MESSAGE if is_xlsx else _UPLOAD_TOO_LARGE_MESSAGE
         declared = request.headers.get("content-length")
-        if declared is not None and declared.isdigit() and int(declared) > _UPLOAD_MAX_BYTES:
-            raise HTTPException(422, "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요.")
+        if declared is not None and declared.isdigit() and int(declared) > max_bytes:
+            raise HTTPException(422, too_large_message)
         data = await request.body()
-        if len(data) > _UPLOAD_MAX_BYTES:
-            raise HTTPException(422, "파일이 너무 큽니다(5MB 한도). 필요한 부분만 발췌해 주세요.")
+        if len(data) > max_bytes:
+            raise HTTPException(422, too_large_message)
+
+        if is_xlsx:
+            try:
+                extraction = extract_xlsx(data, filename)
+            except XlsxTooLarge as e:
+                raise HTTPException(422, str(e)) from e
+            except XlsxUnreadable as e:
+                raise HTTPException(422, str(e)) from e
+            # 확인과 쓰기를 잠금 안에서 함께 수행한다 (텍스트 분기와 같은 이유). 중복 판정은
+            # 추출본 이름으로 한다: 사용자가 손으로 같은 이름의 자료를 만들어 뒀어도 그것을
+            # 엑셀 추출본으로 교체하는 의미다 (계획서 B2)
+            with store.locked(name):
+                if store.source_exists(name, extract_name) and not overwrite:
+                    raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+                store.write_upload(name, filename, data)
+                try:
+                    store.write_source(name, extract_name, extraction.text)
+                except Exception:
+                    # 추출본 쓰기가 실패하면 원본만 남는 상태를 만들지 않는다 (계획서 B2)
+                    store.delete_upload(name, filename)
+                    raise
+            return UploadResult(
+                filename=filename,
+                chars=len(extraction.text),
+                sheets=extraction.sheets,
+                cells=extraction.cells,
+                truncated=extraction.truncated,
+                notes=extraction.notes,
+            )
+
         text = decode_source_bytes(data, filename)  # 해석 실패는 InvalidSourceEncoding(422)
         # 확인(source_exists)과 쓰기를 잠금 안에서 함께 수행한다: 잠금 밖이면 같은 새 이름의
         # 두 업로드가 둘 다 확인을 통과해 나중 것이 조용히 덮어쓸 수 있다 (적대 리뷰 재현)
@@ -356,7 +420,7 @@ def create_app(
             if store.source_exists(name, filename) and not overwrite:
                 raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
             store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
-        return UploadResult(filename=filename, chars=len(text))
+        return UploadResult(filename=filename, chars=len(text), sheets=None, cells=None, truncated=False, notes=[])
 
     @app.get("/api/status", response_model=AppStatus)
     def get_status():
