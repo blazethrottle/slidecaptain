@@ -55,6 +55,17 @@ it("취소를 누르면 onCancel이 불린다", async () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
 });
 
+// nit F-5 (B 묶음 최종 리뷰): 상태 조회 실패는 "AI 제공자 확인 실패에게 전송됩니다" 처럼 조사가
+// 어색하게 붙는 문장 대신, 실패를 그대로 알리는 별도 문장으로 보여야 한다
+it("상태 조회가 실패하면 조사가 어색한 문장 대신 별도 안내를 보여준다", async () => {
+  vi.mocked(api.getStatus).mockRejectedValue(new Error("네트워크 오류"));
+  render(<AiConsentDialog onConfirm={() => {}} onCancel={() => {}} />);
+  expect(await screen.findByText(
+    "AI 제공자 정보를 확인하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
+  )).toBeInTheDocument();
+  expect(screen.queryByText(/확인 실패에게/)).toBeNull();
+});
+
 it("Escape를 누르면 onCancel이 불린다", async () => {
   vi.mocked(api.getStatus).mockResolvedValue(STATUS);
   const onCancel = vi.fn();
@@ -62,6 +73,26 @@ it("Escape를 누르면 onCancel이 불린다", async () => {
   await screen.findByRole("dialog");
   await userEvent.keyboard("{Escape}");
   expect(onCancel).toHaveBeenCalledTimes(1);
+});
+
+// F-2 (B 묶음 최종 리뷰 major): role="dialog" aria-modal="true"만으로는 포커스가 대화 상자 밖으로
+// 새는 것을 막지 못한다. 마지막 요소(취소)에서 Tab -> 첫 요소(확인)로, 첫 요소에서 Shift+Tab ->
+// 마지막 요소로 순환해야 한다
+it("Tab과 Shift+Tab이 대화 상자 안의 포커스 가능 요소 사이에서 순환한다 (F-2)", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue(STATUS);
+  render(<AiConsentDialog onConfirm={() => {}} onCancel={() => {}} />);
+  const confirmBtn = await screen.findByRole("button", { name: "전송에 동의하고 계속" });
+  const cancelBtn = screen.getByRole("button", { name: "취소" });
+  await waitFor(() => expect(confirmBtn).toHaveFocus());
+
+  await userEvent.tab();
+  expect(cancelBtn).toHaveFocus();  // 대화 상자 안의 두 번째(마지막) 요소
+
+  await userEvent.tab();  // 마지막에서 Tab -> 첫 요소로 순환
+  expect(confirmBtn).toHaveFocus();
+
+  await userEvent.tab({ shift: true });  // 첫 요소에서 Shift+Tab -> 마지막 요소로 순환
+  expect(cancelBtn).toHaveFocus();
 });
 
 it("닫힐 때 이전 포커스 요소로 돌아간다", async () => {

@@ -160,9 +160,30 @@ describe("자료 파일 업로드", () => {
     const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
     renderScreen();
     await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
-    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 3개, 셀 1,204개 계산값 없음: 2곳"))
+    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 3개, 셀 1,204개. 계산값 없음: 2곳"))
       .toBeInTheDocument();
     expect(await screen.findByText("일부가 잘렸습니다: 매출.xlsx (60,000자 초과분 생략. 시트 손익 행 412부터)"))
+      .toBeInTheDocument();
+  });
+
+  // 잘림 상세("행 N에서 D, E열 생략")가 "(한계:" 접두사 없이 따로 남으면 잘림 알림이 아니라 일반
+  // 안내로 샜다(B 묶음 최종 리뷰 minor F-4). 백엔드가 한 note로 합친 뒤에는 잘림 알림에만 나와야 한다
+  it("행 절단 상세가 백엔드 note에 합쳐져 있으면 잘림 알림에만 나오고 일반 안내에는 새지 않는다", async () => {
+    vi.mocked(api.listSources).mockResolvedValueOnce([]).mockResolvedValue(["매출.xlsx.md"]);
+    vi.mocked(api.uploadSource).mockResolvedValue({
+      filename: "매출.xlsx", chars: 500, sheets: 3, cells: 1204, truncated: true,
+      notes: ["(한계: 60,000자 초과분 생략. 시트 손익 행 412부터. 행 412에서 D, E열 생략)"],
+    });
+    vi.mocked(api.readSource).mockResolvedValue({ text: "# XLSX 추출: 매출.xlsx" });
+    const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+    renderScreen();
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), xlsx);
+    expect(await screen.findByText(
+      "일부가 잘렸습니다: 매출.xlsx (60,000자 초과분 생략. 시트 손익 행 412부터. 행 412에서 D, E열 생략)",
+    )).toBeInTheDocument();
+    // 일반 안내(시트/셀 수 요약)에는 열 상세가 다시 나타나지 않는다: 같은 정보가 두 곳에서 서로 다른
+    // 형태로 보이면 사용자가 둘을 별개 사건으로 오해한다
+    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 3개, 셀 1,204개"))
       .toBeInTheDocument();
   });
 
@@ -214,7 +235,7 @@ describe("자료 파일 업로드", () => {
     vi.mocked(api.readSource).mockResolvedValue({ text: "추출본" });
     renderScreen();
     await userEvent.upload(screen.getByLabelText("자료 파일 선택"), [x1]);
-    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 1개, 셀 10개 계산값 없음: 2곳"))
+    expect(await screen.findByText("1개 자료를 추가했습니다. 매출.xlsx: 시트 1개, 셀 10개. 계산값 없음: 2곳"))
       .toBeInTheDocument();
   });
 });

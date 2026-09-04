@@ -260,6 +260,33 @@ it("스냅샷 복구가 412인 채로 '목록으로'를 눌러 나가도 충돌 
   expect(screen.queryByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeNull();
 });
 
+// F-1 (B 묶음 최종 리뷰 major): "서버 내용 다시 읽기" 버튼은 다른 헤더 버튼과 같이 uploading에도
+// 잠겨야 한다. 안 잠기면 업로드 진행 중 눌러 자료 화면이 통째로 언마운트되어, 나중에 응답한 업로드
+// 결과가 화면에 영구히 반영되지 않는다(파일은 서버에 저장되지만 사용자는 확인할 방법이 없다)
+it("자료 업로드 진행 중에는 다시 읽기 버튼도 잠긴다 (F-1)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  const upload = deferred<UploadResult>();
+  vi.mocked(api.uploadSource).mockReturnValue(upload.promise);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<ProjectView project={project} onBack={() => {}} />);
+
+  const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
+  await userEvent.upload(await screen.findByLabelText("자료 파일 선택"), xlsx);
+  await waitFor(() => expect(api.uploadSource).toHaveBeenCalledTimes(1));
+
+  // 업로드가 아직 끝나지 않은 채로 보고 정보를 고쳐 저장 시도 -> 412 -> hasConflict 배너
+  await userEvent.clear(screen.getByLabelText("보고서 제목"));
+  await userEvent.type(screen.getByLabelText("보고서 제목"), "새 제목");
+  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
+  const reloadBtn = await screen.findByRole("button", { name: "서버 내용 다시 읽기" });
+
+  expect(reloadBtn).toBeDisabled();  // 업로드가 여전히 진행 중이므로 잠겨 있어야 한다
+
+  upload.resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
+  await waitFor(() => expect(reloadBtn).not.toBeDisabled());  // 업로드가 끝나면 다시 풀린다
+});
+
 // 업로드 중 화면 잠금 (계획서 B4 가정 7): 업로드가 응답하기 전까지는 자료 탭 안의 일이라도 탭 5개
 // 전부와 목록으로와 내보내기와 스냅샷 복구를 잠가야 FC-17(업로드 중 탭 전환)이 막힌다
 it("자료 업로드가 진행 중이면 탭 버튼과 목록으로와 내보내기와 스냅샷 복구가 잠기고, 착지 뒤 풀린다", async () => {

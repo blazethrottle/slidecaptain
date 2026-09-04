@@ -161,7 +161,12 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       {hasConflict && (
         <p role="alert">
           다른 창이나 프로그램에서 먼저 저장되었습니다.{" "}
-          <button onClick={reloadDeck}>서버 내용 다시 읽기</button>
+          {/* 다른 헤더 버튼과 같은 조건으로 잠근다: 업로드 진행 중 눌러 자료 화면이 통째로
+              언마운트되면, 나중에 응답한 업로드 결과가 화면에 영구히 반영되지 않는다(B 묶음
+              최종 리뷰 major F-1) */}
+          <button onClick={reloadDeck} disabled={generating || uploading || leaving || dialogOpen}
+            title={generating ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 다시 읽을 수 있습니다" : undefined}>서버 내용 다시 읽기</button>
         </p>
       )}
       <header>

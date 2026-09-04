@@ -198,7 +198,9 @@ export function SourcesScreen({
       const summary = added > 0 ? `${added}개 자료를 추가했습니다.` : "추가한 자료가 없습니다.";
       let infoText = summary + (skipped > 0 ? ` 건너뜀 ${skipped}개.` : "");
       if (xlsxDetails.length > 0) infoText += " " + xlsxDetails.join(" / ");
-      if (extraNotes.length > 0) infoText += " " + extraNotes.join(" / ");
+      // 두 블록을 공백 하나로 붙이면 "셀 1,204개 계산값 없음: 2곳"처럼 서로 다른 두 사실이 한
+      // 구절로 오독된다. xlsxDetails 블록 뒤에 붙을 때만 마침표로 끊는다(B 묶음 최종 리뷰 minor F-3)
+      if (extraNotes.length > 0) infoText += (xlsxDetails.length > 0 ? ". " : " ") + extraNotes.join(" / ");
       setInfo(infoText);
       const truncatedResults = results.filter((r) => r.truncated);
       if (truncatedResults.length > 0) {

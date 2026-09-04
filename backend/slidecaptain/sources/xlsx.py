@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta
 from io import BytesIO
 
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 from pydantic import BaseModel
 
 _HIDDEN_STATES = {"hidden", "veryHidden"}
@@ -152,6 +152,7 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
         sheet_name = _clean_sheet_name(ws.title)
         processed_sheet_names.append(sheet_name)
 
+        header_index = len(body_lines)
         block_lines = [f"## 시트: {sheet_name} ({value_range_desc}, 값 셀 {sheet_value_cells}개)"]
         if merges:
             block_lines.append("병합: " + ", ".join(merges))
@@ -159,10 +160,14 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
             body_lines.append(line)
             body_len += len(line) + 1
 
+        written_cells: list[tuple[int, str]] = []
+        sheet_truncated_mid = False
+
         for row_no, tokens in rows:
             row_cell_count = len(tokens)
             if total_value_cells + row_cell_count > limits.max_value_cells:
                 truncated = True
+                sheet_truncated_mid = True
                 note = (
                     f"(한계: 값 셀 {limits.max_value_cells:,}개 초과분 생략. 시트 {sheet_name} 행 "
                     f"{row_no}부터)"
@@ -176,14 +181,18 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
             full_line = prefix + " | ".join(tokens)
             if body_len + len(full_line) + 1 > limits.max_chars:
                 truncated = True
+                sheet_truncated_mid = True
                 budget = limits.max_chars - body_len - len(prefix)
                 kept, skipped_cols = _fit_tokens(tokens, budget)
                 if kept:
                     body_lines.append(prefix + " | ".join(kept))
                     total_value_cells += len(kept)
-                if skipped_cols:
-                    notes.append(f"행 {row_no}에서 {', '.join(skipped_cols)}열 생략(글자 수 한도)")
-                note = f"(한계: {limits.max_chars:,}자 초과분 생략. 시트 {sheet_name} 행 {row_no}부터)"
+                    written_cells.extend((row_no, token.split("=", 1)[0]) for token in kept)
+                # 잘림 사건 하나를 note 하나로 합친다(B 묶음 최종 리뷰 minor F-4): 예전에는
+                # 열 상세("행 N에서 D, E열 생략")가 "(한계:" 접두사 없이 따로 남아 프런트가
+                # 그 상세만 일반 안내로 분류하고, "어디서 잘렸는지"만 잘림 알림에 남겼다.
+                col_detail = f". 행 {row_no}에서 {', '.join(skipped_cols)}열 생략" if skipped_cols else ""
+                note = f"(한계: {limits.max_chars:,}자 초과분 생략. 시트 {sheet_name} 행 {row_no}부터{col_detail})"
                 notes.append(note)
                 body_lines.append(note)
                 stopped = True
@@ -192,6 +201,13 @@ def _build_extraction(wb_formulas, wb_values, filename: str, limits: XlsxLimits)
             body_lines.append(full_line)
             body_len += len(full_line) + 1
             total_value_cells += row_cell_count
+            written_cells.extend((row_no, token.split("=", 1)[0]) for token in tokens)
+
+        if sheet_truncated_mid:
+            actual_range_desc = _value_range_desc_from_cells(written_cells)
+            body_lines[header_index] = (
+                f"## 시트: {sheet_name} ({actual_range_desc}, 값 셀 {len(written_cells)}개, 이하 잘림)"
+            )
 
     if stopped:
         remaining_sheets = included_sheets[len(processed_sheet_names) :]
@@ -276,6 +292,18 @@ def _scan_sheet(ws, vws):
     merges = [str(rng) for rng in ws.merged_cells.ranges]
     rows = [(r, tokens_by_row[r]) for r in sorted(tokens_by_row)]
     return rows, value_cell_count, value_range_desc, merges, calc_missing, newline_replacements
+
+
+def _value_range_desc_from_cells(cells: list[tuple[int, str]]) -> str:
+    """실제로 본문에 쓰인 (행 번호, 열 문자) 목록에서 "값 범위 A1:F120" 문구를 만든다. 시트가
+    도중에 잘려 본문에 쓰인 값이 시트 전체보다 적을 때, 그 실제 값 기준으로 범위를 다시 계산하는
+    데 쓴다(계획서와 별개로 B 묶음 최종 리뷰 major B-1 반영: 잘리기 전 전체 통계를 그대로
+    보고하면 안 된다)."""
+    if not cells:
+        return "값 범위 없음"
+    rows = [r for r, _ in cells]
+    cols = [column_index_from_string(c) for _, c in cells]
+    return f"값 범위 {get_column_letter(min(cols))}{min(rows)}:{get_column_letter(max(cols))}{max(rows)}"
 
 
 def _clean_sheet_name(name: str) -> str:

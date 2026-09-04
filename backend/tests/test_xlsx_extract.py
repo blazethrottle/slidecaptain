@@ -329,11 +329,52 @@ def test_char_cap_truncates_mid_row_keeping_whole_tokens():
     assert result.truncated is True
     assert "A=1" in result.text  # 앞쪽 열은 살아남는다
     assert "GR=200" not in result.text  # 마지막 열은 잘린다
-    assert any("열 생략(글자 수 한도)" in n for n in result.notes)
-    assert any("자 초과분 생략" in n and "행 1부터" in n for n in result.notes)
+    # 잘림 사건 하나를 note 하나로 합친다(B 묶음 최종 리뷰 minor F-4): 열 상세가 "(한계:"
+    # 접두사 없이 따로 남으면 프런트가 잘림 알림이 아니라 일반 안내로 분류한다
+    assert len(result.notes) == 1
+    assert result.notes[0].startswith("(한계:")
+    assert "열 생략" in result.notes[0]
+    assert "자 초과분 생략" in result.notes[0] and "행 1부터" in result.notes[0]
     # 살아남은 셀 수가 cells 필드에 반영된다 (B1 리뷰 cells-undercount-charcap: 이 경로가
     # total_value_cells를 갱신하지 않고 바로 break해 0을 돌려주고 있었다)
     assert result.cells > 0
+
+
+def test_char_cap_mid_sheet_header_reflects_actual_body_not_full_sheet():
+    """B 묶음 최종 리뷰 major B-1 재현: 글자 수 상한이 시트 도중에 걸리면 그 시트 머리글의
+    값 범위·값 셀 수는 잘리기 전 시트 전체가 아니라 실제로 본문에 남은 값 기준이어야 한다."""
+
+    def build(wb: openpyxl.Workbook) -> None:
+        ws = wb.active
+        for row in range(1, 21):
+            ws.cell(row=row, column=1, value=row)
+
+    limits = XlsxLimits(max_value_cells=10_000, max_chars=40)
+    result = extract_xlsx(xlsx_fixtures.workbook_bytes(build), "글자수상한헤더.xlsx", limits)
+
+    assert result.truncated is True
+    assert result.cells == 0
+    assert "행 1:" not in result.text  # 본문에 값 행이 실제로 없다
+    assert "(값 범위 없음, 값 셀 0개, 이하 잘림)" in result.text
+    assert "값 셀 20개" not in result.text  # 잘리기 전 전체 수치가 남아있으면 안 된다
+
+
+def test_value_cell_cap_mid_sheet_header_reflects_actual_body_not_full_sheet():
+    """값 셀 상한이 시트 도중에 걸릴 때도 머리글이 잘리기 전 전체 수치가 아니라 실제로 본문에
+    남은 값 범위·개수를 반영해야 한다(B 묶음 최종 리뷰 major B-1)."""
+
+    def build(wb: openpyxl.Workbook) -> None:
+        ws = wb.active
+        for row in range(1, 21):
+            ws.cell(row=row, column=1, value=row)
+
+    limits = XlsxLimits(max_value_cells=10)
+    result = extract_xlsx(xlsx_fixtures.workbook_bytes(build), "값셀상한헤더.xlsx", limits)
+
+    assert result.truncated is True
+    assert result.cells == 10
+    assert "(값 범위 A1:A10, 값 셀 10개, 이하 잘림)" in result.text
+    assert "값 셀 20개" not in result.text
 
 
 def test_char_cap_mid_sheet_drops_later_sheet_from_count_and_notes():
