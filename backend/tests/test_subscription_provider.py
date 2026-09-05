@@ -465,6 +465,33 @@ def test_build_call_usage_logs_raw_usage_handles_non_dict_model_usage_value(capl
     assert "model_usage_in=None" in msg
 
 
+def test_build_call_usage_ignores_non_dict_model_usage_entries():
+    """D2-5 리뷰 반영: model_usage 값이 dict 가 아닌 이상값이어도 build_call_usage 본체가 예외를 내지 않는다.
+
+    유효한 항목이 하나도 없으면 usage dict 로 폴백하고(token_source="usage"), 유효 항목과 이상값이
+    섞여 있으면 유효 항목만 합산한다. SDK 파서가 CLI 의 modelUsage 를 변환 없이 옮기므로 이 경로는
+    이론상 열려 있다.
+    """
+    only_bad = _result(
+        model_usage={"weird-model": "not-a-dict"},
+        usage={"input_tokens": 7, "output_tokens": 3, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
+    )
+    usage = build_call_usage(only_bad, None)
+    assert usage.token_source == "usage"
+    assert usage.input_tokens == 7 and usage.output_tokens == 3
+
+    mixed = _result(
+        model_usage={
+            "weird-model": "not-a-dict",
+            "claude-sonnet-4-5-20250929": {"inputTokens": 10, "outputTokens": 4, "cacheReadInputTokens": 1, "cacheCreationInputTokens": 0},
+        },
+    )
+    usage = build_call_usage(mixed, None)
+    assert usage.token_source == "model_usage"
+    assert (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens) == (10, 4, 1)
+    assert usage.model == "claude-sonnet-4-5-20250929"
+
+
 def test_build_call_usage_logs_raw_usage_on_error_result(caplog):
     """`is_error` 결과에서도 같은 로그가 남는다 (build_call_usage 가 호출되는 모든 경로)."""
     caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")

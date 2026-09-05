@@ -106,7 +106,11 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     """
     _log_raw_usage_line(result)
 
-    model_usage = result.model_usage or {}
+    # D2-5 리뷰 반영: SDK 파서는 CLI 의 modelUsage 를 변환 없이 옮기므로 값이 dict 가 아닌 항목이 올 수
+    # 있다. 그런 항목은 없는 것으로 보고(합산과 모델 추정에서 제외) 유효 항목이 없으면 usage dict 로 폴백한다.
+    model_usage = {
+        key: value for key, value in (result.model_usage or {}).items() if isinstance(value, dict)
+    }
     usage_dict = result.usage or {}
 
     input_tokens: int | None = None
