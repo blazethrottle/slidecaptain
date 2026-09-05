@@ -1,6 +1,6 @@
 [project]
 name = "slidecaptain"
-version = "0.1.0"
+dynamic = ["version"]
 description = "보고 슬라이드(PPTX) 제작 로컬 웹앱: 결정론 코어"
 requires-python = ">=3.13"
 dependencies = [
@@ -22,6 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["slidecaptain*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "slidecaptain.__version__" }
 
 [tool.setuptools.package-data]
 "slidecaptain.metrics" = ["assets/*.json"]

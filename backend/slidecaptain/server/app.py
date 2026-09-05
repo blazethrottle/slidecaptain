@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from slidecaptain import __version__
 from slidecaptain.export.exporter import export_deck_data
 from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.font_metrics import FontMetrics
@@ -183,7 +184,7 @@ def create_app(
     static_dir: Path | None = None,
     login_checker: Callable[[], LoginStatus] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Slide Captain", version="0.2.0")
+    app = FastAPI(title="Slide Captain", version=__version__)
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
     # requested_model은 프로바이더가 실제로 요청한 별칭이다(응답에 담긴 실제 모델과 다른 축.
     # 단계 5A 묶음 C 가정 1과 6, 태스크 C3). SubscriptionProvider 외의 프로바이더가 model 속성이
