@@ -117,12 +117,15 @@ describe("formatUsage", () => {
     expect(formatUsage(usage)).toContain("측정되지 않은 호출 1회 제외");
   });
 
-  it("token_source가 usage인 레코드가 있으면 토큰 앞에 '대략'을 붙인다", () => {
+  it("token_source가 usage인 레코드가 있으면 입력과 출력 토큰 앞에 모두 '대략'을 붙인다", () => {
+    // F4 리뷰 반영: 폴백 출처(usage dict)는 입력과 출력 토큰 모두에 같은 불확실성을 준다(가정 1).
+    // 입력에만 "대략"을 붙이면 출력 토큰이 마치 정확한 값처럼 보인다.
     const usage: GenerationUsage = {
       ...emptyUsage(), calls: 1, input_tokens: 10, output_tokens: 5, duration_ms: 100, cost_usd: 0.1,
       records: [{ purpose: "generate", ok: true, usage: callUsage({ token_source: "usage" }) }],
     };
     expect(formatUsage(usage)).toContain("대략 입력");
+    expect(formatUsage(usage)).toContain("대략 출력");
   });
 
   it("실제 모델이 있으면 앞에 붙인다", () => {

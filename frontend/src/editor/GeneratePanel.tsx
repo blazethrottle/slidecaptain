@@ -96,7 +96,6 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
             {result.condensed && " 분량에 맞춰 축약했습니다."}
             {result.format_retried && " 형식 재시도 1회를 거쳤습니다."}
           </p>
-          <p className="usage">{formatUsage(result.usage)}</p>
           {result.warnings.length > 0 && (
             <ul>{result.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
           )}
@@ -109,6 +108,9 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
           <button onClick={() => setResult(null)}>버리기</button>
         </div>
       )}
+      {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6).
+          형식 오류로 끝나도 최소 1회 호출은 있었으므로 상태 분기 밖에서 항상 보인다 */}
+      {result && <p className="usage">{formatUsage(result.usage)}</p>}
     </section>
   );
 }

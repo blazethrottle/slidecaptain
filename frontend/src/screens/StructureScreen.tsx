@@ -53,6 +53,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setCancelNotice("");
     setRawText("");
     setStructureUsage(null);
+    // F1 리뷰 반영: 새 구조안을 받으면 이전 승인 루프의 장 사용량 합계는 더 이상 유효하지 않다
+    setChapterUsageSummary(null);
+    setChapterUsageCount(0);
+    setChapterUsageHadUnaccountedFailure(false);
     try {
       const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
       const result = await api.generateStructure(project.name, {
@@ -258,10 +262,15 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           </table>
           <button onClick={add}>장 추가</button>
           {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
-          {chapterUsageSummary && (
+          {/* F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 실패 단서만은 표시한다.
+              chapterUsageSummary만 조건으로 두면 성공분이 0건일 때 이 문단 자체가 사라졌다 */}
+          {(chapterUsageSummary || chapterUsageHadUnaccountedFailure) && (
             <p className="usage">
-              {`장 생성 ${chapterUsageCount}회: ${formatUsage(chapterUsageSummary).replace(/^AI 사용량: /, "")}`}
-              {chapterUsageHadUnaccountedFailure && ` ${FAILED_CHAPTER_USAGE_NOTICE}`}
+              {[
+                chapterUsageSummary
+                  && `장 생성 ${chapterUsageCount}회: ${formatUsage(chapterUsageSummary).replace(/^AI 사용량: /, "")}`,
+                chapterUsageHadUnaccountedFailure && FAILED_CHAPTER_USAGE_NOTICE,
+              ].filter(Boolean).join(" ")}
             </p>
           )}
           <button onClick={approve} disabled={busy || draft.length === 0}>승인하고 내용 생성</button>

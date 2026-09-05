@@ -248,7 +248,7 @@ it("구조안 생성 뒤 사용량 문단이 승인 버튼 위에 보인다", as
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
   const usageP = await screen.findByText(/AI 사용량: 호출 1회/);
   const approveBtn = screen.getByRole("button", { name: "승인하고 내용 생성" });
-  // DOCUMENT_POSITION_FOLLOWING(4): usageP가 approveBtn보다 문서상 앞에 있다
+  // DOCUMENT_POSITION_PRECEDING(2): usageP가 approveBtn보다 문서상 앞에 있다 (F6 리뷰 반영: 주석 정정)
   // eslint-disable-next-line no-bitwise
   expect(approveBtn.compareDocumentPosition(usageP) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
@@ -307,6 +307,53 @@ it("승인 루프에서 한 장이 503으로 실패하면 합계 줄에 포함�
   expect(onDone).not.toHaveBeenCalled();
   // 성공한 1개 장(c1)의 usage만 합계에 실리고, 실패한 c2는 결과 자체가 없어 빠졌다는 단서가 보인다
   expect(screen.getByText(/장 생성 1회.*입력 100 토큰/)).toBeInTheDocument();
+  expect(screen.getByText(
+    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)",
+    { exact: false },
+  )).toBeInTheDocument();
+});
+
+// F1 리뷰 반영: "다시 생성"은 새 구조안을 받으므로 이전 승인 루프의 장 사용량 합계는 더 이상 유효하지 않다
+it("다시 생성을 누르면 이전 승인 루프의 사용량 합계가 사라진다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter)
+    .mockResolvedValueOnce({ status: "ok", usage: measuredUsage(), raw_text: "", warnings: [],
+      unverified_numbers: [], format_retried: false, condensed: false,
+      slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
+    .mockResolvedValueOnce({ status: "ok", usage: measuredUsage(), raw_text: "", warnings: [],
+      unverified_numbers: [], format_retried: false, condensed: false,
+      slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(onDone).toHaveBeenCalled());
+  expect(await screen.findByText(/장 생성 2회/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
+  await waitFor(() => expect(screen.queryByText(/장 생성 2회/)).not.toBeInTheDocument());
+});
+
+// F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 사용량 관련 안내는 사라지지 않아야 한다
+it("승인 루프에서 모든 장이 실패해도 실패 단서가 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter).mockRejectedValue(new ApiError(503, "AI 서비스가 응답하지 않습니다."));
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByText(/AI 서비스가 응답하지 않습니다/);
+  expect(onDone).not.toHaveBeenCalled();
+  // 성공분이 0건이라 "장 생성 N회" 합계 줄은 없지만, 실패했다는 사실 자체는 화면에 남아야 한다
   expect(screen.getByText(
     "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)",
     { exact: false },

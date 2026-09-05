@@ -50,8 +50,11 @@ export function formatUsage(usage: GenerationUsage): string {
   if (usage.input_tokens == null || usage.output_tokens == null) {
     parts.push("토큰 미확인");
   } else {
-    parts.push(`${approx ? "대략 " : ""}입력 ${formatTokenCount(usage.input_tokens)} 토큰`);
-    parts.push(`출력 ${formatTokenCount(usage.output_tokens)} 토큰`);
+    // F4 리뷰 반영: usage dict 폴백은 입력과 출력 토큰에 같은 불확실성을 준다(가정 1).
+    // "대략"을 입력에만 붙이면 출력 토큰이 마치 정확한 값처럼 보인다.
+    const approxPrefix = approx ? "대략 " : "";
+    parts.push(`${approxPrefix}입력 ${formatTokenCount(usage.input_tokens)} 토큰`);
+    parts.push(`${approxPrefix}출력 ${formatTokenCount(usage.output_tokens)} 토큰`);
     if (usage.cache_read_tokens) {
       parts.push(`캐시 읽기 ${formatTokenCount(usage.cache_read_tokens)} 토큰`);
     }

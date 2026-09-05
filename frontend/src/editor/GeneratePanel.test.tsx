@@ -102,7 +102,9 @@ it("축약에서 AI 전송을 취소해도 알림이 아닌 안내 문구를 보
 });
 
 // 태스크 C4: 결과 안내(축약, 재시도 문구) 옆에 사용량 한 줄을 보인다
-it("재생성 결과 안내 옆에 사용량 한 줄을 보이고, 값이 없으면 미확인이 보인다", async () => {
+it("재생성 결과 안내 옆에 사용량 한 줄을 보인다", async () => {
+  // F8 리뷰 반영: 제목이 실제로 검증하지 않는 "값이 없으면 미확인" 주장을 포함하고 있었다.
+  // 그 케이스는 바로 다음 테스트가 담당하므로 제목을 실제 검증 내용에 맞춘다.
   vi.mocked(api.generateChapter).mockResolvedValue({ ...okResult, usage: measuredUsage() });
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
@@ -116,6 +118,19 @@ it("사용량 값이 없으면 미확인이 보인다", async () => {
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText(/토큰 미확인/)).toBeInTheDocument();
   expect(screen.getByText(/비용 미확인/)).toBeInTheDocument();
+});
+
+// F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6). 형식 오류로
+// 끝나도 최소 1회 호출은 있었으므로 그 사용량을 화면에서 감추면 안 된다.
+it("형식 오류에도 사용량 한 줄이 보인다", async () => {
+  vi.mocked(api.generateChapter).mockResolvedValue({
+    status: "format_error", slots: null, usage: measuredUsage(), raw_text: "이상한 원문",
+    warnings: [], unverified_numbers: [], format_retried: true, condensed: false,
+  });
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  expect(await screen.findByText(/형식에 맞게 읽지 못했습니다/)).toBeInTheDocument();
+  expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
 });
 
 it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다", () => {
