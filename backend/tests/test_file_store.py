@@ -1,3 +1,4 @@
+import json
 import shutil
 import sys
 import threading
@@ -604,3 +605,25 @@ def test_casefold_conflict_detects_nfd_named_existing_file(store):
     (store.root / "p1" / "sources" / nfd).write_text("x", encoding="utf-8")
     with pytest.raises(SourceConflict):
         store.write_source("p1", "보고서a.md", "y")
+
+
+# -- AI 사용량 로컬 기록 (단계 5A 묶음 C 태스크 C3) -----------------------------------
+
+
+def test_append_usage_creates_file_and_appends_lines(store):
+    store.create_project("p1")
+    store.append_usage("p1", '{"kind": "structure", "n": 1}')
+    store.append_usage("p1", '{"kind": "chapter", "n": 2}')
+    path = store.root / "p1" / "ai-usage.jsonl"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0]) == {"kind": "structure", "n": 1}
+    assert json.loads(lines[1]) == {"kind": "chapter", "n": 2}
+    # LF로 끝나야 한다 (가정 4): splitlines()로 정확히 2줄이 나온 것 자체가 그 증거이지만,
+    # 마지막 줄 끝에도 개행이 있어야 다음 append가 같은 줄에 붙지 않는다
+    assert path.read_bytes().endswith(b"\n")
+
+
+def test_append_usage_missing_project_raises(store):
+    with pytest.raises(ProjectNotFound):
+        store.append_usage("없는프로젝트", '{"a": 1}')

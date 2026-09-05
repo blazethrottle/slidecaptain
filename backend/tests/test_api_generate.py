@@ -1,5 +1,9 @@
+import json
+
 from fastapi.testclient import TestClient
 
+from slidecaptain.models.deck import DeckMeta
+from slidecaptain.pipeline.prompts import build_structure_prompt
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
 
@@ -17,8 +21,9 @@ SLOTS_PAYLOAD = {"template": "bullet_box",
 
 
 class StubProvider:
-    def __init__(self, responses):
+    def __init__(self, responses, model=None):
         self.responses = list(responses)
+        self.model = model  # 단계 5A 묶음 C 태스크 C3: requested_model이 이 속성을 그대로 옮긴다
 
     async def complete(self, prompt, schema):
         item = self.responses.pop(0)
@@ -30,8 +35,10 @@ class StubProvider:
 _APP_HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
 
 
-def _client(store, responses) -> TestClient:
-    return TestClient(create_app(store, provider=StubProvider(responses)), headers=_APP_HEADERS)
+def _client(store, responses, model=None) -> TestClient:
+    return TestClient(
+        create_app(store, provider=StubProvider(responses, model=model)), headers=_APP_HEADERS
+    )
 
 
 def _project_with_structure(client):
@@ -189,3 +196,146 @@ def test_generate_without_any_marker_headers_is_403_not_428(store):
     client.post("/api/projects", json={"name": "p1"})
     r = client.post("/api/projects/p1/generate/structure", json={})
     assert r.status_code == 403
+
+
+# AI 사용량 로컬 기록 (단계 5A 묶음 C 태스크 C3, 가정 4와 5): 생성 3종 라우트가 GenerationService의
+# on_usage 콜백으로 projects/<이름>/ai-usage.jsonl에 작업 1건 = 1줄을 남긴다.
+
+
+def test_generate_structure_writes_usage_record(store):
+    client = _client(
+        store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")],
+        model="claude-sonnet-4-5-20250929",
+    )
+    client.post("/api/projects", json={"name": "p1", "title": "검토"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
+    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    assert r.status_code == 200
+    assert r.json()["usage"]["calls"] == 1
+
+    lines = (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["kind"] == "structure"
+    assert record["chapter_id"] is None
+    assert record["outcome"] == "ok"
+    assert record["summary"]["calls"] == 1
+    assert record["requested_model"] == "claude-sonnet-4-5-20250929"
+
+
+def test_generate_structure_without_model_writes_none_requested_model(store):
+    # 스텁이 model 속성을 안 주면(기본값 None) 기록에도 None으로 남는다
+    client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
+    client.post("/api/projects", json={"name": "p1", "title": "검토"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
+    client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    record = json.loads(
+        (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["requested_model"] is None
+
+
+def test_generate_chapter_with_format_retry_writes_usage_record(store):
+    client = _client(store, [
+        ProviderResponse(structured=None, raw_text="이상한 응답"),
+        ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r"),
+    ])
+    _project_with_structure(client)
+    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    assert r.status_code == 200
+    assert r.json()["format_retried"] is True
+
+    record = json.loads(
+        (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["kind"] == "chapter"
+    assert record["chapter_id"] == "c1"
+    assert record["outcome"] == "ok"
+    assert record["summary"]["calls"] == 2
+    assert [c["purpose"] for c in record["summary"]["records"]] == ["generate", "format_retry"]
+
+
+def test_condense_chapter_writes_usage_record(store):
+    client = _client(store, [ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")])
+    _project_with_structure(client)
+    body = {"slots": {"template": "bullet_box",
+                      "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
+                      "conclusion": "성장 지속", "footnote": ""}}
+    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    assert r.status_code == 200
+
+    record = json.loads(
+        (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["kind"] == "condense"
+    assert record["chapter_id"] == "c1"
+    assert record["summary"]["calls"] == 1
+
+
+def test_provider_failure_writes_failed_usage_record(store):
+    client = _client(store, [ProviderCallFailed("한도를 소진했습니다")])
+    _project_with_structure(client)
+    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    assert r.status_code == 503  # 종전과 동일한 상태 코드 (기록 추가가 오류 처리를 바꾸지 않는다)
+
+    record = json.loads(
+        (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert record["kind"] == "chapter"
+    assert record["outcome"] == "failed"
+    assert record["summary"]["failed_calls"] == 1
+
+
+def test_generate_ok_even_if_usage_log_write_fails(store, monkeypatch):
+    def _boom(name, line):
+        raise RuntimeError("기록 실패")
+
+    monkeypatch.setattr(store, "append_usage", _boom)
+    client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
+    client.post("/api/projects", json={"name": "p1", "title": "검토"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
+    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    assert r.status_code == 200  # 기록 쓰기 실패는 생성 결과를 막지 않는다 (가정 4)
+
+
+def test_usage_log_has_no_content_leak(store):
+    # 자료 문장, 지시사항, 응답 원문, 슬롯 문장, 프롬프트 고정 문구, 프로바이더 오류 문구 중
+    # 어느 것도 ai-usage.jsonl에 실리지 않는다 (가정 4: 로컬 기록에는 내용이 없다)
+    client = _client(store, [
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="원문유출금지첫번째"),
+        ProviderResponse(
+            structured={"template": "bullet_box",
+                        "bullets": [{"text": "슬롯내용유출금지그자체", "level": 0}],
+                        "conclusion": "성장 지속", "footnote": ""},
+            raw_text="원문유출금지두번째",
+        ),
+        ProviderCallFailed("프로바이더오류유출금지문구"),
+    ])
+    client.post("/api/projects", json={"name": "p1", "title": "검토"})
+    client.put("/api/projects/p1/sources/리서치.md", json={"text": "자료문장유출금지그자체"})
+    deck = client.get("/api/projects/p1/deck").json()
+    deck["structure"] = {"chapters": [
+        {"id": "c1", "topic": "시장 현황", "conclusion": "성장", "template": "bullet_box",
+         "source_refs": ["리서치.md"]},
+    ]}
+    assert client.put("/api/projects/p1/deck", json=deck).status_code == 200
+
+    client.post("/api/projects/p1/generate/structure", json={"instructions": "지시문유출금지그자체"})
+    client.post("/api/projects/p1/generate/chapter/c1", json={})
+    client.post("/api/projects/p1/generate/chapter/c1", json={})  # 실패 호출
+
+    content = (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8")
+    assert content.count("\n") == 3  # 세 호출 각각 1줄
+
+    fixed_prefix = build_structure_prompt(DeckMeta(title="아무"), {}).splitlines()[0]
+    forbidden = [
+        "자료문장유출금지그자체",
+        "지시문유출금지그자체",
+        "원문유출금지첫번째",
+        "원문유출금지두번째",
+        "슬롯내용유출금지그자체",
+        fixed_prefix,
+        "프로바이더오류유출금지문구",
+    ]
+    for text in forbidden:
+        assert text not in content

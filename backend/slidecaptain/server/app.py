@@ -3,6 +3,7 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
+import logging
 import threading
 import time
 import unicodedata
@@ -45,6 +46,8 @@ from slidecaptain.storage.file_store import (
     decode_source_bytes,
     validate_name,
 )
+
+_LOG = logging.getLogger("slidecaptain.server.app")
 
 _STATUS_BY_ERROR = [
     (InvalidName, 422),
@@ -182,7 +185,14 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Slide Captain", version="0.2.0")
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
-    service = GenerationService(provider, metrics) if provider is not None else None
+    # requested_model은 프로바이더가 실제로 요청한 별칭이다(응답에 담긴 실제 모델과 다른 축.
+    # 단계 5A 묶음 C 가정 1과 6, 태스크 C3). SubscriptionProvider 외의 프로바이더가 model 속성이
+    # 없어도 getattr 기본값으로 안전하다.
+    service = (
+        GenerationService(provider, metrics, requested_model=getattr(provider, "model", None))
+        if provider is not None
+        else None
+    )
     checker = login_checker or check_login
     # 앱 상태 (계획서 2026-09-01 태스크 4): 로그인 확인 캐시와 마지막 생성 성공 시각. 파일에 남기지 않는다
     status_state: dict = {"login": None, "login_at_mono": 0.0, "checked_at": "", "last_generation_at": None}
@@ -195,6 +205,18 @@ def create_app(
         """구조안 생성, 장별 생성, 축약이 status == "ok"로 끝나면 마지막 성공 시각을 갱신한다."""
         if getattr(result, "status", None) == "ok":
             status_state["last_generation_at"] = _now_iso()
+
+    def _append_usage(name: str, record) -> None:
+        """생성 서비스의 on_usage 콜백 (단계 5A 묶음 C 태스크 C3, 가정 4와 5).
+
+        기록 쓰기 실패는 사용자 관점에서 부가 기능이므로 경고 로그만 남기고 생성 결과를
+        막지 않는다 (service._emit_usage도 콜백 예외를 삼키지만, 여기서도 한 번 더 잡아
+        원인 위치가 분명한 로그를 남긴다).
+        """
+        try:
+            store.append_usage(name, record.model_dump_json())
+        except Exception:
+            _LOG.warning("AI 사용량 기록(ai-usage.jsonl) 쓰기 실패: 프로젝트 %s", name, exc_info=True)
 
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -481,7 +503,10 @@ def create_app(
         svc = _require_service()
         deck = store.load_deck(name)
         sources = _load_sources(name)
-        result = await svc.generate_structure(deck.meta, sources, req.target_chapters, req.instructions)
+        result = await svc.generate_structure(
+            deck.meta, sources, req.target_chapters, req.instructions,
+            on_usage=lambda rec: _append_usage(name, rec),
+        )
         _record_success(result)
         return result
 
@@ -497,7 +522,10 @@ def create_app(
             raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
         preset = _preset_for(deck)
         sources = _load_sources(name)
-        result = await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions)
+        result = await svc.generate_chapter(
+            deck, chapter_id, sources, preset, req.instructions,
+            on_usage=lambda rec: _append_usage(name, rec),
+        )
         _record_success(result)
         return result
 
@@ -523,7 +551,10 @@ def create_app(
             )
         preset = _preset_for(deck)
         sources = _load_sources(name)
-        result = await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions)
+        result = await svc.condense_chapter(
+            deck, chapter_id, req.slots, sources, preset, req.instructions,
+            on_usage=lambda rec: _append_usage(name, rec),
+        )
         _record_success(result)
         return result
 

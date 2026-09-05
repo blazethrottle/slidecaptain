@@ -190,6 +190,7 @@ class ProjectStore(Protocol):
     def read_upload(self, name: str, filename: str) -> bytes | None: ...
     def delete_upload(self, name: str, filename: str) -> None: ...
     def exports_dir(self, name: str) -> Path: ...
+    def append_usage(self, name: str, line: str) -> None: ...
     def load_global_preset(self) -> Preset: ...
     def save_global_preset(self, preset: Preset) -> None: ...
 
@@ -526,6 +527,18 @@ class FileProjectStore:
     def exports_dir(self, name: str) -> Path:
         name = _nfc(name)
         return self._project_dir(name) / "exports"
+
+    # -- AI 사용량 기록 ------------------------------------------------------
+
+    def append_usage(self, name: str, line: str) -> None:
+        """AI 사용량 기록 1줄을 project/<이름>/ai-usage.jsonl에 덧붙인다 (단계 5A 묶음 C 태스크 C3,
+        가정 4). 내용은 담지 않는 사용량 요약 한 줄이며, 파일이 없으면 새로 만든다. 없는 프로젝트는
+        다른 쓰기 메서드와 같이 ProjectNotFound를 낸다."""
+        name = _nfc(name)
+        with self.locked(name):
+            d = self._project_dir(name)
+            with (d / "ai-usage.jsonl").open("a", encoding="utf-8", newline="\n") as f:
+                f.write(line + "\n")
 
     # -- 전역 프리셋 --------------------------------------------------------
 
