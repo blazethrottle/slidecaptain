@@ -9,6 +9,7 @@
 
 import asyncio
 import logging
+from typing import Literal
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -52,9 +53,10 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     output_tokens: int | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+    token_source: Literal["model_usage", "usage", "none"]
 
     if model_usage:
-        token_source: str = "model_usage"
+        token_source = "model_usage"
         input_tokens = sum(int(mu.get("inputTokens", 0)) for mu in model_usage.values())
         output_tokens = sum(int(mu.get("outputTokens", 0)) for mu in model_usage.values())
         cache_read_tokens = sum(int(mu.get("cacheReadInputTokens", 0)) for mu in model_usage.values())
@@ -86,7 +88,7 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
         duration_ms=result.duration_ms,
         duration_api_ms=result.duration_api_ms,
         num_turns=result.num_turns,
-        cost_usd=result.total_cost_usd,
+        cost_usd=result.total_cost_usd,  # SDK가 이미 합산한 값을 그대로 옮긴다(재합산 아님)
         stop_reason=result.stop_reason,
         terminal_reason=result.terminal_reason,
         api_error_status=result.api_error_status,

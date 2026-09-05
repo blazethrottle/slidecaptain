@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import pytest
 
@@ -12,8 +13,12 @@ import slidecaptain.pipeline.subscription as sub
 from slidecaptain.pipeline.subscription import DEFAULT_MODEL, SubscriptionProvider, build_call_usage
 
 
-def _fake_query(result_message=None, error: Exception | None = None, captured: dict | None = None,
-                assistant_model: str | None = None):
+def _fake_query(
+    result_message=None,
+    error: Exception | None = None,
+    captured: dict | None = None,
+    assistant_model: str | None = None,
+):
     async def fake(prompt, options):
         if captured is not None:
             captured["prompt"] = prompt
@@ -134,7 +139,11 @@ def test_error_result_with_usage_attaches_usage_to_exception(monkeypatch):
     assert usage.token_source == "usage"
     msg = str(exc_info.value)
     assert "rate limited" not in msg
-    assert "529" not in msg
+    # 특정 문자열("529") 대신 숫자 전체 부재를 일반화해서 확인한다: 상태 코드가 어떤
+    # 값이든 새면 걸린다 (발견 C1-F2). 영문 전체는 블록하지 않는다: "AI"는 이 모듈의
+    # 모든 사용자 문구에 쓰이는 의도된 제품 용어이며(subscription.py의 다른 문구들도
+    # 전부 "AI 호출"로 시작), 영문 전체 금지는 실제 설계와 맞지 않는 과잉 일반화다.
+    assert not re.search(r"\d", msg)
 
 
 def test_timeout_maps_to_korean_error(monkeypatch):
@@ -255,7 +264,8 @@ def test_build_call_usage_multi_model_sums_tokens_and_cost():
                 "maxOutputTokens": 8192,
             },
         },
-        total_cost_usd=0.012,
+        total_cost_usd=0.012,  # 개별 costUSD 합(0.01+0.002)과 값이 같지만, 이는 total_cost_usd
+        # 패스스루의 결과이지 이 함수가 costUSD를 재합산한 결과가 아니다 (아래 테스트로 구분)
     )
     usage = build_call_usage(result, assistant_model="claude-sonnet-4-5-20250929")
     assert usage.token_source == "model_usage"
@@ -263,6 +273,40 @@ def test_build_call_usage_multi_model_sums_tokens_and_cost():
     assert usage.output_tokens == 120
     assert usage.cost_usd == 0.012
     assert usage.model == "claude-sonnet-4-5-20250929"  # AssistantMessage.model 우선
+
+
+def test_build_call_usage_cost_is_total_cost_usd_passthrough_not_recomputed_sum():
+    """cost_usd 는 개별 model_usage 의 costUSD 를 재합산한 값이 아니라 SDK 의
+    total_cost_usd 를 그대로 옮긴 값이다. 위 테스트만으로는 "합산"과 "패스스루"를
+    구분할 수 없어(둘이 우연히 같은 값을 내므로), 두 값을 의도적으로 어긋나게 준다
+    (발견 C1-F1)."""
+    result = _result(
+        model_usage={
+            "claude-sonnet-4-5-20250929": {
+                "inputTokens": 1000,
+                "outputTokens": 100,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+                "webSearchRequests": 0,
+                "costUSD": 0.01,
+                "contextWindow": 200000,
+                "maxOutputTokens": 8192,
+            },
+            "claude-sonnet-4-5-20250929-cleanup": {
+                "inputTokens": 200,
+                "outputTokens": 20,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+                "webSearchRequests": 0,
+                "costUSD": 0.002,
+                "contextWindow": 200000,
+                "maxOutputTokens": 8192,
+            },
+        },
+        total_cost_usd=0.02,  # 개별 costUSD 합(0.012)과 일부러 다르게 둔다
+    )
+    usage = build_call_usage(result, assistant_model=None)
+    assert usage.cost_usd == 0.02  # 합산값(0.012)이 아니라 total_cost_usd 그대로
 
 
 def test_build_call_usage_model_priority_assistant_over_model_usage_key():
