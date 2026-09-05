@@ -19,6 +19,7 @@ export type TablePlan = components["schemas"]["TablePlan"];
 export type CapacityWarning = components["schemas"]["CapacityWarning"];
 export type StructureResult = components["schemas"]["StructureResult"];
 export type ChapterResult = components["schemas"]["ChapterResult"];
+export type GenerationUsage = components["schemas"]["GenerationUsage"];
 export type TemplateName = Chapter["template"];
 export type UploadResult = components["schemas"]["UploadResult"];
 export type AppStatus = components["schemas"]["AppStatus"];

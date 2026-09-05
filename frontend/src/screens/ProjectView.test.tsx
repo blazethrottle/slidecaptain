@@ -2,6 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck, type Preset, type RenderPlan, type UploadResult } from "../api/client";
 import { deferred } from "../test/fixtures";
+import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -203,7 +204,7 @@ it("구조안 승인 루프에서 412를 받으면 배너가 뜨고, 다시 읽�
     .mockResolvedValueOnce({ ok: true })  // 승인 반영 (snapshot true)
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.mocked(api.generateChapter).mockResolvedValue({
-    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
     format_retried: false, condensed: false,
     slots: { template: "cover", title: "제목", subtitle: "", date: "" },
   });

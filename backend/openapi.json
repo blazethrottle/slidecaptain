@@ -1051,6 +1051,204 @@
         "title": "BulletMarker",
         "description": "불릿 목록 표식. 문자와 표식 전용 폰트 (승격 전에는 라이터의 리터럴이었다)."
       },
+      "CallUsage": {
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "cache_creation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Tokens"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "duration_api_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Api Ms"
+          },
+          "num_turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Turns"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "stop_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Reason"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "api_error_status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Error Status"
+          },
+          "token_source": {
+            "type": "string",
+            "enum": [
+              "model_usage",
+              "usage",
+              "none"
+            ],
+            "title": "Token Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "duration_ms",
+          "duration_api_ms",
+          "num_turns",
+          "cost_usd",
+          "stop_reason",
+          "terminal_reason",
+          "api_error_status",
+          "token_source"
+        ],
+        "title": "CallUsage",
+        "description": "원시 호출 1건의 실제 사용량 (설계서 4.4, 단계 5A 묶음 C 태스크 C1).\n\nSDK 가 값을 못 주면 그 필드는 None 이다. 없는 값은 만들지 않는다(가정 3)."
+      },
+      "CallUsageRecord": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "generate",
+              "format_retry",
+              "condense"
+            ],
+            "title": "Purpose"
+          },
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CallUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "ok",
+          "usage"
+        ],
+        "title": "CallUsageRecord",
+        "description": "원시 호출 1건의 목적과 성패, 사용량 (단계 5A 묶음 C 태스크 C2, 가정 2와 3)."
+      },
       "CapacityWarning": {
         "properties": {
           "chapter_id": {
@@ -1230,11 +1428,15 @@
             "type": "boolean",
             "title": "Condensed",
             "default": false
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "status",
+          "usage"
         ],
         "title": "ChapterResult"
       },
@@ -1705,6 +1907,138 @@
         },
         "type": "object",
         "title": "GenerateStructureRequest"
+      },
+      "GenerationUsage": {
+        "properties": {
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "failed_calls": {
+            "type": "integer",
+            "title": "Failed Calls"
+          },
+          "unmeasured_calls": {
+            "type": "integer",
+            "title": "Unmeasured Calls"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Tokens"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read Tokens"
+          },
+          "cache_creation_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Creation Tokens"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "duration_api_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Api Ms"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/CallUsageRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          }
+        },
+        "type": "object",
+        "required": [
+          "calls",
+          "failed_calls",
+          "unmeasured_calls",
+          "models",
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_tokens",
+          "duration_ms",
+          "duration_api_ms",
+          "cost_usd",
+          "missing",
+          "records"
+        ],
+        "title": "GenerationUsage",
+        "description": "생성 작업 1건(서비스 공개 메서드 1회 호출) 안의 모든 호출을 합산한 값 (가정 3).\n\n없는 값은 만들지 않는다: 합산에 참여한 호출 중 하나라도 어떤 필드가 없으면\n그 필드의 합계는 None이고 missing에 이름이 실린다(부분 합계는 과소 집계라 더 해롭다).\n사용량 자체가 없는 호출(usage=None. 결과 메시지 없이 끊긴 실패)은 unmeasured_calls로\n따로 세고 합산에서는 제외한다(있는 필드까지 None으로 만들지 않는다)."
       },
       "HTTPValidationError": {
         "properties": {
@@ -2407,11 +2741,15 @@
             "type": "boolean",
             "title": "Format Retried",
             "default": false
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
           }
         },
         "type": "object",
         "required": [
-          "status"
+          "status",
+          "usage"
         ],
         "title": "StructureResult"
       },

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type Deck } from "../api/client";
+import { emptyUsage } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -27,7 +28,7 @@ const CH2 = { id: "c2", topic: "본문", conclusion: "결론", template: "bullet
 it("구조안을 생성해 초안 표를 보여준다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: ["9999"], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: ["9999"], format_retried: false,
   });
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
@@ -38,14 +39,14 @@ it("구조안을 생성해 초안 표를 보여준다", async () => {
 it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: [], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.generateChapter)
-    .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    .mockResolvedValueOnce({ status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
       slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
-    .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    .mockResolvedValueOnce({ status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
       slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
   const onDone = vi.fn();
@@ -70,7 +71,7 @@ it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async 
 
 it("형식 오류면 원문과 재시도 경로를 보여준다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
-    status: "format_error", structure: null, raw_text: "이상한 응답",
+    status: "format_error", structure: null, usage: emptyUsage(), raw_text: "이상한 응답",
     unverified_numbers: [], format_retried: true,
   });
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
@@ -107,14 +108,14 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
 
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: [], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.generateChapter)
-    .mockResolvedValueOnce({ status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    .mockResolvedValueOnce({ status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
       format_retried: false, condensed: false,
       slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
-    .mockResolvedValueOnce({ status: "format_error", slots: null, raw_text: "깨진 응답",
+    .mockResolvedValueOnce({ status: "format_error", slots: null, usage: emptyUsage(), raw_text: "깨진 응답",
       warnings: [], unverified_numbers: [], format_retried: true, condensed: false });
   const onDone = vi.fn();
   render(<Wrapper onDone={onDone} />);
@@ -129,7 +130,7 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
 
   // 재승인: setDraftGenerated(false) 정정 덕분에 deck.slides의 c1이 계승되어(kept) 실패한 c2만 재생성 대상이 된다
   vi.mocked(api.generateChapter).mockResolvedValueOnce({
-    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
     format_retried: false, condensed: false,
     slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
@@ -144,13 +145,13 @@ it("일부 장이 실패하면 onDone을 부르지 않고, 재승인은 성공�
 it("승인 루프의 putDeck이 412면 그 장을 실패로 표시하고 onConflict를 부르며 멈춘다 (A5)", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: [], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck)
     .mockResolvedValueOnce({ ok: true })  // 최초 승인 반영 (snapshot true)
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.mocked(api.generateChapter).mockResolvedValue({
-    status: "ok", raw_text: "", warnings: [], unverified_numbers: [],
+    status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
     format_retried: false, condensed: false,
     slots: { template: "cover", title: "제목", subtitle: "", date: "" },
   });
@@ -172,7 +173,7 @@ it("승인 루프의 putDeck이 412면 그 장을 실패로 표시하고 onConfl
 it("최초 승인 반영의 putDeck이 412면 생성을 시작하지 않고 onConflict를 부른다 (A5b 리뷰)", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: [], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
@@ -201,7 +202,7 @@ it("구조안 생성에서 AI 전송을 취소하면 알림이 아닌 안내 문
 it("승인 루프에서 첫 장을 취소하면 남은 장은 관문을 다시 묻지 않고 취소로 표시되며 onDone을 부르지 않는다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
-    raw_text: "", unverified_numbers: [], format_retried: false,
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.generateChapter).mockRejectedValue(new AiConsentDeclined());

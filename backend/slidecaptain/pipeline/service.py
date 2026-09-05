@@ -6,7 +6,8 @@
 3. 수치: 생성 문장의 숫자를 자료 원문 전체와 대조. 없는 숫자는 경고 목록 (차단 아님)
 """
 
-from datetime import date
+import logging
+from datetime import date, datetime
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -27,9 +28,20 @@ from slidecaptain.pipeline.prompts import (
     chapter_response_schema,
     structure_response_schema,
 )
-from slidecaptain.pipeline.provider import AIProvider, ProviderError, ProviderResponse
+from slidecaptain.pipeline.provider import AIProvider, CallUsage, ProviderError, ProviderResponse
+
+_LOG = logging.getLogger("slidecaptain.pipeline.service")
 
 _SLOTS_ADAPTER: TypeAdapter = TypeAdapter(Slots)
+
+# 원시 호출 1건의 목적 (단계 5A 묶음 C 가정 2). 형식 게이트의 재시도는 항상 format_retry다
+_CallPurpose = Literal["generate", "format_retry", "condense"]
+
+# 합계 대상 수치 필드 이름 (GenerationUsage와 CallUsage에 공통. 가정 3)
+_USAGE_NUMERIC_FIELDS: tuple[str, ...] = (
+    "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens",
+    "duration_ms", "duration_api_ms", "cost_usd",
+)
 
 # 자료에 있을 이유가 없는 메타성 필드: 수치 대조 수집에서 제외한다 (설계 결정 6)
 _NUMBER_EXEMPT_FIELDS: dict[str, set[str]] = {
@@ -46,12 +58,101 @@ def _fixable(warnings: list[CapacityWarning]) -> list[CapacityWarning]:
     return [w for w in warnings if w.slot != "title"]
 
 
+class CallUsageRecord(BaseModel):
+    """원시 호출 1건의 목적과 성패, 사용량 (단계 5A 묶음 C 태스크 C2, 가정 2와 3)."""
+
+    purpose: _CallPurpose
+    ok: bool
+    usage: CallUsage | None
+
+
+class GenerationUsage(BaseModel):
+    """생성 작업 1건(서비스 공개 메서드 1회 호출) 안의 모든 호출을 합산한 값 (가정 3).
+
+    없는 값은 만들지 않는다: 합산에 참여한 호출 중 하나라도 어떤 필드가 없으면
+    그 필드의 합계는 None이고 missing에 이름이 실린다(부분 합계는 과소 집계라 더 해롭다).
+    사용량 자체가 없는 호출(usage=None. 결과 메시지 없이 끊긴 실패)은 unmeasured_calls로
+    따로 세고 합산에서는 제외한다(있는 필드까지 None으로 만들지 않는다).
+    """
+
+    calls: int
+    failed_calls: int
+    unmeasured_calls: int
+    models: list[str]
+    input_tokens: int | None
+    output_tokens: int | None
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
+    duration_ms: int | None
+    duration_api_ms: int | None
+    cost_usd: float | None
+    missing: list[str]
+    records: list[CallUsageRecord]
+
+
+class UsageRecord(BaseModel):
+    """로컬 기록 1줄에 실릴 값 (태스크 C3에서 ai-usage.jsonl에 append). 내용은 담지 않는다(가정 4)."""
+
+    ts: str
+    kind: Literal["structure", "chapter", "condense"]
+    chapter_id: str | None
+    outcome: Literal["ok", "format_error", "failed"]
+    requested_model: str | None
+    summary: GenerationUsage
+
+
+class _UsageCollector:
+    """생성 작업 1건 동안의 호출을 쌓는 요청별 지역 변수 (가정 5, 우회 방지: self에 두지 않는다)."""
+
+    def __init__(self) -> None:
+        self._records: list[CallUsageRecord] = []
+
+    def record(self, purpose: _CallPurpose, usage: CallUsage | None, ok: bool) -> None:
+        self._records.append(CallUsageRecord(purpose=purpose, ok=ok, usage=usage))
+
+    def summary(self) -> GenerationUsage:
+        records = self._records
+        measured = [r.usage for r in records if r.usage is not None]
+        failed_calls = sum(1 for r in records if not r.ok)
+        unmeasured_calls = len(records) - len(measured)
+        models = list(dict.fromkeys(u.model for u in measured if u.model))
+
+        missing: list[str] = []
+
+        def _sum(name: str) -> int | float | None:
+            values = [getattr(u, name) for u in measured]
+            if not values or any(v is None for v in values):
+                if values:  # 값이 있는 호출이 하나라도 있는데 다른 하나는 없을 때만 missing이다
+                    missing.append(name)
+                return None
+            return sum(values)
+
+        sums = {name: _sum(name) for name in _USAGE_NUMERIC_FIELDS}
+
+        return GenerationUsage(
+            calls=len(records),
+            failed_calls=failed_calls,
+            unmeasured_calls=unmeasured_calls,
+            models=models,
+            input_tokens=sums["input_tokens"],
+            output_tokens=sums["output_tokens"],
+            cache_read_tokens=sums["cache_read_tokens"],
+            cache_creation_tokens=sums["cache_creation_tokens"],
+            duration_ms=sums["duration_ms"],
+            duration_api_ms=sums["duration_api_ms"],
+            cost_usd=sums["cost_usd"],
+            missing=missing,
+            records=records,
+        )
+
+
 class StructureResult(BaseModel):
     status: Literal["ok", "format_error"]
     structure: Structure | None = None
     raw_text: str = ""
     unverified_numbers: list[str] = []
     format_retried: bool = False
+    usage: GenerationUsage
 
 
 class ChapterResult(BaseModel):
@@ -62,6 +163,7 @@ class ChapterResult(BaseModel):
     unverified_numbers: list[str] = []
     format_retried: bool = False
     condensed: bool = False
+    usage: GenerationUsage
 
 
 def _try_parse(parse: Callable[[Any], Any], response: ProviderResponse) -> Any | None:
@@ -74,22 +176,71 @@ def _try_parse(parse: Callable[[Any], Any], response: ProviderResponse) -> Any |
 
 
 class GenerationService:
-    def __init__(self, provider: AIProvider, metrics: FontMetrics) -> None:
-        self.provider = provider
+    def __init__(
+        self,
+        provider: AIProvider,
+        metrics: FontMetrics,
+        requested_model: str | None = None,
+    ) -> None:
+        self._provider = provider
         self.metrics = metrics
+        self._requested_model = requested_model
+
+    async def _complete(
+        self, prompt: str, schema: dict, purpose: _CallPurpose, collector: _UsageCollector
+    ) -> ProviderResponse:
+        """프로바이더 호출의 유일한 경유지 (가정 5, 우회 방지).
+
+        성공은 response.usage를, ProviderError는 e.usage를 ok=False로 기록한 뒤 재발생한다.
+        """
+        try:
+            response = await self._provider.complete(prompt, schema)
+        except ProviderError as e:
+            collector.record(purpose, e.usage, ok=False)
+            raise
+        collector.record(purpose, response.usage, ok=True)
+        return response
 
     async def _call_with_format_gate(
-        self, prompt: str, schema: dict, parse: Callable[[Any], Any]
+        self,
+        prompt: str,
+        schema: dict,
+        parse: Callable[[Any], Any],
+        purpose: _CallPurpose,
+        collector: _UsageCollector,
     ) -> tuple[Any | None, str, bool]:
         """게이트 1 (형식): 실패 시 1회 재시도. (parsed, raw_text, retried)를 돌려준다."""
-        response = await self.provider.complete(prompt, schema)
+        response = await self._complete(prompt, schema, purpose, collector)
         parsed = _try_parse(parse, response)
         if parsed is not None:
             return parsed, response.raw_text, False
-        retry = await self.provider.complete(
-            build_format_retry_prompt(prompt, response.raw_text), schema
+        retry = await self._complete(
+            build_format_retry_prompt(prompt, response.raw_text), schema, "format_retry", collector
         )
         return _try_parse(parse, retry), retry.raw_text, True
+
+    def _emit_usage(
+        self,
+        on_usage: Callable[[UsageRecord], None] | None,
+        kind: Literal["structure", "chapter", "condense"],
+        chapter_id: str | None,
+        outcome: Literal["ok", "format_error", "failed"],
+        collector: _UsageCollector,
+    ) -> None:
+        if on_usage is None:
+            return
+        record = UsageRecord(
+            ts=datetime.now().astimezone().isoformat(timespec="seconds"),
+            kind=kind,
+            chapter_id=chapter_id,
+            outcome=outcome,
+            requested_model=self._requested_model,
+            summary=collector.summary(),
+        )
+        try:
+            on_usage(record)
+        except Exception:
+            _LOG.warning("사용량 콜백(on_usage) 실행 중 오류", exc_info=True)
 
     async def generate_structure(
         self,
@@ -97,6 +248,7 @@ class GenerationService:
         sources: dict[str, str],
         target_chapters: int | None = None,
         instructions: str = "",
+        on_usage: Callable[[UsageRecord], None] | None = None,
     ) -> StructureResult:
         prompt = build_structure_prompt(meta, sources, target_chapters, instructions)
 
@@ -113,19 +265,32 @@ class GenerationService:
             ]
             return Structure(chapters=chapters)
 
-        structure, raw, retried = await self._call_with_format_gate(
-            prompt, structure_response_schema(), parse
-        )
-        if structure is None:
-            return StructureResult(status="format_error", raw_text=raw, format_retried=retried)
-        texts = [t for ch in structure.chapters for t in (ch.topic, ch.conclusion)]
-        return StructureResult(
-            status="ok",
-            structure=structure,
-            raw_text=raw,
-            unverified_numbers=find_unverified_numbers(texts, list(sources.values()) + [meta.title]),
-            format_retried=retried,
-        )
+        collector = _UsageCollector()
+        outcome: Literal["ok", "format_error", "failed"] = "failed"
+        try:
+            structure, raw, retried = await self._call_with_format_gate(
+                prompt, structure_response_schema(), parse, "generate", collector
+            )
+            if structure is None:
+                outcome = "format_error"
+                return StructureResult(
+                    status="format_error", raw_text=raw, format_retried=retried,
+                    usage=collector.summary(),
+                )
+            texts = [t for ch in structure.chapters for t in (ch.topic, ch.conclusion)]
+            outcome = "ok"
+            return StructureResult(
+                status="ok",
+                structure=structure,
+                raw_text=raw,
+                unverified_numbers=find_unverified_numbers(
+                    texts, list(sources.values()) + [meta.title]
+                ),
+                format_retried=retried,
+                usage=collector.summary(),
+            )
+        finally:
+            self._emit_usage(on_usage, "structure", None, outcome, collector)
 
     async def generate_chapter(
         self,
@@ -134,35 +299,51 @@ class GenerationService:
         sources: dict[str, str],
         preset: Preset,
         instructions: str = "",
+        on_usage: Callable[[UsageRecord], None] | None = None,
     ) -> ChapterResult:
         chapter = self._find_chapter(deck, chapter_id)
         prompt = self._chapter_prompt(deck, chapter, sources, preset, instructions)
         schema = chapter_response_schema(chapter.template)
         parse = self._slots_parser(chapter)
 
-        slots, raw, retried = await self._call_with_format_gate(prompt, schema, parse)
-        if slots is None:
-            return ChapterResult(status="format_error", raw_text=raw, format_retried=retried)
-
-        warnings = self._measure(chapter, slots, preset)
-        condensed = False
-        fixable = _fixable(warnings)
-        if fixable:  # 게이트 2 (분량): 1회 축약 재생성. 직전 초안을 동봉한다 (설계 결정 12)
-            try:
-                condense_response = await self.provider.complete(
-                    build_condense_prompt(prompt, fixable, slots.model_dump_json()), schema
+        collector = _UsageCollector()
+        outcome: Literal["ok", "format_error", "failed"] = "failed"
+        try:
+            slots, raw, retried = await self._call_with_format_gate(
+                prompt, schema, parse, "generate", collector
+            )
+            if slots is None:
+                outcome = "format_error"
+                return ChapterResult(
+                    status="format_error", raw_text=raw, format_retried=retried,
+                    usage=collector.summary(),
                 )
-            except ProviderError:
-                condense_response = None  # 축약 호출 실패로 유효한 초안을 잃지 않는다
-            if condense_response is not None:
-                condensed_slots = _try_parse(parse, condense_response)
-                if condensed_slots is not None:
-                    slots = condensed_slots
-                    raw = condense_response.raw_text
-                    warnings = self._measure(chapter, slots, preset)
-                    condensed = True
 
-        return self._chapter_result(deck, chapter, slots, raw, warnings, sources, retried, condensed)
+            warnings = self._measure(chapter, slots, preset)
+            condensed = False
+            fixable = _fixable(warnings)
+            if fixable:  # 게이트 2 (분량): 1회 축약 재생성. 직전 초안을 동봉한다 (설계 결정 12)
+                try:
+                    condense_response = await self._complete(
+                        build_condense_prompt(prompt, fixable, slots.model_dump_json()),
+                        schema, "condense", collector,
+                    )
+                except ProviderError:
+                    condense_response = None  # 축약 호출 실패로 유효한 초안을 잃지 않는다
+                if condense_response is not None:
+                    condensed_slots = _try_parse(parse, condense_response)
+                    if condensed_slots is not None:
+                        slots = condensed_slots
+                        raw = condense_response.raw_text
+                        warnings = self._measure(chapter, slots, preset)
+                        condensed = True
+
+            outcome = "ok"
+            return self._chapter_result(
+                deck, chapter, slots, raw, warnings, sources, retried, condensed, collector
+            )
+        finally:
+            self._emit_usage(on_usage, "chapter", chapter_id, outcome, collector)
 
     async def condense_chapter(
         self,
@@ -172,6 +353,7 @@ class GenerationService:
         sources: dict[str, str],
         preset: Preset,
         instructions: str = "",
+        on_usage: Callable[[UsageRecord], None] | None = None,
     ) -> ChapterResult:
         """수동 축약 (설계 결정 13): 현재 슬롯을 초안으로 받아 1회 축약한다.
 
@@ -186,15 +368,28 @@ class GenerationService:
         base = self._chapter_prompt(deck, chapter, sources, preset, instructions)
         warnings_now = _fixable(self._measure(chapter, current_slots, preset))
         prompt = build_condense_prompt(base, warnings_now, current_slots.model_dump_json())
-        slots, raw, retried = await self._call_with_format_gate(
-            prompt, chapter_response_schema(chapter.template), self._slots_parser(chapter)
-        )
-        if slots is None:
-            return ChapterResult(status="format_error", raw_text=raw, format_retried=retried)
-        warnings = self._measure(chapter, slots, preset)
-        return self._chapter_result(
-            deck, chapter, slots, raw, warnings, sources, retried, condensed=True
-        )
+
+        collector = _UsageCollector()
+        outcome: Literal["ok", "format_error", "failed"] = "failed"
+        try:
+            slots, raw, retried = await self._call_with_format_gate(
+                prompt, chapter_response_schema(chapter.template), self._slots_parser(chapter),
+                "condense", collector,
+            )
+            if slots is None:
+                outcome = "format_error"
+                return ChapterResult(
+                    status="format_error", raw_text=raw, format_retried=retried,
+                    usage=collector.summary(),
+                )
+            warnings = self._measure(chapter, slots, preset)
+            outcome = "ok"
+            return self._chapter_result(
+                deck, chapter, slots, raw, warnings, sources, retried, condensed=True,
+                collector=collector,
+            )
+        finally:
+            self._emit_usage(on_usage, "condense", chapter_id, outcome, collector)
 
     # -- 내부 공통 ---------------------------------------------------------
 
@@ -237,6 +432,7 @@ class GenerationService:
         sources: dict[str, str],
         retried: bool,
         condensed: bool,
+        collector: _UsageCollector,
     ) -> ChapterResult:
         exempt = _NUMBER_EXEMPT_FIELDS.get(chapter.template, set())
         texts = collect_strings(slots.model_dump(exclude=exempt))
@@ -250,6 +446,7 @@ class GenerationService:
             ),
             format_retried=retried,
             condensed=condensed,
+            usage=collector.summary(),
         )
 
     def _measure(self, chapter: Chapter, slots: Any, preset: Preset) -> list[CapacityWarning]:

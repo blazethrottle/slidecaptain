@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { revokeConsent } from "../api/aiGate";
 import type { AppStatus, Deck } from "../api/client";
+import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -38,7 +39,8 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     }
     if (method === "POST" && url.endsWith("/generate/structure")) {
       return new Response(JSON.stringify({
-        status: "ok", structure: { chapters: [] }, raw_text: "", unverified_numbers: [], format_retried: false,
+        status: "ok", structure: { chapters: [] }, usage: emptyUsage(),
+        raw_text: "", unverified_numbers: [], format_retried: false,
       }), { status: 200 });
     }
     throw new Error(`스텁되지 않은 요청: ${method} ${url}`);

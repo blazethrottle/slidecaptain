@@ -1,12 +1,13 @@
 import asyncio
+import inspect
 
 import pytest
 
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import BulletBoxSlots, Chapter, Deck, DeckMeta, Structure, TableSlots
 from slidecaptain.models.preset import Preset
-from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
-from slidecaptain.pipeline.service import GenerationService
+from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, ProviderResponse
+from slidecaptain.pipeline.service import GenerationService, UsageRecord
 
 METRICS = FontMetrics.load_default()
 SOURCES = {"리서치.md": "시장 규모는 500억 원이다. 2026년 기준."}
@@ -28,6 +29,27 @@ class StubProvider:
 def _service(responses) -> tuple[GenerationService, StubProvider]:
     stub = StubProvider(responses)
     return GenerationService(stub, METRICS), stub
+
+
+def _usage(**overrides) -> CallUsage:
+    """단계 5A 묶음 C 태스크 C2 테스트용 CallUsage. 기본값은 전부 채워져 있다."""
+    base = dict(
+        model="claude-sonnet-4-5-20250929",
+        input_tokens=10,
+        output_tokens=5,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        duration_ms=1000,
+        duration_api_ms=900,
+        num_turns=2,
+        cost_usd=0.01,
+        stop_reason="end_turn",
+        terminal_reason="completed",
+        api_error_status=None,
+        token_source="model_usage",
+    )
+    base.update(overrides)
+    return CallUsage(**base)
 
 
 def _deck() -> Deck:
@@ -335,3 +357,237 @@ def test_cover_slots_ignore_audience_and_presenter_from_ai():
     result = asyncio.run(service.generate_chapter(deck, "c0", SOURCES, Preset()))
     assert result.status == "ok"
     assert set(result.slots.model_dump()) == {"template", "title", "subtitle", "date"}
+
+
+# -- 태스크 C2: 서비스 합산 (단계 5A 묶음 C) ---------------------------------
+
+def test_usage_summary_ok_single_call():
+    usage = _usage(input_tokens=10, output_tokens=5, cost_usd=0.01)
+    service, _ = _service([ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r", usage=usage)])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.usage.calls == 1
+    assert result.usage.failed_calls == 0
+    assert result.usage.unmeasured_calls == 0
+    assert result.usage.models == ["claude-sonnet-4-5-20250929"]
+    assert result.usage.input_tokens == 10
+    assert result.usage.output_tokens == 5
+    assert result.usage.cost_usd == 0.01
+    assert len(result.usage.records) == result.usage.calls
+    assert result.usage.records[0].purpose == "generate"
+
+
+def test_usage_format_retry_sums_both_calls():
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage(input_tokens=10)),
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="good", usage=_usage(input_tokens=20)),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.status == "ok"
+    assert result.usage.calls == 2
+    assert [r.purpose for r in result.usage.records] == ["generate", "format_retry"]
+    assert result.usage.input_tokens == 30
+
+
+def test_usage_format_retry_failure_still_counts_calls():
+    service, _ = _service([
+        ProviderResponse(structured=None, raw_text="원문1", usage=_usage()),
+        ProviderResponse(structured=None, raw_text="원문2", usage=_usage()),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.status == "format_error"
+    assert result.usage.calls == 2
+
+
+def test_usage_chapter_auto_condense_purposes():
+    long_bullets = [{"text": f"근거 없는 장문 불릿 문장 {i}번이며 자료 원문의 맥락 설명이 길게 이어진다", "level": 0}
+                    for i in range(30)]
+    over_payload = {"template": "bullet_box", "bullets": long_bullets, "conclusion": "성장", "footnote": ""}
+    service, _ = _service([
+        ProviderResponse(structured=over_payload, raw_text="r1", usage=_usage()),
+        ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r2", usage=_usage()),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert [r.purpose for r in result.usage.records] == ["generate", "condense"]
+
+
+def test_usage_chapter_format_retry_then_condense_purposes():
+    long_bullets = [{"text": f"근거 없는 장문 불릿 문장 {i}번이며 자료 원문의 맥락 설명이 길게 이어진다", "level": 0}
+                    for i in range(30)]
+    over_payload = {"template": "bullet_box", "bullets": long_bullets, "conclusion": "성장", "footnote": ""}
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage()),
+        ProviderResponse(structured=over_payload, raw_text="r1", usage=_usage()),
+        ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r2", usage=_usage()),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert [r.purpose for r in result.usage.records] == ["generate", "format_retry", "condense"]
+
+
+def test_usage_condense_call_failure_with_usage_counts_as_failed_not_unmeasured():
+    long_bullets = [{"text": f"장문 불릿 {i}번이며 설명이 길게 이어진다", "level": 0} for i in range(30)]
+    over_payload = {"template": "bullet_box", "bullets": long_bullets, "conclusion": "성장", "footnote": ""}
+    service, _ = _service([
+        ProviderResponse(structured=over_payload, raw_text="r1", usage=_usage(input_tokens=100)),
+        ProviderCallFailed("한도", usage=_usage(input_tokens=50)),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"  # 축약 호출 실패로 유효한 초안을 잃지 않는다
+    assert result.usage.calls == 2
+    assert result.usage.failed_calls == 1
+    assert result.usage.unmeasured_calls == 0
+    assert result.usage.records[-1].ok is False
+    assert result.usage.input_tokens == 150  # 실패 호출의 토큰도 합계에 포함된다
+
+
+def test_usage_condense_call_failure_without_usage_counts_as_unmeasured():
+    long_bullets = [{"text": f"장문 불릿 {i}번이며 설명이 길게 이어진다", "level": 0} for i in range(30)]
+    over_payload = {"template": "bullet_box", "bullets": long_bullets, "conclusion": "성장", "footnote": ""}
+    service, _ = _service([
+        ProviderResponse(structured=over_payload, raw_text="r1", usage=_usage(input_tokens=100)),
+        ProviderCallFailed("한도"),  # usage 없음: 결과 메시지 없이 끊긴 실패(ⓑ 유형)
+    ])
+    result = asyncio.run(service.generate_chapter(_deck(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert result.usage.calls == 2
+    assert result.usage.unmeasured_calls == 1
+    assert result.usage.failed_calls == 1
+    assert result.usage.input_tokens == 100  # 나머지 호출 값만
+
+
+def test_usage_manual_condense_format_retry_purposes():
+    current = BulletBoxSlots(bullets=[{"text": "시장 규모 500억과 부연 설명", "level": 0}], conclusion="성장 지속")
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage()),
+        ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="good", usage=_usage()),
+    ])
+    result = asyncio.run(service.condense_chapter(_deck(), "c1", current, SOURCES, Preset()))
+    assert result.status == "ok"
+    assert [r.purpose for r in result.usage.records] == ["condense", "format_retry"]
+
+
+def test_usage_missing_field_when_one_call_lacks_it():
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage(input_tokens=None)),
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="good", usage=_usage(input_tokens=20)),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.usage.input_tokens is None
+    assert "input_tokens" in result.usage.missing
+
+
+def test_usage_missing_cost_when_one_call_lacks_it():
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage(cost_usd=None)),
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="good", usage=_usage(cost_usd=0.02)),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.usage.cost_usd is None
+    assert "cost_usd" in result.usage.missing
+
+
+def test_usage_sums_when_all_present():
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad",
+                          usage=_usage(input_tokens=10, cost_usd=0.01)),
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="good",
+                          usage=_usage(input_tokens=20, cost_usd=0.02)),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.usage.input_tokens == 30
+    assert result.usage.cost_usd == pytest.approx(0.03)
+    assert result.usage.missing == []
+
+
+def test_usage_all_zero_cost_sums_to_zero_not_none():
+    service, _ = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad", usage=_usage(cost_usd=0.0)),
+        ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="good", usage=_usage(cost_usd=0.0)),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES))
+    assert result.usage.cost_usd == 0.0
+    assert "cost_usd" not in result.usage.missing
+
+
+def test_on_usage_called_once_on_success():
+    calls: list[UsageRecord] = []
+    service, _ = _service([ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r", usage=_usage())])
+    asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=calls.append))
+    assert len(calls) == 1
+    assert calls[0].outcome == "ok"
+    assert calls[0].kind == "structure"
+    assert calls[0].chapter_id is None
+
+
+def test_on_usage_called_with_failed_outcome_on_exception():
+    calls: list[UsageRecord] = []
+    service, _ = _service([ProviderCallFailed("한도 소진")])
+    with pytest.raises(ProviderCallFailed):
+        asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=calls.append))
+    assert len(calls) == 1
+    assert calls[0].outcome == "failed"
+
+
+def test_on_usage_callback_exception_does_not_break_result():
+    def raising_cb(record):
+        raise RuntimeError("콜백 실패")
+
+    service, _ = _service([ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r", usage=_usage())])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=raising_cb))
+    assert result.status == "ok"  # 콜백이 예외를 던져도 결과가 돌아온다
+
+
+def test_on_usage_not_called_for_unknown_chapter():
+    calls: list[UsageRecord] = []
+    service, _ = _service([])
+    with pytest.raises(ValueError):
+        asyncio.run(service.generate_chapter(_deck(), "없는장", SOURCES, Preset(), on_usage=calls.append))
+    assert calls == []  # 프로바이더 호출 전 ValueError는 on_usage를 부르지 않는다
+
+
+def test_concurrent_generate_structure_isolates_usage():
+    class TaggedProvider:
+        async def complete(self, prompt, schema):
+            await asyncio.sleep(0)  # 다른 코루틴에 양보해 인터리빙을 강제한다
+            tokens = 111 if "TAG_A" in prompt else 222
+            return ProviderResponse(
+                structured=STRUCTURE_PAYLOAD, raw_text="r", usage=_usage(input_tokens=tokens)
+            )
+
+    service = GenerationService(TaggedProvider(), METRICS)
+    records: dict[str, UsageRecord] = {}
+
+    async def run():
+        return await asyncio.gather(
+            service.generate_structure(_deck().meta, SOURCES, instructions="TAG_A",
+                                        on_usage=lambda r: records.__setitem__("A", r)),
+            service.generate_structure(_deck().meta, SOURCES, instructions="TAG_B",
+                                        on_usage=lambda r: records.__setitem__("B", r)),
+        )
+
+    result_a, result_b = asyncio.run(run())
+    assert result_a.usage.calls == 1 and result_a.usage.input_tokens == 111
+    assert result_b.usage.calls == 1 and result_b.usage.input_tokens == 222
+    assert records["A"].summary.input_tokens == 111
+    assert records["B"].summary.input_tokens == 222
+
+
+def test_provider_complete_only_called_via_complete_helper():
+    import slidecaptain.pipeline.service as service_module
+    source = inspect.getsource(service_module)
+    assert source.count("_provider.complete(") == 1  # 우회 방지: 유일한 경유지
+    complete_source = inspect.getsource(GenerationService._complete)
+    assert "_provider.complete(" in complete_source
+
+
+def test_usage_record_json_has_no_prompt_or_slot_content():
+    service, _ = _service(
+        [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="원문 그대로", usage=_usage())]
+    )
+    captured: list[UsageRecord] = []
+    asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=captured.append))
+    dumped = captured[0].model_dump_json()
+    assert "시장 규모는 500억 원이다" not in dumped  # 자료 문장
+    assert "원문 그대로" not in dumped  # raw_text
+    assert "표지" not in dumped  # 구조안 텍스트 조각

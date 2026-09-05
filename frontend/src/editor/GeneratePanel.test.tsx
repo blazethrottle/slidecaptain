@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, type ChapterResult, type Deck } from "../api/client";
+import { emptyUsage } from "../test/usage";
 import { GeneratePanel } from "./GeneratePanel";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -19,7 +20,7 @@ const deck: Deck = {
 };
 
 const okResult: ChapterResult = {
-  status: "ok", raw_text: "", warnings: [], unverified_numbers: ["8888"],
+  status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: ["8888"],
   format_retried: false, condensed: true,
   slots: { template: "bullet_box", bullets: [{ text: "새 내용", level: 0 }], conclusion: "결", footnote: "" },
 };
@@ -48,7 +49,7 @@ it("축약은 현재 슬롯을 동봉해 호출한다", async () => {
 
 it("형식 오류는 원문과 재시도 경로를 보여주고 버리기 전까지 반영 버튼이 없다", async () => {
   vi.mocked(api.generateChapter).mockResolvedValue({
-    status: "format_error", slots: null, raw_text: "이상한 원문",
+    status: "format_error", slots: null, usage: emptyUsage(), raw_text: "이상한 원문",
     warnings: [], unverified_numbers: [], format_retried: true, condensed: false,
   });
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);

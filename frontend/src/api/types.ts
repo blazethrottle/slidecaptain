@@ -345,6 +345,57 @@ export interface components {
              */
             font: string;
         };
+        /**
+         * CallUsage
+         * @description 원시 호출 1건의 실제 사용량 (설계서 4.4, 단계 5A 묶음 C 태스크 C1).
+         *
+         *     SDK 가 값을 못 주면 그 필드는 None 이다. 없는 값은 만들지 않는다(가정 3).
+         */
+        CallUsage: {
+            /** Model */
+            model: string | null;
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Cache Read Tokens */
+            cache_read_tokens: number | null;
+            /** Cache Creation Tokens */
+            cache_creation_tokens: number | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Duration Api Ms */
+            duration_api_ms: number | null;
+            /** Num Turns */
+            num_turns: number | null;
+            /** Cost Usd */
+            cost_usd: number | null;
+            /** Stop Reason */
+            stop_reason: string | null;
+            /** Terminal Reason */
+            terminal_reason: string | null;
+            /** Api Error Status */
+            api_error_status: number | null;
+            /**
+             * Token Source
+             * @enum {string}
+             */
+            token_source: "model_usage" | "usage" | "none";
+        };
+        /**
+         * CallUsageRecord
+         * @description 원시 호출 1건의 목적과 성패, 사용량 (단계 5A 묶음 C 태스크 C2, 가정 2와 3).
+         */
+        CallUsageRecord: {
+            /**
+             * Purpose
+             * @enum {string}
+             */
+            purpose: "generate" | "format_retry" | "condense";
+            /** Ok */
+            ok: boolean;
+            usage: components["schemas"]["CallUsage"] | null;
+        };
         /** CapacityWarning */
         CapacityWarning: {
             /** Chapter Id */
@@ -424,6 +475,7 @@ export interface components {
              * @default false
              */
             condensed: boolean;
+            usage: components["schemas"]["GenerationUsage"];
         };
         /**
          * Colors
@@ -692,6 +744,43 @@ export interface components {
              * @default
              */
             instructions: string;
+        };
+        /**
+         * GenerationUsage
+         * @description 생성 작업 1건(서비스 공개 메서드 1회 호출) 안의 모든 호출을 합산한 값 (가정 3).
+         *
+         *     없는 값은 만들지 않는다: 합산에 참여한 호출 중 하나라도 어떤 필드가 없으면
+         *     그 필드의 합계는 None이고 missing에 이름이 실린다(부분 합계는 과소 집계라 더 해롭다).
+         *     사용량 자체가 없는 호출(usage=None. 결과 메시지 없이 끊긴 실패)은 unmeasured_calls로
+         *     따로 세고 합산에서는 제외한다(있는 필드까지 None으로 만들지 않는다).
+         */
+        GenerationUsage: {
+            /** Calls */
+            calls: number;
+            /** Failed Calls */
+            failed_calls: number;
+            /** Unmeasured Calls */
+            unmeasured_calls: number;
+            /** Models */
+            models: string[];
+            /** Input Tokens */
+            input_tokens: number | null;
+            /** Output Tokens */
+            output_tokens: number | null;
+            /** Cache Read Tokens */
+            cache_read_tokens: number | null;
+            /** Cache Creation Tokens */
+            cache_creation_tokens: number | null;
+            /** Duration Ms */
+            duration_ms: number | null;
+            /** Duration Api Ms */
+            duration_api_ms: number | null;
+            /** Cost Usd */
+            cost_usd: number | null;
+            /** Missing */
+            missing: string[];
+            /** Records */
+            records: components["schemas"]["CallUsageRecord"][];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1105,6 +1194,7 @@ export interface components {
              * @default false
              */
             format_retried: boolean;
+            usage: components["schemas"]["GenerationUsage"];
         };
         /** SummarySlots */
         SummarySlots: {

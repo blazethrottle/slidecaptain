@@ -1,3 +1,4 @@
+import { emptyUsage } from "../test/usage";
 import * as aiGate from "./aiGate";
 import { AiConsentDeclined, api, resetEtags } from "./client";
 
@@ -92,7 +93,7 @@ it("ETag를 모르면 If-Match를 보내지 않는다", async () => {
 it("동의가 있으면 구조안 생성 요청에 X-AI-Consent 헤더를 붙인다", async () => {
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
   const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", structure: null, raw_text: "", unverified_numbers: [],
+    new Response(JSON.stringify({ status: "ok", structure: null, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
       format_retried: false }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   await api.generateStructure("p1", {});
@@ -112,7 +113,7 @@ it("동의가 없으면 구조안 생성은 fetch를 부르지 않고 AiConsentD
 it("장 생성도 동의 관문을 거쳐 헤더를 붙인다", async () => {
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
   const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", slots: null, raw_text: "", warnings: [],
+    new Response(JSON.stringify({ status: "ok", slots: null, usage: emptyUsage(), raw_text: "", warnings: [],
       unverified_numbers: [], format_retried: false, condensed: false }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   await api.generateChapter("p1", "c1");
@@ -132,7 +133,7 @@ it("장 생성은 동의가 없으면 fetch를 부르지 않는다", async () =>
 it("축약도 동의 관문을 거쳐 헤더를 붙인다", async () => {
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
   const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", slots: null, raw_text: "", warnings: [],
+    new Response(JSON.stringify({ status: "ok", slots: null, usage: emptyUsage(), raw_text: "", warnings: [],
       unverified_numbers: [], format_retried: false, condensed: false }), { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
   await api.condenseChapter("p1", "c1", { template: "bullet_box", bullets: [], conclusion: "", footnote: "" });
