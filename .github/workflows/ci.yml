@@ -32,12 +32,20 @@ jobs:
       - name: 체크아웃 줄바꿈 바이트 검사 (bat 는 CRLF, 셸 픽스처는 LF)
         shell: python
         run: |
+          import subprocess
           from pathlib import Path
           bat = Path("SlideCaptain실행.bat").read_bytes()
           assert b"\r\n" in bat, "batch file must be CRLF"
           for name in ("backend/tests/fixtures/eol/probe.sh", "backend/tests/fixtures/eol/probe.command"):
               data = Path(name).read_bytes()
               assert data and b"\r" not in data, f"{name} must be LF"
+          command_script = Path("SlideCaptain실행.command").read_bytes()
+          assert command_script and b"\r" not in command_script, "SlideCaptain실행.command must be LF"
+          ls_files = subprocess.run(
+              ["git", "ls-files", "-s", "--", "SlideCaptain실행.command"],
+              capture_output=True, text=True, check=True,
+          ).stdout.strip()
+          assert ls_files.startswith("100755"), f"SlideCaptain실행.command must be executable in the git index: {ls_files!r}"
           print("eol bytes ok")
 
       - uses: actions/setup-node@v4

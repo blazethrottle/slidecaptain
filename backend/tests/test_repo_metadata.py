@@ -3,6 +3,7 @@
 문자열 검색이 아니라 `git check-ignore`와 `git check-attr`의 실제 결과와 작업트리 바이트를 본다 (계획서 Global Constraints).
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import pytest
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 BUNDLED_TTF = REPOSITORY_ROOT / "backend" / "slidecaptain" / "fonts" / "assets" / "NotoSansKR-Regular.ttf"
 BATCH_FILE = REPOSITORY_ROOT / "SlideCaptain실행.bat"
+COMMAND_SCRIPT = REPOSITORY_ROOT / "SlideCaptain실행.command"
 EOL_FIXTURES = (
     REPOSITORY_ROOT / "backend" / "tests" / "fixtures" / "eol" / "probe.sh",
     REPOSITORY_ROOT / "backend" / "tests" / "fixtures" / "eol" / "probe.command",
@@ -84,7 +86,7 @@ def test_keeps_allowed_paths_trackable(path):
     ("path", "expected"),
     [
         ("SlideCaptain실행.bat", "crlf"),
-        ("scripts/run.command", "lf"),
+        ("SlideCaptain실행.command", "lf"),
         ("scripts/run.sh", "lf"),
         ("backend/slidecaptain/__main__.py", "lf"),
         ("README.md", "lf"),
@@ -99,7 +101,7 @@ def test_eol_attribute_by_file_type(path, expected):
     ("path", "expected"),
     [
         ("SlideCaptain실행.bat", "set"),
-        ("scripts/run.command", "set"),
+        ("SlideCaptain실행.command", "set"),
         ("scripts/run.sh", "set"),
         ("README.md", "auto"),  # 기본 규칙(text=auto)만 받는 파일과의 대조
     ],
@@ -126,3 +128,29 @@ def test_working_tree_shell_fixtures_use_lf(fixture: Path):
     data = fixture.read_bytes()
     assert data, f"줄바꿈 픽스처가 비어 있다: {fixture.name}"
     assert b"\r" not in data, f"셸 스크립트 픽스처에 CR 이 있다: {fixture.name}"
+
+
+def test_command_script_uses_lf_and_bash_shebang():
+    # macOS 더블클릭 실행 스크립트(태스크 D2-3). CRLF 면 셔뱅과 줄 끝 인용이 깨진다.
+    data = COMMAND_SCRIPT.read_bytes()
+    assert data, "실행 스크립트가 비어 있다"
+    assert b"\r" not in data, "실행 스크립트에 CR 이 섞여 있다 (LF 여야 한다)"
+    first_line = data.split(b"\n", 1)[0]
+    assert first_line == b"#!/bin/bash", f"셔뱅이 #!/bin/bash 가 아니다: {first_line!r}"
+
+
+def test_command_script_is_tracked_with_executable_git_mode():
+    # Finder 더블클릭이 실행하려면 Git 인덱스 모드가 100755 여야 한다 (.bat 의 100644 와 대조).
+    result = _git("ls-files", "-s", "--", "SlideCaptain실행.command")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip(), "실행 스크립트가 Git 인덱스에 없다 (git add 를 했는지 확인)"
+    mode = result.stdout.split()[0]
+    assert mode == "100755", f"Git 인덱스 모드가 100755 가 아니다: {mode}"
+
+
+def test_command_script_passes_bash_syntax_check():
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("이 환경에 bash 실행 파일이 없다")
+    result = subprocess.run([bash, "-n", str(COMMAND_SCRIPT)], capture_output=True, text=True)
+    assert result.returncode == 0, f"bash -n 문법 검사 실패:\n{result.stderr}"
