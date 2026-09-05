@@ -125,3 +125,15 @@ def test_serve_installs_fonts_into_isolated_dir_not_real_user_folder(monkeypatch
     assert (user_dir / "NotoSansKR-Regular.ttf").exists()
     assert (user_dir / "NotoSansKR-Bold.ttf").exists()
     assert "설치했습니다" in capsys.readouterr().out
+
+
+def test_isolated_font_dirs_fixture_also_covers_win32_branch(monkeypatch, tmp_path):
+    # D2-2 리뷰 반영: _user_font_dir 의 win32 분기는 Path.home() 이 아니라 LOCALAPPDATA 환경변수를
+    # 쓰므로, 격리 픽스처가 그 변수까지 임시 폴더로 돌리지 않으면 CI windows-latest 러너에서 실제
+    # 사용자 폰트 폴더에 설치한다. 이 Mac 에서 win32 분기를 흉내 내어 격리를 확인한다.
+    import sys
+
+    from slidecaptain.fonts import installer
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert installer._user_font_dir().is_relative_to(tmp_path)
