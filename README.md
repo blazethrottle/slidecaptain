@@ -38,6 +38,8 @@ fnm install 22.17.1
 fnm use 22.17.1
 ```
 
+fnm을 처음 설치했다면 셸 설정 파일(`~/.zshrc`)에 `eval "$(fnm env --use-on-cd)"` 한 줄을 추가하고 터미널을 새로 연 뒤 `node -v`가 v22.17.1인지 확인한다. 이 연동이 없으면 `fnm use`는 성공 메시지를 내고도 Node 버전을 바꾸지 않는다(2026-09-05 실측).
+
 `frontend` 폴더에서 화면 의존성을 설치하고 빌드한다. 빌드된 화면을 서버가 함께 제공한다.
 ```
 npm ci
@@ -46,7 +48,7 @@ npm run build
 
 ### Windows
 
-`backend` 폴더에서 가상환경을 만들고 의존성과 함께 설치한다.
+`backend` 폴더에서 가상환경을 만들고 의존성과 함께 설치한다(`python --version`이 3.13 이상이어야 한다).
 ```
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"

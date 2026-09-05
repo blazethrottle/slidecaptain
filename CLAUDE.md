@@ -15,14 +15,14 @@
 - 로컬 서버: `backend` 폴더에서 `.venv/bin/python -m slidecaptain serve`(Windows `.venv/Scripts/python.exe -m slidecaptain serve`) 실행 후 `http://127.0.0.1:8765/docs`
 - CLI 내보내기: `backend` 폴더에서 `.venv/bin/python -m slidecaptain export <deck.json>`(Windows `.venv/Scripts/python.exe -m slidecaptain export <deck.json>`)
 - 타입 재생성: `backend`에서 `.venv/bin/python scripts/dump_openapi.py`(Windows `.venv/Scripts/python.exe scripts/dump_openapi.py`) 실행 후 저장소 루트에서 `npm --prefix frontend run generate-types` (최초 1회는 `frontend` 폴더 안에서 `npm install` 선행. 루트에서 `npm --prefix frontend install` 형태는 Windows에서 동작하지 않는다)
-- Windows 전용 참고(2026-08-31 해소): 종전에는 기본 Node가 32비트라 vite가 구동되지 않아 PATH 우회가 필요했으나, nvm4w의 v22.17.1 폴더를 64비트 배포본으로 교체해 기본 Node가 64비트가 되었다(우회 불필요). 만약 다시 32비트로 표류하면(`node -p process.arch`가 ia32) 예비본 `C:\Users\DREAMUS\.claude\tools\node64\node-v22.17.1-win-x64`를 PATH 앞에 두면 된다
+- Windows 전용 참고(2026-08-31 해소): 종전에는 기본 Node가 32비트라 vite가 구동되지 않아 PATH 우회가 필요했으나, nvm4w의 v22.17.1 폴더를 64비트 배포본으로 교체해 기본 Node가 64비트가 되었다(우회 불필요). 만약 다시 32비트로 표류하면(`node -p process.arch`가 ia32) 예비본 `C:\Users\<사용자명>\.claude\tools\node64\node-v22.17.1-win-x64`를 PATH 앞에 두면 된다
 - 프런트 테스트: `frontend` 폴더 안에서 `npm test`
 - 프런트 개발 서버: `frontend` 폴더 안에서 `npm run dev` (백엔드 `serve`와 병행 실행)
 - 화면 빌드: `frontend` 폴더 안에서 `npm run build` (백엔드 `serve`가 빌드된 `dist`를 함께 서빙한다)
 
 ## 푸시 전 검증과 CI (2026-09-03 단계 5A D1)
 
-- 푸시 전에 공개 저장소 감사기를 돌린다: 저장소 루트에서 `backend/.venv/bin/python scripts/audit_public_repo.py` (Windows 는 `backend/.venv/Scripts/python.exe`). 과거 이력까지 보려면 `--history` 를 붙인다. 발견 0건이 종료 코드 0 이다. 이 저장소는 공개 GitHub 에 올라가므로 회사 자료, 오피스 파일, 인증정보가 추적되면 안 된다 (규칙은 `.gitignore` 와 감사기, 검사는 `backend/tests/test_repo_metadata.py`)
+- 푸시 전에 공개 저장소 감사기를 돌린다: 저장소 루트에서 `backend/.venv/bin/python scripts/audit_public_repo.py` (Windows 는 `backend\.venv\Scripts\python.exe`). 과거 이력까지 보려면 `--history` 를 붙인다. 발견 0건이 종료 코드 0 이다. 이 저장소는 공개 GitHub 에 올라가므로 회사 자료, 오피스 파일, 인증정보가 추적되면 안 된다 (규칙은 `.gitignore` 와 감사기, 검사는 `backend/tests/test_repo_metadata.py`)
 - `.github/workflows/ci.yml` 이 push 와 pull request 마다 Windows 와 macOS 에서 같은 순서로 실행한다: 체크아웃 줄바꿈 바이트 검사(배치 파일은 CRLF, 셸 픽스처는 LF), 감사기, 백엔드 전체 테스트, OpenAPI 와 프런트 타입 재생성 뒤 생성 파일 무변경 확인, 프런트 테스트, 화면 빌드. Python 3.13, Node 는 `.nvmrc` 의 22.17.1 을 쓴다
 - CI 가 보증하지 않는 것: 실제 AI 로그인과 호출, PowerPoint 표시와 렌더 검증, 폰트 설치 실증. 이것들은 수동 관통과 단계 5A D2 의 몫이다
 
