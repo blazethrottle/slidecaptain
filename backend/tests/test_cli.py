@@ -127,6 +127,26 @@ def test_serve_installs_fonts_into_isolated_dir_not_real_user_folder(monkeypatch
     assert "설치했습니다" in capsys.readouterr().out
 
 
+def test_serve_configures_root_logging_to_info(monkeypatch, tmp_path):
+    # 태스크 D2-5: uvicorn은 루트 로거에 핸들러를 추가하지 않아, serve가 로깅을 직접
+    # 설정하지 않으면 subscription.py의 SDK 사용량 원시 로그(INFO)가 레코드조차 생성되지
+    # 않는다. logging.basicConfig는 루트 로거에 이미 핸들러가 있으면 아무 것도 하지 않는
+    # 함수라 실제 호출 뒤 효과를 검사하는 대신, 호출 자체를 스파이로 확인한다(pytest가
+    # 자체적으로 루트 로거에 캡처 핸들러를 붙여 두므로 효과 검사는 신뢰할 수 없다).
+    import logging
+
+    import uvicorn
+
+    calls: list[dict] = []
+    monkeypatch.setattr(logging, "basicConfig", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kwargs: None)
+    from slidecaptain.__main__ import main
+
+    assert main(["serve", "--data-dir", str(tmp_path / "data"), "--port", "8772"]) == 0
+    assert calls, "logging.basicConfig가 호출되지 않았습니다"
+    assert calls[0].get("level") == logging.INFO
+
+
 def test_isolated_font_dirs_fixture_also_covers_win32_branch(monkeypatch, tmp_path):
     # D2-2 리뷰 반영: _user_font_dir 의 win32 분기는 Path.home() 이 아니라 LOCALAPPDATA 환경변수를
     # 쓰므로, 격리 픽스처가 그 변수까지 임시 폴더로 돌리지 않으면 CI windows-latest 러너에서 실제

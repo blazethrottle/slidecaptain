@@ -333,6 +333,159 @@ def test_build_call_usage_cost_none_stays_none_not_zero():
     assert usage.cost_usd is None
 
 
+# --- build_call_usage 의 SDK 원시 사용량 로그 (태스크 D2-5) ---
+
+
+def test_build_call_usage_logs_raw_usage_with_both_sources(caplog):
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result(
+        text="원문 응답 조각",
+        usage={
+            "input_tokens": 10,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 3,
+            "cache_creation_input_tokens": 1,
+        },
+        model_usage={
+            "claude-sonnet-4-5-20250929": {
+                "inputTokens": 12345,
+                "outputTokens": 1234,
+                "cacheReadInputTokens": 100,
+                "cacheCreationInputTokens": 7,
+                "webSearchRequests": 0,
+                "costUSD": 0.0123,
+                "contextWindow": 200000,
+                "maxOutputTokens": 8192,
+            }
+        },
+        total_cost_usd=0.0123,
+        num_turns=2,
+    )
+
+    build_call_usage(result, assistant_model=None)
+
+    records = [r for r in caplog.records if r.name == "slidecaptain.pipeline.subscription"]
+    assert len(records) == 1
+    msg = records[0].getMessage()
+    assert "usage_keys=['cache_creation_input_tokens', 'cache_read_input_tokens', " in msg
+    assert "model_usage_keys=['claude-sonnet-4-5-20250929']" in msg
+    assert "usage_in=10" in msg
+    assert "usage_out=5" in msg
+    assert "usage_cache_read=3" in msg
+    assert "usage_cache_create=1" in msg
+    assert "model_usage_in=12345" in msg
+    assert "model_usage_out=1234" in msg
+    assert "model_usage_cache_read=100" in msg
+    assert "model_usage_cache_create=7" in msg
+    assert "num_turns=2" in msg
+    assert "total_cost_usd=있음" in msg
+    # 프롬프트 조각과 응답 원문은 담지 않는다
+    assert "원문" not in msg
+    assert "raw_text" not in msg
+
+
+def test_build_call_usage_logs_raw_usage_model_usage_only(caplog):
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result(
+        model_usage={
+            "claude-sonnet-4-5-20250929": {
+                "inputTokens": 100,
+                "outputTokens": 10,
+                "cacheReadInputTokens": 0,
+                "cacheCreationInputTokens": 0,
+                "webSearchRequests": 0,
+                "costUSD": 0.001,
+                "contextWindow": 200000,
+                "maxOutputTokens": 8192,
+            }
+        },
+    )
+
+    build_call_usage(result, assistant_model=None)
+
+    msg = caplog.records[-1].getMessage()
+    assert "usage_keys=[]" in msg
+    assert "usage_in=None" in msg
+    assert "usage_out=None" in msg
+    assert "usage_cache_read=None" in msg
+    assert "usage_cache_create=None" in msg
+    assert "model_usage_in=100" in msg
+    assert "model_usage_out=10" in msg
+
+
+def test_build_call_usage_logs_raw_usage_usage_dict_only(caplog):
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result(
+        usage={
+            "input_tokens": 7,
+            "output_tokens": 2,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        },
+    )
+
+    build_call_usage(result, assistant_model=None)
+
+    msg = caplog.records[-1].getMessage()
+    assert "model_usage_keys=[]" in msg
+    assert "model_usage_in=None" in msg
+    assert "model_usage_out=None" in msg
+    assert "usage_in=7" in msg
+    assert "usage_out=2" in msg
+
+
+def test_build_call_usage_logs_raw_usage_neither_source_no_exception(caplog):
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result()
+
+    build_call_usage(result, assistant_model=None)  # 예외 없이 끝난다
+
+    msg = caplog.records[-1].getMessage()
+    assert "usage_keys=[]" in msg
+    assert "model_usage_keys=[]" in msg
+    assert "usage_in=None" in msg
+    assert "model_usage_in=None" in msg
+    assert "num_turns=" in msg
+
+
+def test_build_call_usage_logs_raw_usage_handles_non_dict_model_usage_value(caplog):
+    """`model_usage` 의 값이 dict 가 아닌 이상값이어도 예외 없이 로그가 남는다.
+
+    로그 헬퍼(`_log_raw_usage_line`) 자체만 검증한다: `build_call_usage` 본체의 1순위
+    토큰 계산 분기는 이 태스크의 변경 대상이 아니며, 그 분기가 비-dict 값에 예외를
+    던지는 것은 이 로그 신설과 무관한 기존 동작이다(수정하면 태스크 범위 밖의 변경이 된다).
+    """
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result(model_usage={"weird-model": "not-a-dict"})
+
+    sub._log_raw_usage_line(result)  # 예외 없이 끝난다
+
+    msg = caplog.records[-1].getMessage()
+    assert "model_usage_keys=['weird-model']" in msg
+    assert "model_usage_in=None" in msg
+
+
+def test_build_call_usage_logs_raw_usage_on_error_result(caplog):
+    """`is_error` 결과에서도 같은 로그가 남는다 (build_call_usage 가 호출되는 모든 경로)."""
+    caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")
+    result = _result(
+        is_error=True,
+        errors=["rate limited"],
+        usage={
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        },
+    )
+
+    build_call_usage(result, assistant_model=None)
+
+    msg = caplog.records[-1].getMessage()
+    assert "usage_in=1" in msg
+    assert "rate limited" not in msg
+
+
 def test_complete_uses_first_seen_assistant_model(monkeypatch):
     monkeypatch.setattr(
         sub, "query",

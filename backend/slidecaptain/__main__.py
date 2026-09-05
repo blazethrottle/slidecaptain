@@ -5,6 +5,7 @@
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -60,6 +61,12 @@ def _run_serve(args) -> int:
     import uvicorn
 
     from slidecaptain.fonts.installer import _bundled_font_paths, ensure_fonts
+
+    # 태스크 D2-5: uvicorn은 루트 로거에 핸들러를 추가하지 않아, 이 호출이 없으면
+    # subscription.py의 SDK 사용량 원시 로그(INFO)가 레코드조차 생성되지 않는다(실측).
+    # 부수 효과로 SDK 동봉 CLI 안내("Using bundled Claude Code CLI: ...") 같은 다른
+    # INFO 로그도 함께 보이지만 내용(프롬프트와 응답)은 아니다.
+    logging.basicConfig(level=logging.INFO)
 
     try:
         if ensure_fonts() == "installed":

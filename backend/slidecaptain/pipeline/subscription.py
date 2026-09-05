@@ -36,6 +36,64 @@ _LOG = logging.getLogger("slidecaptain.pipeline.subscription")
 DEFAULT_MODEL = "sonnet"
 
 
+def _log_raw_usage_line(result: ResultMessage) -> None:
+    """`ResultMessage` 의 `usage`/`model_usage` 원시 형태를 INFO 로그 한 줄로 남긴다 (태스크 D2-5).
+
+    C 계획서 가정 1 의 실측 필요 3항목(① `usage` dict 키가 snake_case 인지 ② `model_usage`
+    가 실제로 채워지는지 ③ `model_usage` 없이 `usage` 로 폴백한 값이 세션 누적인지 마지막 턴
+    값인지)을 실호출 1회로 판정하려면, 원시 키와 두 출처의 합계가 같은 호출의 로그에 함께
+    보여야 한다. 그래서 `build_call_usage` 의 if/elif 분기(1순위 출처만 채택)와 무관하게
+    `usage` dict 와 `model_usage` 를 각각 독립적으로 합산한다(분기 지역 변수를 재사용하면
+    한쪽이 있을 때 다른 쪽 합계가 항상 `None` 이 되어 이 로그의 존재 이유가 사라진다).
+    프롬프트와 응답과 오류 문구는 참조하지 않는다. 로그 조립 자체의 실패가 사용량 계산이라는
+    본 동작에 영향을 주면 안 되므로 예외를 삼킨다.
+    """
+    try:
+        usage_dict = result.usage
+        model_usage_raw = result.model_usage
+
+        usage_keys = sorted(usage_dict.keys()) if usage_dict else []
+        model_usage_keys = sorted(model_usage_raw.keys()) if model_usage_raw else []
+
+        if usage_dict:
+            usage_in = usage_dict.get("input_tokens")
+            usage_out = usage_dict.get("output_tokens")
+            usage_cache_read = usage_dict.get("cache_read_input_tokens")
+            usage_cache_create = usage_dict.get("cache_creation_input_tokens")
+        else:
+            usage_in = usage_out = usage_cache_read = usage_cache_create = None
+
+        # model_usage 의 값이 dict 가 아닌 이상값이어도(실측되지 않은 SDK 버전 등) 예외 없이
+        # 넘어간다: 유효한 항목이 하나도 없으면 0이 아니라 None(미확인)으로 남긴다.
+        valid_entries = (
+            [mu for mu in model_usage_raw.values() if isinstance(mu, dict)] if model_usage_raw else []
+        )
+        if valid_entries:
+            model_usage_in = sum(int(mu.get("inputTokens", 0)) for mu in valid_entries)
+            model_usage_out = sum(int(mu.get("outputTokens", 0)) for mu in valid_entries)
+            model_usage_cache_read = sum(int(mu.get("cacheReadInputTokens", 0)) for mu in valid_entries)
+            model_usage_cache_create = sum(
+                int(mu.get("cacheCreationInputTokens", 0)) for mu in valid_entries
+            )
+        else:
+            model_usage_in = model_usage_out = model_usage_cache_read = model_usage_cache_create = None
+
+        cost_present = "있음" if result.total_cost_usd is not None else "없음"
+
+        _LOG.info(
+            "SDK 사용량 원시 형태: "
+            f"usage_keys={usage_keys} model_usage_keys={model_usage_keys} "
+            f"usage_in={usage_in} usage_out={usage_out} "
+            f"usage_cache_read={usage_cache_read} usage_cache_create={usage_cache_create} "
+            f"model_usage_in={model_usage_in} model_usage_out={model_usage_out} "
+            f"model_usage_cache_read={model_usage_cache_read} "
+            f"model_usage_cache_create={model_usage_cache_create} "
+            f"num_turns={result.num_turns} total_cost_usd={cost_present}"
+        )
+    except Exception:  # 로그 조립 실패가 사용량 계산에 영향을 주지 않는다
+        _LOG.debug("SDK 사용량 원시 로그 조립 실패", exc_info=True)
+
+
 def build_call_usage(result: ResultMessage, assistant_model: str | None) -> CallUsage:
     """`ResultMessage` 하나에서 `CallUsage` 를 만드는 순수 함수 (단계 5A 묶음 C 가정 1).
 
@@ -46,6 +104,8 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     1개일 때만 그것을 쓴다. 비용은 SDK 가 이미 합산해 주는 `total_cost_usd` 를
     그대로 옮긴다(없는 값을 0으로 바꾸지 않는다).
     """
+    _log_raw_usage_line(result)
+
     model_usage = result.model_usage or {}
     usage_dict = result.usage or {}
 
