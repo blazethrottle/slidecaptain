@@ -29,11 +29,13 @@ function formatCost(cost: number): string {
 /** AI 사용량 한 줄 문구 (가정 7). None 값은 그 항목만 "미확인"으로 쓴다. */
 export function formatUsage(usage: GenerationUsage): string {
   const qualifiers: string[] = [];
-  if (usage.failed_calls > 0) qualifiers.push(`실패 ${usage.failed_calls}회 포함`);
   const retryCount = countByPurpose(usage.records, "format_retry");
   if (retryCount > 0) qualifiers.push(`형식 재시도 ${retryCount}회 포함`);
   const condenseCount = countByPurpose(usage.records, "condense");
   if (condenseCount > 0) qualifiers.push(`축약 ${condenseCount}회 포함`);
+  // C-2 리뷰 반영: 형식 재시도 호출 자체가 실패로 끝나면 "실패 1회 포함"이 별개 사건처럼
+  // 읽혔다. "이 중 실패 N회"로 바꾸고 맨 뒤에 두어 같은 레코드의 결과임을 드러낸다
+  if (usage.failed_calls > 0) qualifiers.push(`이 중 실패 ${usage.failed_calls}회`);
 
   // 실제 모델이 있으면 앞에 붙인다(가정 7). 여러 모델이 섞이면 그대로 나열한다
   const modelPrefix = usage.models.length > 0 ? `${usage.models.join(", ")} 로 ` : "";

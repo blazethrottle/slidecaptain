@@ -121,6 +121,7 @@ class _UsageCollector:
 
         def _sum(name: str) -> int | float | None:
             values = [getattr(u, name) for u in measured]
+            # 전부 미측정이면 missing은 비고 unmeasured_calls가 그것을 나타낸다 (C-4)
             if not values or any(v is None for v in values):
                 if values:  # 값이 있는 호출이 하나라도 있는데 다른 하나는 없을 때만 missing이다
                     missing.append(name)
@@ -225,8 +226,9 @@ class GenerationService:
         kind: Literal["structure", "chapter", "condense"],
         chapter_id: str | None,
         outcome: Literal["ok", "format_error", "failed"],
-        collector: _UsageCollector,
+        summary: GenerationUsage,
     ) -> None:
+        """호출자가 이미 계산한 summary를 그대로 싣는다 (C-3: 반환값과 같은 객체를 재사용해 중복 계산을 없앤다)."""
         if on_usage is None:
             return
         record = UsageRecord(
@@ -235,7 +237,7 @@ class GenerationService:
             chapter_id=chapter_id,
             outcome=outcome,
             requested_model=self._requested_model,
-            summary=collector.summary(),
+            summary=summary,
         )
         try:
             on_usage(record)
@@ -267,15 +269,17 @@ class GenerationService:
 
         collector = _UsageCollector()
         outcome: Literal["ok", "format_error", "failed"] = "failed"
+        summary: GenerationUsage | None = None
         try:
             structure, raw, retried = await self._call_with_format_gate(
                 prompt, structure_response_schema(), parse, "generate", collector
             )
+            summary = collector.summary()  # C-3: 한 번만 계산해 반환값과 _emit_usage에 같은 객체를 넘긴다
             if structure is None:
                 outcome = "format_error"
                 return StructureResult(
                     status="format_error", raw_text=raw, format_retried=retried,
-                    usage=collector.summary(),
+                    usage=summary,
                 )
             texts = [t for ch in structure.chapters for t in (ch.topic, ch.conclusion)]
             outcome = "ok"
@@ -287,10 +291,12 @@ class GenerationService:
                     texts, list(sources.values()) + [meta.title]
                 ),
                 format_retried=retried,
-                usage=collector.summary(),
+                usage=summary,
             )
         finally:
-            self._emit_usage(on_usage, "structure", None, outcome, collector)
+            self._emit_usage(
+                on_usage, "structure", None, outcome, summary if summary is not None else collector.summary()
+            )
 
     async def generate_chapter(
         self,
@@ -308,15 +314,17 @@ class GenerationService:
 
         collector = _UsageCollector()
         outcome: Literal["ok", "format_error", "failed"] = "failed"
+        summary: GenerationUsage | None = None
         try:
             slots, raw, retried = await self._call_with_format_gate(
                 prompt, schema, parse, "generate", collector
             )
             if slots is None:
                 outcome = "format_error"
+                summary = collector.summary()
                 return ChapterResult(
                     status="format_error", raw_text=raw, format_retried=retried,
-                    usage=collector.summary(),
+                    usage=summary,
                 )
 
             warnings = self._measure(chapter, slots, preset)
@@ -339,11 +347,14 @@ class GenerationService:
                         condensed = True
 
             outcome = "ok"
+            summary = collector.summary()  # C-3: 한 번만 계산해 반환값과 _emit_usage에 같은 객체를 넘긴다
             return self._chapter_result(
-                deck, chapter, slots, raw, warnings, sources, retried, condensed, collector
+                deck, chapter, slots, raw, warnings, sources, retried, condensed, summary
             )
         finally:
-            self._emit_usage(on_usage, "chapter", chapter_id, outcome, collector)
+            self._emit_usage(
+                on_usage, "chapter", chapter_id, outcome, summary if summary is not None else collector.summary()
+            )
 
     async def condense_chapter(
         self,
@@ -371,6 +382,7 @@ class GenerationService:
 
         collector = _UsageCollector()
         outcome: Literal["ok", "format_error", "failed"] = "failed"
+        summary: GenerationUsage | None = None
         try:
             slots, raw, retried = await self._call_with_format_gate(
                 prompt, chapter_response_schema(chapter.template), self._slots_parser(chapter),
@@ -378,18 +390,22 @@ class GenerationService:
             )
             if slots is None:
                 outcome = "format_error"
+                summary = collector.summary()
                 return ChapterResult(
                     status="format_error", raw_text=raw, format_retried=retried,
-                    usage=collector.summary(),
+                    usage=summary,
                 )
             warnings = self._measure(chapter, slots, preset)
             outcome = "ok"
+            summary = collector.summary()  # C-3: 한 번만 계산해 반환값과 _emit_usage에 같은 객체를 넘긴다
             return self._chapter_result(
                 deck, chapter, slots, raw, warnings, sources, retried, condensed=True,
-                collector=collector,
+                usage=summary,
             )
         finally:
-            self._emit_usage(on_usage, "condense", chapter_id, outcome, collector)
+            self._emit_usage(
+                on_usage, "condense", chapter_id, outcome, summary if summary is not None else collector.summary()
+            )
 
     # -- 내부 공통 ---------------------------------------------------------
 
@@ -432,7 +448,7 @@ class GenerationService:
         sources: dict[str, str],
         retried: bool,
         condensed: bool,
-        collector: _UsageCollector,
+        usage: GenerationUsage,
     ) -> ChapterResult:
         exempt = _NUMBER_EXEMPT_FIELDS.get(chapter.template, set())
         texts = collect_strings(slots.model_dump(exclude=exempt))
@@ -446,7 +462,7 @@ class GenerationService:
             ),
             format_retried=retried,
             condensed=condensed,
-            usage=collector.summary(),
+            usage=usage,
         )
 
     def _measure(self, chapter: Chapter, slots: Any, preset: Preset) -> list[CapacityWarning]:

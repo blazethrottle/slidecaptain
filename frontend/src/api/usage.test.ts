@@ -100,9 +100,35 @@ describe("formatUsage", () => {
       ],
     };
     const text = formatUsage(usage);
-    expect(text).toContain("실패 1회 포함");
+    expect(text).toContain("이 중 실패 1회");
     expect(text).toContain("형식 재시도 1회 포함");
     expect(text).toContain("축약 1회 포함");
+  });
+
+  // C 묶음 최종 리뷰 minor C-2: 실패 문구는 "이 중 실패 N회"로 바꾸고 괄호 맨 뒤에 둔다.
+  // 종전 "실패 1회 포함"은 재시도 호출 자체의 실패를 별개 사건처럼 읽히게 했다
+  it("형식 재시도 호출이 실패하면 '이 중 실패 N회'를 괄호 맨 뒤에 붙인다", () => {
+    const usage: GenerationUsage = {
+      ...emptyUsage(), calls: 2, failed_calls: 1,
+      input_tokens: 10, output_tokens: 5, duration_ms: 100, cost_usd: 0.1,
+      records: [
+        { purpose: "generate", ok: true, usage: callUsage() },
+        { purpose: "format_retry", ok: false, usage: callUsage() },
+      ],
+    };
+    expect(formatUsage(usage)).toBe(
+      "AI 사용량: 호출 2회(형식 재시도 1회 포함, 이 중 실패 1회), 입력 10 토큰, 출력 5 토큰, " +
+      "처리 0.1초, 참고 비용 $0.1 (AI 도구가 계산한 값으로 실제 청구액이 아닙니다)",
+    );
+  });
+
+  it("다른 수식어가 없으면 '호출 1회(이 중 실패 1회)'로 쓴다", () => {
+    const usage: GenerationUsage = {
+      ...emptyUsage(), calls: 1, failed_calls: 1,
+      input_tokens: 10, output_tokens: 5, duration_ms: 100, cost_usd: 0.1,
+      records: [{ purpose: "generate", ok: false, usage: callUsage() }],
+    };
+    expect(formatUsage(usage)).toContain("호출 1회(이 중 실패 1회)");
   });
 
   it("measured되지 않은 호출이 있으면 '측정되지 않은 호출 N회 제외'를 붙인다", () => {

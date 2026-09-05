@@ -253,6 +253,35 @@ it("구조안 생성 뒤 사용량 문단이 승인 버튼 위에 보인다", as
   expect(approveBtn.compareDocumentPosition(usageP) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
 });
 
+// C 묶음 최종 리뷰 major C-1: 구조안 최초 생성이 format_error로 끝나도 계측된 사용량이
+// 화면에 남아야 한다(draft가 비어 있어 "장 구성" 섹션 자체가 없는 경우)
+it("구조안 최초 생성이 format_error면 사용량이 형식 오류 안내와 함께 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "format_error", structure: null, usage: measuredUsage(),
+    raw_text: "이상한 응답", unverified_numbers: [], format_retried: true,
+  });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByText(/형식에 맞게 읽지 못했습니다/);
+  expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+});
+
+// 같은 결함의 두 번째 경로: 기존 구조안이 있는 상태(장 구성 섹션이 이미 렌더됨)에서
+// "다시 생성"이 format_error로 끝나면 새로 받은 사용량이 문단으로 보여야 한다
+it("기존 구조안이 있는 상태에서 다시 생성이 format_error면 새 사용량이 보인다", async () => {
+  const deck = emptyDeck();
+  deck.structure.chapters = [CH1];
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "format_error", structure: null, usage: measuredUsage(),
+    raw_text: "이상한 응답 2", unverified_numbers: [], format_retried: true,
+  });
+  render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);
+  expect(screen.getByRole("button", { name: "승인하고 내용 생성" })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
+  await screen.findByText(/형식에 맞게 읽지 못했습니다/);
+  expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+});
+
 it("사용량 값이 없으면 미확인이 보인다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },

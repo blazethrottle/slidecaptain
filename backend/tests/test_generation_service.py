@@ -307,8 +307,10 @@ def test_condense_chapter_manual():
 def test_condense_chapter_template_mismatch_raises():
     wrong = TableSlots(columns=["a"], rows=[["b"]])
     service, _ = _service([])
+    calls: list[UsageRecord] = []
     with pytest.raises(ValueError):
-        asyncio.run(service.condense_chapter(_deck(), "c1", wrong, SOURCES, Preset()))
+        asyncio.run(service.condense_chapter(_deck(), "c1", wrong, SOURCES, Preset(), on_usage=calls.append))
+    assert calls == []  # 프로바이더 호출 전 ValueError는 on_usage를 부르지 않는다 (C-4)
 
 
 def test_deck_title_numbers_count_as_verified():
@@ -536,6 +538,36 @@ def test_on_usage_callback_exception_does_not_break_result():
     service, _ = _service([ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r", usage=_usage())])
     result = asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=raising_cb))
     assert result.status == "ok"  # 콜백이 예외를 던져도 결과가 돌아온다
+
+
+def test_on_usage_records_format_error_after_failed_retry():
+    # C-4: 형식 재시도도 실패해 format_error로 끝난 작업에서도 그때까지의 호출은 기록된다
+    calls: list[UsageRecord] = []
+    service, _ = _service([
+        ProviderResponse(structured=None, raw_text="원문1", usage=_usage()),
+        ProviderResponse(structured=None, raw_text="원문2", usage=_usage()),
+    ])
+    result = asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=calls.append))
+    assert result.status == "format_error"
+    assert len(calls) == 1
+    assert calls[0].outcome == "format_error"
+    assert calls[0].summary.calls == 2
+
+
+def test_usage_summary_all_unmeasured_has_empty_missing():
+    # C-4: 첫 호출부터 결과 메시지 없이 끊기면(ⓑ 유형) 합계는 전부 None이지만
+    # missing은 비어야 한다(값이 있는 호출이 하나도 없으므로 "누락"이 아니다). 가정 3
+    calls: list[UsageRecord] = []
+    service, _ = _service([ProviderCallFailed("연결 실패")])  # usage 없음
+    with pytest.raises(ProviderCallFailed):
+        asyncio.run(service.generate_structure(_deck().meta, SOURCES, on_usage=calls.append))
+    summary = calls[0].summary
+    assert summary.calls == 1
+    assert summary.unmeasured_calls == 1
+    assert summary.missing == []
+    assert summary.input_tokens is None
+    assert summary.output_tokens is None
+    assert summary.cost_usd is None
 
 
 def test_on_usage_not_called_for_unknown_chapter():

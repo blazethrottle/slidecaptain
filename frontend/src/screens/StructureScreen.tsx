@@ -65,6 +65,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (result.status === "format_error") {
         setError("AI 응답을 형식에 맞게 읽지 못했습니다. 원문을 확인하고 다시 생성해 주세요.");
         setRawText(result.raw_text);
+        setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
       } else if (result.structure) {
         setDraft(result.structure.chapters);
         setDraftGenerated(true);
@@ -201,6 +202,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {error && <p role="alert">{error}</p>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
+      {/* C-1 리뷰 반영: draft 유무와 무관하게 렌더한다(형식 오류 안내 근처).
+          draft가 비어 있으면 "장 구성" 섹션 자체가 없어 그 안에 두면 최초 생성의
+          format_error에서 사용량을 보여줄 자리가 없었다 */}
+      {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
       {numbers.length > 0 && (
         <p className="number-warning">자료에서 찾지 못한 수치가 있습니다: {numbers.join(", ")}. 반영 전에 확인해 주세요.</p>
       )}
@@ -261,7 +266,6 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             </tbody>
           </table>
           <button onClick={add}>장 추가</button>
-          {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
           {/* F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 실패 단서만은 표시한다.
               chapterUsageSummary만 조건으로 두면 성공분이 0건일 때 이 문단 자체가 사라졌다 */}
           {(chapterUsageSummary || chapterUsageHadUnaccountedFailure) && (
