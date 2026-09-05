@@ -4,6 +4,20 @@ import { AiConsentDeclined, api, type ChapterResult, type Deck } from "../api/cl
 import { emptyUsage } from "../test/usage";
 import { GeneratePanel } from "./GeneratePanel";
 
+// 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
+function measuredUsage(): ChapterResult["usage"] {
+  return {
+    ...emptyUsage(), calls: 1,
+    input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0,
+    duration_ms: 1000, duration_api_ms: 900, cost_usd: 0.01,
+    records: [{ purpose: "generate", ok: true, usage: {
+      model: null, input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0,
+      duration_ms: 1000, duration_api_ms: 900, num_turns: 1, cost_usd: 0.01, stop_reason: null,
+      terminal_reason: "completed", api_error_status: null, token_source: "model_usage",
+    } }],
+  };
+}
+
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, generateChapter: vi.fn(), condenseChapter: vi.fn() } };
@@ -85,6 +99,23 @@ it("축약에서 AI 전송을 취소해도 알림이 아닌 안내 문구를 보
   await userEvent.click(screen.getByText("이 장 축약"));
   const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
   expect(notice.closest('[role="alert"]')).toBeNull();
+});
+
+// 태스크 C4: 결과 안내(축약, 재시도 문구) 옆에 사용량 한 줄을 보인다
+it("재생성 결과 안내 옆에 사용량 한 줄을 보이고, 값이 없으면 미확인이 보인다", async () => {
+  vi.mocked(api.generateChapter).mockResolvedValue({ ...okResult, usage: measuredUsage() });
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expect(screen.getByText(/입력 100 토큰/)).toBeInTheDocument();
+});
+
+it("사용량 값이 없으면 미확인이 보인다", async () => {
+  vi.mocked(api.generateChapter).mockResolvedValue(okResult);  // okResult.usage는 emptyUsage()
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  expect(await screen.findByText(/토큰 미확인/)).toBeInTheDocument();
+  expect(screen.getByText(/비용 미확인/)).toBeInTheDocument();
 });
 
 it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다", () => {

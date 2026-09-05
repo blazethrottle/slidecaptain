@@ -1,9 +1,24 @@
 import { useState } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AiConsentDeclined, api, ApiError, type Deck } from "../api/client";
+import { AiConsentDeclined, api, ApiError, type Deck, type GenerationUsage } from "../api/client";
 import { emptyUsage } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
+
+// 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
+function measuredUsage(overrides: Partial<GenerationUsage> = {}): GenerationUsage {
+  return {
+    ...emptyUsage(), calls: 1,
+    input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0,
+    duration_ms: 1000, duration_api_ms: 900, cost_usd: 0.01,
+    records: [{ purpose: "generate", ok: true, usage: {
+      model: null, input_tokens: 100, output_tokens: 50, cache_read_tokens: 0, cache_creation_tokens: 0,
+      duration_ms: 1000, duration_api_ms: 900, num_turns: 1, cost_usd: 0.01, stop_reason: null,
+      terminal_reason: "completed", api_error_status: null, token_source: "model_usage",
+    } }],
+    ...overrides,
+  };
+}
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -221,6 +236,81 @@ it("승인 루프에서 첫 장을 취소하면 남은 장은 관문을 다시 �
   expect(api.generateChapter).toHaveBeenCalledTimes(1);
   expect(onDone).not.toHaveBeenCalled();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+// 태스크 C4: 구조안 결과 아래(승인 버튼 위)에 사용량 한 줄을 보인다
+it("구조안 생성 뒤 사용량 문단이 승인 버튼 위에 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: measuredUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  const usageP = await screen.findByText(/AI 사용량: 호출 1회/);
+  const approveBtn = screen.getByRole("button", { name: "승인하고 내용 생성" });
+  // DOCUMENT_POSITION_FOLLOWING(4): usageP가 approveBtn보다 문서상 앞에 있다
+  // eslint-disable-next-line no-bitwise
+  expect(approveBtn.compareDocumentPosition(usageP) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+});
+
+it("사용량 값이 없으면 미확인이 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  expect(await screen.findByText(/토큰 미확인/)).toBeInTheDocument();
+  expect(screen.getByText(/비용 미확인/)).toBeInTheDocument();
+});
+
+it("승인 루프가 끝나면 장 생성 합계 한 줄을 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter)
+    .mockResolvedValueOnce({ status: "ok", usage: measuredUsage(), raw_text: "", warnings: [],
+      unverified_numbers: [], format_retried: false, condensed: false,
+      slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
+    .mockResolvedValueOnce({ status: "ok", usage: measuredUsage(), raw_text: "", warnings: [],
+      unverified_numbers: [], format_retried: false, condensed: false,
+      slots: { template: "bullet_box", bullets: [{ text: "가", level: 0 }], conclusion: "결", footnote: "" } });
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(onDone).toHaveBeenCalled());
+  // 두 장의 usage(입력 100 토큰씩)를 합산한 값이 보인다: 장 생성 2회, 입력 200 토큰
+  expect(await screen.findByText(/장 생성 2회.*입력 200 토큰/)).toBeInTheDocument();
+});
+
+it("승인 루프에서 한 장이 503으로 실패하면 합계 줄에 포함되지 않았다는 단서가 보인다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.generateChapter)
+    .mockResolvedValueOnce({ status: "ok", usage: measuredUsage(), raw_text: "", warnings: [],
+      unverified_numbers: [], format_retried: false, condensed: false,
+      slots: { template: "cover", title: "제목", subtitle: "", date: "" } })
+    .mockRejectedValueOnce(new ApiError(503, "AI 서비스가 응답하지 않습니다."));
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByText(/AI 서비스가 응답하지 않습니다/);
+  expect(onDone).not.toHaveBeenCalled();
+  // 성공한 1개 장(c1)의 usage만 합계에 실리고, 실패한 c2는 결과 자체가 없어 빠졌다는 단서가 보인다
+  expect(screen.getByText(/장 생성 1회.*입력 100 토큰/)).toBeInTheDocument();
+  expect(screen.getByText(
+    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)",
+    { exact: false },
+  )).toBeInTheDocument();
 });
 
 it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AiConsentDeclined, api, messageOf, type ChapterResult, type Deck, type ProjectInfo,
 } from "../api/client";
+import { formatUsage } from "../api/usage";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
@@ -95,6 +96,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
             {result.condensed && " 분량에 맞춰 축약했습니다."}
             {result.format_retried && " 형식 재시도 1회를 거쳤습니다."}
           </p>
+          <p className="usage">{formatUsage(result.usage)}</p>
           {result.warnings.length > 0 && (
             <ul>{result.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
           )}

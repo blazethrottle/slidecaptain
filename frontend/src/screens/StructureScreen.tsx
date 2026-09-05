@@ -1,9 +1,14 @@
 import { useState } from "react";
 import {
   AiConsentDeclined, api, ApiError, messageOf,
-  type Chapter, type ChapterResult, type Deck, type ProjectInfo, type TemplateName,
+  type Chapter, type ChapterResult, type Deck, type GenerationUsage, type ProjectInfo, type TemplateName,
 } from "../api/client";
+import { formatUsage, sumUsage } from "../api/usage";
 import { TEMPLATE_LABELS } from "../editor/labels";
+
+// 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
+const FAILED_CHAPTER_USAGE_NOTICE =
+  "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)";
 
 // 취소는 실패가 아니다 (계획서 B3): AI 전송 고지를 취소하면 "취소"로 표시하고 role=alert 배너를
 // 띄우지 않는다. 이 문구는 GeneratePanel의 취소 안내와 같다
@@ -36,6 +41,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [rawText, setRawText] = useState("");
   const [numbers, setNumbers] = useState<string[]>([]);
   const [progress, setProgress] = useState<Progress>({});
+  const [structureUsage, setStructureUsage] = useState<GenerationUsage | null>(null);
+  const [chapterUsageSummary, setChapterUsageSummary] = useState<GenerationUsage | null>(null);
+  const [chapterUsageCount, setChapterUsageCount] = useState(0);  // 합계에 실제로 실린 장 수
+  const [chapterUsageHadUnaccountedFailure, setChapterUsageHadUnaccountedFailure] = useState(false);
 
   const generate = async () => {
     setBusy(true);
@@ -43,6 +52,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setError("");
     setCancelNotice("");
     setRawText("");
+    setStructureUsage(null);
     try {
       const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
       const result = await api.generateStructure(project.name, {
@@ -55,6 +65,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         setDraft(result.structure.chapters);
         setDraftGenerated(true);
         setNumbers(result.unverified_numbers);
+        setStructureUsage(result.usage);
       }
     } catch (e) {
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
@@ -104,6 +115,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     onBusyChange?.(true);
     setError("");
     setCancelNotice("");
+    // 이번 승인 루프에서 실제로 결과를 받은 장의 usage만 모은다(가정 7): 결과 자체가 없는
+    // 실패(hadUnaccountedFailure)는 usage가 없어 합계에서 자연히 빠지고, 화면이 그 사실을 밝힌다
+    const chapterUsages: GenerationUsage[] = [];
+    let hadUnaccountedFailure = false;
     try {
       let current: Deck = { ...deck, structure: { chapters: draft }, slides: kept };
       await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
@@ -136,8 +151,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           setError(messageOf(e));
           setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
           failed = true;
+          hadUnaccountedFailure = true;  // 결과 자체가 없어 usage를 얻지 못했다
           continue;
         }
+        chapterUsages.push(result.usage);  // format_error도 결과가 있으므로 usage를 얻는다
         if (result.status !== "ok" || !result.slots) {
           setError("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 시도해 주세요.");
           setRawText(result.raw_text);
@@ -167,6 +184,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (e instanceof ApiError && e.status === 412) onConflict?.();
       setError(messageOf(e));
     } finally {
+      setChapterUsageSummary(chapterUsages.length > 0 ? sumUsage(chapterUsages) : null);
+      setChapterUsageCount(chapterUsages.length);
+      setChapterUsageHadUnaccountedFailure(hadUnaccountedFailure);
       setBusy(false);
       onBusyChange?.(false);
     }
@@ -237,6 +257,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             </tbody>
           </table>
           <button onClick={add}>장 추가</button>
+          {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
+          {chapterUsageSummary && (
+            <p className="usage">
+              {`장 생성 ${chapterUsageCount}회: ${formatUsage(chapterUsageSummary).replace(/^AI 사용량: /, "")}`}
+              {chapterUsageHadUnaccountedFailure && ` ${FAILED_CHAPTER_USAGE_NOTICE}`}
+            </p>
+          )}
           <button onClick={approve} disabled={busy || draft.length === 0}>승인하고 내용 생성</button>
         </section>
       )}
