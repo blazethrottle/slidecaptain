@@ -38,8 +38,9 @@ def test_app_and_openapi_expose_same_version(store):
 
 def test_installed_package_metadata_matches_version():
     """worktree 가 빌린 가상환경은 main 클론의 정적 메타데이터를 읽으므로 이 테스트는
-    setuptools dynamic 메커니즘 자체의 검증이 아니다. 그 검증은 관통(D2-6)의 새 클론
-    설치가 유일하며, 여기서는 값이 어긋나지 않는지만 확인한다.
+    setuptools dynamic 메커니즘 자체의 검증이 아니다. 그 검증은 새로 설치하는 환경에서만
+    되며, CI 가 매 실행마다 새 체크아웃에 editable 설치를 하므로 거기서 검증되고, 관통(D2-6)의
+    새 클론 설치는 실사용 환경에서의 추가 확인이다. 여기서는 값이 어긋나지 않는지만 확인한다.
     """
     try:
         installed_version = metadata.version("slidecaptain")

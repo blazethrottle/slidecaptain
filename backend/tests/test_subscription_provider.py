@@ -492,6 +492,15 @@ def test_build_call_usage_ignores_non_dict_model_usage_entries():
     assert usage.model == "claude-sonnet-4-5-20250929"
 
 
+def test_build_call_usage_ignores_non_dict_usage_field():
+    """D2 최종 리뷰 반영: usage 필드 자체가 dict 가 아닌 이상값이어도 build_call_usage 는 예외를 내지 않고
+    없는 것으로 본다(model_usage 항목 필터와 대칭)."""
+    result = _result(usage="not-a-dict")
+    usage = build_call_usage(result, None)
+    assert usage.token_source == "none"
+    assert usage.input_tokens is None
+
+
 def test_build_call_usage_logs_raw_usage_on_error_result(caplog):
     """`is_error` 결과에서도 같은 로그가 남는다 (build_call_usage 가 호출되는 모든 경로)."""
     caplog.set_level("INFO", logger="slidecaptain.pipeline.subscription")

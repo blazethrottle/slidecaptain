@@ -24,7 +24,7 @@
 
 - 푸시 전에 공개 저장소 감사기를 돌린다: 저장소 루트에서 `backend/.venv/bin/python scripts/audit_public_repo.py` (Windows 는 `backend\.venv\Scripts\python.exe`). 과거 이력까지 보려면 `--history` 를 붙인다. 발견 0건이 종료 코드 0 이다. 이 저장소는 공개 GitHub 에 올라가므로 회사 자료, 오피스 파일, 인증정보가 추적되면 안 된다 (규칙은 `.gitignore` 와 감사기, 검사는 `backend/tests/test_repo_metadata.py`)
 - `.github/workflows/ci.yml` 이 push 와 pull request 마다 Windows 와 macOS 에서 같은 순서로 실행한다: 체크아웃 줄바꿈 바이트 검사(배치 파일은 CRLF, 셸 픽스처는 LF), 감사기, 백엔드 전체 테스트, OpenAPI 와 프런트 타입 재생성 뒤 생성 파일 무변경 확인, 프런트 테스트, 화면 빌드. Python 3.13, Node 는 `.nvmrc` 의 22.17.1 을 쓴다
-- CI 가 보증하지 않는 것: 실제 AI 로그인과 호출, PowerPoint 표시와 렌더 검증, 폰트 설치 실증. 이것들은 수동 관통과 단계 5A D2 의 몫이다
+- CI 가 보증하지 않는 것: 실제 AI 로그인과 호출, PowerPoint 표시와 렌더 검증, 폰트 설치 실증. 이것들은 실기기 관통의 몫이다
 
 ## 관례
 

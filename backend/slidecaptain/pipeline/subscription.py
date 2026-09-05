@@ -111,7 +111,7 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     model_usage = {
         key: value for key, value in (result.model_usage or {}).items() if isinstance(value, dict)
     }
-    usage_dict = result.usage or {}
+    usage_dict = result.usage if isinstance(result.usage, dict) else {}  # model_usage 항목 필터와 대칭
 
     input_tokens: int | None = None
     output_tokens: int | None = None
