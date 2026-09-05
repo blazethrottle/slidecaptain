@@ -70,7 +70,7 @@
 
 - `ProjectStore` Protocol 과 `FileProjectStore` 에 `append_usage(name: str, line: str) -> None` 추가: `projects/<이름>/ai-usage.jsonl` 에 `locked(name)` 안에서 한 줄 append(끝에 LF, `encoding="utf-8"`, `newline="\n"`). 파일이 없으면 만든다. 프로젝트 이름 검증은 기존 `_project_dir` 경로를 그대로 탄다.
 - `app.py`: 생성 3종 라우트가 `on_usage=lambda rec: _append_usage(name, rec)` 를 넘긴다. `_append_usage` 는 `rec.model_dump_json()` 을 `store.append_usage` 로 쓰고 예외는 경고 로그로 삼킨다. `GenerationService` 생성 시 `requested_model=getattr(provider, "model", None)`.
-- OpenAPI(`backend/openapi.json`)와 프런트 타입(`frontend/src/api/types.ts`) 재생성. `client.ts` 에 `GenerationUsage` 타입 재노출 한 줄(프런트 코드 수정의 유일한 예외). 프런트 결과 목 20곳에 `usage: emptyUsage()` 추가(`frontend/src/test/usage.ts` 신설: `calls: 0, failed_calls: 0, unmeasured_calls: 0, models: [], 토큰과 시간과 비용 null, missing: [], records: []`). 프런트 화면 코드는 C4 범위라 수정하지 않는다.
+- (2026-09-05 정정: 이 항목은 실제로 C2 커밋 9401389 에서 수행했다. 아래 "실행 순서" 절의 실행 편차 참조. 최종 리뷰 gate-docs F3) OpenAPI(`backend/openapi.json`)와 프런트 타입(`frontend/src/api/types.ts`) 재생성. `client.ts` 에 `GenerationUsage` 타입 재노출 한 줄(프런트 코드 수정의 유일한 예외). 프런트 결과 목 20곳에 `usage: emptyUsage()` 추가(`frontend/src/test/usage.ts` 신설: `calls: 0, failed_calls: 0, unmeasured_calls: 0, models: [], 토큰과 시간과 비용 null, missing: [], records: []`). 프런트 화면 코드는 C4 범위라 수정하지 않는다.
 
 **테스트 (실패부터, `backend/tests/test_file_store.py`, `test_api_generate.py`)**
 
@@ -122,6 +122,20 @@ C1 → C2 → C3 → C4 → 문서 정정 → 묶음 최종 리뷰 → 반영 �
 | 저장과 화면 | 503 정정, 설계서 절 번호 정정(9.1 항목 6), `client.ts` 타입 재노출, 호출 전 `ValueError` 의 콜백 범위, 승인 루프에서 실패한 장이 합계에서 빠지는 불일치를 화면 단서로, 비개발자 문구("참고 비용", "AI 도구가 계산한 값") |
 
 기록만 남긴 것: CLI 는 모델별 `thinkingTokens` 를 보고할 수 있으나 설치된 SDK 의 `ModelUsage` 자료형에 그 키가 없다(`outputTokens` 에 이미 포함되어 합계에는 영향 없음). SDK 가 노출하면 `CallUsage` 에 선택 필드로 추가한다.
+
+## 구현 리뷰 반영 (2026-09-05)
+
+태스크마다 구현자와 독립 리뷰어를 분리했고, 리뷰어는 구현 직전 커밋에서 새 테스트가 실제로 실패하는지 재실증했다. 묶음 최종 리뷰는 세 관점(SDK 계약과 백엔드 계약은 설치된 SDK 소스 대조와 StubProvider 를 주입한 TestClient 재현 12종과 실제 서버의 헤더 관문, 프런트는 재현 테스트, 관문과 문서는 완료 관문 3문장 대조와 문서 정정 커밋의 사실 확인)을 병렬로 돌리고 major 는 반박자 3명씩 적대 검증했다. 실제 AI 호출은 한 번도 하지 않았다.
+
+| 태스크 | 커밋 | 리뷰 판정 | 반영 |
+|---|---|---|---|
+| C1 프로바이더 계측 | 6911ccb | 수정 후 승인 (minor 2, nit 2, 정보 1) | d77f04b: 다중 모델 비용이 재합산이 아니라 `total_cost_usd` 패스스루임을 구분하는 테스트, 오류 문구의 숫자 부재 검증 일반화(영문 전체 금지는 "AI" 가 제품 용어라 적용하지 않음), `token_source` 지역 변수 타입 힌트, 헬퍼 시그니처 정렬. 비동기 생성기 정리가 GC 파이널라이저에 의존하는 점은 계획서가 D2 로 미룬 리스크의 재확인이라 조치하지 않음 |
+| C2 서비스 합산 | 9401389 | 승인 (minor 4) | 응답 모델 `usage` 필수 필드가 OpenAPI 동기화 테스트에 걸려 재생성과 결과 목 20곳 갱신을 C3 에서 이 태스크로 당김. minor 4건(summary 두 번 계산, condense 템플릿 불일치와 format_error outcome 의 전용 테스트 부재, 전부 미측정 시 `missing` 빈 목록)은 최종 리뷰로 넘김 |
+| C3 로컬 기록과 API | 47323a7 | 승인 (nit 2, 관찰 3) | 현행 유지: `record` 타입 힌트 부재는 파일 관례와 일치, on_usage 예외의 이중 방어는 의도, append 전용 기록은 계획서가 명시한 한계 |
+| C4 화면 표시 | 3c40d5d | 수정 후 승인 (major 2, minor 3, nit 3) | d965996: "다시 생성" 시 이전 승인 루프 사용량 잔존, 전부 실패 시 실패 단서 소실, "대략" 표시를 입력과 출력 양쪽에, GeneratePanel 의 형식 오류 시 사용량 은닉, 주석과 테스트 제목 정정. 반영하지 않음: 입력과 출력 토큰 비대칭(가정 1 상 도달 불가), 아주 작은 비용의 "$0" 표시(저우선순위) |
+| 묶음 최종 | 75cd3c8..4a57111 | backend 승인 (minor 2, nit 1), frontend 수정 후 승인 (major 1, minor 2, nit 2), gate-docs 수정 후 승인 (major 1, minor 5, nit 2). major 는 두 관점이 같은 결함을 보고한 1건이며 반박자 6명 전원이 실제 결함으로 확정 | e3cb63f: 구조안 생성이 format_error 로 끝나도 사용량 문단을 표시(GeneratePanel 의 F5 반영을 StructureScreen 최초 생성 경로에 이식. 백엔드는 형식 오류에도 `usage` 를 항상 채우는데 화면이 버리고 있었다), 실패 문구를 "이 중 실패 N회" 로 결합해 형식 재시도 실패가 두 사건처럼 읽히지 않게, `collector.summary()` 를 작업당 한 번만 계산, 테스트 3건 추가(condense 템플릿 불일치 시 on_usage 미호출, format_error outcome, 전부 미측정 시 `missing` 빈 목록과 `unmeasured_calls` 고정). 현행 유지: `usage` dict 폴백의 캐스팅 비대칭(pydantic 강제 변환, D2 실측 전), 승인 루프 진행 라벨의 "실패" 세분화(범위 밖, 이월표), `.usage` CSS 부재(기존 관례), 아주 작은 비용의 "$0"(이월표). D2 실측: SDK 반환 형태 3항목과 `max_turns=2` 구조에서 폴백 값이 정리 턴만 반영할 위험(이월표 기존 행). 문서 정정 2건(설계서 4.4 필드 설명, 이 절 C3 항목의 상호 참조)은 이 문서 커밋에서 처리 |
+
+실행 중 발견: 계획서 적대 리뷰 1차 실행은 세션 한도로 리뷰어 3명이 전멸해 재실행이 완주했고, 태스크 워크플로와 최종 리뷰는 한 번에 완주했다. 태스크 리뷰어가 구현자의 계획서 테스트 목록 밖 시나리오("다시 생성" 뒤 잔존, 전부 실패)를 잡았고, 최종 리뷰는 같은 결함 유형이 자매 화면에 남은 것을 잡았다. 최종: 백엔드 585, 프런트 220.
 
 ## 이 계획이 틀렸을 가능성
 

@@ -244,7 +244,9 @@ XLSX 는 `openpyxl` 로 읽어 값이 있는 셀만 텍스트로 추출한다(�
 `format_error`, `failed`), `requested_model`(프로바이더에 요청한 별칭. 실제 모델과 다른 축), `summary`(작업 합계:
 `calls`, `failed_calls`, `unmeasured_calls`, `models`, 입력과 출력과 캐시 읽기와 캐시 생성 토큰, `duration_ms` 와
 `duration_api_ms`, `cost_usd`, `missing`, 그리고 호출별 `records`: `purpose`(`generate`, `format_retry`, `condense`), `ok`,
-`usage`(원시 호출 1건의 실제 모델, 토큰, 시간, 턴 수, 비용값, 종료 사유, `token_source`)).
+`usage`(원시 호출 1건의 실제 모델, 토큰 4종, `duration_ms` 와 `duration_api_ms`, `num_turns`, `cost_usd`, `stop_reason` 과
+`terminal_reason`(응답이 멈춘 이유와 쿼리 루프가 끝난 이유. 다른 축), `api_error_status`, `token_source`. 2026-09-05 최종 리뷰 F2 로 나열 정정)).
+측정된 호출이 하나도 없으면(전부 결과 없이 끊김) 합계는 전부 `null` 이고 `missing` 은 비어 있으며 `unmeasured_calls` 가 그 사실을 나타낸다.
 
 - **내용 없음**: 프롬프트, 자료, 지시사항, 응답 원문, 슬롯, 오류 문구 본문은 어떤 필드에도 넣지 않는다(2.6 의 5항).
   고정 열거값과 숫자와 서버가 만든 id 뿐이다. API 테스트가 기록 파일 전체에서 자료 문장과 지시사항과 응답 원문과
