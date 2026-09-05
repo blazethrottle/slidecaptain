@@ -106,6 +106,11 @@
 
 C1 → C2 → C3 → C4 → 문서 정정 → 묶음 최종 리뷰 → 반영 → push. C3 뒤에 OpenAPI 와 프런트 타입을 재생성해 C4 가 그 위에서 시작한다. 검증 명령은 B 와 같다(worktree 백엔드 테스트는 `PYTHONPATH` 필수).
 
+실행 편차 (2026-09-05, 구현자 자진 보고와 독립 리뷰어 실측으로 확인):
+
+- **재생성을 C3 가 아니라 C2 에서 했다.** `StructureResult` 와 `ChapterResult` 에 `usage` 필수 필드를 더하는 순간 `backend/tests/test_openapi.py` 가 `backend/openapi.json` 과 실제 스키마의 동기화를 강제하므로, C2 커밋(9401389)에서 재생성하지 않으면 백엔드 전체 테스트가 통과하지 않는다. 그래서 OpenAPI 와 프런트 타입 재생성, `client.ts` 재노출, `frontend/src/test/usage.ts` 의 `emptyUsage()` 와 결과 목 20곳 갱신을 C2 로 당겼고, C3(47323a7)는 `append_usage` 와 라우트 배선과 그 백엔드 테스트만 다뤘다(C3 의 재생성은 무변경). 이 파급은 B2 에 이어 두 번째라 `CLAUDE.md` 관례에 적었다.
+- **다중 모델의 `cost_usd` 는 재합산이 아니라 `total_cost_usd` 패스스루다.** 가정 1 은 "토큰과 비용은 합산" 이라 적었으나 C1 구현은 토큰만 모델별로 합산하고 비용은 `ResultMessage.total_cost_usd` 를 그대로 옮긴다(SDK 값이 이미 세션 총합이라 재합산은 중복 계산 위험만 늘린다). C1 리뷰 F1 이 두 방식을 구분하지 못하는 테스트를 지적해 어긋나는 입력의 테스트를 추가했다(d77f04b).
+
 ## 적대 리뷰 반영 (2026-09-05)
 
 세 관점 리뷰어(SDK 계약과 계측, 서비스 합산과 관문, 저장과 API 와 화면과 개인정보)가 병렬로 반박했고 셋 다 "수정 후 승인"(발견 25건: major 11, minor 10, nit 4). 24건 반영, 1건 기록만.
