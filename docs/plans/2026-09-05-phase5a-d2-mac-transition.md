@@ -143,6 +143,35 @@ D2-1 → D2-2 → D2-3 → D2-5 → D2-4(문서는 스크립트 이름과 명령
 | SDK 로그와 관통 | 원시 로그의 네 합계를 분기와 무관하게 독립 합산(major), 단일 표본의 판정 보류 규칙, C 계획서의 프로세스 잔존 불릿에 `ps` 결과 병기, `logging.basicConfig` 채택 확정(실측: uvicorn 은 루트 로거를 건드리지 않아 INFO 레코드가 생성조차 안 되며 basicConfig 는 유지됨)과 SDK 부수 출력 예고. 확인해 준 것: 취소는 호출 0회, 자동 트리거 경로 없음, 스크래치 덱은 `test_exporter.py` 의 `_write_deck` 패턴으로 가능, 폰트 이동은 안전 |
 | 문서와 관문 | 로드맵 확정 범위 표 D 행과 마스터 플랜 통합 검증 표의 Windows 문구 정정(major), 이월표 조건부 행의 판정, README 문서 목록 기준과 120줄 상한, CLAUDE.md 의 nvm4w 단락과 푸시 전 검증 절 순서, 관통이 최종 리뷰 뒤인 근거와 fix 의 독립 리뷰, 머지 디렉터리와 worktree 정리의 분리 |
 
+## 구현 리뷰 반영 (2026-09-05, 2026-09-06)
+
+태스크마다 구현자와 독립 리뷰어를 분리했고, 리뷰어는 구현 직전 커밋에서 새 테스트가 실제로 실패하는지 재실증했다(ultracode 가 꺼진 세션이라 Workflow 대신 서브에이전트를 직접 띄웠다). 묶음 최종 리뷰는 세 관점(환경과 스크립트: 로컬 새 클론에서 README 절차 그대로 실행하고 실제 앱으로 `.command` 기동과 HUP 와 INT 확인, 백엔드 계약: 교차 커밋 상호작용과 StubProvider 재현과 실제 서버 로그, 문서와 관문: 완료 관문 대조와 문서 정정 목록 산출)을 병렬로 돌렸다. major 가 관통 체크리스트 문구 1건뿐이라 반박자는 붙이지 않았다.
+
+| 태스크 | 커밋 | 리뷰 판정 | 반영 |
+|---|---|---|---|
+| D2-1 버전 단일 출처 | 2d65032 | 승인 (nit 1) | 리뷰어가 `git archive` 새 트리에 `uv pip install -e` 로 dynamic 버전 동작을 실증. nit(`/openapi.json` 대신 `app.openapi()`)는 현행 유지 |
+| D2-2 테스트 폰트 격리 | 9aaf251 | 수정 후 승인 (critical 1, minor 1, nit 1) | a1359b6: win32 분기는 `LOCALAPPDATA` 라 `Path.home` 패치로는 CI windows-latest 에서 격리되지 않던 것을 환경변수 패치로 해소. 편차: 초안의 `_user_font_dir` 교체는 플랫폼 분기 테스트 3건과 충돌해 `Path.home` 패치로 구현(계획서 가정 4 정정) |
+| D2-3 Mac 실행 스크립트 | 6dd0c3d | 수정 후 승인 (major 1, minor 1) | 4753069: 블로킹 `wait` 를 1초 생존 확인 루프로, 신호별 트랩(INT 130, TERM 143, HUP 129), open 실패 안내. 리뷰어의 INT 미발화 관측은 job control 없는 배경 실행 하네스의 부작용이었고(SIGINT 무시 상속), `set -m` 하네스와 실제 Terminal 실행 양쪽에서 INT 가 정상 동작 |
+| D2-5 SDK 원시 사용량 로그 | a8f8244 | 승인 (major 1은 C1 코드의 사전 존재 결함, minor 1) | 8a153ca: `build_call_usage` 가 `model_usage` 의 비-dict 항목을 무시하고 유효 항목이 없으면 폴백. usage dict 자체의 방어 비대칭(minor)은 최종 리뷰 반영 2751cab 에서 대칭화 |
+| D2-4 README 와 CLAUDE.md | 077f329 | 수정 후 승인 (major 2, nit 3) | 9d20ba9: fnm 셸 연동 안내(연동 없이는 `fnm use` 가 Node 를 바꾸지 못하는 것을 리뷰어가 실측. 이 Mac 은 연동돼 있어 관통에서는 드러나지 않는 사각), CLAUDE.md 에 2026-08-29 부터 남아 있던 회사 PC 사용자명 익명화, Windows Python 버전 확인 문구, 감사기 경로 표기 |
+| 묶음 최종 | fbbec60..9d20ba9 | env 수정 후 승인 (minor 1, nit 1), backend 수정 후 승인 (minor 1, nit 1), gate-docs 수정 후 승인 (major 1, minor 2, nit 1). 코드 결함 0 | 2751cab: usage 필드 방어 대칭화, `test_version` docstring(CI 가 매 실행 dynamic 버전을 검증), README fnm 문장, CLAUDE.md 문구 통일. fb02f00: 관통 전 문서 정정(가정 4 와 D2-2 절, 관통 항목 2 에 Ctrl+C, 로드맵 확정 범위 표 D 행, 감사기 본문 문자열 사각 신설, 마스터 플랜 각주) |
+| 관통 유래 | bb5a4a4 | 독립 리뷰 승인. 결함 0, 문서 낡음 minor 3 과 nit 2 는 이 문서 커밋에서 처리 | usage dict 폴백의 토큰을 채우지 않음(마지막 턴 값 실측). 화면은 "토큰 미확인" |
+
+## 관통 기록 (2026-09-06, 메인 세션 수동 수행)
+
+새 클론은 `git clone --branch codex/phase-5a` 로 GitHub 에서 받았고(HEAD fb02f00), 데이터 폴더는 기본값 `~/slidecaptain-projects` 를 썼다. 표기: 실기기 / CI / 미수행(사유).
+
+| 항목 | 결과 | 확인 수단 |
+|---|---|---|
+| 1 새 클론 환경 구성 | README macOS 절차 그대로 `uv venv`, `uv pip install -e`, fnm 22.17.1, `npm ci`, `npm run build` 통과. `importlib.metadata` 0.1.0 = `__version__`. 백엔드 603, 프런트 220, 재생성 무변경, 감사 0 | 실기기 |
+| 2 실행 스크립트 | `open` 으로 Terminal 창과 서버(2초 안에 응답)와 브라우저. quarantine 없음. 재실행 시 브라우저만 열고 종료 0. 스크립트에 INT(Ctrl+C 에 해당)를 보내 2초 안에 스크립트와 서버 종료. HUP(창 닫기)로도 종료(최종 리뷰 env 가 실제 창 닫기로 확인) | 실기기 |
+| 3 폰트 재설치 | 사용자 폰트 폴더의 Noto 두 파일을 스크래치로 옮긴 뒤 `serve` 1회: `font_installed` False → True, 파일 재생성. 안내 문구는 stdout 버퍼링으로 로그에 남지 않아 파일 상태로 판정 | 실기기 |
+| 4 비기밀 프로젝트와 업로드 | 화면에서 프로젝트 생성과 보고자 저장, 마크다운 1 과 합성 XLSX 1 업로드: "2개 자료를 추가했습니다. 합성매출.xlsx: 시트 2개, 셀 14개. 계산값 없음: 1곳". `uploads/` 원본과 `sources/` 추출본 분리 확인. QA-1: 업로드 직후 "자료 파일을 찾지 못했습니다: 합성매출.xlsx" 오류가 함께 표시됨(이월표) | 실기기 |
+| 5 AI 전송 확인과 실호출 1회 | 고지 대화 상자(제공자 "Claude 구독 (sonnet)") → 취소는 "전송을 취소했습니다" 로 끝나고 기록 파일 없음 → 동의 뒤 구조안 생성 1회 성공(목표 3장 → 5장 초안). 화면: "AI 사용량: claude-sonnet-5 로 호출 1회, 입력 2,239 토큰, 출력 6,671 토큰, 캐시 생성 37,957 토큰, 처리 70.4초, 참고 비용 $0.2207 (...)". `ai-usage.jsonl` 1줄(`token_source` model_usage, `num_turns` 2, `terminal_reason` completed, `missing` 없음). 기록 파일에 자료 문장과 이름 누출 없음. 서버 자식 프로세스 0. 원시 로그(D2-5)로 가정 5 ①②③ 판정(위 표). 구조안은 승인하지 않음 | 실기기, 실호출 1회 |
+| 6 편집과 저장과 내보내기 | 샘플 덱 5장을 넣고 재진입 → 편집 탭에서 불릿 인라인 수정(첫 클릭 선택, 둘째 클릭 편집창, Enter 확정) → "저장됨", `deck.json` 반영, 의미 시점 스냅샷 자동 생성 → PPTX 내보내기 완료 → python-pptx 재열기 5장, 도형 이름 "장ID:슬롯", 수정 문구 포함 → Keynote 로 열림. PowerPoint 표시는 도구 부재로 미수행. QA-2(nit): 안내 문구 "PowerPoint에서 여세요" | 실기기 (PowerPoint 표시 미수행) |
+| 7 Windows | CI windows-latest 성공(fb02f00 실행 33960917126 외 D2 커밋 전부) | CI (사용자 결정) |
+| 8 정리와 판정 | 새 클론과 스크래치 덱 정리. C 계획서 가정 1 과 `_consume` 불릿, 설계서 4.4, 이월표 6행과 조건부 행에 실측 병기. 관통 유래 수정 bb5a4a4 는 독립 리뷰(독립 리뷰 승인. 결함 0, 문서 낡음 minor 3 과 nit 2 는 이 문서 커밋에서 처리) 뒤 반영 | 문서 |
+
 ## 이 계획이 틀렸을 가능성
 
 - `.command` 를 `open` 으로 실행하는 것과 Finder 더블클릭이 완전히 같지 않을 수 있다(로그인 셸 환경 차이로 `fnm` 이나 `uv` 경로가 다를 수 있다). 스크립트는 가상환경의 절대 경로 python 만 쓰므로 PATH 에 의존하지 않게 만든다. 그래도 다르면 관통 기록에 적는다.
