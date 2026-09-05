@@ -132,8 +132,10 @@ def test_error_result_with_usage_attaches_usage_to_exception(monkeypatch):
         asyncio.run(SubscriptionProvider().complete("q", {}))
     usage = exc_info.value.usage
     assert usage is not None
-    assert usage.input_tokens == 100
-    assert usage.output_tokens == 50
+    # D2 관통 실측(2026-09-06): usage dict 는 세션 누적이 아니라 마지막 턴 값이라 토큰을 신뢰하지 않는다.
+    # 출처 표시(token_source="usage")와 비용, 상태 코드는 남고 토큰 4종은 None 이다.
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
     assert usage.cost_usd == 0.004
     assert usage.api_error_status == 529
     assert usage.token_source == "usage"
@@ -211,6 +213,13 @@ def test_build_call_usage_model_usage_source():
 
 
 def test_build_call_usage_falls_back_to_usage_dict():
+    """model_usage 가 없으면 출처는 usage 로 표시하되 토큰은 채우지 않는다.
+
+    D2 관통 실측(2026-09-06, 실호출 1회): usage dict 의 input_tokens 는 2 였고 model_usage 합은 2,239 였다.
+    즉 usage dict 는 세션 누적이 아니라 마지막 턴(구조화 출력 정리 턴)의 값이라, 그 값을 "대략" 으로
+    보여주면 실제보다 천 배 작은 숫자가 된다. 없는 값은 만들지 않는다(가정 3)는 규칙대로 None 으로 둔다.
+    원시 값은 _log_raw_usage_line 의 로그에 남아 진단에는 쓸 수 있다.
+    """
     result = _result(
         usage={
             "input_tokens": 10,
@@ -221,10 +230,11 @@ def test_build_call_usage_falls_back_to_usage_dict():
     )
     usage = build_call_usage(result, assistant_model=None)
     assert usage.token_source == "usage"
-    assert usage.input_tokens == 10
-    assert usage.output_tokens == 5
-    assert usage.cache_read_tokens == 3
-    assert usage.cache_creation_tokens == 0
+    assert usage.input_tokens is None
+    assert usage.output_tokens is None
+    assert usage.cache_read_tokens is None
+    assert usage.cache_creation_tokens is None
+    assert usage.duration_ms == result.duration_ms  # 시간과 턴 수는 그대로 채운다
 
 
 def test_build_call_usage_no_source_leaves_tokens_none_but_keeps_timing():
@@ -478,7 +488,7 @@ def test_build_call_usage_ignores_non_dict_model_usage_entries():
     )
     usage = build_call_usage(only_bad, None)
     assert usage.token_source == "usage"
-    assert usage.input_tokens == 7 and usage.output_tokens == 3
+    assert usage.input_tokens is None and usage.output_tokens is None  # 폴백 토큰은 신뢰하지 않는다(관통 실측)
 
     mixed = _result(
         model_usage={

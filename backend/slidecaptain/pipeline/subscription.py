@@ -97,9 +97,9 @@ def _log_raw_usage_line(result: ResultMessage) -> None:
 def build_call_usage(result: ResultMessage, assistant_model: str | None) -> CallUsage:
     """`ResultMessage` 하나에서 `CallUsage` 를 만드는 순수 함수 (단계 5A 묶음 C 가정 1).
 
-    토큰의 1순위 출처는 `model_usage`(모델별 dict, 2개 이상이면 합산), 없으면
-    `usage` dict(그때는 `token_source="usage"` 로 표시해 화면이 "대략" 을 붙인다),
-    둘 다 없으면 `None` 이고 `token_source="none"`. 모델 문자열은 스트림에서
+    토큰의 유일한 출처는 `model_usage`(모델별 dict, 2개 이상이면 합산)다. `usage` dict 만 있으면
+    `token_source="usage"` 로 표시하되 토큰은 채우지 않는다(D2 관통 실측: 마지막 턴 값이라 신뢰 불가),
+    둘 다 없으면 `token_source="none"`. 어느 경우든 토큰이 없으면 화면은 "토큰 미확인" 을 쓴다. 모델 문자열은 스트림에서
     처음 본 `AssistantMessage.model` 을 우선하고, 없으면 `model_usage` 의 키가
     1개일 때만 그것을 쓴다. 비용은 SDK 가 이미 합산해 주는 `total_cost_usd` 를
     그대로 옮긴다(없는 값을 0으로 바꾸지 않는다).
@@ -128,11 +128,11 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
             int(mu.get("cacheCreationInputTokens", 0)) for mu in model_usage.values()
         )
     elif usage_dict:
+        # D2 관통 실측(2026-09-06, 실호출 1회): usage dict 는 세션 누적이 아니라 마지막 턴의 값이다
+        # (input_tokens 2 대 model_usage 합 2,239). 그 값을 "대략" 으로 보여주면 천 배 작은 숫자가 되므로
+        # 출처만 usage 로 표시하고 토큰 4종은 채우지 않는다(가정 3: 없는 값은 만들지 않는다). 원시 값은
+        # _log_raw_usage_line 의 로그로 진단할 수 있다.
         token_source = "usage"
-        input_tokens = usage_dict.get("input_tokens")
-        output_tokens = usage_dict.get("output_tokens")
-        cache_read_tokens = usage_dict.get("cache_read_input_tokens")
-        cache_creation_tokens = usage_dict.get("cache_creation_input_tokens")
     else:
         token_source = "none"
 
