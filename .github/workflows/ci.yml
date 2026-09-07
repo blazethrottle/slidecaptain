@@ -21,7 +21,11 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest]
     steps:
+      # 감사기의 이력 검사는 도달 가능한 커밋 전부를 본다. checkout 기본값(fetch-depth 1)이면
+      # 커밋 1개만 보고 조용히 통과한다 (2026-09-07 설계 판단: 검사가 있는 것처럼 보이는 상태를 만들지 않는다)
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -61,8 +65,8 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: 공개 저장소 추적 파일 감사
-        run: python scripts/audit_public_repo.py
+      - name: 공개 저장소 추적 파일과 이력 감사
+        run: python scripts/audit_public_repo.py --history
 
       - name: 백엔드 테스트
         working-directory: backend
