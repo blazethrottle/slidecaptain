@@ -91,6 +91,25 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
         // 밴드 문장 편집 경로. 속성 패널 전용 UI는 없다(DB-6 소관): 미리보기 인라인 편집만 쓴다
         if (slot === "text") return { ...slots, text };
         return slots;
+      case "cards": {
+        // 프레임 하나(card0, card1, ...)에 배지(있으면)/소제목/불릿/꼬리 라벨(있으면)이 이
+        // 순서로 늘어선다. 어느 index가 무엇인지는 그 카드에 배지가 있는지로 갈린다: 배지가
+        // 있으면 index 0이 배지, 없으면 index 0이 곧 소제목이다(카드 추가/삭제는 DB-6 소관).
+        const at = ref.index ?? 0;
+        return { ...slots, cards: slots.cards.map((card, i) => {
+          if (slot !== `card${i}`) return card;
+          const headingAt = card.badge ? 1 : 0;
+          const tailAt = headingAt + 1 + card.bullets.length;
+          if (card.badge && at === 0) return { ...card, badge: text };
+          if (at === headingAt) return { ...card, heading: text };
+          if (card.tail && at === tailAt) return { ...card, tail: text };
+          if (at > headingAt && at < tailAt) {
+            return { ...card, bullets: card.bullets.map((b, j) =>
+              j === at - headingAt - 1 ? { ...b, text } : b) };
+          }
+          return card;
+        }) };
+      }
     }
     return slots;
   });

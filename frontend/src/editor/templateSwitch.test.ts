@@ -84,3 +84,42 @@ it("callout끼리는 그대로다", () => {
   expect(r.slots).toBe(callout);
   expect(r.dropped).toEqual([]);
 });
+
+// ---- 카드(cards) 전환 (2026-09-07 DB-2) ----
+// conclusion/footnote에 대응하는 자리가 없어 결론과 각주는 소실 목록에 오르고, 불릿은
+// 최소 카드 수(2개)로 고르게 나눠 담는다.
+
+it("bullet_box에서 cards로: 불릿이 두 카드로 고르게 나뉘고 결론과 각주는 소실 목록", () => {
+  const r = switchTemplate(bulletSlots, "cards");
+  expect(r.slots.template === "cards" && r.slots.cards).toHaveLength(2);
+  expect(r.slots.template === "cards" && r.slots.cards[0].bullets).toHaveLength(1);
+  expect(r.slots.template === "cards" && r.slots.cards[1].bullets).toHaveLength(1);
+  expect(r.dropped.join(" ")).toContain("결론");
+  expect(r.dropped.join(" ")).toContain("각주");
+});
+
+it("cards에서 bullet_box로: 카드들의 불릿을 합치고 배지, 소제목, 꼬리 라벨은 소실 목록", () => {
+  const cards: Slots = {
+    template: "cards",
+    cards: [
+      { badge: "신규", heading: "카드 A", bullets: [{ text: "가", level: 0 }], tail: "자세히", emphasis: false },
+      { badge: "", heading: "카드 B", bullets: [{ text: "나", level: 0 }], tail: "", emphasis: true },
+    ],
+  };
+  const r = switchTemplate(cards, "bullet_box");
+  expect(r.slots.template === "bullet_box" && r.slots.bullets?.map((b) => b.text)).toEqual(["가", "나"]);
+  expect(r.dropped.join(" ")).toContain("신규");
+  expect(r.dropped.join(" ")).toContain("카드 A");
+  expect(r.dropped.join(" ")).toContain("자세히");
+  expect(r.dropped.join(" ")).toContain("카드 B");
+});
+
+it("cards끼리는 그대로다", () => {
+  const cards: Slots = { template: "cards", cards: [
+    { badge: "", heading: "A", bullets: [], tail: "", emphasis: false },
+    { badge: "", heading: "B", bullets: [], tail: "", emphasis: false },
+  ] };
+  const r = switchTemplate(cards, "cards");
+  expect(r.slots).toBe(cards);
+  expect(r.dropped).toEqual([]);
+});

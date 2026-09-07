@@ -442,6 +442,51 @@ export interface components {
              */
             bullets: components["schemas"]["Bullet"][];
         };
+        /**
+         * CardItem
+         * @description 카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다
+         *     (eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른
+         *     템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다.
+         */
+        CardItem: {
+            /**
+             * Badge
+             * @default
+             */
+            badge: string;
+            /** Heading */
+            heading: string;
+            /**
+             * Bullets
+             * @default []
+             */
+            bullets: components["schemas"]["Bullet"][];
+            /**
+             * Tail
+             * @default
+             */
+            tail: string;
+            /**
+             * Emphasis
+             * @default false
+             */
+            emphasis: boolean;
+        };
+        /**
+         * CardsSlots
+         * @description 카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:
+         *     compare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나
+         *     병렬 비교하는 용도라 공통 결론이 필수가 아니다.
+         */
+        CardsSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "cards";
+            /** Cards */
+            cards: components["schemas"]["CardItem"][];
+        };
         /** Chapter */
         Chapter: {
             /** Id */
@@ -457,7 +502,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout";
+            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards";
             /**
              * Source Refs
              * @default []
@@ -472,7 +517,7 @@ export interface components {
              */
             status: "ok" | "format_error";
             /** Slots */
-            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"]) | null;
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"]) | null;
             /**
              * Raw Text
              * @default
@@ -606,7 +651,7 @@ export interface components {
         /** CondenseChapterRequest */
         CondenseChapterRequest: {
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"];
             /**
              * Instructions
              * @default
@@ -1001,6 +1046,10 @@ export interface components {
              *       "card_gap": 20,
              *       "card_heading_height": 24,
              *       "card_heading_gap": 8,
+             *       "card_badge_height": 16,
+             *       "card_badge_gap": 6,
+             *       "card_tail_height": 16,
+             *       "card_tail_gap": 8,
              *       "cover_indent": 30,
              *       "table_min_col_width": 60,
              *       "table_cell_pad_x": 6,
@@ -1110,7 +1159,7 @@ export interface components {
              */
             subtitle: string;
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"];
         };
         /** SlidePlan */
         SlidePlan: {
@@ -1240,6 +1289,26 @@ export interface components {
              * @default 8
              */
             card_heading_gap: number;
+            /**
+             * Card Badge Height
+             * @default 16
+             */
+            card_badge_height: number;
+            /**
+             * Card Badge Gap
+             * @default 6
+             */
+            card_badge_gap: number;
+            /**
+             * Card Tail Height
+             * @default 16
+             */
+            card_tail_height: number;
+            /**
+             * Card Tail Gap
+             * @default 8
+             */
+            card_tail_gap: number;
             /**
              * Cover Indent
              * @default 30

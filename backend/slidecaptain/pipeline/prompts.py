@@ -7,6 +7,7 @@
 from slidecaptain.models.deck import (
     BulletBoxSlots,
     CalloutSlots,
+    CardsSlots,
     Chapter,
     CompareSlots,
     CoverSlots,
@@ -32,7 +33,8 @@ TEMPLATE_GUIDE = """\
 - table: 비교표, 데이터 표 (열 이름 + 행 + 선택 각주)
 - compare2: 옵션 비교나 전후 대비 카드 2개 + 결론 박스
 - divider: 섹션 구분 간지
-- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)"""
+- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)
+- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)"""
 
 STYLE_RULES = """\
 문체 규칙:
@@ -51,6 +53,7 @@ _SLOTS_BY_TEMPLATE = {
     "compare2": CompareSlots,
     "divider": DividerSlots,
     "callout": CalloutSlots,
+    "cards": CardsSlots,
 }
 
 _CONTRACT_LABELS = {
@@ -67,6 +70,8 @@ _CONTRACT_LABELS = {
     "card_heading_max_lines": "카드 소제목",
     "card_bullets_max_lines": "카드 하나의 불릿 전체",
     "text_max_lines": "강조 문장",
+    "card_badge_max_lines": "카드 배지",
+    "card_tail_max_lines": "카드 꼬리 라벨",
 }
 
 
@@ -118,7 +123,8 @@ def structure_response_schema() -> dict:
                         "template": {
                             "type": "string",
                             "enum": [
-                                "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout",
+                                "cover", "summary", "bullet_box", "table", "compare2", "divider",
+                                "callout", "cards",
                             ],
                         },
                         "source_refs": {"type": "array", "items": {"type": "string"}},
@@ -136,12 +142,16 @@ def structure_response_schema() -> dict:
 _ITEM_COUNT_KEYS = {"points_max_lines", "bullets_max_lines", "card_bullets_max_lines"}
 
 
-def _contract_block(contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
+def _contract_block(template: str, contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
     if not contract:
         # 모든 템플릿이 계약을 가지므로(표지와 간지도 2026-09-02 부터) 서비스 경로에서는 도달하지 않는다.
         # 계약 없이 호출하는 테스트와 외부 호출자를 위한 폴백으로만 남긴다 (구현 리뷰 R3)
         return "분량 한도: 이 템플릿은 짧은 텍스트만 담는다. 각 칸은 한 줄로 쓴다"
     lines = []
+    if template == "cards":
+        # 개수 제약은 max_lines 형태의 계약 딕셔너리에 담을 수 없는 값이라 여기서 별도로 넣는다
+        # (2026-09-07 DB-2). AI가 실제로 만드는 cards 배열 길이(2~4)를 직접 겨냥한 문구다.
+        lines.append("- 카드 개수: 2개 이상 4개 이하")
     for key, value in contract.items():
         suffix = f" (한 줄짜리 항목 {value}개 기준)" if key in _ITEM_COUNT_KEYS else ""
         unit = "행" if key == "rows_max_single_line" else "줄"
@@ -186,7 +196,7 @@ def build_chapter_prompt(
 - 이 장의 결론: {chapter.conclusion or "미정 (자료에서 도출)"}
 - 템플릿: {chapter.template}
 
-{_contract_block(contract, char_hints)}
+{_contract_block(chapter.template, contract, char_hints)}
 
 {STYLE_RULES}
 {extra}{sources_part}"""

@@ -71,6 +71,7 @@ def _minimal_slots(template: str):
     from slidecaptain.models.deck import (
         BulletBoxSlots,
         CalloutSlots,
+        CardsSlots,
         CompareSlots,
         CoverSlots,
         DividerSlots,
@@ -90,6 +91,10 @@ def _minimal_slots(template: str):
             right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
         ),
         "callout": lambda: CalloutSlots(text="핵심 메시지 한 문장"),
+        "cards": lambda: CardsSlots(cards=[
+            {"heading": "카드 A", "bullets": [{"text": "항목", "level": 0}]},
+            {"heading": "카드 B", "bullets": [{"text": "항목", "level": 0}]},
+        ]),
     }[template]()
 
 

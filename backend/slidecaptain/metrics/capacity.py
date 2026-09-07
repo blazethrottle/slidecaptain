@@ -138,6 +138,28 @@ def callout_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> d
     }
 
 
+def cards_geometry(
+    preset: Preset, card_count: int = 2, eyebrow: str = "", subtitle: str = ""
+) -> dict[str, float]:
+    """cards 템플릿 카드 기하 (2026-09-07 DB-2). compare2의 card_geometry와 달리 결론
+    상자가 없어 카드 높이가 본문 영역 전체다: 카드 수가 늘어도 높이는 바뀌지 않고 폭만
+    좁아진다. bullets_h는 배지와 꼬리 라벨이 항상 있다고 가정한 안전한 하한이다(계약 용도):
+    실제 렌더(layout.templates._build_cards)는 카드마다 실제로 있는 만큼만 뺀다.
+    """
+    s = preset.spacing
+    g = content_geometry(preset, eyebrow, subtitle)
+    card_h = g["content_bottom"] - g["content_top"]
+    card_w = (g["content_width"] - s.card_gap * (card_count - 1)) / card_count
+    inner_w = card_w - 2 * s.box_padding
+    reserved = (
+        s.card_heading_height + s.card_heading_gap
+        + s.card_badge_height + s.card_badge_gap
+        + s.card_tail_height + s.card_tail_gap
+    )
+    bullets_h = card_h - 2 * s.box_padding - reserved
+    return {"card_w": card_w, "card_h": card_h, "inner_w": inner_w, "bullets_h": bullets_h}
+
+
 def cover_geometry(preset: Preset) -> dict:
     """표지 프레임 기하 (x, w 와 칸별 (y, h)). y 리터럴의 프리셋 승격은 단계 5B 이월 항목이라 값은 그대로 둔다."""
     s = preset.spacing
@@ -167,7 +189,7 @@ def divider_geometry(preset: Preset) -> dict:
 
 
 def capacity_contract(
-    template: str, preset: Preset, eyebrow: str = "", subtitle: str = ""
+    template: str, preset: Preset, eyebrow: str = "", subtitle: str = "", card_count: int = 2
 ) -> dict[str, int]:
     s = preset.spacing
     r = preset.font_roles
@@ -179,6 +201,9 @@ def capacity_contract(
     divider = divider_geometry(preset)["fields"]
     card = card_geometry(preset, eyebrow, subtitle)
     callout = callout_geometry(preset, eyebrow, subtitle)
+    # card_count는 cards 템플릿에만 쓰인다. 기본값 2는 기존 7종 호출(card_count 인자를 주지
+    # 않는 모든 호출부)의 결과를 그대로 유지한다 (2026-09-07 DB-2)
+    cards = cards_geometry(preset, card_count, eyebrow, subtitle)
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
@@ -216,6 +241,12 @@ def capacity_contract(
         "callout": {
             "text_max_lines": max_lines(callout["inner_h"], r.box_pt, ls),
         },
+        "cards": {
+            "card_badge_max_lines": max_lines(s.card_badge_height, r.footnote_pt, ls),
+            "card_heading_max_lines": max_lines(s.card_heading_height, r.body_pt, ls),
+            "card_bullets_max_lines": items_that_fit(cards["bullets_h"], r.body_pt, ls, s.bullet_gap),
+            "card_tail_max_lines": max_lines(s.card_tail_height, r.footnote_pt, ls),
+        },
     }
     return contracts[template]
 
@@ -235,8 +266,12 @@ def hangul_chars_per_line(preset: Preset, face) -> int:
     return hangul_chars_for_width(width, preset.font_roles.body_pt, face, preset.spacing.safety_ratio)
 
 
-def char_hints(template: str, preset: Preset, metrics) -> dict[str, int]:
-    """템플릿별 환산 안내 (칸 이름 → 한 줄 한글 글자 수). 프롬프트 계약 블록이 그대로 이어 붙인다."""
+def char_hints(template: str, preset: Preset, metrics, card_count: int = 2) -> dict[str, int]:
+    """템플릿별 환산 안내 (칸 이름 → 한 줄 한글 글자 수). 프롬프트 계약 블록이 그대로 이어 붙인다.
+
+    card_count는 cards 템플릿에만 쓰인다: 카드 폭이 카드 수에 따라 달라지므로 한 줄 글자
+    수도 함께 달라진다. 기본값 2는 이 인자를 주지 않는 기존 7종 호출의 결과를 그대로 유지한다.
+    """
     s, r = preset.spacing, preset.font_roles
     regular, bold = metrics.face(False), metrics.face(True)
     if template in ("bullet_box", "summary", "table"):
@@ -261,4 +296,14 @@ def char_hints(template: str, preset: Preset, metrics) -> dict[str, int]:
     if template == "callout":
         band = callout_geometry(preset)
         return {"밴드 안 한 줄": hangul_chars_for_width(band["inner_w"], r.box_pt, bold, s.safety_ratio)}
+    if template == "cards":
+        cg = cards_geometry(preset, card_count)
+        return {
+            "카드 배지": hangul_chars_for_width(cg["inner_w"], r.footnote_pt, bold, s.safety_ratio),
+            "카드 소제목": hangul_chars_for_width(cg["inner_w"], r.body_pt, bold, s.safety_ratio),
+            "카드 안 한 줄": hangul_chars_for_width(
+                cg["inner_w"] - s.bullet_indent, r.body_pt, regular, s.safety_ratio
+            ),
+            "카드 꼬리 라벨": hangul_chars_for_width(cg["inner_w"], r.footnote_pt, regular, s.safety_ratio),
+        }
     raise KeyError(template)

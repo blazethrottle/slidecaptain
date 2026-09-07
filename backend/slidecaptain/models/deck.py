@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field, model_validator
 
 SCHEMA_VERSION = 1
 
-TemplateName = Literal["cover", "summary", "bullet_box", "table", "compare2", "divider", "callout"]
+TemplateName = Literal[
+    "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards",
+]
 ReportType = Literal["research", "approval", "strategy"]
 
 
@@ -98,8 +100,34 @@ class CalloutSlots(BaseModel):
     ] = "surface1"
 
 
+class CardItem(BaseModel):
+    """카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다
+    (eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른
+    템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다.
+    """
+
+    badge: str = ""
+    heading: str
+    bullets: list[Bullet] = []
+    tail: str = ""
+    emphasis: bool = False
+
+
+class CardsSlots(BaseModel):
+    """카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:
+    compare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나
+    병렬 비교하는 용도라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["cards"] = "cards"
+    cards: list[CardItem] = Field(min_length=2, max_length=4)
+
+
 Slots = Annotated[
-    Union[CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots, CalloutSlots],
+    Union[
+        CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots,
+        CalloutSlots, CardsSlots,
+    ],
     Field(discriminator="template"),
 ]
 

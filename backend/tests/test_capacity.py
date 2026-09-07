@@ -101,6 +101,7 @@ from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.capacity import (
     callout_geometry,
     card_geometry,
+    cards_geometry,
     char_hints,
     content_geometry,
     hangul_chars_per_line,
@@ -109,6 +110,8 @@ from slidecaptain.models.deck import (
     BulletBoxSlots,
     CalloutSlots,
     Card,
+    CardItem,
+    CardsSlots,
     Chapter,
     CompareSlots,
     Deck,
@@ -184,7 +187,7 @@ def test_compare2_contract_and_template_share_card_geometry():
 
 def test_contract_never_negative_with_large_padding():
     p2 = apply_overrides(PRESET, {"spacing": {"box_padding": 40.0}})
-    for template in ("summary", "bullet_box", "table", "compare2"):
+    for template in ("summary", "bullet_box", "table", "compare2", "cards"):
         assert min(capacity_contract(template, p2).values()) >= 0
 
 
@@ -247,3 +250,91 @@ def test_callout_contract_boundary_of_lines_fits_and_plus_one_overflows():
 
     assert not _slot_warnings(_slide("callout", slots(n)), "text"), "계약대로 채웠는데 넘침 경고가 났다"
     assert _slot_warnings(_slide("callout", slots(n + 1)), "text"), "계약보다 한 줄 더 넣었는데 경고가 없다"
+
+
+# ---- 카드(cards) 용량 계약 (2026-09-07 DB-2) ----
+# capacity_contract/char_hints에 card_count 인자가 늘었다: 카드 수에 따라 폭이 달라지고,
+# 폭이 달라지면 카드 안 한 줄에 들어가는 글자 수(char_hints)가 달라진다. 높이 기반인
+# card_bullets_max_lines 자체는 카드 수와 무관하다(한 행에 나란히 두므로 높이는 늘 본문
+# 영역 전체다): 그래도 왕복 테스트는 2, 3, 4 각각에서 좌표 계산이 옳은지 검증한다.
+
+def test_existing_seven_templates_contract_values_unchanged_by_cards_signature():
+    """capacity_contract에 card_count 인자를 더해도 기존 7종(callout 포함) 계약은 그대로다."""
+    assert capacity_contract("cover", PRESET) == {
+        "cover_title_max_lines": 1, "subtitle_max_lines": 1, "date_max_lines": 1,
+    }
+    assert capacity_contract("divider", PRESET) == {
+        "section_no_max_lines": 1, "section_title_max_lines": 1,
+    }
+    assert capacity_contract("summary", PRESET) == {"points_max_lines": 14, "conclusion_max_lines": 2}
+    assert capacity_contract("bullet_box", PRESET) == {
+        "bullets_max_lines": 14, "conclusion_max_lines": 2, "footnote_max_lines": 1,
+    }
+    assert capacity_contract("table", PRESET) == {"rows_max_single_line": 16, "footnote_max_lines": 1}
+    assert capacity_contract("compare2", PRESET) == {
+        "card_heading_max_lines": 1, "card_bullets_max_lines": 11, "conclusion_max_lines": 2,
+    }
+    assert capacity_contract("callout", PRESET) == {"text_max_lines": 3}
+
+
+def test_cards_geometry_width_shrinks_as_card_count_grows_but_height_does_not():
+    two = cards_geometry(PRESET, 2)
+    three = cards_geometry(PRESET, 3)
+    four = cards_geometry(PRESET, 4)
+    assert two["card_w"] > three["card_w"] > four["card_w"]
+    assert two["card_h"] == three["card_h"] == four["card_h"]
+    # 컴페어2와 같은 산식이라 카드 2개일 때는 값도 같다 (compare2 카드폭 420.0, test_layout_engine.py 실측)
+    assert two["card_w"] == pytest.approx(420.0)
+
+
+def test_cards_geometry_widths_sum_to_content_width_for_every_valid_count():
+    for n in (2, 3, 4):
+        cg = cards_geometry(PRESET, n)
+        assert n * cg["card_w"] + (n - 1) * PRESET.spacing.card_gap == pytest.approx(
+            content_geometry(PRESET)["content_width"]
+        )
+
+
+def test_cards_char_hint_shrinks_as_card_count_grows():
+    two = char_hints("cards", PRESET, REAL, card_count=2)
+    four = char_hints("cards", PRESET, REAL, card_count=4)
+    assert set(two) == {"카드 배지", "카드 소제목", "카드 안 한 줄", "카드 꼬리 라벨"}
+    for key in two:
+        assert two[key] > four[key], f"{key}: 카드가 늘어 폭이 좁아지면 한 줄 글자 수도 줄어야 한다"
+
+
+def test_cards_contract_answers_without_card_count_argument():
+    # capacity_contract("cards", PRESET) 처럼 card_count를 생략하는 기존 호출부(service.py)가
+    # 죽지 않아야 한다: 기본값 2가 안전한 하한이다
+    contract = capacity_contract("cards", PRESET)
+    assert set(contract) == {
+        "card_badge_max_lines", "card_heading_max_lines", "card_bullets_max_lines", "card_tail_max_lines",
+    }
+    assert all(v >= 0 for v in contract.values())
+
+
+def _cards_slots(n: int, bullets_per_card: int, badge: str = "배지", tail: str = "꼬리") -> CardsSlots:
+    return CardsSlots(cards=[
+        CardItem(
+            badge=badge, heading=f"카드{i}", tail=tail,
+            bullets=[Bullet(text=f"항목{i}-{j}") for j in range(bullets_per_card)],
+        )
+        for i in range(n)
+    ])
+
+
+@pytest.mark.parametrize("card_count", [2, 3, 4])
+def test_cards_contract_boundary_of_one_line_bullets_fits_and_plus_one_overflows(card_count):
+    """카드 2, 3, 4개 각각에서 계약대로 채우면 실측이 통과하는지 (배지와 꼬리가 항상 있다고
+    가정한 계약의 안전한 하한이므로, 실측도 배지와 꼬리를 채워야 경계가 정확히 맞는다)."""
+    n = capacity_contract("cards", PRESET, card_count=card_count)["card_bullets_max_lines"]
+    fits = _slide("cards", _cards_slots(card_count, n))
+    assert not _slot_warnings(fits, "card0"), "계약대로 채웠는데 넘침 경고가 났다"
+    overflows = _slide("cards", _cards_slots(card_count, n + 1))
+    assert _slot_warnings(overflows, "card0"), "계약보다 하나 더 넣었는데 경고가 없다"
+
+
+def test_cards_contract_never_negative_with_large_padding_across_counts():
+    p2 = apply_overrides(PRESET, {"spacing": {"box_padding": 40.0}})
+    for n in (2, 3, 4):
+        assert min(capacity_contract("cards", p2, card_count=n).values()) >= 0

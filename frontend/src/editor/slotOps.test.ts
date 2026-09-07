@@ -144,6 +144,47 @@ it("강조 밴드 문장은 text 슬롯으로 고친다", () => {
   expect(slots.template === "callout" && slots.tone).toBe("surface1");  // 톤은 건드리지 않는다
 });
 
+it("카드의 index는 배지 유무로 갈린다: 배지가 있으면 0이 배지, 없으면 0이 소제목", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "cards", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "cards",
+      cards: [
+        { badge: "신규", heading: "카드 A", bullets: [{ text: "가", level: 0 }], tail: "자세히", emphasis: false },
+        { badge: "", heading: "카드 B", bullets: [{ text: "나", level: 0 }], tail: "", emphasis: false },
+      ],
+    } }],
+  };
+  // card0: 배지가 있는 카드. index 0=배지, 1=소제목, 2=불릿, 3=꼬리 라벨
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 0 }, "새 배지");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].badge).toBe("새 배지");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 1 }, "새 소제목");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].heading).toBe("새 소제목");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 2 }, "새 불릿");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].bullets[0].text).toBe("새 불릿");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 3 }, "새 꼬리");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].tail).toBe("새 꼬리");
+
+  // card1: 배지도 꼬리도 없는 카드. index 0=소제목, 1=불릿
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card1", index: 0 }, "새 B 제목");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[1].heading).toBe("새 B 제목");
+  expect(slots.template === "cards" && slots.cards[0].heading).toBe("카드 A");  // 다른 카드는 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card1", index: 1 }, "새 B 불릿");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[1].bullets[0].text).toBe("새 B 불릿");
+});
+
 it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
   const deck: Deck = {
     ...bulletDeck(),

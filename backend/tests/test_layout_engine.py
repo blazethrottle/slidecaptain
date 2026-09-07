@@ -7,6 +7,8 @@ from slidecaptain.models.deck import (
     BulletBoxSlots,
     CalloutSlots,
     Card,
+    CardItem,
+    CardsSlots,
     Chapter,
     CompareSlots,
     CoverSlots,
@@ -514,3 +516,96 @@ def test_callout_short_text_has_no_warning_and_single_line():
     assert plan.warnings == []
     band = _frame(plan, ":text")
     assert band.paras[0].lines == ["짧은 강조 문장"]
+
+
+# ---- 카드(cards) 프레임 (2026-09-07 DB-2) ----
+# 벤치마크 원형: 배지(선택)/제목/본문 불릿/꼬리 라벨(선택)을 담은 카드 2~4개를 가로로 나열.
+
+
+def _cards_deck(n: int, **card_kwargs) -> Deck:
+    cards = [CardItem(heading=f"카드{i}", bullets=[Bullet(text=f"항목{i}")], **card_kwargs) for i in range(n)]
+    return _deck([("cards", CardsSlots(cards=cards))])
+
+
+@pytest.mark.parametrize("n", [2, 3, 4])
+def test_cards_frames_do_not_overlap_and_span_the_content_width(n):
+    # 카드 사이에는 compare2의 두 카드처럼 card_gap(기본 20pt)만큼의 간격이 있다: 딱 붙지 않는다.
+    plan = build_render_plan(_cards_deck(n), PRESET, FAKE)
+    cards = [_frame(plan.slides[0], f":card{i}") for i in range(n)]
+    for a, b in zip(cards, cards[1:]):
+        assert a.x + a.w == pytest.approx(b.x - PRESET.spacing.card_gap), "카드 사이 간격이 card_gap이 아니다"
+        assert a.x + a.w <= b.x, "카드가 겹친다"
+    assert cards[0].x == 50.0  # margin_left
+    assert cards[-1].x + cards[-1].w == pytest.approx(50.0 + 860.0)  # margin_left + content_width
+    assert all(c.y == cards[0].y for c in cards), "카드 높이(y)는 카드 수와 무관하게 같아야 한다"
+    assert all(c.h == cards[0].h for c in cards)
+
+
+def test_cards_frame_names_carry_role_tags():
+    plan = build_render_plan(_cards_deck(2), PRESET, FAKE)
+    names = {f.name for f in plan.slides[0].frames}
+    assert names == {"ch01:title", "ch01:card0", "ch01:card1", "ch01:page_number"}
+
+
+def test_cards_emphasis_card_gets_dark_fill_and_accent_border_not_thicker_border():
+    deck = _deck([(
+        "cards",
+        CardsSlots(cards=[
+            CardItem(heading="강조", bullets=[Bullet(text="가")], emphasis=True),
+            CardItem(heading="보통", bullets=[Bullet(text="나")], emphasis=False),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    emphasized = _frame(plan.slides[0], ":card0")
+    plain = _frame(plan.slides[0], ":card1")
+    assert emphasized.fill == PRESET.colors.ink
+    assert emphasized.border == PRESET.colors.accent1
+    assert plain.fill is None
+    assert plain.border == PRESET.colors.rule
+    # 계획서 명시: 강조는 굵기가 아니라 색으로 구분한다 (border_width_pt는 둘 다 명시하지 않는다)
+    assert emphasized.border_width_pt is None
+    assert plain.border_width_pt is None
+
+
+def test_cards_emphasis_card_text_is_readable_on_the_dark_fill():
+    deck = _deck([(
+        "cards",
+        CardsSlots(cards=[
+            CardItem(badge="신규", heading="강조", tail="자세히", bullets=[Bullet(text="가")], emphasis=True),
+            CardItem(heading="보통", bullets=[Bullet(text="나")]),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    emphasized = _frame(plan.slides[0], ":card0")
+    plain = _frame(plan.slides[0], ":card1")
+    assert emphasized.paras, "배지/제목/불릿/꼬리 문단이 있어야 한다"
+    assert all(p.color != PRESET.colors.text for p in emphasized.paras)
+    assert all(p.color == PRESET.colors.text for p in plain.paras)
+
+
+def test_cards_badge_and_tail_are_optional_and_add_exactly_one_para_each():
+    deck = _deck([(
+        "cards",
+        CardsSlots(cards=[
+            CardItem(badge="신규", heading="A", tail="자세히", bullets=[Bullet(text="가")]),
+            CardItem(heading="B", bullets=[Bullet(text="나")]),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    with_both = _frame(plan.slides[0], ":card0")
+    without = _frame(plan.slides[0], ":card1")
+    assert len(with_both.paras) == len(without.paras) + 2
+
+
+def test_cards_badge_overflow_warns_only_that_cards_badge_slot():
+    long_badge = "배지 문구가 지나치게 길어서 한 줄 높이를 넘긴다 " * 6
+    deck = _deck([(
+        "cards",
+        CardsSlots(cards=[
+            CardItem(badge=long_badge, heading="A", bullets=[Bullet(text="가")]),
+            CardItem(heading="B", bullets=[Bullet(text="나")]),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert "card0_badge" in _warned_slots(plan)
+    assert "card1_badge" not in _warned_slots(plan)

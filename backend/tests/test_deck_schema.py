@@ -5,6 +5,8 @@ from slidecaptain.models.deck import (
     SCHEMA_VERSION,
     Bullet,
     BulletBoxSlots,
+    CardItem,
+    CardsSlots,
     Chapter,
     Deck,
     DeckMeta,
@@ -159,6 +161,35 @@ def test_table_cell_newline_rejected():
             }}],
         })
     assert "줄바꿈" in str(exc_info.value)
+
+
+# ---- 카드(cards) 슬롯 검증 (2026-09-07 DB-2) ----
+
+
+def test_card_item_badge_and_tail_default_to_empty_and_not_emphasized():
+    card = CardItem(heading="제목")
+    assert card.badge == ""
+    assert card.tail == ""
+    assert card.bullets == []
+    assert card.emphasis is False
+
+
+def test_cards_slots_accepts_two_to_four_cards():
+    for n in (2, 3, 4):
+        slots = CardsSlots(cards=[CardItem(heading=f"카드{i}") for i in range(n)])
+        assert len(slots.cards) == n
+
+
+def test_cards_slots_rejects_fewer_than_two_cards():
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[CardItem(heading="하나뿐")])
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[])
+
+
+def test_cards_slots_rejects_more_than_four_cards():
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[CardItem(heading=f"카드{i}") for i in range(5)])
 
 
 def test_legacy_cover_audience_key_is_ignored_on_load():

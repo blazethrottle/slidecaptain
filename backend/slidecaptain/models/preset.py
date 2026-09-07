@@ -110,6 +110,12 @@ class Spacing(BaseModel):
     card_gap: float = Field(default=20.0, ge=0)
     card_heading_height: float = Field(default=24.0, gt=0)
     card_heading_gap: float = Field(default=8.0, ge=0)
+    # cards 템플릿 전용 배지와 꼬리 라벨 (2026-09-07 DB-2). 둘 다 선택 필드라 값이 있을 때만
+    # 카드 안에서 이만큼의 높이와 간격을 차지한다(카드 heading_height/heading_gap과 같은 방식).
+    card_badge_height: float = Field(default=16.0, gt=0)
+    card_badge_gap: float = Field(default=6.0, ge=0)
+    card_tail_height: float = Field(default=16.0, gt=0)
+    card_tail_gap: float = Field(default=8.0, ge=0)
     cover_indent: float = Field(default=30.0, ge=0)
     table_min_col_width: float = Field(default=60.0, gt=0)
     table_cell_pad_x: float = Field(default=6.0, ge=0)

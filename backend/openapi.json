@@ -1340,6 +1340,68 @@
         ],
         "title": "Card"
       },
+      "CardItem": {
+        "properties": {
+          "badge": {
+            "type": "string",
+            "title": "Badge",
+            "default": ""
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "bullets": {
+            "items": {
+              "$ref": "#/components/schemas/Bullet"
+            },
+            "type": "array",
+            "title": "Bullets",
+            "default": []
+          },
+          "tail": {
+            "type": "string",
+            "title": "Tail",
+            "default": ""
+          },
+          "emphasis": {
+            "type": "boolean",
+            "title": "Emphasis",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "CardItem",
+        "description": "카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다\n(eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른\n템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다."
+      },
+      "CardsSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "cards",
+            "title": "Template",
+            "default": "cards"
+          },
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/CardItem"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Cards"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cards"
+        ],
+        "title": "CardsSlots",
+        "description": "카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:\ncompare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나\n병렬 비교하는 용도라 공통 결론이 필수가 아니다."
+      },
       "Chapter": {
         "properties": {
           "id": {
@@ -1364,7 +1426,8 @@
               "table",
               "compare2",
               "divider",
-              "callout"
+              "callout",
+              "cards"
             ],
             "title": "Template"
           },
@@ -1419,6 +1482,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/CalloutSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CardsSlots"
                   }
                 ],
                 "discriminator": {
@@ -1426,6 +1492,7 @@
                   "mapping": {
                     "bullet_box": "#/components/schemas/BulletBoxSlots",
                     "callout": "#/components/schemas/CalloutSlots",
+                    "cards": "#/components/schemas/CardsSlots",
                     "compare2": "#/components/schemas/CompareSlots",
                     "cover": "#/components/schemas/CoverSlots",
                     "divider": "#/components/schemas/DividerSlots",
@@ -1643,6 +1710,9 @@
               },
               {
                 "$ref": "#/components/schemas/CalloutSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CardsSlots"
               }
             ],
             "title": "Slots",
@@ -1651,6 +1721,7 @@
               "mapping": {
                 "bullet_box": "#/components/schemas/BulletBoxSlots",
                 "callout": "#/components/schemas/CalloutSlots",
+                "cards": "#/components/schemas/CardsSlots",
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
@@ -2395,6 +2466,10 @@
               "card_gap": 20.0,
               "card_heading_height": 24.0,
               "card_heading_gap": 8.0,
+              "card_badge_height": 16.0,
+              "card_badge_gap": 6.0,
+              "card_tail_height": 16.0,
+              "card_tail_gap": 8.0,
               "cover_indent": 30.0,
               "table_min_col_width": 60.0,
               "table_cell_pad_x": 6.0,
@@ -2607,6 +2682,9 @@
               },
               {
                 "$ref": "#/components/schemas/CalloutSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CardsSlots"
               }
             ],
             "title": "Slots",
@@ -2615,6 +2693,7 @@
               "mapping": {
                 "bullet_box": "#/components/schemas/BulletBoxSlots",
                 "callout": "#/components/schemas/CalloutSlots",
+                "cards": "#/components/schemas/CardsSlots",
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
@@ -2816,6 +2895,30 @@
             "type": "number",
             "minimum": 0.0,
             "title": "Card Heading Gap",
+            "default": 8.0
+          },
+          "card_badge_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Card Badge Height",
+            "default": 16.0
+          },
+          "card_badge_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Card Badge Gap",
+            "default": 6.0
+          },
+          "card_tail_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Card Tail Height",
+            "default": 16.0
+          },
+          "card_tail_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Card Tail Gap",
             "default": 8.0
           },
           "cover_indent": {

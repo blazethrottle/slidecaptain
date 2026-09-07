@@ -1,4 +1,4 @@
-from slidecaptain.models.deck import CalloutSlots, Chapter, Deck, DeckMeta, Structure
+from slidecaptain.models.deck import CalloutSlots, CardsSlots, Chapter, Deck, DeckMeta, Structure
 from slidecaptain.models.render import CapacityWarning
 from slidecaptain.pipeline.prompts import (
     TEMPLATE_GUIDE,
@@ -176,3 +176,63 @@ def test_callout_chapter_schema_matches_slot_model():
     schema = chapter_response_schema("callout")
     assert "text" in schema["properties"]
     assert "tone" in schema["properties"]
+
+
+# ---- 카드(cards) 등록 (2026-09-07 DB-2) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지,
+# 개수 제약(2~4)이 계약 블록에 드러나는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_cards():
+    lines = TEMPLATE_GUIDE.splitlines()
+    cards_lines = [ln for ln in lines if "cards" in ln]
+    assert len(cards_lines) == 1
+    # 기존 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
+    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    assert "- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)" in lines
+
+
+def test_cards_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["cards"] is CardsSlots
+    assert "card_badge_max_lines" in _CONTRACT_LABELS
+    assert "card_heading_max_lines" in _CONTRACT_LABELS  # compare2와 공유하는 기존 라벨
+    assert "card_bullets_max_lines" in _CONTRACT_LABELS
+    assert "card_tail_max_lines" in _CONTRACT_LABELS
+
+
+def test_cards_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "cards" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_cards_contract_block_states_the_card_count_constraint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="카드", template="cards")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 5,
+         "card_tail_max_lines": 1},
+        today="2026-09-07", char_hints={"카드 안 한 줄": 20},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 카드 개수: 2개 이상 4개 이하" in prompt
+    assert "- 카드 배지: 최대 1줄" in prompt
+    assert "- 카드 꼬리 라벨: 최대 1줄" in prompt
+    assert "카드 안 한 줄 약 20자" in prompt
+
+
+def test_other_templates_contract_block_has_no_card_count_line():
+    # 카드 개수 문구는 cards 전용이다: 다른 템플릿의 프롬프트를 오염시키면 안 된다
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="주제", template="bullet_box")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "카드 개수" not in prompt
+
+
+def test_cards_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("cards")
+    assert "cards" in schema["properties"]
+    cards_field = schema["properties"]["cards"]
+    assert cards_field.get("minItems") == 2
+    assert cards_field.get("maxItems") == 4

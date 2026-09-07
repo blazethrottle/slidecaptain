@@ -31,6 +31,19 @@ function collect(slots: Slots): Currency {
       // 밴드는 문장 하나뿐이다: bullet_box/summary의 conclusion과 같은 "그 장의 결론 한 줄"
       // 의미이므로 같은 자리로 담아 다른 템플릿의 결론과 오갈 수 있게 한다
       return { conclusion: slots.text, bullets: [], dropped: [] };
+    case "cards": {
+      // 카드에는 conclusion/footnote에 대응하는 자리가 없다: 불릿만 모으고 배지, 소제목,
+      // 꼬리 라벨은 각 카드별로 소실 목록에 남긴다 (2026-09-07 DB-2)
+      const dropped: string[] = [];
+      const bullets: Bullet[] = [];
+      slots.cards.forEach((card, i) => {
+        if (card.badge) dropped.push(`${i + 1}번째 카드 배지 "${card.badge}"`);
+        if (card.heading) dropped.push(`${i + 1}번째 카드 소제목 "${card.heading}"`);
+        if (card.tail) dropped.push(`${i + 1}번째 카드 꼬리 라벨 "${card.tail}"`);
+        bullets.push(...(card.bullets ?? []));
+      });
+      return { bullets, dropped };
+    }
   }
 }
 
@@ -69,6 +82,22 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
       dropBullets();
       dropFootnote();
       return { slots: { template: "callout", text: conclusion, tone: "surface1" }, dropped };
+    case "cards": {
+      // 결론과 각주는 카드에 담을 자리가 없어 소실 목록에 오른다. 불릿은 최소 카드 수(2개)로
+      // 고르게 나눠 담는다: 어느 한쪽에만 몰아넣지 않아야 두 카드 다 편집할 거리가 있다
+      dropConclusion();
+      dropFootnote();
+      const mid = Math.ceil(c.bullets.length / 2);
+      const emptyCard = (bullets: Bullet[]) =>
+        ({ badge: "", heading: "", bullets, tail: "", emphasis: false });
+      return {
+        slots: { template: "cards", cards: [
+          emptyCard(c.bullets.slice(0, mid)),
+          emptyCard(c.bullets.slice(mid)),
+        ] },
+        dropped,
+      };
+    }
   }
 }
 

@@ -9,6 +9,7 @@ from slidecaptain.metrics.capacity import (
     content_geometry,
     callout_geometry,
     card_geometry,
+    cards_geometry,
     cover_geometry,
     divider_geometry,
     line_height_pt,
@@ -22,6 +23,8 @@ from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
     CalloutSlots,
+    CardItem,
+    CardsSlots,
     Chapter,
     CompareSlots,
     CoverSlots,
@@ -40,11 +43,16 @@ def _para_lines(
     return break_paragraph(text, width_pt, font_pt, metrics.face(bold), preset.spacing.safety_ratio)
 
 
-def _bullet_paras(bullets: list[Bullet], area_width_pt: float, preset: Preset, metrics) -> list[Para]:
+def _bullet_paras(
+    bullets: list[Bullet], area_width_pt: float, preset: Preset, metrics, color: str | None = None
+) -> list[Para]:
+    """color를 생략하면 기본 본문색(c.text)이다. cards 템플릿의 emphasis 카드처럼 어두운
+    배경 위에서는 호출자가 휘도로 계산한 색을 넘긴다 (2026-09-07 DB-2)."""
     s, r, c = preset.spacing, preset.font_roles, preset.colors
+    text_color = color if color is not None else c.text
     return [
         Para(
-            text=b.text, level=b.level, font_pt=r.body_pt, color=c.text, bullet=True,
+            text=b.text, level=b.level, font_pt=r.body_pt, color=text_color, bullet=True,
             lines=_para_lines(
                 b.text, area_width_pt - s.bullet_indent * (b.level + 1), r.body_pt, False, preset, metrics
             ),
@@ -544,6 +552,84 @@ def _build_callout(
     return SlidePlan(chapter_id=chapter.id, template="callout", frames=frames, warnings=warnings)
 
 
+def _build_cards(
+    chapter: Chapter, slots: CardsSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
+) -> SlidePlan:
+    """카드 2~4개를 가로로 나눈 프레임 (2026-09-07 DB-2). compare2와 달리 결론 상자가
+    없어 카드 높이는 본문 영역 전체다. 배지와 꼬리 라벨은 선택이라, 카드마다 실제로 있는
+    만큼만 본문 가용 높이에서 뺀다: 용량 계약(capacity.cards_geometry)은 둘 다 항상
+    있다고 가정한 안전한 하한이라, 실제 렌더가 계약이 약속한 것보다 좁아지는 일은 없다.
+
+    강조 카드는 어두운 채움(ink)과 강조 테두리 색(accent1)으로 구분한다. 테두리 굵기는
+    다른 카드와 같다: border_width_pt를 명시하지 않아 공통 기본값을 그대로 쓴다(계획서가
+    강조를 굵기가 아니라 색으로 하라고 명시했다). 글자색은 DB-1이 만든 휘도 판단 함수로
+    카드 배경에 맞게 다시 고른다.
+    """
+    s, r, c = preset.spacing, preset.font_roles, preset.colors
+    g = slide_geometry(preset, eyebrow, subtitle)
+    n = len(slots.cards)
+    cg = cards_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
+    card_w, card_h, inner_w = cg["card_w"], cg["card_h"], cg["inner_w"]
+    warnings: list[CapacityWarning] = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
+
+    def card_frame(card: CardItem, name: str, x: float) -> Frame:
+        fill = c.ink if card.emphasis else None
+        border = c.accent1 if card.emphasis else c.rule
+        text_color = readable_text_color(fill, light=c.background, dark=c.text) if fill else c.text
+        paras: list[Para] = []
+        reserved = s.card_heading_height + s.card_heading_gap
+        if card.badge:
+            paras.append(Para(
+                text=card.badge, font_pt=r.footnote_pt, bold=True, color=text_color,
+                lines=_para_lines(card.badge, inner_w, r.footnote_pt, True, preset, metrics),
+            ))
+            reserved += s.card_badge_height + s.card_badge_gap
+            if (bw := _fixed_height_warning(
+                chapter, f"{name}_badge", card.badge, inner_w, s.card_badge_height,
+                r.footnote_pt, True, preset, metrics,
+            )) is not None:
+                warnings.append(bw)
+        paras.append(Para(
+            text=card.heading, font_pt=r.body_pt, bold=True, color=text_color,
+            lines=_para_lines(card.heading, inner_w, r.body_pt, True, preset, metrics),
+        ))
+        if (hw := _fixed_height_warning(
+            chapter, f"{name}_heading", card.heading, inner_w, s.card_heading_height,
+            r.body_pt, True, preset, metrics,
+        )) is not None:
+            warnings.append(hw)
+        if card.tail:
+            reserved += s.card_tail_height + s.card_tail_gap
+        bullets_h = card_h - 2 * s.box_padding - reserved
+        paras.extend(_bullet_paras(card.bullets, inner_w, preset, metrics, color=text_color))
+        measure = measure_bullets(card.bullets, inner_w, r.body_pt, metrics.face(False), s)
+        if measure.total_height_pt > bullets_h:
+            warnings.append(_measure_warning(chapter, name, measure.total_height_pt, bullets_h))
+        if card.tail:
+            paras.append(Para(
+                text=card.tail, font_pt=r.footnote_pt, color=text_color,
+                lines=_para_lines(card.tail, inner_w, r.footnote_pt, False, preset, metrics),
+            ))
+            if (twn := _fixed_height_warning(
+                chapter, f"{name}_tail", card.tail, inner_w, s.card_tail_height,
+                r.footnote_pt, False, preset, metrics,
+            )) is not None:
+                warnings.append(twn)
+        return Frame(
+            name=f"{chapter.id}:{name}", x=x, y=g["content_top"], w=card_w, h=card_h,
+            fill=fill, border=border, paras=paras,
+        )
+
+    frames = [_title_frame(chapter, preset, metrics, g)]
+    for i, card in enumerate(slots.cards):
+        frames.append(card_frame(card, f"card{i}", s.margin_left + i * (card_w + s.card_gap)))
+    frames.append(_page_number_frame(chapter, page_no, preset))
+    return SlidePlan(chapter_id=chapter.id, template="cards", frames=frames, warnings=warnings)
+
+
 def build_slide(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
     eyebrow: str = "", subtitle: str = "",
@@ -577,4 +663,6 @@ def _dispatch(
         return _build_compare2(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, CalloutSlots):
         return _build_callout(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+    if isinstance(slots, CardsSlots):
+        return _build_cards(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

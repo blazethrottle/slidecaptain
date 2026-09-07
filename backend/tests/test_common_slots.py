@@ -16,6 +16,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import (
     BulletBoxSlots,
     CalloutSlots,
+    CardsSlots,
     CompareSlots,
     CoverSlots,
     DividerSlots,
@@ -120,6 +121,10 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
             right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
         ),
         "callout": CalloutSlots(text="핵심 메시지"),
+        "cards": CardsSlots(cards=[
+            {"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
+            {"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
+        ]),
     }[template]
     return Deck(
         meta=DeckMeta(title="공통 슬롯"),
@@ -128,7 +133,7 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
     )
 
 
-CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2", "callout"]
+CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2", "callout", "cards"]
 
 
 @pytest.mark.parametrize("template", CONTENT_TEMPLATES)
@@ -139,7 +144,7 @@ def test_every_content_template_moves_its_body_down_for_the_slots(template):
     shifted = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
     body = {
         "summary": "points", "bullet_box": "bullets", "table": "table",
-        "compare2": "left_card", "callout": "text",
+        "compare2": "left_card", "callout": "text", "cards": "card0",
     }[template]
 
     assert shifted[body].y > plain[body].y
@@ -152,7 +157,7 @@ def test_body_never_overlaps_the_footer_elements_when_slots_are_present(template
     frames = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
     body = {
         "summary": "points", "bullet_box": "bullets", "table": "table",
-        "compare2": "left_card", "callout": "text",
+        "compare2": "left_card", "callout": "text", "cards": "card0",
     }[template]
     body_frame = frames[body]
     bottom = body_frame.y + body_frame.h
