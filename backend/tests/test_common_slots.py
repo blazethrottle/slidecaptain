@@ -15,6 +15,7 @@ from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import (
     BulletBoxSlots,
+    CalloutSlots,
     CompareSlots,
     CoverSlots,
     DividerSlots,
@@ -118,6 +119,7 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
             left={"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
             right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
         ),
+        "callout": CalloutSlots(text="핵심 메시지"),
     }[template]
     return Deck(
         meta=DeckMeta(title="공통 슬롯"),
@@ -126,7 +128,7 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
     )
 
 
-CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2"]
+CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2", "callout"]
 
 
 @pytest.mark.parametrize("template", CONTENT_TEMPLATES)
@@ -135,7 +137,10 @@ def test_every_content_template_moves_its_body_down_for_the_slots(template):
 
     plain = _frames(_deck_for(template))
     shifted = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
-    body = {"summary": "points", "bullet_box": "bullets", "table": "table", "compare2": "left_card"}[template]
+    body = {
+        "summary": "points", "bullet_box": "bullets", "table": "table",
+        "compare2": "left_card", "callout": "text",
+    }[template]
 
     assert shifted[body].y > plain[body].y
 
@@ -145,7 +150,10 @@ def test_body_never_overlaps_the_footer_elements_when_slots_are_present(template
     """카드 위치만 내려가고 높이가 그대로면 아래 요소를 침범한다 (2026-09-07 최종 리뷰 critical)."""
 
     frames = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
-    body = {"summary": "points", "bullet_box": "bullets", "table": "table", "compare2": "left_card"}[template]
+    body = {
+        "summary": "points", "bullet_box": "bullets", "table": "table",
+        "compare2": "left_card", "callout": "text",
+    }[template]
     body_frame = frames[body]
     bottom = body_frame.y + body_frame.h
     # 세로로 겹치는지는 가로가 겹치는 것끼리만 따진다. compare2 의 두 카드는 나란히 있다.

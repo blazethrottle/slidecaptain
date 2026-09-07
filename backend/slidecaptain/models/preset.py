@@ -121,8 +121,8 @@ class Spacing(BaseModel):
     border_width_pt: float = Field(default=0.75, gt=0)
     # 강조 밴드(callout) 전용 고정 높이와 모서리 반경 (2026-09-07 DB-1). box_height(결론 상자)를
     # 재사용하지 않는다: 그 필드를 키우면 기존 6종의 결론 상자 높이도 따라 바뀐다.
-    # 84pt는 box_pt(12) x line_spacing(1.4) x 3줄 + box_padding(10) x 2를 정확히 담는 값이다
-    # ("문장 1~3줄"의 하드 상한을 3줄로 잡았다).
+    # 84pt는 3줄 텍스트에 필요한 최소 높이(box_pt(12) x line_spacing(1.4) x 3줄 + box_padding(10) x 2 = 70.4pt)에
+    # 여유를 더한 값이다 ("문장 1~3줄"의 하드 상한을 3줄로 잡았다).
     callout_height: float = Field(default=84.0, gt=0)
     callout_radius_pt: float = Field(default=12.0, ge=0)
 
