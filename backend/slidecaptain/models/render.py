@@ -5,7 +5,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class Para(BaseModel):
@@ -28,6 +28,20 @@ class TablePlan(BaseModel):
     row_heights_pt: list[float]  # 머리글 포함, 위에서부터
     header_lines: list[list[str]] = []  # 머리글 칸별 줄바꿈 결과 (미리보기 전용)
     cell_lines: list[list[list[str]]] = []  # 행 x 열 x 줄 (미리보기 전용)
+    # 칸별 채움. 비면 header_fill 로 머리행 전체를 칠하고 본문은 칠하지 않는다(기존 동작).
+    # 벤치마크의 표는 행 교차가 아니라 열 단위 색상 코딩이고 머리행도 칸마다 색이 다르다
+    # (2026-09-07 실측: 표 4개 전수 조사). header_fill 하나로는 표현할 수 없다
+    header_fills: list[str] = []  # 머리행 칸별
+    body_fills: list[str] = []  # 본문 열별 (모든 본문 행에 같은 열 색을 쓴다)
+
+    @model_validator(mode="after")
+    def _cell_fill_lengths_match_columns(self) -> "TablePlan":
+        for name, values in (("header_fills", self.header_fills), ("body_fills", self.body_fills)):
+            if values and len(values) != len(self.col_widths_pt):
+                raise ValueError(
+                    f"{name} 의 길이({len(values)})가 열 수({len(self.col_widths_pt)})와 다릅니다."
+                )
+        return self
 
 
 class Frame(BaseModel):

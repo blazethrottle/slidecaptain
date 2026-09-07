@@ -125,6 +125,14 @@ def _add_text_shape(slide, frame: Frame, style: RenderStyle) -> None:
     _fill_text_frame(shape.text_frame, frame, style)
 
 
+def _cell_fill(plan: TablePlan, row: int, col: int) -> str | None:
+    """칸 채움색. 칸별 목록이 있으면 그것을 쓰고, 없으면 머리행만 단일 색으로 칠한다."""
+
+    if row == 0:
+        return plan.header_fills[col] if plan.header_fills else plan.header_fill
+    return plan.body_fills[col] if plan.body_fills else None
+
+
 def _add_table_shape(slide, frame: Frame, style: RenderStyle) -> None:
     plan: TablePlan = frame.table
     n_rows = len(plan.rows) + 1
@@ -148,9 +156,10 @@ def _add_table_shape(slide, frame: Frame, style: RenderStyle) -> None:
             cell.margin_right = _emu(style.table_cell_pad_x_pt)
             cell.margin_top = _emu(style.table_cell_pad_y_pt)
             cell.margin_bottom = _emu(style.table_cell_pad_y_pt)
-            if r_idx == 0:
+            fill_colour = _cell_fill(plan, r_idx, c_idx)
+            if fill_colour is not None:
                 cell.fill.solid()
-                cell.fill.fore_color.rgb = RGBColor.from_string(plan.header_fill)
+                cell.fill.fore_color.rgb = RGBColor.from_string(fill_colour)
             tf = cell.text_frame
             tf.word_wrap = True
             paragraph = tf.paragraphs[0]

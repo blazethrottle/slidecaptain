@@ -81,6 +81,7 @@ it("표 칸을 편집하면 행과 열이 담긴 참조로 반영된다", async 
         col_widths_pt: [200, 660], header: ["구분", "내용"], rows: [["A", "값"]],
         font_pt: 12, header_fill: "F2F2F2", row_heights_pt: [22.8, 22.8],
         header_lines: [["구분"], ["내용"]], cell_lines: [[["A"], ["값"]]],
+        header_fills: [], body_fills: [],
       } }],
   };
   const onCommitText = vi.fn();
@@ -148,4 +149,26 @@ it("프레임별 테두리 두께가 있으면 그 값을, 없으면 계획의 �
 
   expect(card.style.border).toContain("0.75px");
   expect(badge.style.border).toContain("2.5px");
+});
+
+it("표 칸별 채움이 있으면 그 색을, 없으면 머리행 단일 색을 쓴다", () => {
+  const table = {
+    col_widths_pt: [200, 330, 330], header: ["구분", "A안", "B안"], rows: [["비용", "높음", "낮음"]],
+    font_pt: 12, header_fill: "F2F2F2", row_heights_pt: [22.8, 22.8],
+    header_lines: [["구분"], ["A안"], ["B안"]], cell_lines: [[["비용"], ["높음"], ["낮음"]]],
+    header_fills: ["F4F6F7", "1B2A3A", "0E8C7F"], body_fills: ["FFFFFF", "EAF2F1", "FBF3E6"],
+  };
+  const coloured: SlidePlan = {
+    chapter_id: "c3", template: "table", warnings: [],
+    frames: [{ name: "c3:table", x: 50, y: 92, w: 860, h: 200, fill: null, border: null,
+      valign: "top", paras: [], radius_pt: null, border_width_pt: null, table }],
+  };
+  const { container } = render(<Preview slide={coloured} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+
+  const cells = Array.from(container.querySelectorAll('[data-frame="c3:table"] div > div > div'));
+  const backgrounds = cells.map((c) => (c as HTMLElement).style.background).filter(Boolean);
+
+  expect(backgrounds.slice(0, 3)).toEqual(["rgb(244, 246, 247)", "rgb(27, 42, 58)", "rgb(14, 140, 127)"]);
+  expect(backgrounds.slice(3, 6)).toEqual(["rgb(255, 255, 255)", "rgb(234, 242, 241)", "rgb(251, 243, 230)"]);
 });

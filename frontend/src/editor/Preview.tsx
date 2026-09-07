@@ -87,6 +87,11 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
     );
   };
 
+  const cellFill = (t: NonNullable<Frame["table"]>, rowIdx: number, col: number) => {
+    if (rowIdx === -1) return `#${t.header_fills?.length ? t.header_fills[col] : t.header_fill}`;
+    return t.body_fills?.length ? `#${t.body_fills[col]}` : undefined;
+  };
+
   const renderTable = (f: Frame) => {
     const t = f.table;
     if (!t) return null;
@@ -94,12 +99,13 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
     const renderRow = (cells: string[][], texts: string[], rowIdx: number, bold: boolean) => (
       <div key={rowIdx} style={{
         display: "flex", height: t.row_heights_pt[rowIdx + 1],
-        background: rowIdx === -1 ? `#${t.header_fill}` : undefined,
         fontWeight: bold ? 700 : 400,
       }}>
         {cells.map((lines, col) => (
           <div key={col} style={{
             width: t.col_widths_pt[col], boxSizing: "border-box",
+            // 칸 채움은 라이터와 같은 규칙이다: 칸별 목록이 있으면 그것을, 없으면 머리행만 단일 색
+            background: cellFill(t, rowIdx, col),
             padding: `${style.table_cell_pad_y_pt}px ${style.table_cell_pad_x_pt}px`,
             border: `0.5px solid ${TABLE_LINE}`, fontSize: t.font_pt,
             lineHeight: String(style.line_spacing), overflow: "hidden",

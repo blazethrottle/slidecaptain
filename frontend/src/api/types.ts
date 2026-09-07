@@ -1239,6 +1239,16 @@ export interface components {
              * @default []
              */
             cell_lines: string[][][];
+            /**
+             * Header Fills
+             * @default []
+             */
+            header_fills: string[];
+            /**
+             * Body Fills
+             * @default []
+             */
+            body_fills: string[];
         };
         /** TableSlots */
         TableSlots: {

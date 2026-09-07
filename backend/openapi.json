@@ -2867,6 +2867,22 @@
             "type": "array",
             "title": "Cell Lines",
             "default": []
+          },
+          "header_fills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Header Fills",
+            "default": []
+          },
+          "body_fills": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Body Fills",
+            "default": []
           }
         },
         "type": "object",
