@@ -701,7 +701,9 @@ def _build_process(
                     lines=_para_lines(note, pg["label_w"], r.footnote_pt, False, preset, metrics),
                 ))
                 if (lw := _fixed_height_warning(
-                    chapter, f"{name}_label{j}", note, pg["label_w"], s.process_label_height,
+                    # slot은 라벨 프레임 자신의 slot("{name}_labels")과 같은 접두어로 시작해야
+                    # Preview.tsx의 isWarned()가 이 경고를 그 프레임에 매칭한다(DB-3 리뷰 발견 1)
+                    chapter, f"{name}_labels_{j}", note, pg["label_w"], s.process_label_height,
                     r.footnote_pt, False, preset, metrics,
                 )) is not None:
                     warnings.append(lw)

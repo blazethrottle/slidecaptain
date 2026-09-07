@@ -737,5 +737,34 @@ def test_process_label_overflow_warns_only_that_steps_label_slot():
         ]),
     )])
     plan = build_render_plan(deck, PRESET, METRICS).slides[0]
-    assert "step0_label0" in _warned_slots(plan)
-    assert "step1_label0" not in _warned_slots(plan)
+    # 라벨 프레임 slot은 복수형("step0_labels")이라, 경고 slot도 그 접두어를 따라야
+    # Preview.tsx의 isWarned()가 프레임을 찾아낸다 (DB-3 리뷰 발견 1)
+    assert "step0_labels_0" in _warned_slots(plan)
+    assert "step1_labels_0" not in _warned_slots(plan)
+
+
+def test_process_label_overflow_warning_slot_matches_its_frame_for_preview_highlighting():
+    """Preview.tsx의 isWarned(slide, slot)은 `w.slot === slot || w.slot.startsWith(`${slot}_`)`로
+    경고를 프레임에 매칭한다. 라벨 넘침 경고의 slot이 라벨 프레임 자신의 slot과 이 규약을
+    지키지 않으면, 경고 메시지는 떠도 편집 화면에서 그 프레임에 빨간 강조가 뜨지 않는다
+    (DB-3 리뷰 발견 1: frontend/src/editor/Preview.tsx:16, 이전에는 어떤 테스트도 이 접점을
+    검증하지 않았다). 파이썬으로 그 매칭 규칙을 그대로 재현해 계약을 고정한다."""
+    long_label = "보조 라벨 문구가 지나치게 길어서 한 줄 높이를 넘긴다 " * 6
+    deck = _deck([(
+        "process",
+        ProcessSlots(steps=[
+            ProcessStep(heading="A", notes=[long_label, "짧음"]),
+            ProcessStep(heading="B"),
+            ProcessStep(heading="C"),
+        ]),
+    )])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    labels_frame = _frame(slide, ":step0_labels")
+    frame_slot = labels_frame.name.split(":", 1)[1]
+    label_warnings = [w for w in slide.warnings if w.slot.startswith("step0_label")]
+    assert label_warnings, "넘침 경고가 최소 1개는 있어야 이 계약을 검증할 수 있다"
+    for w in label_warnings:
+        assert w.slot == frame_slot or w.slot.startswith(f"{frame_slot}_"), (
+            f"경고 slot {w.slot!r}이 프레임 slot {frame_slot!r}과 매칭되지 않아 "
+            "Preview에서 강조가 뜨지 않는다"
+        )

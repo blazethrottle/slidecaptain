@@ -117,14 +117,17 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
       dropConclusion();
       dropFootnote();
       const MIN_STEPS = 3, MAX_STEPS = 6;
-      const headings = c.bullets.map((b) => b.text);
-      if (headings.length > MAX_STEPS) {
-        dropped.push(`단계 ${headings.length - MAX_STEPS}개 (최대 ${MAX_STEPS}개까지만 옮길 수 있음)`);
+      if (c.bullets.length > MAX_STEPS) {
+        dropped.push(`단계 ${c.bullets.length - MAX_STEPS}개 (최대 ${MAX_STEPS}개까지만 옮길 수 있음)`);
       }
-      const kept = headings.slice(0, MAX_STEPS);
-      while (kept.length < MIN_STEPS) kept.push("");
+      const keptBullets = c.bullets.slice(0, MAX_STEPS);
+      // ProcessStep은 단계 개념상 들여쓰기 깊이를 표현할 자리가 없다: 조용히 버리지 않고 안내한다
+      const indented = keptBullets.filter((b) => b.level > 0).length;
+      if (indented > 0) dropped.push(`들여쓰기 정보 ${indented}개 (단계는 들여쓰기를 표현하지 않음)`);
+      const headings = keptBullets.map((b) => b.text);
+      while (headings.length < MIN_STEPS) headings.push("");
       return {
-        slots: { template: "process", steps: kept.map((heading) => ({ heading, subtitle: "", notes: [] })) },
+        slots: { template: "process", steps: headings.map((heading) => ({ heading, subtitle: "", notes: [] })) },
         dropped,
       };
     }

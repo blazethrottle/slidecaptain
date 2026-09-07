@@ -147,6 +147,26 @@ it("불릿이 6개보다 많으면 process로 옮길 때 초과분은 소실 목
   expect(r.dropped.join(" ")).toContain("단계 2개");
 });
 
+it("들여쓰기가 있는 불릿을 process로 옮기면 소실 목록에 들여쓰기 손실이 남는다 (리뷰 닛 1)", () => {
+  // ProcessStep에는 들여쓰기 깊이를 담을 자리가 없다: 단계 제목은 평문으로만 옮겨지고
+  // level은 조용히 버려졌었다. 몇 개가 버려졌는지 안내한다.
+  const indented: Slots = {
+    template: "bullet_box",
+    bullets: [
+      { text: "가", level: 0 }, { text: "나", level: 1 }, { text: "다", level: 1 },
+    ],
+    conclusion: "", footnote: "",
+  };
+  const r = switchTemplate(indented, "process");
+  expect(r.slots.template === "process" && r.slots.steps.map((s) => s.heading)).toEqual(["가", "나", "다"]);
+  expect(r.dropped.join(" ")).toContain("들여쓰기 정보 2개");
+});
+
+it("들여쓰기가 없는 불릿을 process로 옮기면 들여쓰기 손실 안내가 없다", () => {
+  const r = switchTemplate(bulletSlots, "process");
+  expect(r.dropped.some((d) => d.includes("들여쓰기"))).toBe(false);
+});
+
 it("process에서 bullet_box로: 단계 제목들을 불릿으로 모으고 부제와 보조 라벨은 소실 목록", () => {
   const process: Slots = {
     template: "process",

@@ -20,6 +20,7 @@ from slidecaptain.models.deck import (
     CompareSlots,
     CoverSlots,
     DividerSlots,
+    ProcessSlots,
     SummarySlots,
     TableSlots,
     Chapter,
@@ -125,6 +126,7 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
             {"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
             {"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
         ]),
+        "process": ProcessSlots(steps=[{"heading": f"단계{i}"} for i in range(3)]),
     }[template]
     return Deck(
         meta=DeckMeta(title="공통 슬롯"),
@@ -133,7 +135,7 @@ def _deck_for(template: str, **slide_kwargs) -> Deck:
     )
 
 
-CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2", "callout", "cards"]
+CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2", "callout", "cards", "process"]
 
 
 @pytest.mark.parametrize("template", CONTENT_TEMPLATES)
@@ -144,7 +146,7 @@ def test_every_content_template_moves_its_body_down_for_the_slots(template):
     shifted = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
     body = {
         "summary": "points", "bullet_box": "bullets", "table": "table",
-        "compare2": "left_card", "callout": "text", "cards": "card0",
+        "compare2": "left_card", "callout": "text", "cards": "card0", "process": "step0",
     }[template]
 
     assert shifted[body].y > plain[body].y
@@ -157,7 +159,7 @@ def test_body_never_overlaps_the_footer_elements_when_slots_are_present(template
     frames = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
     body = {
         "summary": "points", "bullet_box": "bullets", "table": "table",
-        "compare2": "left_card", "callout": "text", "cards": "card0",
+        "compare2": "left_card", "callout": "text", "cards": "card0", "process": "step0",
     }[template]
     body_frame = frames[body]
     bottom = body_frame.y + body_frame.h

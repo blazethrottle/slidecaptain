@@ -143,7 +143,6 @@ class Spacing(BaseModel):
     process_label_width: float = Field(default=140.0, gt=0)
     process_label_gap: float = Field(default=16.0, ge=0)
     process_label_height: float = Field(default=14.0, gt=0)
-    process_label_line_gap: float = Field(default=4.0, ge=0)
 
 
 class Preset(BaseModel):

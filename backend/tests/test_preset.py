@@ -205,3 +205,12 @@ def test_callout_geometry_constants_added():
     s = Preset().spacing
     assert s.callout_height == 84.0
     assert s.callout_radius_pt == 12.0
+
+
+def test_process_label_line_gap_field_removed_as_unused():
+    """process_label_line_gap은 layout/metrics 어디에서도 읽히지 않는 죽은 값이었다(DB-3 리뷰
+    발견 3). 라벨 2개는 한 프레임 안에서 기본 문단 흐름으로 쌓이고 이 값이 관여할 자리가 없어
+    필드를 뺀다. Spacing은 extra="forbid"라 없는 필드를 주면 검증에서 거부된다."""
+
+    with pytest.raises(ValidationError):
+        Preset.model_validate({"spacing": {"process_label_line_gap": 4.0}})

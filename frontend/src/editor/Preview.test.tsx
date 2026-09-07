@@ -197,3 +197,38 @@ it("칸별 채움이 비면 머리행 칸들이 단일 색을 그대로 쓴다",
   expect(backgrounds.slice(0, 2)).toEqual(["rgb(242, 242, 242)", "rgb(242, 242, 242)"]);
   expect(backgrounds.slice(2)).toEqual(["", ""]);
 });
+
+const processSlide: SlidePlan = {
+  chapter_id: "c5",
+  template: "process",
+  // 라벨 넘침 경고의 slot은 라벨 프레임 자신의 slot("step0_labels")과 같은 접두어로
+  // 시작해야 isWarned()가 그 프레임에 강조를 매칭한다 (DB-3 리뷰 발견 1: 백엔드가 예전에
+  // "step0_label0"을 냈을 때는 이 접두어가 어긋나 강조가 뜨지 않았다)
+  warnings: [{ chapter_id: "c5", slot: "step0_labels_0", message: "넘침", needed_pt: 40, available_pt: 14 }],
+  frames: [
+    { name: "c5:step0_badge", x: 50, y: 92, w: 28, h: 28, fill: "0E8C7F", border: null,
+      valign: "middle", table: null,
+      paras: [{ text: "1", level: 0, font_pt: 9, bold: true, color: "FFFFFF",
+        align: "center", bullet: false, lines: ["1"] }] },
+    { name: "c5:step0", x: 90, y: 92, w: 600, h: 60, fill: null, border: null,
+      valign: "top", table: null,
+      paras: [{ text: "단계 제목", level: 0, font_pt: 12, bold: true, color: "202020",
+        align: "left", bullet: false, lines: ["단계 제목"] }] },
+    { name: "c5:step0_labels", x: 700, y: 92, w: 140, h: 60, fill: null, border: null,
+      valign: "top", table: null,
+      paras: [{ text: "보조 라벨", level: 0, font_pt: 9, bold: false, color: "202020",
+        align: "right", bullet: false, lines: ["보조 라벨"] }] },
+  ],
+};
+
+it("process 단계의 라벨 넘침 경고가 라벨 프레임에 강조를 붙인다 (DB-3 리뷰 발견 1)", () => {
+  const { container } = render(<Preview slide={processSlide} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  const labels = container.querySelector('[data-frame="c5:step0_labels"]');
+  expect(labels).toHaveClass("warned");
+  // 배지 프레임의 slot("step0_badge")은 이 경고 slot의 접두어가 아니니 강조가 붙지 않는다.
+  // ("step0"은 여기서 쓰지 않는다: "step0_labels"도 "step0_"로 시작해 isWarned()가 라벨
+  // 경고를 제목/부제 프레임에도 함께 매칭한다. 이는 이번 수정 대상인 리뷰 발견 1과는 다른,
+  // 형제 프레임 이름이 서로의 접두어가 되는 기존 구조적 한계라 이 커밋의 범위 밖이다.)
+  expect(container.querySelector('[data-frame="c5:step0_badge"]')).not.toHaveClass("warned");
+});

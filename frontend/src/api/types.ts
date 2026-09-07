@@ -1068,8 +1068,7 @@ export interface components {
              *       "process_subtitle_gap": 4,
              *       "process_label_width": 140,
              *       "process_label_gap": 16,
-             *       "process_label_height": 14,
-             *       "process_label_line_gap": 4
+             *       "process_label_height": 14
              *     }
              */
             spacing: components["schemas"]["Spacing"];
@@ -1448,11 +1447,6 @@ export interface components {
              * @default 14
              */
             process_label_height: number;
-            /**
-             * Process Label Line Gap
-             * @default 4
-             */
-            process_label_line_gap: number;
         };
         /** Structure */
         Structure: {
