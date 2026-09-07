@@ -1477,6 +1477,72 @@
             "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Background",
             "default": "FFFFFF"
+          },
+          "ink": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ink",
+            "default": "1B2A3A"
+          },
+          "ink_soft": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ink Soft",
+            "default": "24384A"
+          },
+          "accent1": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Accent1",
+            "default": "0E8C7F"
+          },
+          "accent2": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Accent2",
+            "default": "C8860B"
+          },
+          "danger": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Danger",
+            "default": "C0473B"
+          },
+          "ok": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ok",
+            "default": "2E9E5B"
+          },
+          "surface1": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface1",
+            "default": "EAF2F1"
+          },
+          "surface2": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface2",
+            "default": "F4F6F7"
+          },
+          "surface3": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface3",
+            "default": "FBF3E6"
+          },
+          "surface_danger": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface Danger",
+            "default": "FBEEEC"
+          },
+          "rule": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Rule",
+            "default": "DCE3E5"
           }
         },
         "additionalProperties": false,
@@ -1727,6 +1793,12 @@
             "exclusiveMinimum": 0.0,
             "title": "Section Title Pt",
             "default": 24.0
+          },
+          "eyebrow_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Eyebrow Pt",
+            "default": 10.5
           },
           "title_pt": {
             "type": "number",
@@ -2217,6 +2289,7 @@
             "default": {
               "cover_title_pt": 28.0,
               "section_title_pt": 24.0,
+              "eyebrow_pt": 10.5,
               "title_pt": 20.0,
               "subtitle_pt": 14.0,
               "body_pt": 12.0,
@@ -2234,7 +2307,18 @@
               "box_fill": "EEF3F9",
               "table_header_fill": "F2F2F2",
               "border": "D0D7E2",
-              "background": "FFFFFF"
+              "background": "FFFFFF",
+              "ink": "1B2A3A",
+              "ink_soft": "24384A",
+              "accent1": "0E8C7F",
+              "accent2": "C8860B",
+              "danger": "C0473B",
+              "ok": "2E9E5B",
+              "surface1": "EAF2F1",
+              "surface2": "F4F6F7",
+              "surface3": "FBF3E6",
+              "surface_danger": "FBEEEC",
+              "rule": "DCE3E5"
             }
           },
           "spacing": {

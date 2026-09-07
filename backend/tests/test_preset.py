@@ -137,3 +137,62 @@ def test_rejects_content_height_collapsing_footnote_height():
     with pytest.raises(ValidationError) as exc:
         Preset.model_validate({"spacing": {"footnote_height": 500.0}})
     assert "내용 높이" in str(exc.value)
+
+
+def test_colour_roles_carry_the_measured_benchmark_values():
+    """벤치마크 실측값을 역할 이름으로 승격한다. 색이 장식이 아니라 분류를 뜻하게 하는 전제다."""
+
+    colors = Preset().colors
+
+    assert colors.ink == "1B2A3A"
+    assert colors.ink_soft == "24384A"
+    assert colors.accent1 == "0E8C7F"
+    assert colors.accent2 == "C8860B"
+    assert colors.danger == "C0473B"
+    assert colors.ok == "2E9E5B"
+    assert colors.surface1 == "EAF2F1"
+    assert colors.surface2 == "F4F6F7"
+    assert colors.surface3 == "FBF3E6"
+    assert colors.surface_danger == "FBEEEC"
+    assert colors.rule == "DCE3E5"
+
+
+def test_existing_colour_fields_keep_their_defaults():
+    """기존 6종 템플릿이 쓰는 색은 그대로다. 바뀌면 골든 테스트가 깨진다."""
+
+    colors = Preset().colors
+
+    assert colors.text == "202020"
+    assert colors.accent == "1F4E79"
+    assert colors.box_fill == "EEF3F9"
+    assert colors.table_header_fill == "F2F2F2"
+    assert colors.border == "D0D7E2"
+    assert colors.background == "FFFFFF"
+
+
+def test_eyebrow_size_is_added_without_touching_existing_font_roles():
+    """아이브로우만 새로 더한다. 기존 크기를 바꾸면 기존 6종의 렌더가 전부 바뀐다."""
+
+    fonts = Preset().font_roles
+
+    assert fonts.eyebrow_pt == 10.5
+    assert fonts.title_pt == 20.0
+    assert fonts.subtitle_pt == 14.0
+    assert fonts.body_pt == 12.0
+    assert fonts.footnote_pt == 9.0
+
+
+def test_new_colour_roles_reject_non_hex_values():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Preset(colors={"accent1": "청록"})
+
+
+def test_eyebrow_size_respects_the_floor_rule():
+    """분량이 넘치면 글자가 아니라 내용을 줄인다는 하한 규칙은 새 단계에도 적용된다."""
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Preset(font_roles={"eyebrow_pt": 0})

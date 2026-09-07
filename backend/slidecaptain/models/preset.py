@@ -27,6 +27,8 @@ class FontRoles(BaseModel):
 
     cover_title_pt: float = Field(default=28.0, gt=0)
     section_title_pt: float = Field(default=24.0, gt=0)
+    # 제목 위 분류 라벨 (2026-09-07 DA-3 신설). 기존 크기는 하나도 바꾸지 않는다
+    eyebrow_pt: float = Field(default=10.5, gt=0)
     title_pt: float = Field(default=20.0, gt=0)
     subtitle_pt: float = Field(default=14.0, gt=0)
     body_pt: float = Field(default=12.0, gt=0)
@@ -41,7 +43,7 @@ class FontRoles(BaseModel):
         for name in ("body_pt", "box_pt", "table_pt"):
             if getattr(self, name) < BODY_MIN_PT:
                 raise ValueError(f"{name}은 본문 하한 {BODY_MIN_PT}pt 아래로 내릴 수 없습니다")
-        for name in ("footnote_pt", "page_number_pt"):
+        for name in ("footnote_pt", "page_number_pt", "eyebrow_pt"):
             if getattr(self, name) < FOOTNOTE_MIN_PT:
                 raise ValueError(f"{name}은 각주 하한 {FOOTNOTE_MIN_PT}pt 아래로 내릴 수 없습니다")
         return self
@@ -58,6 +60,21 @@ class Colors(BaseModel):
     table_header_fill: HexColor = "F2F2F2"
     border: HexColor = "D0D7E2"
     background: HexColor = "FFFFFF"
+
+    # 아래는 역할로 이름 붙인 팔레트다 (2026-09-07 DA-3). 값은 벤치마크 실측이며 괄호는 사용 횟수.
+    # 색이 장식이 아니라 슬라이드 안에서 순서와 분류와 상태를 뜻하게 하려면 역할 이름이 필요하다.
+    # 위 여섯 개는 기존 6종 템플릿이 쓰므로 기본값을 바꾸지 않는다.
+    ink: HexColor = "1B2A3A"  # 채움 7
+    ink_soft: HexColor = "24384A"  # 채움 4
+    accent1: HexColor = "0E8C7F"  # 채움 5, 테두리 25
+    accent2: HexColor = "C8860B"  # 채움 2, 테두리 4
+    danger: HexColor = "C0473B"  # 채움 1, 테두리 2
+    ok: HexColor = "2E9E5B"  # 채움 1, 테두리 1
+    surface1: HexColor = "EAF2F1"  # 채움 18 (최다)
+    surface2: HexColor = "F4F6F7"  # 채움 15
+    surface3: HexColor = "FBF3E6"  # 채움 2
+    surface_danger: HexColor = "FBEEEC"  # 채움 1
+    rule: HexColor = "DCE3E5"  # 테두리 42 (최다)
 
 
 class BulletMarker(BaseModel):

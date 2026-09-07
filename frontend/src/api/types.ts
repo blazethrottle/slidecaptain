@@ -512,6 +512,61 @@ export interface components {
              * @default FFFFFF
              */
             background: string;
+            /**
+             * Ink
+             * @default 1B2A3A
+             */
+            ink: string;
+            /**
+             * Ink Soft
+             * @default 24384A
+             */
+            ink_soft: string;
+            /**
+             * Accent1
+             * @default 0E8C7F
+             */
+            accent1: string;
+            /**
+             * Accent2
+             * @default C8860B
+             */
+            accent2: string;
+            /**
+             * Danger
+             * @default C0473B
+             */
+            danger: string;
+            /**
+             * Ok
+             * @default 2E9E5B
+             */
+            ok: string;
+            /**
+             * Surface1
+             * @default EAF2F1
+             */
+            surface1: string;
+            /**
+             * Surface2
+             * @default F4F6F7
+             */
+            surface2: string;
+            /**
+             * Surface3
+             * @default FBF3E6
+             */
+            surface3: string;
+            /**
+             * Surface Danger
+             * @default FBEEEC
+             */
+            surface_danger: string;
+            /**
+             * Rule
+             * @default DCE3E5
+             */
+            rule: string;
         };
         /** CompareSlots */
         CompareSlots: {
@@ -649,6 +704,11 @@ export interface components {
              * @default 24
              */
             section_title_pt: number;
+            /**
+             * Eyebrow Pt
+             * @default 10.5
+             */
+            eyebrow_pt: number;
             /**
              * Title Pt
              * @default 20
@@ -863,6 +923,7 @@ export interface components {
              * @default {
              *       "cover_title_pt": 28,
              *       "section_title_pt": 24,
+             *       "eyebrow_pt": 10.5,
              *       "title_pt": 20,
              *       "subtitle_pt": 14,
              *       "body_pt": 12,
@@ -880,7 +941,18 @@ export interface components {
              *       "box_fill": "EEF3F9",
              *       "table_header_fill": "F2F2F2",
              *       "border": "D0D7E2",
-             *       "background": "FFFFFF"
+             *       "background": "FFFFFF",
+             *       "ink": "1B2A3A",
+             *       "ink_soft": "24384A",
+             *       "accent1": "0E8C7F",
+             *       "accent2": "C8860B",
+             *       "danger": "C0473B",
+             *       "ok": "2E9E5B",
+             *       "surface1": "EAF2F1",
+             *       "surface2": "F4F6F7",
+             *       "surface3": "FBF3E6",
+             *       "surface_danger": "FBEEEC",
+             *       "rule": "DCE3E5"
              *     }
              */
             colors: components["schemas"]["Colors"];
