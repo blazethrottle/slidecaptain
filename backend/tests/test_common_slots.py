@@ -246,3 +246,56 @@ def test_shared_helper_reports_the_same_geometry_when_slots_are_empty():
     assert filled["title_y"] > empty["title_y"]
     assert filled["content_top"] > empty["content_top"]
     assert empty["content_bottom"] == filled["content_bottom"]
+
+
+# 본문 글자 크기 단계 (계획서 "이 계획이 틀렸을 가능성" 5번의 실측. 2026-09-07 DB 회차)
+
+# 제목 영역의 계층: 제목 20.0 위아래에 아이브로우 10.5 와 부제 14.0 이 붙는다. 이 셋은 본문이
+# 아니므로 본문 크기 일관성 검사에서 뺀다. 계획서 위험 5 는 "슬롯을 본문 영역 밖에 둔다" 를
+# 선택지로 명시했고, 실측 결과 이것이 맞았다: 이 셋을 넣고 세면 8종 중 7종이 3단계가 되어
+# 검사가 늘 실패하지만, 빼고 세면 본문은 전 템플릿에서 12.0 하나로 일관된다.
+_TITLE_AREA_SUFFIXES = (":title", ":page_number", ":eyebrow", ":subtitle")
+
+
+def _body_font_sizes(template: str, eyebrow: str, subtitle: str) -> set[float]:
+    slide = build_render_plan(
+        _deck_for(template, eyebrow=eyebrow, subtitle=subtitle), PRESET, FontMetrics.from_bundled()
+    ).slides[0]
+    return {
+        p.font_pt
+        for f in slide.frames
+        if not f.name.endswith(_TITLE_AREA_SUFFIXES)
+        for p in f.paras
+    }
+
+
+@pytest.mark.parametrize("template", CONTENT_TEMPLATES)
+@pytest.mark.parametrize("eyebrow,subtitle", [("", ""), ("분류", ""), ("", "한 문장 부제"), ("분류", "한 문장 부제")])
+def test_body_font_sizes_stay_within_two_steps_for_every_template_and_slot_combination(
+    template, eyebrow, subtitle
+):
+    """본문 글자 크기는 어느 템플릿에서도, 공통 슬롯이 붙어도 두 단계를 넘지 않는다.
+
+    종전 검사는 슬롯이 없는 bullet_box 한 경우만 보아서 새 템플릿도 슬롯 조합도 재지 않았다
+    (test_layout_engine.py 의 같은 이름 테스트). 계획서가 위험으로 예고한 항목이라 여기서 전수로 잰다.
+    """
+    assert len(_body_font_sizes(template, eyebrow, subtitle)) <= 2
+
+
+def test_the_font_step_check_actually_counts_body_sizes():
+    """위 검사가 공허하지 않음을 보인다.
+
+    본문 계열 크기를 프리셋에서 벌리면 세는 단계 수가 늘어야 한다. 이 테스트가 없으면 위 검사가
+    늘 통과하는 이유가 규칙이 지켜져서인지 아무것도 세지 않아서인지 구분할 수 없다.
+    """
+    metrics = FontMetrics.from_bundled()
+    roles = PRESET.font_roles
+    widened = PRESET.model_copy(
+        update={"font_roles": roles.model_copy(update={"box_pt": roles.body_pt + 6})}
+    )
+
+    def steps(preset):
+        slide = build_render_plan(_deck_for("bullet_box"), preset, metrics).slides[0]
+        return {p.font_pt for f in slide.frames if not f.name.endswith(_TITLE_AREA_SUFFIXES) for p in f.paras}
+
+    assert len(steps(widened)) > len(steps(PRESET))

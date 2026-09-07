@@ -360,9 +360,20 @@ def test_matrix_chapter_schema_matches_slot_model():
 # (앞선 4개 테스트가 그 불변을 확인한다).
 
 
-def test_template_guide_lists_exactly_ten_templates():
+def test_template_guide_covers_every_declared_template():
+    """항목 수를 숫자로 고정하면 열한 번째 템플릿을 더할 때 누락을 잡지 못한다.
+
+    TemplateName 에는 추가하고 안내 문구에는 빠뜨려도 줄 수가 그대로라 검사가 통과한다.
+    DA-5 가 다섯 레지스트리를 단일 출처로 묶은 것과 같은 이유다 (2026-09-07 DB-5 리뷰).
+    """
+    from typing import get_args
+
+    from slidecaptain.models.deck import TemplateName
+
     lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
-    assert len(lines) == 10
+    named = {ln.removeprefix("- ").split(":")[0].strip() for ln in lines}
+
+    assert named == set(get_args(TemplateName))
 
 
 def test_template_guide_every_entry_states_a_content_condition():

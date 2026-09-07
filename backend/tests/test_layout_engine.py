@@ -237,6 +237,9 @@ def test_overflow_produces_warning_not_resize():
 
 
 def test_body_font_sizes_at_most_two_steps_on_content_slides():
+    # 슬롯도 없고 템플릿도 하나인 최소 경우다. 전 템플릿과 공통 슬롯 조합에서 같은 규칙이
+    # 지켜지는지는 test_common_slots.py 가 본다 (2026-09-07: 이 테스트만 있을 때 계획서가
+    # 위험으로 예고한 "아이브로우와 부제가 함께 쓰이면 3단계" 가 실제로 검사되지 않았다)
     deck = _bullet_box_deck()
     plan = build_render_plan(deck, PRESET, FAKE)
     slide = plan.slides[0]

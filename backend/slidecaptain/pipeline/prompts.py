@@ -163,7 +163,8 @@ _ITEM_COUNT_KEYS = {
 _SLOT_NOTES: dict[str, str] = {
     "callout": (
         "tone은 문장의 성격에 맞는 색 역할을 고른다: danger는 위험이나 우려, ok는 긍정이나 달성, "
-        "accent1과 accent2는 일반 강조, 나머지(ink 계열과 surface 계열)는 중립 배경이다"
+        "surface_danger는 같은 우려를 옅은 배경으로 은은하게 표시할 때, accent1과 accent2는 일반 강조, "
+        "나머지(ink 계열과 surface1에서 surface3)는 중립 배경이다"
     ),
     "cards": (
         "badge는 카드 위쪽 짧은 라벨, tail은 카드 아래쪽 짧은 라벨이다(둘 다 선택, 없으면 비운다). "
