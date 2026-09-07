@@ -187,7 +187,34 @@ def _slot_notes_block(template: str) -> str:
     return f"슬롯 안내: {note}\n\n" if note else ""
 
 
-def _contract_block(template: str, contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
+def _count_table_block(
+    count_table: list[tuple[int, dict[str, int], dict[str, int]]] | None,
+) -> str:
+    """항목을 적게 쓰면 항목마다 더 담을 수 있다는 안내.
+
+    위 계약 본문은 가장 많은 개수를 기준으로 계산한다(capacity.worst_case_counts). 그래야 AI 가
+    개수를 몇 개로 정하든 계약을 지킨 결과가 넘치지 않는다. 다만 그 값만 주면 3단계짜리 장에서도
+    6단계 기준의 빡빡한 상한을 지키려 해서 산출물이 필요 이상으로 빈약해진다. 그래서 개수를 줄일
+    때 생기는 여유를 함께 알린다. 최대 개수 행은 계약 본문이 이미 말하므로 되풀이하지 않는다
+    (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 같은 결함을 지적했다).
+    """
+    rows = [(count, contract, hints) for count, contract, hints in (count_table or []) if contract or hints]
+    if len(rows) < 2:
+        return ""
+    lines = []
+    for count, contract, hints in rows[:-1]:  # 마지막(최대 개수)은 계약 본문과 같다
+        parts = [f"{_CONTRACT_LABELS.get(k, k)} 최대 {v}줄" for k, v in contract.items()]
+        parts += [f"{name} 약 {n}자" for name, n in hints.items()]
+        lines.append(f"  - {count}개면 " + ", ".join(parts))
+    return "\n- 개수를 줄이면 항목마다 더 담을 수 있다:\n" + "\n".join(lines)
+
+
+def _contract_block(
+    template: str,
+    contract: dict[str, int],
+    char_hints: dict[str, int] | None = None,
+    count_table: list[tuple[int, dict[str, int], dict[str, int]]] | None = None,
+) -> str:
     if not contract:
         # 모든 템플릿이 계약을 가지므로(표지와 간지도 2026-09-02 부터) 서비스 경로에서는 도달하지 않는다.
         # 계약 없이 호출하는 테스트와 외부 호출자를 위한 폴백으로만 남긴다 (구현 리뷰 R3)
@@ -212,7 +239,12 @@ def _contract_block(template: str, contract: dict[str, int], char_hints: dict[st
         if char_hints
         else ""
     )
-    return "분량 한도 (실제 폰트 폭으로 실측한 줄수 기준. 초과하면 재생성을 요구한다):\n" + "\n".join(lines) + hint
+    return (
+        "분량 한도 (실제 폰트 폭으로 실측한 줄수 기준. 초과하면 재생성을 요구한다):\n"
+        + "\n".join(lines)
+        + hint
+        + _count_table_block(count_table)
+    )
 
 
 def build_chapter_prompt(
@@ -223,6 +255,7 @@ def build_chapter_prompt(
     today: str,
     instructions: str = "",
     char_hints: dict[str, int] | None = None,
+    count_table: list[tuple[int, dict[str, int], dict[str, int]]] | None = None,
 ) -> str:
     structure_lines = "\n".join(
         f"- [{ch.id}] {ch.topic} ({ch.template}): {ch.conclusion}"
@@ -247,7 +280,7 @@ def build_chapter_prompt(
 - 이 장의 결론: {chapter.conclusion or "미정 (자료에서 도출)"}
 - 템플릿: {chapter.template}
 
-{_slot_notes_block(chapter.template)}{_contract_block(chapter.template, contract, char_hints)}
+{_slot_notes_block(chapter.template)}{_contract_block(chapter.template, contract, char_hints, count_table)}
 
 {STYLE_RULES}
 {extra}{sources_part}"""

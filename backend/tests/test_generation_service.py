@@ -735,3 +735,68 @@ def test_callout_text_numbers_are_verified_not_exempt():
     service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
     result = asyncio.run(service.generate_chapter(deck, "c1", SOURCES, Preset()))
     assert "68" in result.unverified_numbers
+
+
+# 개수 의존 템플릿의 프롬프트 계약 (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 지적한 결함의 처방)
+
+
+def _deck_with_template(template: str) -> Deck:
+    return Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="진행 절차", template=template, source_refs=["리서치.md"]),
+    ]))
+
+
+def test_chapter_prompt_contract_is_based_on_the_largest_item_count():
+    """장별 프롬프트는 AI 가 항목을 몇 개 쓸지 정하기 전에 조립된다.
+
+    가장 적은 개수로 계약을 계산하면 AI 가 많은 개수를 고를 때 계약이 약속한 것보다 실제로
+    들어가는 분량이 훨씬 적어진다. matrix 는 3행 기준 대표 항목 7줄이지만 6행이면 3줄이다.
+    """
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("matrix")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "- 대표 항목: 최대 3줄" in prompt, "최대 개수(6행) 기준이어야 한다"
+    assert "- 대표 항목: 최대 7줄" not in prompt, "기본값(3행) 기준이면 계약이 거짓말이 된다"
+
+
+def test_chapter_prompt_tells_that_fewer_items_allow_more_text():
+    """보수적 계약만 주면 3행짜리 장도 6행 기준으로 빈약해지므로 여유를 함께 알린다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("matrix")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "개수를 줄이면" in prompt
+    assert "3개면 분류 셀 최대 5줄" in prompt
+
+
+def test_chapter_prompt_char_hints_are_also_worst_case_for_cards():
+    """cards 는 가로로 나뉘어 줄 수가 아니라 줄당 글자 수가 카드 수에 좌우된다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("cards")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "카드 안 한 줄 약 14자" in prompt, "최대 개수(4카드) 기준이어야 한다"
+    assert "카드 안 한 줄 약 33자" not in prompt.split("개수를 줄이면")[0], "본문 안내가 2카드 기준이면 안 된다"
+    assert "2개면" in prompt
+
+
+def test_chapter_prompt_for_count_independent_templates_is_unchanged():
+    """기존 6종은 개수에 좌우되지 않으므로 이 변경으로 프롬프트가 달라지지 않는다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("bullet_box")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "개수를 줄이면" not in prompt

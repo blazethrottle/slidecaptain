@@ -471,3 +471,62 @@ def test_format_retry_prompt_reason_empty_string_is_same_as_absent():
     without_reason = build_format_retry_prompt("기본", raw_text="원문")
     empty_reason = build_format_retry_prompt("기본", raw_text="원문", reason="")
     assert without_reason == empty_reason
+
+
+# 개수별 계약 안내 (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 지적한 결함의 처방)
+
+
+def _deck_with_template(template: str) -> Deck:
+    return Deck(meta=META, structure=Structure(chapters=[
+        Chapter(id="c1", topic="진행 절차", template=template),
+    ]))
+
+
+
+def test_contract_block_tells_that_fewer_items_allow_more_text():
+    """계약 본문은 최대 개수 기준이므로, 적게 쓰면 여유가 있다는 사실을 함께 알린다.
+
+    이 줄이 없으면 AI 는 3단계짜리 장에서도 6단계 기준의 빡빡한 상한을 지키려 해서
+    산출물이 필요 이상으로 빈약해진다.
+    """
+    deck = _deck_with_template("process")
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"step_heading_max_lines": 1, "step_subtitle_max_lines": 1, "step_label_max_lines": 1},
+        today="2026-09-07",
+        count_table=[(3, {"step_subtitle_max_lines": 4}, {}), (4, {"step_subtitle_max_lines": 3}, {}),
+                     (5, {"step_subtitle_max_lines": 2}, {}), (6, {"step_subtitle_max_lines": 1}, {})],
+    )
+
+    assert "개수를 줄이면" in prompt
+    assert "3개면 단계 부제 최대 4줄" in prompt
+    assert "5개면 단계 부제 최대 2줄" in prompt
+    # 최대 개수 행은 계약 본문이 이미 말하므로 표에서 되풀이하지 않는다
+    assert "6개면" not in prompt
+
+
+def test_contract_block_renders_char_hints_in_the_count_table():
+    """cards 는 줄 수가 아니라 줄당 글자 수가 카드 수에 따라 달라진다."""
+    deck = _deck_with_template("cards")
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES, {"card_heading_max_lines": 1},
+        today="2026-09-07", char_hints={"카드 안 한 줄": 14},
+        count_table=[(2, {}, {"카드 안 한 줄": 33}), (3, {}, {"카드 안 한 줄": 20}),
+                     (4, {}, {"카드 안 한 줄": 14})],
+    )
+
+    assert "2개면 카드 안 한 줄 약 33자" in prompt
+    assert "3개면 카드 안 한 줄 약 20자" in prompt
+
+
+def test_contract_block_without_count_table_is_unchanged():
+    """개수에 좌우되지 않는 기존 6종 프롬프트는 이 변경으로 달라지지 않는다."""
+    deck = _deck_with_template("bullet_box")
+    chapter = deck.structure.chapters[0]
+    contract = {"bullets_max_lines": 9, "conclusion_max_lines": 2, "footnote_max_lines": 1}
+
+    before = build_chapter_prompt(deck, chapter, SOURCES, contract, today="2026-09-07")
+    after = build_chapter_prompt(deck, chapter, SOURCES, contract, today="2026-09-07", count_table=[])
+
+    assert before == after
+    assert "개수를 줄이면" not in before

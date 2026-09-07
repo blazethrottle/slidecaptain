@@ -13,7 +13,7 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from slidecaptain.layout.templates import build_slide
-from slidecaptain.metrics.capacity import capacity_contract, char_hints
+from slidecaptain.metrics.capacity import capacity_contract, char_hints, count_capacity_table, worst_case_counts
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Slots, Structure
 from slidecaptain.models.preset import Preset
@@ -439,14 +439,19 @@ class GenerationService:
         # 프롬프트에는 근거로 매핑된 자료만 넣되, 매핑이 비면 전체로 폴백한다 (설계 결정 11).
         # cover와 divider의 자료 생략은 build_chapter_prompt가 처리한다
         chapter_sources = {n: sources[n] for n in chapter.source_refs if n in sources} or sources
+        # 계약은 항목을 가장 많이 쓰는 경우로 잡는다: 이 프롬프트는 AI 가 개수를 정하기 전에
+        # 조립되므로, 적은 개수를 기준으로 계산하면 계약이 약속한 분량이 실제보다 후해진다
+        # (2026-09-07 DB-2, DB-3, DB-4 리뷰). 개수를 줄일 때 생기는 여유는 count_table 이 알린다
+        counts = worst_case_counts(chapter.template)
         return build_chapter_prompt(
             deck,
             chapter,
             chapter_sources,
-            capacity_contract(chapter.template, preset),
+            capacity_contract(chapter.template, preset, **counts),
             today=date.today().isoformat(),
             instructions=instructions,
-            char_hints=char_hints(chapter.template, preset, self.metrics),
+            char_hints=char_hints(chapter.template, preset, self.metrics, **counts),
+            count_table=count_capacity_table(chapter.template, preset, self.metrics),
         )
 
     def _slots_parser(self, chapter: Chapter) -> Callable[[Any], Any]:

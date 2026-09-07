@@ -559,3 +559,73 @@ def test_matrix_contract_never_negative_with_large_padding_across_counts():
     p2 = apply_overrides(PRESET, {"spacing": {"box_padding": 40.0}})
     for n in (3, 4, 5, 6):
         assert min(capacity_contract("matrix", p2, row_count=n).values()) >= 0
+
+
+# 개수 의존 템플릿의 프롬프트 계약 (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 같은 결함을 지적했다)
+
+
+def test_count_range_comes_from_the_schema_not_a_hardcoded_number():
+    """개수 범위는 deck.py 의 스키마 제약에서 읽는다.
+
+    여기에 숫자를 적어 두면 스키마의 제약이 바뀔 때 조용히 어긋난다. 실제로 이 묶음은
+    템플릿 이름을 네 곳에 하드코딩했다가 DA-5 에서 단일 출처로 묶은 이력이 있다.
+    """
+    from slidecaptain.metrics.capacity import count_range
+
+    assert count_range("cards") == (2, 4)
+    assert count_range("process") == (3, 6)
+    assert count_range("matrix") == (3, 6)
+    assert count_range("bullet_box") is None
+
+
+def test_worst_case_counts_gives_the_largest_item_count():
+    """프롬프트 계약은 개수가 정해지기 전에 만들어지므로 가장 빡빡한 개수로 잡는다."""
+    from slidecaptain.metrics.capacity import worst_case_counts
+
+    assert worst_case_counts("cards") == {"card_count": 4}
+    assert worst_case_counts("process") == {"step_count": 6}
+    assert worst_case_counts("matrix") == {"row_count": 6}
+    assert worst_case_counts("bullet_box") == {}
+
+
+def test_worst_case_contract_is_not_more_generous_than_any_actual_count():
+    """최대 개수 기준 계약은 어느 실제 개수에서도 초과하지 않는다.
+
+    이것이 보수적 계약의 정의다: AI 가 몇 개를 고르든 계약을 지키면 넘치지 않는다.
+    """
+    from slidecaptain.metrics.capacity import capacity_contract, count_range, worst_case_counts
+
+    preset = Preset()
+    for template in ("cards", "process", "matrix"):
+        low, high = count_range(template)
+        arg = next(iter(worst_case_counts(template)))
+        worst = capacity_contract(template, preset, **{arg: high})
+        for count in range(low, high + 1):
+            actual = capacity_contract(template, preset, **{arg: count})
+            for key, limit in worst.items():
+                assert limit <= actual[key], f"{template} {count}개에서 {key} 계약이 실제보다 후하다"
+
+
+def test_count_capacity_table_lists_only_the_values_that_change_with_count():
+    """개수별 표에는 개수에 따라 실제로 달라지는 값만 담는다.
+
+    변하지 않는 값까지 개수마다 반복하면 프롬프트만 길어지고 AI 가 읽을 것이 늘어난다.
+    cards 는 가로로 나뉘어 줄당 글자 수가 달라지고, process 와 matrix 는 세로로 쌓여
+    줄 수가 달라진다 (2026-09-07 실측).
+    """
+    from slidecaptain.metrics.capacity import count_capacity_table
+    from slidecaptain.metrics.font_metrics import FontMetrics
+
+    preset, metrics = Preset(), FontMetrics.load_default()
+
+    cards = count_capacity_table("cards", preset, metrics)
+    assert [count for count, _, _ in cards] == [2, 3, 4]
+    assert all(not contract for _, contract, _ in cards), "cards 의 줄 수 계약은 카드 수와 무관하다"
+    assert all("카드 안 한 줄" in hints for _, _, hints in cards)
+
+    process = count_capacity_table("process", preset, metrics)
+    assert [count for count, _, _ in process] == [3, 4, 5, 6]
+    assert all("step_subtitle_max_lines" in contract for _, contract, _ in process)
+    assert all(not hints for _, _, hints in process), "process 의 줄당 글자 수는 단계 수와 무관하다"
+
+    assert count_capacity_table("bullet_box", preset, metrics) == []

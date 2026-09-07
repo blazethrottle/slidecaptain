@@ -14,7 +14,7 @@ import math
 from pydantic import BaseModel
 
 from slidecaptain.metrics.line_breaker import break_paragraph
-from slidecaptain.models.deck import Bullet
+from slidecaptain.models.deck import Bullet, CardsSlots, MatrixSlots, ProcessSlots
 from slidecaptain.models.preset import Preset, Spacing, content_box
 
 
@@ -411,3 +411,79 @@ def char_hints(
             ),
         }
     raise KeyError(template)
+
+
+# 개수에 따라 용량이 달라지는 템플릿과 그 개수 인자 이름, 개수를 담는 슬롯 필드.
+# 개수 범위는 deck.py 의 스키마 제약에서 읽는다: 숫자를 여기 적으면 제약이 바뀔 때 조용히 어긋난다
+# (템플릿 이름을 네 곳에 하드코딩했다가 DA-5 에서 단일 출처로 묶은 것과 같은 이유).
+_COUNT_DEPENDENT: dict[str, tuple[str, type, str]] = {
+    "cards": ("card_count", CardsSlots, "cards"),
+    "process": ("step_count", ProcessSlots, "steps"),
+    "matrix": ("row_count", MatrixSlots, "rows"),
+}
+
+
+def count_range(template: str) -> tuple[int, int] | None:
+    """그 템플릿이 담는 항목 개수의 하한과 상한. 개수에 좌우되지 않는 템플릿은 None."""
+    entry = _COUNT_DEPENDENT.get(template)
+    if entry is None:
+        return None
+    _, model, field = entry
+    low: int | None = None
+    high: int | None = None
+    for constraint in model.model_fields[field].metadata:
+        low = getattr(constraint, "min_length", None) or low
+        high = getattr(constraint, "max_length", None) or high
+    if low is None or high is None:
+        raise ValueError(f"{template} 의 {field} 에 개수 제약이 없습니다")
+    return low, high
+
+
+def worst_case_counts(template: str) -> dict[str, int]:
+    """프롬프트에 실을 계약의 개수 인자.
+
+    장별 프롬프트는 AI 가 항목을 몇 개 쓸지 정하기 전에 조립된다. 가장 적은 개수로 계약을
+    계산하면 AI 가 많은 개수를 고를 때 실제로 들어가는 분량이 계약이 약속한 것보다 훨씬
+    적어져 계약이 거짓말이 된다. 그래서 가장 빡빡한 개수로 잡는다: 이렇게 하면 AI 가 어느
+    개수를 고르든 계약을 지킨 결과는 넘치지 않는다 (2026-09-07 DB-2, DB-3, DB-4 리뷰).
+    """
+    entry = _COUNT_DEPENDENT.get(template)
+    if entry is None:
+        return {}
+    _, high = count_range(template)  # type: ignore[misc]
+    return {entry[0]: high}
+
+
+def count_capacity_table(
+    template: str, preset: Preset, metrics
+) -> list[tuple[int, dict[str, int], dict[str, int]]]:
+    """개수별 (개수, 개수에 따라 달라지는 계약, 개수에 따라 달라지는 환산 안내).
+
+    계약 본문은 최대 개수 기준이라 그대로 지켜도 안전하고, 이 표는 항목을 적게 쓰면
+    각 항목에 더 담을 수 있다는 사실을 밝힌다. cards 는 가로로 나뉘어 줄당 글자 수가
+    달라지고 process 와 matrix 는 세로로 쌓여 줄 수가 달라진다 (2026-09-07 실측).
+    개수에 따라 변하지 않는 값은 빼서 프롬프트가 길어지지 않게 한다.
+    """
+    entry = _COUNT_DEPENDENT.get(template)
+    if entry is None:
+        return []
+    arg = entry[0]
+    low, high = count_range(template)  # type: ignore[misc]
+    rows = [
+        (
+            count,
+            capacity_contract(template, preset, **{arg: count}),
+            char_hints(template, preset, metrics, **{arg: count}),
+        )
+        for count in range(low, high + 1)
+    ]
+    varying_contract = {k for k in rows[0][1] if len({r[1][k] for r in rows}) > 1}
+    varying_hints = {k for k in rows[0][2] if len({r[2][k] for r in rows}) > 1}
+    return [
+        (
+            count,
+            {k: v for k, v in contract.items() if k in varying_contract},
+            {k: v for k, v in hints.items() if k in varying_hints},
+        )
+        for count, contract, hints in rows
+    ]
