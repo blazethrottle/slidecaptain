@@ -726,6 +726,10 @@ export interface components {
              * @enum {string}
              */
             valign: "top" | "middle";
+            /** Radius Pt */
+            radius_pt?: number | null;
+            /** Border Width Pt */
+            border_width_pt?: number | null;
         };
         /** GenerateChapterRequest */
         GenerateChapterRequest: {

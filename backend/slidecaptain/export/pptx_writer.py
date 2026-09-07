@@ -85,11 +85,28 @@ def _fill_text_frame(tf, frame: Frame, style: RenderStyle) -> None:
         _style_run(run, para, style)
 
 
+def _corner_adjustment(frame: Frame) -> float:
+    """모서리 반경을 둥근 사각형의 조정값(짧은 변 대비 비율)으로 바꾼다.
+
+    python-pptx 는 0.5 초과와 음수를 예외 없이 저장하므로(2026-09-07 실측) 여기서 자른다.
+    0.5 는 짧은 변의 절반이며 알약과 정원이 나오는 상한이다.
+    """
+
+    short_side = min(frame.w, frame.h)
+    if short_side <= 0:
+        return 0.0
+    return max(0.0, min(0.5, (frame.radius_pt or 0.0) / short_side))
+
+
 def _add_text_shape(slide, frame: Frame, style: RenderStyle) -> None:
     if frame.fill or frame.border:
+        rounded = frame.radius_pt is not None
         shape = slide.shapes.add_shape(
-            MSO_SHAPE.RECTANGLE, _emu(frame.x), _emu(frame.y), _emu(frame.w), _emu(frame.h)
+            MSO_SHAPE.ROUNDED_RECTANGLE if rounded else MSO_SHAPE.RECTANGLE,
+            _emu(frame.x), _emu(frame.y), _emu(frame.w), _emu(frame.h),
         )
+        if rounded:
+            shape.adjustments[0] = _corner_adjustment(frame)
         shape.shadow.inherit = False
         if frame.fill:
             shape.fill.solid()
@@ -98,7 +115,8 @@ def _add_text_shape(slide, frame: Frame, style: RenderStyle) -> None:
             shape.fill.background()
         if frame.border:
             shape.line.color.rgb = RGBColor.from_string(frame.border)
-            shape.line.width = Pt(style.border_width_pt)
+            width = frame.border_width_pt if frame.border_width_pt is not None else style.border_width_pt
+            shape.line.width = Pt(width)
         else:
             shape.line.fill.background()
     else:

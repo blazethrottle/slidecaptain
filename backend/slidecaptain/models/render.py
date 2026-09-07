@@ -43,6 +43,14 @@ class Frame(BaseModel):
     # 세로 정렬. 미리보기가 그릴 수 있는 값만 허용하고, 라이터는 이 값을 모든 텍스트 도형에 항상 명시한다
     # (2026-09-02 Critical 묶음 태스크 B: 채움 프레임이 python-pptx 자동도형 기본값 ctr 을 상속해 미리보기와 어긋났다)
     valign: Literal["top", "middle"] = "top"
+    # 모서리 반경(pt). None 이면 직각 사각형이다. 짧은 변의 절반 이상이면 알약이나 정원이 된다.
+    # 라이터는 사각형과 둥근 사각형 두 가지만 쓴다: OVAL 은 조정 핸들이 없어(python-pptx 1.0.2 실측)
+    # 폭과 높이가 다르면 눌린 타원이 되고, 그 순간 CSS 로 그리는 미리보기와 어긋난다 (2026-09-07 DA-1)
+    radius_pt: float | None = None
+    # 이 프레임만의 테두리 두께(pt). None 이면 RenderStyle.border_width_pt 를 쓴다.
+    # 폴백 판단은 레이아웃 엔진이 하고 소비자는 값을 그대로 쓴다: 같은 기본값 규칙을 라이터와
+    # 미리보기 두 곳에 따로 두면 세로 정렬 사고와 같은 계열의 어긋남이 생긴다
+    border_width_pt: float | None = None
 
 
 class CapacityWarning(BaseModel):

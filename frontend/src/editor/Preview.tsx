@@ -147,7 +147,13 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
                 position: "absolute", left: f.x, top: f.y, width: f.w, height: f.h,
                 boxSizing: "border-box",
                 background: f.fill ? `#${f.fill}` : undefined,
-                border: f.border ? `${style.border_width_pt}px solid #${f.border}` : undefined,
+                // 테두리 두께는 프레임 값이 있으면 그것을 쓴다. 라이터도 같은 규칙이다
+                border: f.border
+                  ? `${f.border_width_pt ?? style.border_width_pt}px solid #${f.border}`
+                  : undefined,
+                // 모서리 반경. CSS 는 반경 합이 변을 넘으면 브라우저가 비례 축소하므로,
+                // 짧은 변의 절반 이상이면 라이터의 조정값 0.5(알약, 정원)와 같은 모양이 된다
+                borderRadius: f.radius_pt != null ? f.radius_pt : undefined,
                 padding: boxed ? style.box_padding_pt : 0,
                 display: f.valign === "middle" ? "flex" : undefined,
                 flexDirection: f.valign === "middle" ? "column" : undefined,

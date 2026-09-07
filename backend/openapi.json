@@ -1862,6 +1862,28 @@
             ],
             "title": "Valign",
             "default": "top"
+          },
+          "radius_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Pt"
+          },
+          "border_width_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Border Width Pt"
           }
         },
         "type": "object",

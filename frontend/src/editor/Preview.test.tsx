@@ -105,3 +105,47 @@ it("editable 이 거짓이면 stale 표시가 붙고 선택된 프레임의 문�
   await userEvent.click(screen.getByText("장 제목"));
   expect(onSelect).toHaveBeenCalledWith({ chapterId: "c1", slot: "title" });
 });
+
+const roundedSlide: SlidePlan = {
+  chapter_id: "c2",
+  template: "cards",
+  warnings: [],
+  frames: [
+    { name: "c2:card", x: 50, y: 50, w: 300, h: 100, fill: "EAF2F1", border: "DCE3E5",
+      valign: "top", table: null, radius_pt: 10, border_width_pt: null,
+      paras: [{ text: "카드", level: 0, font_pt: 12, bold: false, color: "202020",
+        align: "left", bullet: false, lines: ["카드"] }] },
+    { name: "c2:badge", x: 50, y: 200, w: 200, h: 40, fill: "0E8C7F", border: "0E8C7F",
+      valign: "middle", table: null, radius_pt: 20, border_width_pt: 2.5,
+      paras: [{ text: "배지", level: 0, font_pt: 10, bold: true, color: "FFFFFF",
+        align: "center", bullet: false, lines: ["배지"] }] },
+    { name: "c2:plain", x: 50, y: 300, w: 300, h: 60, fill: "F4F6F7", border: null,
+      valign: "top", table: null, radius_pt: null, border_width_pt: null,
+      paras: [{ text: "직각", level: 0, font_pt: 12, bold: false, color: "202020",
+        align: "left", bullet: false, lines: ["직각"] }] },
+  ],
+};
+
+it("모서리 반경을 border-radius 로 그리고 없으면 직각으로 둔다", () => {
+  const { container } = render(<Preview slide={roundedSlide} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+
+  const card = container.querySelector('[data-frame="c2:card"]') as HTMLElement;
+  const badge = container.querySelector('[data-frame="c2:badge"]') as HTMLElement;
+  const plain = container.querySelector('[data-frame="c2:plain"]') as HTMLElement;
+
+  expect(card.style.borderRadius).toBe("10px");
+  expect(badge.style.borderRadius).toBe("20px");
+  expect(plain.style.borderRadius).toBe("");
+});
+
+it("프레임별 테두리 두께가 있으면 그 값을, 없으면 계획의 기본값을 쓴다", () => {
+  const { container } = render(<Preview slide={roundedSlide} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+
+  const card = container.querySelector('[data-frame="c2:card"]') as HTMLElement;
+  const badge = container.querySelector('[data-frame="c2:badge"]') as HTMLElement;
+
+  expect(card.style.border).toContain("0.75px");
+  expect(badge.style.border).toContain("2.5px");
+});

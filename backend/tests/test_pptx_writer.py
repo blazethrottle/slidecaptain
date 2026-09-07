@@ -1,7 +1,7 @@
 import pytest
 from pptx import Presentation
 from pptx.oxml.ns import qn
-from pptx.util import Emu
+from pptx.util import Emu, Pt
 
 from slidecaptain.export.pptx_writer import write_pptx
 from slidecaptain.models.render import Frame, Para, RenderPlan, RenderStyle, SlidePlan
@@ -210,3 +210,85 @@ def test_middle_valign_is_written_explicitly_for_boxed_and_plain_frames(tmp_path
     shapes = {s.name: s for s in prs.slides[0].shapes}
     assert _anchor_of(shapes["ch01:conclusion"]) == "ctr"
     assert _anchor_of(shapes["ch01:title"]) == "ctr"
+
+
+def _radius_plan(*frames: Frame) -> RenderPlan:
+    return RenderPlan(
+        page_width_pt=960.0,
+        page_height_pt=540.0,
+        style=_style(),
+        slides=[SlidePlan(chapter_id="ch01", template="cards", frames=list(frames))],
+    )
+
+
+def _shapes_of(tmp_path, plan: RenderPlan):
+    out = tmp_path / "radius.pptx"
+    write_pptx(plan, out)
+    return list(Presentation(str(out)).slides[0].shapes)
+
+
+def _prst_of(shape) -> str:
+    node = shape._element.find(".//" + qn("a:prstGeom"))
+    return node.get("prst") if node is not None else ""
+
+
+def _adjust_of(shape) -> float | None:
+    return shape.adjustments[0] if len(shape.adjustments) else None
+
+
+def test_frame_without_radius_stays_a_plain_rectangle(tmp_path):
+    """기존 동작 불변: 반경을 지정하지 않으면 직각 사각형이다."""
+
+    frame = Frame(name="ch01:box", x=50, y=50, w=300, h=100, fill="EEF3F9")
+    shape = _shapes_of(tmp_path, _radius_plan(frame))[0]
+
+    assert _prst_of(shape) == "rect"
+
+
+def test_radius_makes_a_rounded_rectangle_with_proportional_adjustment(tmp_path):
+    frame = Frame(name="ch01:card", x=50, y=50, w=300, h=100, fill="EEF3F9", radius_pt=10.0)
+    shape = _shapes_of(tmp_path, _radius_plan(frame))[0]
+
+    assert _prst_of(shape) == "roundRect"
+    assert _adjust_of(shape) == pytest.approx(10.0 / 100.0)
+
+
+@pytest.mark.parametrize(
+    ("w", "h", "radius"),
+    [(200.0, 40.0, 20.0), (40.0, 40.0, 20.0), (300.0, 24.0, 12.0)],
+)
+def test_half_of_short_side_gives_a_pill_or_circle(tmp_path, w, h, radius):
+    """알약과 정원은 둥근 사각형의 조정값 0.5 로 만든다. OVAL 은 조정 핸들이 없어 눌린 타원이 된다."""
+
+    frame = Frame(name="ch01:badge", x=50, y=50, w=w, h=h, fill="0E8C7F", radius_pt=radius)
+    shape = _shapes_of(tmp_path, _radius_plan(frame))[0]
+
+    assert _prst_of(shape) == "roundRect"
+    assert _adjust_of(shape) == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("radius", [80.0, 1000.0])
+def test_radius_over_half_is_clamped(tmp_path, radius):
+    """python-pptx 는 0.5 초과를 예외 없이 저장한다. 클램프는 라이터가 한다."""
+
+    frame = Frame(name="ch01:badge", x=50, y=50, w=200, h=40, fill="0E8C7F", radius_pt=radius)
+    shape = _shapes_of(tmp_path, _radius_plan(frame))[0]
+
+    assert _adjust_of(shape) == pytest.approx(0.5)
+
+
+def test_zero_radius_is_a_rounded_rectangle_with_square_corners(tmp_path):
+    frame = Frame(name="ch01:card", x=50, y=50, w=300, h=100, fill="EEF3F9", radius_pt=0.0)
+    shape = _shapes_of(tmp_path, _radius_plan(frame))[0]
+
+    assert _prst_of(shape) == "roundRect"
+    assert _adjust_of(shape) == pytest.approx(0.0)
+
+
+def test_per_frame_border_width_overrides_the_plan_style(tmp_path):
+    thin = Frame(name="ch01:a", x=50, y=50, w=300, h=100, border="DCE3E5")
+    thick = Frame(name="ch01:b", x=50, y=200, w=300, h=100, border="0E8C7F", border_width_pt=2.5)
+    shapes = _shapes_of(tmp_path, _radius_plan(thin, thick))
+
+    assert shapes[0].line.width == Pt(0.75)
+    assert shapes[1].line.width == Pt(2.5)
