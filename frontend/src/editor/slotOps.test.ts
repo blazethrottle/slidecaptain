@@ -222,6 +222,39 @@ it("번호 단계의 제목과 부제는 step{i} 프레임의 index로 고친다
   expect(next.slides[0].slots).toEqual(deck.slides[0].slots);
 });
 
+it("행렬의 분류/대표 항목/나열은 row{i}_category, row{i}_primary, row{i}_items 프레임으로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "matrix", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "matrix",
+      rows: [
+        { category: "강점", primary: "대표1", items: ["항목1", "항목2"] },
+        { category: "약점", primary: "", items: [] },
+        { category: "기회", primary: "", items: [] },
+      ],
+    } }],
+  };
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_category", index: 0 }, "새 분류");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].category).toBe("새 분류");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_primary", index: 0 }, "새 대표");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].primary).toBe("새 대표");
+  expect(slots.template === "matrix" && slots.rows[1].category).toBe("약점");  // 다른 행은 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_items", index: 0 }, "새 항목1");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].items[0]).toBe("새 항목1");
+  expect(slots.template === "matrix" && slots.rows[0].items[1]).toBe("항목2");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_items", index: 1 }, "새 항목2");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].items[1]).toBe("새 항목2");
+});
+
 it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
   const deck: Deck = {
     ...bulletDeck(),

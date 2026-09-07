@@ -128,6 +128,21 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
           return { ...step, subtitle: text };
         }) };
       }
+      case "matrix": {
+        // row{i}_category/row{i}_primary/row{i}_items는 서로 다른 칸이라 process의 badge/
+        // text/labels처럼 각각 별도 프레임이다(2026-09-07 DB-4). items는 목록이라 index로
+        // 항목을 고른다(라벨 프레임과 같은 방식).
+        const m = /^row(\d+)_(category|primary|items)$/.exec(slot);
+        if (!m) return slots;
+        const rowIndex = Number(m[1]);
+        const part = m[2];
+        return { ...slots, rows: slots.rows.map((row, i) => {
+          if (i !== rowIndex) return row;
+          if (part === "category") return { ...row, category: text };
+          if (part === "primary") return { ...row, primary: text };
+          return { ...row, items: row.items.map((it, j) => (j === (ref.index ?? 0) ? text : it)) };
+        }) };
+      }
     }
     return slots;
   });

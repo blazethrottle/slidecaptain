@@ -75,6 +75,7 @@ def _minimal_slots(template: str):
         CompareSlots,
         CoverSlots,
         DividerSlots,
+        MatrixSlots,
         ProcessSlots,
         SummarySlots,
         TableSlots,
@@ -98,6 +99,9 @@ def _minimal_slots(template: str):
         ]),
         "process": lambda: ProcessSlots(steps=[
             {"heading": f"단계{i}"} for i in range(3)
+        ]),
+        "matrix": lambda: MatrixSlots(rows=[
+            {"category": f"분류{i}"} for i in range(3)
         ]),
     }[template]()
 

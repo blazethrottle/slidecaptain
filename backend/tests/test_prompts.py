@@ -1,5 +1,5 @@
 from slidecaptain.models.deck import (
-    CalloutSlots, CardsSlots, Chapter, Deck, DeckMeta, ProcessSlots, Structure,
+    CalloutSlots, CardsSlots, Chapter, Deck, DeckMeta, MatrixSlots, ProcessSlots, Structure,
 )
 from slidecaptain.models.render import CapacityWarning
 from slidecaptain.pipeline.prompts import (
@@ -295,3 +295,61 @@ def test_process_chapter_schema_matches_slot_model():
     steps_field = schema["properties"]["steps"]
     assert steps_field.get("minItems") == 3
     assert steps_field.get("maxItems") == 6
+
+
+# ---- 행렬(matrix) 등록 (2026-09-07 DB-4) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지,
+# 개수 제약(3~6)이 계약 블록에 드러나는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_matrix():
+    lines = TEMPLATE_GUIDE.splitlines()
+    matrix_lines = [ln for ln in lines if "matrix" in ln]
+    assert len(matrix_lines) == 1
+    # 기존 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
+    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    assert "- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)" in lines
+
+
+def test_matrix_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["matrix"] is MatrixSlots
+    assert "row_category_max_lines" in _CONTRACT_LABELS
+    assert "row_primary_max_lines" in _CONTRACT_LABELS
+    assert "row_items_max_lines" in _CONTRACT_LABELS
+
+
+def test_matrix_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "matrix" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_matrix_contract_block_states_the_row_count_constraint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="비교", template="matrix")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"row_category_max_lines": 2, "row_primary_max_lines": 1, "row_items_max_lines": 4},
+        today="2026-09-07", char_hints={"분류 셀 한 줄": 8},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 행 개수: 3개 이상 6개 이하" in prompt
+    assert "- 분류 셀: 최대 2줄" in prompt
+    assert "- 나열 항목: 최대 4줄 (한 줄짜리 항목 4개 기준)" in prompt
+    assert "분류 셀 한 줄 약 8자" in prompt
+
+
+def test_other_templates_contract_block_has_no_row_count_line():
+    # 행 개수 문구는 matrix 전용이다: 다른 템플릿의 프롬프트를 오염시키면 안 된다
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="주제", template="bullet_box")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "행 개수" not in prompt
+
+
+def test_matrix_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("matrix")
+    assert "rows" in schema["properties"]
+    rows_field = schema["properties"]["rows"]
+    assert rows_field.get("minItems") == 3
+    assert rows_field.get("maxItems") == 6

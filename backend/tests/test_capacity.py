@@ -105,6 +105,7 @@ from slidecaptain.metrics.capacity import (
     char_hints,
     content_geometry,
     hangul_chars_per_line,
+    matrix_geometry,
     process_geometry,
 )
 from slidecaptain.models.deck import (
@@ -117,6 +118,8 @@ from slidecaptain.models.deck import (
     CompareSlots,
     Deck,
     DeckMeta,
+    MatrixRow,
+    MatrixSlots,
     ProcessSlots,
     ProcessStep,
     Slide,
@@ -434,3 +437,125 @@ def test_process_contract_never_negative_with_large_row_gap_across_counts():
     p2 = apply_overrides(PRESET, {"spacing": {"process_row_gap": 100.0}})
     for n in (3, 4, 5, 6):
         assert min(capacity_contract("process", p2, step_count=n).values()) >= 0
+
+
+# ---- 행렬(matrix) 용량 계약 (2026-09-07 DB-4) ----
+# process와 같은 세로 원리(행이 늘수록 행 높이가 줄어든다)를 쓰되, 가로 3칸(분류/대표/나열)의
+# 폭 배분이 다르다: 분류 셀과 나열은 고정 폭 좌우 블록이고 대표 항목이 그 사이 나머지 폭을
+# 쓴다. capacity_contract/char_hints에 더한 row_count 인자는 그래서 process의 step_count와
+# 정확히 같은 자리(세로 용량)에 영향을 준다: 가로 칸 폭은 행 수와 무관하므로 char_hints는
+# process처럼 row_count가 바뀌어도 값이 그대로다.
+
+
+def test_existing_nine_templates_contract_values_unchanged_by_matrix_signature():
+    """capacity_contract에 row_count 인자를 더해도 기존 9종(process 포함) 계약은 그대로다."""
+    assert capacity_contract("cover", PRESET) == {
+        "cover_title_max_lines": 1, "subtitle_max_lines": 1, "date_max_lines": 1,
+    }
+    assert capacity_contract("divider", PRESET) == {
+        "section_no_max_lines": 1, "section_title_max_lines": 1,
+    }
+    assert capacity_contract("summary", PRESET) == {"points_max_lines": 14, "conclusion_max_lines": 2}
+    assert capacity_contract("bullet_box", PRESET) == {
+        "bullets_max_lines": 14, "conclusion_max_lines": 2, "footnote_max_lines": 1,
+    }
+    assert capacity_contract("table", PRESET) == {"rows_max_single_line": 16, "footnote_max_lines": 1}
+    assert capacity_contract("compare2", PRESET) == {
+        "card_heading_max_lines": 1, "card_bullets_max_lines": 11, "conclusion_max_lines": 2,
+    }
+    assert capacity_contract("callout", PRESET) == {"text_max_lines": 3}
+    assert capacity_contract("cards", PRESET) == {
+        "card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 12,
+        "card_tail_max_lines": 1,
+    }
+    assert capacity_contract("process", PRESET) == {
+        "step_heading_max_lines": 1, "step_subtitle_max_lines": 4, "step_label_max_lines": 1,
+    }
+
+
+def test_matrix_geometry_row_height_shrinks_as_row_count_grows_but_x_fields_do_not():
+    three = matrix_geometry(PRESET, 3)
+    six = matrix_geometry(PRESET, 6)
+    assert three["row_h"] > six["row_h"]
+    assert three["category_x"] == six["category_x"]
+    assert three["primary_x"] == six["primary_x"]
+    assert three["primary_w"] == six["primary_w"]
+    assert three["items_x"] == six["items_x"]
+    assert three["items_w"] == six["items_w"]
+
+
+def test_matrix_geometry_rows_span_the_content_height_for_every_valid_count():
+    g = content_geometry(PRESET)
+    content_h = g["content_bottom"] - g["content_top"]
+    for n in (3, 4, 5, 6):
+        mg = matrix_geometry(PRESET, n)
+        assert n * mg["row_h"] + (n - 1) * mg["row_gap"] == pytest.approx(content_h)
+
+
+def test_matrix_char_hint_is_independent_of_row_count():
+    """가로 칸 너비는 행 수와 무관하다: process의 char_hints가 step_count와 무관한 것과 같다."""
+    three = char_hints("matrix", PRESET, REAL, row_count=3)
+    six = char_hints("matrix", PRESET, REAL, row_count=6)
+    assert set(three) == {"분류 셀 한 줄", "대표 항목 한 줄", "나열 항목 한 줄"}
+    assert three == six
+
+
+def test_matrix_contract_answers_without_row_count_argument():
+    # capacity_contract("matrix", PRESET)처럼 row_count를 생략하는 기존 호출부(service.py)가
+    # 죽지 않아야 한다: 기본값 3이 안전하다 (card_count/step_count와 같은 이유)
+    contract = capacity_contract("matrix", PRESET)
+    assert set(contract) == {"row_category_max_lines", "row_primary_max_lines", "row_items_max_lines"}
+    assert all(v >= 0 for v in contract.values())
+
+
+def _matrix_slots(n: int, category: str = "분류", primary: str = "", items: list[str] | None = None) -> MatrixSlots:
+    return MatrixSlots(rows=[
+        MatrixRow(category=category, primary=primary, items=list(items or [])) for _ in range(n)
+    ])
+
+
+@pytest.mark.parametrize("row_count", [3, 4, 5, 6])
+def test_matrix_contract_boundary_of_category_lines_fits_and_plus_one_overflows(row_count):
+    k = char_hints("matrix", PRESET, REAL, row_count=row_count)["분류 셀 한 줄"]
+    n = capacity_contract("matrix", PRESET, row_count=row_count)["row_category_max_lines"]
+
+    def slide(lines: int):
+        category = " ".join([H * k] * lines) if lines > 0 else ""
+        return _slide("matrix", _matrix_slots(row_count, category=category))
+
+    if n > 0:
+        assert not _slot_warnings(slide(n), "row0_category"), "계약대로 채웠는데 넘침 경고가 났다"
+    assert _slot_warnings(slide(n + 1), "row0_category"), "계약보다 한 줄 더 넣었는데 경고가 없다"
+
+
+@pytest.mark.parametrize("row_count", [3, 4, 5, 6])
+def test_matrix_contract_boundary_of_primary_lines_fits_and_plus_one_overflows(row_count):
+    """대표 항목 3, 4, 5, 6개 각각에서 계약대로 채우면 실측이 통과하는지. 행이 낮아질수록
+    (행이 늘수록) 대표 항목 상한도 함께 줄어야 한다."""
+    k = char_hints("matrix", PRESET, REAL, row_count=row_count)["대표 항목 한 줄"]
+    n = capacity_contract("matrix", PRESET, row_count=row_count)["row_primary_max_lines"]
+
+    def slide(lines: int):
+        primary = " ".join([H * k] * lines) if lines > 0 else ""
+        return _slide("matrix", _matrix_slots(row_count, primary=primary))
+
+    if n > 0:
+        assert not _slot_warnings(slide(n), "row0_primary"), "계약대로 채웠는데 넘침 경고가 났다"
+    assert _slot_warnings(slide(n + 1), "row0_primary"), "계약보다 한 줄 더 넣었는데 경고가 없다"
+
+
+@pytest.mark.parametrize("row_count", [3, 4, 5, 6])
+def test_matrix_contract_boundary_of_one_line_items_fits_and_plus_one_overflows(row_count):
+    n = capacity_contract("matrix", PRESET, row_count=row_count)["row_items_max_lines"]
+
+    def slide(k):
+        return _slide("matrix", _matrix_slots(row_count, items=[f"항목{j}" for j in range(k)]))
+
+    assert not _slot_warnings(slide(n), "row0_items"), "계약대로 채웠는데 넘침 경고가 났다"
+    assert _slot_warnings(slide(n + 1), "row0_items"), "계약보다 하나 더 넣었는데 경고가 없다"
+
+
+def test_matrix_contract_never_negative_with_large_padding_across_counts():
+    p2 = apply_overrides(PRESET, {"spacing": {"box_padding": 40.0}})
+    for n in (3, 4, 5, 6):
+        assert min(capacity_contract("matrix", p2, row_count=n).values()) >= 0

@@ -1428,7 +1428,8 @@
               "divider",
               "callout",
               "cards",
-              "process"
+              "process",
+              "matrix"
             ],
             "title": "Template"
           },
@@ -1489,6 +1490,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ProcessSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MatrixSlots"
                   }
                 ],
                 "discriminator": {
@@ -1500,6 +1504,7 @@
                     "compare2": "#/components/schemas/CompareSlots",
                     "cover": "#/components/schemas/CoverSlots",
                     "divider": "#/components/schemas/DividerSlots",
+                    "matrix": "#/components/schemas/MatrixSlots",
                     "process": "#/components/schemas/ProcessSlots",
                     "summary": "#/components/schemas/SummarySlots",
                     "table": "#/components/schemas/TableSlots"
@@ -1721,6 +1726,9 @@
               },
               {
                 "$ref": "#/components/schemas/ProcessSlots"
+              },
+              {
+                "$ref": "#/components/schemas/MatrixSlots"
               }
             ],
             "title": "Slots",
@@ -1733,6 +1741,7 @@
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "matrix": "#/components/schemas/MatrixSlots",
                 "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
@@ -2338,6 +2347,58 @@
         "type": "object",
         "title": "LoginStatus"
       },
+      "MatrixRow": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "primary": {
+            "type": "string",
+            "title": "Primary",
+            "default": ""
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "MatrixRow",
+        "description": "행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목\n(primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의\nbadge/tail과 같은 규칙).\n\n표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에\n고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다."
+      },
+      "MatrixSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "matrix",
+            "title": "Template",
+            "default": "matrix"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/MatrixRow"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 3,
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "MatrixSlots",
+        "description": "분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과\n각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다."
+      },
       "OkResponse": {
         "properties": {
           "ok": {
@@ -2497,7 +2558,12 @@
               "process_subtitle_gap": 4.0,
               "process_label_width": 140.0,
               "process_label_gap": 16.0,
-              "process_label_height": 14.0
+              "process_label_height": 14.0,
+              "matrix_row_gap": 12.0,
+              "matrix_category_width": 140.0,
+              "matrix_category_gap": 16.0,
+              "matrix_items_width": 220.0,
+              "matrix_items_gap": 16.0
             }
           },
           "bullet_marker": {
@@ -2758,6 +2824,9 @@
               },
               {
                 "$ref": "#/components/schemas/ProcessSlots"
+              },
+              {
+                "$ref": "#/components/schemas/MatrixSlots"
               }
             ],
             "title": "Slots",
@@ -2770,6 +2839,7 @@
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "matrix": "#/components/schemas/MatrixSlots",
                 "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
@@ -3109,6 +3179,36 @@
             "exclusiveMinimum": 0.0,
             "title": "Process Label Height",
             "default": 14.0
+          },
+          "matrix_row_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Row Gap",
+            "default": 12.0
+          },
+          "matrix_category_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Matrix Category Width",
+            "default": 140.0
+          },
+          "matrix_category_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Category Gap",
+            "default": 16.0
+          },
+          "matrix_items_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Matrix Items Width",
+            "default": 220.0
+          },
+          "matrix_items_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Items Gap",
+            "default": 16.0
           }
         },
         "additionalProperties": false,

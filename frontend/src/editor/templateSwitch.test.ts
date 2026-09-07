@@ -194,3 +194,55 @@ it("process끼리는 그대로다", () => {
   expect(r.slots).toBe(process);
   expect(r.dropped).toEqual([]);
 });
+
+// ---- 행렬(matrix) 전환 (2026-09-07 DB-4) ----
+// 결론/각주에 대응하는 자리가 없어 결론과 각주는 소실 목록에 오른다. 분류는 process의 단계
+// 제목과 같은 이유로 다른 템플릿의 불릿과 같은 자리다: 순서 목록이라는 의미가 통해서 서로
+// 오갈 수 있다. 대표 항목과 나열은 다른 템플릿에 대응하는 자리가 없어 소실 목록에 남는다.
+
+it("bullet_box에서 matrix로: 불릿이 분류가 되고 결론과 각주는 소실 목록", () => {
+  const r = switchTemplate(bulletSlots, "matrix");
+  // 불릿 2개뿐이라 최소 행 수(3개)를 채우려고 빈 분류 하나가 더 붙는다
+  expect(r.slots.template === "matrix" && r.slots.rows.map((row) => row.category)).toEqual(["가", "나", ""]);
+  expect(r.dropped.join(" ")).toContain("결론");
+  expect(r.dropped.join(" ")).toContain("각주");
+});
+
+it("불릿이 6개보다 많으면 matrix로 옮길 때 초과분은 소실 목록에 오른다", () => {
+  const many: Slots = {
+    template: "bullet_box",
+    bullets: Array.from({ length: 8 }, (_, i) => ({ text: `항목${i}`, level: 0 as const })),
+    conclusion: "결", footnote: "",
+  };
+  const r = switchTemplate(many, "matrix");
+  expect(r.slots.template === "matrix" && r.slots.rows).toHaveLength(6);
+  expect(r.dropped.join(" ")).toContain("행 2개");
+});
+
+it("matrix에서 bullet_box로: 분류들을 불릿으로 모으고 대표 항목과 나열은 소실 목록", () => {
+  const matrix: Slots = {
+    template: "matrix",
+    rows: [
+      { category: "가", primary: "대표1", items: ["항목1"] },
+      { category: "나", primary: "", items: [] },
+      { category: "다", primary: "", items: ["항목2", "항목3"] },
+    ],
+  };
+  const r = switchTemplate(matrix, "bullet_box");
+  expect(r.slots.template === "bullet_box" && r.slots.bullets?.map((b) => b.text)).toEqual(["가", "나", "다"]);
+  expect(r.dropped.join(" ")).toContain("대표1");
+  expect(r.dropped.join(" ")).toContain("항목1");
+  expect(r.dropped.join(" ")).toContain("항목2");
+  expect(r.dropped.join(" ")).toContain("항목3");
+});
+
+it("matrix끼리는 그대로다", () => {
+  const matrix: Slots = { template: "matrix", rows: [
+    { category: "A", primary: "", items: [] },
+    { category: "B", primary: "", items: [] },
+    { category: "C", primary: "", items: [] },
+  ] };
+  const r = switchTemplate(matrix, "matrix");
+  expect(r.slots).toBe(matrix);
+  expect(r.dropped).toEqual([]);
+});

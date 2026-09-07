@@ -143,6 +143,16 @@ class Spacing(BaseModel):
     process_label_width: float = Field(default=140.0, gt=0)
     process_label_gap: float = Field(default=16.0, ge=0)
     process_label_height: float = Field(default=14.0, gt=0)
+    # 행렬(matrix) 전용 (2026-09-07 DB-4). process처럼 세로로 행을 쌓되(단계 수와 같은 원리로
+    # 행 수가 늘면 행 높이가 준다) 가로 3칸(분류/대표/나열)의 폭 배분이 다르다: 분류 셀은 행
+    # 높이 전체를 채우는 색 블록이라 안쪽 여백은 기존 box_padding을 재사용한다(callout/cards와
+    # 같은 "채움 블록 안쪽 여백" 개념). process의 필드를 공유하지 않는 이유는 process_row_gap의
+    # 주석과 같다: 재사용하면 한 템플릿의 조정이 다른 템플릿의 렌더까지 바꾼다.
+    matrix_row_gap: float = Field(default=12.0, ge=0)
+    matrix_category_width: float = Field(default=140.0, gt=0)
+    matrix_category_gap: float = Field(default=16.0, ge=0)
+    matrix_items_width: float = Field(default=220.0, gt=0)
+    matrix_items_gap: float = Field(default=16.0, ge=0)
 
 
 class Preset(BaseModel):

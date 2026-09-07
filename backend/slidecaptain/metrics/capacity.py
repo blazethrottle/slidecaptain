@@ -191,6 +191,33 @@ def process_geometry(
     }
 
 
+def matrix_geometry(
+    preset: Preset, row_count: int = 3, eyebrow: str = "", subtitle: str = ""
+) -> dict[str, float]:
+    """matrix 템플릿의 행 기하 (2026-09-07 DB-4). process_geometry와 같은 세로 원리(행이 늘수록
+    행 높이가 줄어든다)를 쓰되, 가로 3칸(분류/대표/나열)의 폭 배분이 다르다: 분류 셀과 나열은
+    고정 폭 좌우 블록이고, 대표 항목이 그 사이 남는 폭을 쓴다(process의 text_w가 badge_x와
+    label_x 사이 나머지를 쓰는 것과 같은 산식).
+    """
+    s = preset.spacing
+    g = content_geometry(preset, eyebrow, subtitle)
+    row_h = (g["content_bottom"] - g["content_top"] - s.matrix_row_gap * (row_count - 1)) / row_count
+    category_x = s.margin_left
+    primary_x = category_x + s.matrix_category_width + s.matrix_category_gap
+    items_x = s.margin_left + g["content_width"] - s.matrix_items_width
+    primary_w = items_x - s.matrix_items_gap - primary_x
+    return {
+        "content_top": g["content_top"],
+        "row_h": row_h,
+        "row_gap": s.matrix_row_gap,
+        "category_x": category_x,
+        "primary_x": primary_x,
+        "primary_w": primary_w,
+        "items_x": items_x,
+        "items_w": s.matrix_items_width,
+    }
+
+
 def cover_geometry(preset: Preset) -> dict:
     """표지 프레임 기하 (x, w 와 칸별 (y, h)). y 리터럴의 프리셋 승격은 단계 5B 이월 항목이라 값은 그대로 둔다."""
     s = preset.spacing
@@ -221,7 +248,7 @@ def divider_geometry(preset: Preset) -> dict:
 
 def capacity_contract(
     template: str, preset: Preset, eyebrow: str = "", subtitle: str = "",
-    card_count: int = 2, step_count: int = 3,
+    card_count: int = 2, step_count: int = 3, row_count: int = 3,
 ) -> dict[str, int]:
     s = preset.spacing
     r = preset.font_roles
@@ -239,6 +266,10 @@ def capacity_contract(
     # step_count는 process 템플릿에만 쓰인다. 기본값 3은 이 인자를 주지 않는 기존 호출부의
     # 결과를 그대로 유지한다 (2026-09-07 DB-3, card_count와 같은 이유)
     process = process_geometry(preset, step_count, eyebrow, subtitle)
+    # row_count는 matrix 템플릿에만 쓰인다. 기본값 3은 이 인자를 주지 않는 기존 호출부의
+    # 결과를 그대로 유지한다 (2026-09-07 DB-4, card_count/step_count와 같은 이유)
+    matrix = matrix_geometry(preset, row_count, eyebrow, subtitle)
+    matrix_category_inner_h = matrix["row_h"] - 2 * s.box_padding
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
@@ -287,6 +318,11 @@ def capacity_contract(
             "step_subtitle_max_lines": max_lines(process["subtitle_h"], r.subtitle_pt, ls),
             "step_label_max_lines": max_lines(s.process_label_height, r.footnote_pt, ls),
         },
+        "matrix": {
+            "row_category_max_lines": max_lines(matrix_category_inner_h, r.body_pt, ls),
+            "row_primary_max_lines": max_lines(matrix["row_h"], r.body_pt, ls),
+            "row_items_max_lines": items_that_fit(matrix["row_h"], r.body_pt, ls, s.bullet_gap),
+        },
     }
     return contracts[template]
 
@@ -307,7 +343,7 @@ def hangul_chars_per_line(preset: Preset, face) -> int:
 
 
 def char_hints(
-    template: str, preset: Preset, metrics, card_count: int = 2, step_count: int = 3
+    template: str, preset: Preset, metrics, card_count: int = 2, step_count: int = 3, row_count: int = 3
 ) -> dict[str, int]:
     """템플릿별 환산 안내 (칸 이름 → 한 줄 한글 글자 수). 프롬프트 계약 블록이 그대로 이어 붙인다.
 
@@ -318,6 +354,10 @@ def char_hints(
     쌓이므로 배지/제목/라벨 칸의 가로 너비는 단계 수와 무관하다: 이 함수의 결과값은
     step_count가 몇이든 항상 같다(그래도 시그니처를 맞춰 둔다: capacity_contract와 같은
     이유로, 나중에 가로 배치가 바뀌어도 호출부를 다시 고칠 필요가 없다).
+
+    row_count는 matrix 템플릿에만 쓰인다(2026-09-07 DB-4). process의 step_count와 정확히
+    같은 이유로 이 함수의 결과값은 row_count가 몇이든 항상 같다: 행은 세로로 쌓이므로
+    분류/대표/나열 세 칸의 가로 너비는 행 수와 무관하다.
     """
     s, r = preset.spacing, preset.font_roles
     regular, bold = metrics.face(False), metrics.face(True)
@@ -359,5 +399,15 @@ def char_hints(
             "단계 제목": hangul_chars_for_width(pg["text_w"], r.body_pt, bold, s.safety_ratio),
             "단계 부제": hangul_chars_for_width(pg["text_w"], r.subtitle_pt, regular, s.safety_ratio),
             "보조 라벨": hangul_chars_for_width(pg["label_w"], r.footnote_pt, regular, s.safety_ratio),
+        }
+    if template == "matrix":
+        mg = matrix_geometry(preset, row_count)
+        category_inner_w = s.matrix_category_width - 2 * s.box_padding
+        return {
+            "분류 셀 한 줄": hangul_chars_for_width(category_inner_w, r.body_pt, bold, s.safety_ratio),
+            "대표 항목 한 줄": hangul_chars_for_width(mg["primary_w"], r.body_pt, bold, s.safety_ratio),
+            "나열 항목 한 줄": hangul_chars_for_width(
+                mg["items_w"] - s.bullet_indent, r.body_pt, regular, s.safety_ratio
+            ),
         }
     raise KeyError(template)

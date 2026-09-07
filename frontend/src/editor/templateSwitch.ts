@@ -56,6 +56,18 @@ function collect(slots: Slots): Currency {
       });
       return { bullets, dropped };
     }
+    case "matrix": {
+      // process의 단계 제목과 같은 이유: 분류는 순서 목록이라는 점에서 다른 템플릿의 불릿과
+      // 같은 자리다: 불릿으로 모아 서로 오갈 수 있게 한다 (2026-09-07 DB-4). 대표 항목과
+      // 나열은 대응하는 자리가 없어 소실 목록에 남긴다.
+      const dropped: string[] = [];
+      const bullets: Bullet[] = slots.rows.map((row) => ({ text: row.category, level: 0 }));
+      slots.rows.forEach((row, i) => {
+        if (row.primary) dropped.push(`${i + 1}번째 행 대표 항목 "${row.primary}"`);
+        row.items.forEach((item) => dropped.push(`${i + 1}번째 행 나열 항목 "${item}"`));
+      });
+      return { bullets, dropped };
+    }
   }
 }
 
@@ -128,6 +140,28 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
       while (headings.length < MIN_STEPS) headings.push("");
       return {
         slots: { template: "process", steps: headings.map((heading) => ({ heading, subtitle: "", notes: [] })) },
+        dropped,
+      };
+    }
+    case "matrix": {
+      // 결론과 각주는 행에 담을 자리가 없어 소실 목록에 오른다. 분류는 불릿에서 옮겨 오되,
+      // process와 같은 규칙(행 개수도 3~6으로 같다)으로 6개를 넘는 만큼은 자르고(소실 목록에
+      // 남긴다), 3개에 못 미치면 빈 분류로 채운다(최소 개수를 항상 만족시킨다). 대표 항목과
+      // 나열은 새로 만들 수 없어 비운다.
+      dropConclusion();
+      dropFootnote();
+      const MIN_ROWS = 3, MAX_ROWS = 6;
+      if (c.bullets.length > MAX_ROWS) {
+        dropped.push(`행 ${c.bullets.length - MAX_ROWS}개 (최대 ${MAX_ROWS}개까지만 옮길 수 있음)`);
+      }
+      const keptBullets = c.bullets.slice(0, MAX_ROWS);
+      // MatrixRow는 행 개념상 들여쓰기 깊이를 표현할 자리가 없다: 조용히 버리지 않고 안내한다
+      const indented = keptBullets.filter((b) => b.level > 0).length;
+      if (indented > 0) dropped.push(`들여쓰기 정보 ${indented}개 (행은 들여쓰기를 표현하지 않음)`);
+      const categories = keptBullets.map((b) => b.text);
+      while (categories.length < MIN_ROWS) categories.push("");
+      return {
+        slots: { template: "matrix", rows: categories.map((category) => ({ category, primary: "", items: [] })) },
         dropped,
       };
     }

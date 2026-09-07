@@ -14,6 +14,7 @@ from slidecaptain.models.deck import (
     Deck,
     DeckMeta,
     DividerSlots,
+    MatrixSlots,
     ProcessSlots,
     SummarySlots,
     TableSlots,
@@ -36,7 +37,8 @@ TEMPLATE_GUIDE = """\
 - divider: 섹션 구분 간지
 - callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)
 - cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)
-- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)"""
+- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)
+- matrix: 분류 기준으로 항목을 대조할 때 쓴다 (행 3~6개, 왼쪽 분류/가운데 대표 항목/오른쪽 나열, 대표 항목과 나열은 선택)"""
 
 STYLE_RULES = """\
 문체 규칙:
@@ -57,6 +59,7 @@ _SLOTS_BY_TEMPLATE = {
     "callout": CalloutSlots,
     "cards": CardsSlots,
     "process": ProcessSlots,
+    "matrix": MatrixSlots,
 }
 
 _CONTRACT_LABELS = {
@@ -78,6 +81,9 @@ _CONTRACT_LABELS = {
     "step_heading_max_lines": "단계 제목",
     "step_subtitle_max_lines": "단계 부제",
     "step_label_max_lines": "단계 보조 라벨",
+    "row_category_max_lines": "분류 셀",
+    "row_primary_max_lines": "대표 항목",
+    "row_items_max_lines": "나열 항목",
 }
 
 
@@ -130,7 +136,7 @@ def structure_response_schema() -> dict:
                             "type": "string",
                             "enum": [
                                 "cover", "summary", "bullet_box", "table", "compare2", "divider",
-                                "callout", "cards", "process",
+                                "callout", "cards", "process", "matrix",
                             ],
                         },
                         "source_refs": {"type": "array", "items": {"type": "string"}},
@@ -145,7 +151,9 @@ def structure_response_schema() -> dict:
 
 # 줄 수 한도가 "한 줄짜리 항목 개수 기준 하한" 으로 정의된 키 (capacity.items_that_fit). AI 가 줄 수와 항목 수를
 # 같은 것으로 읽게 문구에 개수를 함께 적는다 (2026-09-02 Critical 묶음 태스크 A)
-_ITEM_COUNT_KEYS = {"points_max_lines", "bullets_max_lines", "card_bullets_max_lines"}
+_ITEM_COUNT_KEYS = {
+    "points_max_lines", "bullets_max_lines", "card_bullets_max_lines", "row_items_max_lines",
+}
 
 
 def _contract_block(template: str, contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
@@ -161,6 +169,9 @@ def _contract_block(template: str, contract: dict[str, int], char_hints: dict[st
     if template == "process":
         # cards와 같은 이유: steps 배열 길이(3~6)는 max_lines 계약에 담기지 않는다 (2026-09-07 DB-3)
         lines.append("- 단계 개수: 3개 이상 6개 이하")
+    if template == "matrix":
+        # cards/process와 같은 이유: rows 배열 길이(3~6)는 max_lines 계약에 담기지 않는다 (2026-09-07 DB-4)
+        lines.append("- 행 개수: 3개 이상 6개 이하")
     for key, value in contract.items():
         suffix = f" (한 줄짜리 항목 {value}개 기준)" if key in _ITEM_COUNT_KEYS else ""
         unit = "행" if key == "rows_max_single_line" else "줄"

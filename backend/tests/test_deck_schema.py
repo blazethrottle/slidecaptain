@@ -10,6 +10,8 @@ from slidecaptain.models.deck import (
     Chapter,
     Deck,
     DeckMeta,
+    MatrixRow,
+    MatrixSlots,
     ProcessSlots,
     ProcessStep,
     Slide,
@@ -224,6 +226,33 @@ def test_process_slots_rejects_more_than_six_steps():
 def test_process_step_rejects_more_than_two_notes():
     with pytest.raises(ValidationError):
         ProcessStep(heading="단계", notes=["가", "나", "다"])
+
+
+# ---- 행렬(matrix) 슬롯 검증 (2026-09-07 DB-4) ----
+
+
+def test_matrix_row_primary_and_items_default_to_empty():
+    row = MatrixRow(category="분류")
+    assert row.primary == ""
+    assert row.items == []
+
+
+def test_matrix_slots_accepts_three_to_six_rows():
+    for n in (3, 4, 5, 6):
+        slots = MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(n)])
+        assert len(slots.rows) == n
+
+
+def test_matrix_slots_rejects_fewer_than_three_rows():
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(2)])
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[])
+
+
+def test_matrix_slots_rejects_more_than_six_rows():
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(7)])
 
 
 def test_legacy_cover_audience_key_is_ignored_on_load():

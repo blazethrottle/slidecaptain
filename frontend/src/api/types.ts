@@ -502,7 +502,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards" | "process";
+            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards" | "process" | "matrix";
             /**
              * Source Refs
              * @default []
@@ -517,7 +517,7 @@ export interface components {
              */
             status: "ok" | "format_error";
             /** Slots */
-            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"]) | null;
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"]) | null;
             /**
              * Raw Text
              * @default
@@ -651,7 +651,7 @@ export interface components {
         /** CondenseChapterRequest */
         CondenseChapterRequest: {
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"];
             /**
              * Instructions
              * @default
@@ -932,6 +932,43 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /**
+         * MatrixRow
+         * @description 행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목
+         *     (primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의
+         *     badge/tail과 같은 규칙).
+         *
+         *     표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에
+         *     고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다.
+         */
+        MatrixRow: {
+            /** Category */
+            category: string;
+            /**
+             * Primary
+             * @default
+             */
+            primary: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: string[];
+        };
+        /**
+         * MatrixSlots
+         * @description 분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과
+         *     각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다.
+         */
+        MatrixSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "matrix";
+            /** Rows */
+            rows: components["schemas"]["MatrixRow"][];
+        };
         /** OkResponse */
         OkResponse: {
             /**
@@ -1068,7 +1105,12 @@ export interface components {
              *       "process_subtitle_gap": 4,
              *       "process_label_width": 140,
              *       "process_label_gap": 16,
-             *       "process_label_height": 14
+             *       "process_label_height": 14,
+             *       "matrix_row_gap": 12,
+             *       "matrix_category_width": 140,
+             *       "matrix_category_gap": 16,
+             *       "matrix_items_width": 220,
+             *       "matrix_items_gap": 16
              *     }
              */
             spacing: components["schemas"]["Spacing"];
@@ -1202,7 +1244,7 @@ export interface components {
              */
             subtitle: string;
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"];
         };
         /** SlidePlan */
         SlidePlan: {
@@ -1447,6 +1489,31 @@ export interface components {
              * @default 14
              */
             process_label_height: number;
+            /**
+             * Matrix Row Gap
+             * @default 12
+             */
+            matrix_row_gap: number;
+            /**
+             * Matrix Category Width
+             * @default 140
+             */
+            matrix_category_width: number;
+            /**
+             * Matrix Category Gap
+             * @default 16
+             */
+            matrix_category_gap: number;
+            /**
+             * Matrix Items Width
+             * @default 220
+             */
+            matrix_items_width: number;
+            /**
+             * Matrix Items Gap
+             * @default 16
+             */
+            matrix_items_gap: number;
         };
         /** Structure */
         Structure: {

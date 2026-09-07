@@ -12,6 +12,7 @@ SCHEMA_VERSION = 1
 
 TemplateName = Literal[
     "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
+    "matrix",
 ]
 ReportType = Literal["research", "approval", "strategy"]
 
@@ -144,10 +145,33 @@ class ProcessSlots(BaseModel):
     steps: list[ProcessStep] = Field(min_length=3, max_length=6)
 
 
+class MatrixRow(BaseModel):
+    """행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목
+    (primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의
+    badge/tail과 같은 규칙).
+
+    표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에
+    고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다.
+    """
+
+    category: str
+    primary: str = ""
+    items: list[str] = []
+
+
+class MatrixSlots(BaseModel):
+    """분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과
+    각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["matrix"] = "matrix"
+    rows: list[MatrixRow] = Field(min_length=3, max_length=6)
+
+
 Slots = Annotated[
     Union[
         CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots,
-        CalloutSlots, CardsSlots, ProcessSlots,
+        CalloutSlots, CardsSlots, ProcessSlots, MatrixSlots,
     ],
     Field(discriminator="template"),
 ]

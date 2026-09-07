@@ -13,6 +13,7 @@ from slidecaptain.metrics.capacity import (
     cover_geometry,
     divider_geometry,
     line_height_pt,
+    matrix_geometry,
     max_lines,
     measure_bullets,
     measure_lines,
@@ -30,6 +31,7 @@ from slidecaptain.models.deck import (
     CompareSlots,
     CoverSlots,
     DividerSlots,
+    MatrixSlots,
     ProcessSlots,
     SummarySlots,
     TableSlots,
@@ -715,6 +717,81 @@ def _build_process(
     return SlidePlan(chapter_id=chapter.id, template="process", frames=frames, warnings=warnings)
 
 
+def _build_matrix(
+    chapter: Chapter, slots: MatrixSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
+) -> SlidePlan:
+    """분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). 왼쪽 분류 셀(채움 블록)/가운데
+    대표 항목/오른쪽 나열이 서로 다른 가로 칸에 있어 프레임 셋으로 나뉜다: process가 배지/
+    제목/라벨을 칸으로 나누는 것과 같은 이유다(하나의 세로 텍스트 상자로는 "왼쪽 분류, 가운데
+    대표 항목, 오른쪽 나열"을 표현할 수 없다). 표(TableSlots)와 다른 점은 deck.py MatrixRow
+    주석에 있다.
+
+    분류 셀은 행 높이 전체를 채우는 색 블록이다(process의 작은 원형 배지와 달리, 행을 대표
+    하는 라벨이라 더 크게 강조한다). 대표 항목과 나열은 선택이라, 실제로 값이 있는 행만
+    그 칸의 프레임을 만든다(cards의 배지/꼬리 라벨과 같은 규칙).
+    """
+    s, r, c = preset.spacing, preset.font_roles, preset.colors
+    g = slide_geometry(preset, eyebrow, subtitle)
+    n = len(slots.rows)
+    mg = matrix_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
+    row_h, row_gap = mg["row_h"], mg["row_gap"]
+    warnings: list[CapacityWarning] = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
+
+    category_fill = c.accent1
+    category_text_color = readable_text_color(category_fill, light=c.background, dark=c.text)
+    category_inner_w = s.matrix_category_width - 2 * s.box_padding
+    category_inner_h = row_h - 2 * s.box_padding
+
+    frames = [_title_frame(chapter, preset, metrics, g)]
+    for i, row in enumerate(slots.rows):
+        name = f"row{i}"
+        row_y = mg["content_top"] + i * (row_h + row_gap)
+        frames.append(Frame(
+            name=f"{chapter.id}:{name}_category",
+            x=mg["category_x"], y=row_y, w=s.matrix_category_width, h=row_h,
+            fill=category_fill, valign="middle",
+            paras=[Para(
+                text=row.category, font_pt=r.body_pt, bold=True, color=category_text_color, align="center",
+                lines=_para_lines(row.category, category_inner_w, r.body_pt, True, preset, metrics),
+            )],
+        ))
+        if (cwarn := _fixed_height_warning(
+            chapter, f"{name}_category", row.category, category_inner_w, category_inner_h,
+            r.body_pt, True, preset, metrics,
+        )) is not None:
+            warnings.append(cwarn)
+        if row.primary:
+            frames.append(Frame(
+                name=f"{chapter.id}:{name}_primary",
+                x=mg["primary_x"], y=row_y, w=mg["primary_w"], h=row_h,
+                valign="middle",
+                paras=[Para(
+                    text=row.primary, font_pt=r.body_pt, bold=True, color=c.text,
+                    lines=_para_lines(row.primary, mg["primary_w"], r.body_pt, True, preset, metrics),
+                )],
+            ))
+            if (pwarn := _fixed_height_warning(
+                chapter, f"{name}_primary", row.primary, mg["primary_w"], row_h,
+                r.body_pt, True, preset, metrics,
+            )) is not None:
+                warnings.append(pwarn)
+        if row.items:
+            item_bullets = [Bullet(text=item, level=0) for item in row.items]
+            frames.append(Frame(
+                name=f"{chapter.id}:{name}_items",
+                x=mg["items_x"], y=row_y, w=mg["items_w"], h=row_h,
+                paras=_bullet_paras(item_bullets, mg["items_w"], preset, metrics),
+            ))
+            measure = measure_bullets(item_bullets, mg["items_w"], r.body_pt, metrics.face(False), s)
+            if measure.total_height_pt > row_h:
+                warnings.append(_measure_warning(chapter, f"{name}_items", measure.total_height_pt, row_h))
+    frames.append(_page_number_frame(chapter, page_no, preset))
+    return SlidePlan(chapter_id=chapter.id, template="matrix", frames=frames, warnings=warnings)
+
+
 def build_slide(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
     eyebrow: str = "", subtitle: str = "",
@@ -752,4 +829,6 @@ def _dispatch(
         return _build_cards(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, ProcessSlots):
         return _build_process(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+    if isinstance(slots, MatrixSlots):
+        return _build_matrix(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

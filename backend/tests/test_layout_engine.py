@@ -15,6 +15,8 @@ from slidecaptain.models.deck import (
     Deck,
     DeckMeta,
     DividerSlots,
+    MatrixRow,
+    MatrixSlots,
     ProcessSlots,
     ProcessStep,
     Slide,
@@ -764,6 +766,141 @@ def test_process_label_overflow_warning_slot_matches_its_frame_for_preview_highl
     label_warnings = [w for w in slide.warnings if w.slot.startswith("step0_label")]
     assert label_warnings, "넘침 경고가 최소 1개는 있어야 이 계약을 검증할 수 있다"
     for w in label_warnings:
+        assert w.slot == frame_slot or w.slot.startswith(f"{frame_slot}_"), (
+            f"경고 slot {w.slot!r}이 프레임 slot {frame_slot!r}과 매칭되지 않아 "
+            "Preview에서 강조가 뜨지 않는다"
+        )
+
+
+# ---- 행렬(matrix) 프레임 (2026-09-07 DB-4) ----
+# 왼쪽 분류 셀(채움 블록, 항상 있음)/가운데 대표 항목(선택)/오른쪽 나열(선택)을 담은 행
+# 3~6개를 세로로 쌓는다. process처럼 칸마다 가로 위치가 달라 프레임 셋으로 나뉜다. 표와
+# 다른 점은 deck.py MatrixRow 주석 참고: 표는 열 이름이 있는 균일한 격자이고 matrix는
+# 분류축이 왼쪽에 고정된 행 나열이다.
+
+
+def _matrix_deck(n: int, **row_kwargs) -> Deck:
+    rows = [MatrixRow(category=f"분류{i}", **row_kwargs) for i in range(n)]
+    return _deck([("matrix", MatrixSlots(rows=rows))])
+
+
+@pytest.mark.parametrize("n", [3, 4, 5, 6])
+def test_matrix_rows_do_not_overlap_and_stay_within_the_content_area(n):
+    from slidecaptain.metrics.capacity import content_geometry, matrix_geometry
+
+    plan = build_render_plan(_matrix_deck(n), PRESET, FAKE)
+    slide = plan.slides[0]
+    g = content_geometry(PRESET)
+    rows = [_frame(slide, f":row{i}_category") for i in range(n)]
+    for row in rows:
+        assert row.y >= g["content_top"] - 0.01
+        assert row.y + row.h <= g["content_bottom"] + 0.01
+    for a, b in zip(rows, rows[1:]):
+        assert a.y + a.h <= b.y + 0.01, "행이 겹친다"
+    # 기하 함수 자체도 분류/대표/나열 세 칸이 겹치지 않고 본문 폭 전체에 걸친다
+    mg = matrix_geometry(PRESET, n)
+    assert mg["category_x"] == pytest.approx(PRESET.spacing.margin_left)
+    assert mg["category_x"] + PRESET.spacing.matrix_category_width <= mg["primary_x"] + 0.01
+    assert mg["primary_x"] + mg["primary_w"] <= mg["items_x"] + 0.01
+    assert mg["items_x"] + mg["items_w"] == pytest.approx(PRESET.spacing.margin_left + g["content_width"])
+
+
+def test_matrix_row_height_shrinks_as_row_count_grows():
+    three = _frame(build_render_plan(_matrix_deck(3), PRESET, FAKE).slides[0], ":row0_category")
+    six = _frame(build_render_plan(_matrix_deck(6), PRESET, FAKE).slides[0], ":row0_category")
+    assert three.h > six.h
+
+
+def test_matrix_category_gets_a_filled_block_with_readable_text_color():
+    """분류 셀은 색 역할로 채우고 글자색은 DB-1의 휘도 판단 함수로 다시 고른다 (계획서 명시)."""
+    from slidecaptain.metrics.color import readable_text_color
+
+    plan = build_render_plan(_matrix_deck(3), PRESET, FAKE)
+    expected = readable_text_color(PRESET.colors.accent1, light=PRESET.colors.background, dark=PRESET.colors.text)
+    for i in range(3):
+        cell = _frame(plan.slides[0], f":row{i}_category")
+        assert cell.fill == PRESET.colors.accent1
+        assert cell.paras[0].color == expected
+
+
+def test_matrix_frame_names_carry_role_tags_when_optional_columns_are_empty():
+    plan = build_render_plan(_matrix_deck(3), PRESET, FAKE)
+    names = {f.name for f in plan.slides[0].frames}
+    assert names == {
+        "ch01:title",
+        "ch01:row0_category", "ch01:row1_category", "ch01:row2_category",
+        "ch01:page_number",
+    }
+
+
+def test_matrix_primary_and_items_are_optional_and_add_their_own_frames_when_present():
+    deck = _deck([(
+        "matrix",
+        MatrixSlots(rows=[
+            MatrixRow(category="강점", primary="빠른 실행", items=["항목1", "항목2"]),
+            MatrixRow(category="약점"),
+            MatrixRow(category="기회"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    names = {f.name for f in plan.slides[0].frames}
+    assert "ch01:row0_primary" in names
+    assert "ch01:row0_items" in names
+    assert "ch01:row1_primary" not in names
+    assert "ch01:row1_items" not in names
+    assert "ch01:row2_primary" not in names
+    assert "ch01:row2_items" not in names
+
+
+def test_matrix_items_render_as_a_bulleted_list_in_render_order():
+    deck = _deck([(
+        "matrix",
+        MatrixSlots(rows=[
+            MatrixRow(category="강점", items=["항목A", "항목B", "항목C"]),
+            MatrixRow(category="약점"),
+            MatrixRow(category="기회"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    items_frame = _frame(plan.slides[0], ":row0_items")
+    assert [p.text for p in items_frame.paras] == ["항목A", "항목B", "항목C"]
+    assert all(p.bullet for p in items_frame.paras)
+
+
+def test_matrix_category_overflow_warns_only_that_rows_category_slot():
+    long_category = "분류 이름이 지나치게 길어서 셀 높이를 넘긴다 " * 6
+    deck = _deck([(
+        "matrix",
+        MatrixSlots(rows=[
+            MatrixRow(category=long_category),
+            MatrixRow(category="짧음"),
+            MatrixRow(category="셋째"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert "row0_category" in _warned_slots(plan)
+    assert "row1_category" not in _warned_slots(plan)
+
+
+def test_matrix_items_overflow_warning_slot_matches_its_frame_for_preview_highlighting():
+    """DB-3 리뷰 발견 1과 같은 계열의 위험: 나열 넘침 경고의 slot이 나열 프레임 자신의
+    slot("row0_items")과 이 규약(`w.slot === slot || w.slot.startsWith(`${slot}_`)`)을
+    지키지 않으면 경고 메시지는 떠도 편집 화면에서 그 프레임에 빨간 강조가 뜨지 않는다."""
+    many_items = [f"항목{i}" for i in range(30)]
+    deck = _deck([(
+        "matrix",
+        MatrixSlots(rows=[
+            MatrixRow(category="강점", items=many_items),
+            MatrixRow(category="약점"),
+            MatrixRow(category="기회"),
+        ]),
+    )])
+    slide = build_render_plan(deck, PRESET, METRICS).slides[0]
+    items_frame = _frame(slide, ":row0_items")
+    frame_slot = items_frame.name.split(":", 1)[1]
+    item_warnings = [w for w in slide.warnings if w.slot.startswith("row0_items")]
+    assert item_warnings, "넘침 경고가 최소 1개는 있어야 이 계약을 검증할 수 있다"
+    for w in item_warnings:
         assert w.slot == frame_slot or w.slot.startswith(f"{frame_slot}_"), (
             f"경고 slot {w.slot!r}이 프레임 slot {frame_slot!r}과 매칭되지 않아 "
             "Preview에서 강조가 뜨지 않는다"
