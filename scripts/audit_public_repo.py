@@ -13,6 +13,13 @@
   지우면 기본 검사는 통과하고 ``--history`` 가 잡는다.
 - Office 파일 검사는 확장자 기반이다. 확장자 없이 zip 시그니처(``PK``)만 가진
   오피스 파일(잘못 저장된 pptx 등)은 잡지 못한다.
+- 식별 문자열 검사는 사용자 계정이 든 경로(``C:\\Users\\<계정>``, ``/Users/<계정>``)만
+  본다. 사람 이름이나 회사 이름 자체는 추측으로 잡지 않는다. 자리표시자(``<...>``,
+  ``%...%``, ``$...``)와 공용 계정(Public, Default, Shared 등)은 통과시킨다.
+- ``--history`` 의 식별 문자열 검사는 ``_IDENTITY_EXEMPT_COMMITS`` 의 커밋을 건너뛴다.
+  이 저장소의 과거 계정명 유입 2건은 사용자 결정(2026-09-07)으로 이력에 남기기로 했고,
+  그 결정이 새 유입까지 덮지 않도록 예외는 커밋 해시로만 한정한다. 이력을 재작성하면
+  해시가 바뀌므로 이 목록도 함께 갱신해야 한다.
 """
 
 from __future__ import annotations
@@ -50,6 +57,9 @@ _SYNTHETIC_FIXTURE = ("backend", "tests", "fixtures", "synthetic")
 _PILOT_DIRECTORY = ("docs", "pilot")
 _PILOT_NOTE = re.compile(r"\d{4}-\d{2}-\d{2}-파일럿-관찰지\.md\Z")
 _COMMIT_HEADER = re.compile(rb"(?m)^([0-9a-f]{40})\0\n\n")
+_SECRET_NAME_TOKENS = frozenset({"credential", "credentials", "secret", "secrets"})
+_SAMPLE_NAME_TOKENS = frozenset({"example", "sample", "template"})
+_NAME_TOKEN_SEPARATORS = re.compile(r"[-_.]+")
 
 
 def _bytes_pattern(*parts: bytes, flags: int = 0) -> re.Pattern[bytes]:
@@ -82,6 +92,31 @@ _ENVIRONMENT_ASSIGNMENT = _bytes_pattern(
     flags=re.IGNORECASE,
 )
 _PLACEHOLDER_VALUE = re.compile(rb"your|example|placeholder|changeme|dummy", re.IGNORECASE)
+
+# 두 패턴은 조각을 이어 붙여 만든다. 소스에 경로 리터럴을 그대로 두면 이 파일 자신이
+# 검사에 걸린다 (2026-09-07 실측. 비밀 패턴이 ``_bytes_pattern`` 을 쓰는 것과 같은 이유).
+# Windows 는 드라이브 접두어가 있어 대소문자를 가리지 않아도 URL 과 헷갈리지 않는다.
+# POSIX 는 대문자로 시작하는 사용자 폴더만 본다. 소문자까지 보면 REST 경로의 사용자 목록
+# 엔드포인트를 계정 경로로 오인한다 (2026-09-07 설계 판단)
+_WINDOWS_ACCOUNT_PATH = _bytes_pattern(
+    rb"[a-z]:", rb"\\", rb"users", rb"\\", rb"([^\\\r\n\"']{1,64})", flags=re.IGNORECASE
+)
+_POSIX_ACCOUNT_PATH = _bytes_pattern(rb"/", rb"Users", rb"/", rb"([^/\r\n\"'\s]{1,64})")
+_SHARED_ACCOUNT_SEGMENTS = frozenset(
+    {b"public", b"default", b"default user", b"all users", b"shared"}
+)
+_PLACEHOLDER_PREFIXES = (b"<", b"%", b"$", b"~", b"{")
+# 이 저장소의 과거 계정명이 diff 본문에 있는 커밋 4건(문맥 줄 포함 실측). 3e47fbb 가 들여왔고
+# 57572e3 과 077f329 가 같은 줄을 문맥으로 통과시켰으며 9d20ba9 가 익명화했다.
+# `git log -S` 는 추가와 삭제만 세므로 문맥 줄에 남은 2건을 놓친다 (2026-09-07 실측). 사용자 결정(2026-09-07)으로 이력은 재작성하지 않는다
+_IDENTITY_EXEMPT_COMMITS = frozenset(
+    {
+        "3e47fbbbf3aca85c0f7b647f15f1c2153573aa83",
+        "57572e3615213bee28d727206ca22ca48e315281",
+        "077f32991717108dfb5e81704df592f12f0cfe23",
+        "9d20ba90610aedc1d5bf85d148f654dc1f34c80a",
+    }
+)
 
 
 def _run_git(root: Path, *arguments: str) -> bytes:
@@ -159,6 +194,12 @@ def _is_allowed_pilot_note(parts: tuple[str, ...]) -> bool:
     )
 
 
+def _name_tokens(name: str) -> set[str]:
+    """파일명을 붙임표와 밑줄과 점으로 나눈 조각들. 앞의 점은 떼어 ``.secrets`` 도 본다."""
+
+    return {token for token in _NAME_TOKEN_SEPARATORS.split(name.strip(".")) if token}
+
+
 def _is_secret_filename(name: str) -> bool:
     lowered = name.lower()
     if lowered == ".env":
@@ -167,8 +208,27 @@ def _is_secret_filename(name: str) -> bool:
         return True
     if Path(lowered).suffix in _PRIVATE_KEY_EXTENSIONS:
         return True
-    stem = lowered.split(".", 1)[0]
-    return stem in {"credential", "credentials", "secret", "secrets"}
+    tokens = _name_tokens(lowered)
+    if tokens & _SAMPLE_NAME_TOKENS:
+        return False
+    return bool(tokens & _SECRET_NAME_TOKENS)
+
+
+def _is_placeholder_account(segment: bytes) -> bool:
+    stripped = segment.strip()
+    if not stripped:
+        return True
+    if stripped[:1] in _PLACEHOLDER_PREFIXES:
+        return True
+    return stripped.lower() in _SHARED_ACCOUNT_SEGMENTS
+
+
+def _contains_identity(content: bytes) -> bool:
+    for pattern in (_WINDOWS_ACCOUNT_PATH, _POSIX_ACCOUNT_PATH):
+        for match in pattern.finditer(content):
+            if not _is_placeholder_account(match.group(1)):
+                return True
+    return False
 
 
 def audit_paths(paths: list[str]) -> list[Finding]:
@@ -223,6 +283,8 @@ def audit_contents(root: Path, paths: list[str]) -> list[Finding]:
             continue
         if _contains_secret(content):
             findings.append(Finding("비밀 패턴", relative_path))
+        if _contains_identity(content):
+            findings.append(Finding("식별 문자열", relative_path))
     return findings
 
 
@@ -230,7 +292,7 @@ def _unique_findings(findings: list[Finding]) -> list[Finding]:
     return list(dict.fromkeys(findings))
 
 
-def _historical_secret_findings(root: Path) -> list[Finding]:
+def _historical_content_findings(root: Path) -> list[Finding]:
     paths_by_commit = _historical_paths_by_commit(root)
     findings: list[Finding] = []
     diff_output = _run_git(root, "log", "--all", "--format=%H%x00", "-p", "--no-ext-diff")
@@ -240,14 +302,19 @@ def _historical_secret_findings(root: Path) -> list[Finding]:
         next_start = headers[index + 1].start() if index + 1 < len(headers) else len(diff_output)
         diff = diff_output[header.end() : next_start]
         paths = paths_by_commit.get(commit, [])
+        checks = [("비밀 패턴(이력)", _contains_secret)]
+        if commit not in _IDENTITY_EXEMPT_COMMITS:
+            checks.append(("식별 문자열(이력)", _contains_identity))
         patches = [patch for patch in diff.split(b"\ndiff --git ") if patch]
         if len(paths) != len(patches):
-            if _contains_secret(diff):
-                findings.extend(Finding("비밀 패턴(이력)", path) for path in paths)
+            for rule, matches in checks:
+                if matches(diff):
+                    findings.extend(Finding(rule, path) for path in paths)
             continue
         for path, patch in zip(paths, patches, strict=True):
-            if _contains_secret(patch):
-                findings.append(Finding("비밀 패턴(이력)", path))
+            for rule, matches in checks:
+                if matches(patch):
+                    findings.append(Finding(rule, path))
     return findings
 
 
@@ -289,7 +356,7 @@ def audit_repository(root: Path, include_history: bool = False) -> list[Finding]
     findings.extend(audit_contents(root, current_paths))
     if include_history:
         findings.extend(audit_paths(historical_paths(root)))
-        findings.extend(_historical_secret_findings(root))
+        findings.extend(_historical_content_findings(root))
     return _unique_findings(findings)
 
 
