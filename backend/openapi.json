@@ -1427,7 +1427,8 @@
               "compare2",
               "divider",
               "callout",
-              "cards"
+              "cards",
+              "process"
             ],
             "title": "Template"
           },
@@ -1485,6 +1486,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/CardsSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessSlots"
                   }
                 ],
                 "discriminator": {
@@ -1496,6 +1500,7 @@
                     "compare2": "#/components/schemas/CompareSlots",
                     "cover": "#/components/schemas/CoverSlots",
                     "divider": "#/components/schemas/DividerSlots",
+                    "process": "#/components/schemas/ProcessSlots",
                     "summary": "#/components/schemas/SummarySlots",
                     "table": "#/components/schemas/TableSlots"
                   }
@@ -1713,6 +1718,9 @@
               },
               {
                 "$ref": "#/components/schemas/CardsSlots"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessSlots"
               }
             ],
             "title": "Slots",
@@ -1725,6 +1733,7 @@
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
               }
@@ -2480,7 +2489,16 @@
               "safety_ratio": 0.97,
               "border_width_pt": 0.75,
               "callout_height": 84.0,
-              "callout_radius_pt": 12.0
+              "callout_radius_pt": 12.0,
+              "process_row_gap": 12.0,
+              "process_badge_size": 28.0,
+              "process_badge_gap": 16.0,
+              "process_heading_height": 20.0,
+              "process_subtitle_gap": 4.0,
+              "process_label_width": 140.0,
+              "process_label_gap": 16.0,
+              "process_label_height": 14.0,
+              "process_label_line_gap": 4.0
             }
           },
           "bullet_marker": {
@@ -2511,6 +2529,59 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Preset"
+      },
+      "ProcessSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "process",
+            "title": "Template",
+            "default": "process"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessStep"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 3,
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "steps"
+        ],
+        "title": "ProcessSlots",
+        "description": "번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 \"플로우차트\"의\n실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가\n내용이라 공통 결론이 필수가 아니다."
+      },
+      "ProcessStep": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle",
+            "default": ""
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Notes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "ProcessStep",
+        "description": "번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서\n나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.\nsubtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙)."
       },
       "ProjectInfo": {
         "properties": {
@@ -2685,6 +2756,9 @@
               },
               {
                 "$ref": "#/components/schemas/CardsSlots"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessSlots"
               }
             ],
             "title": "Slots",
@@ -2697,6 +2771,7 @@
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
               }
@@ -2987,6 +3062,60 @@
             "minimum": 0.0,
             "title": "Callout Radius Pt",
             "default": 12.0
+          },
+          "process_row_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Row Gap",
+            "default": 12.0
+          },
+          "process_badge_size": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Badge Size",
+            "default": 28.0
+          },
+          "process_badge_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Badge Gap",
+            "default": 16.0
+          },
+          "process_heading_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Heading Height",
+            "default": 20.0
+          },
+          "process_subtitle_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Subtitle Gap",
+            "default": 4.0
+          },
+          "process_label_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Label Width",
+            "default": 140.0
+          },
+          "process_label_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Label Gap",
+            "default": 16.0
+          },
+          "process_label_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Label Height",
+            "default": 14.0
+          },
+          "process_label_line_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Label Line Gap",
+            "default": 4.0
           }
         },
         "additionalProperties": false,

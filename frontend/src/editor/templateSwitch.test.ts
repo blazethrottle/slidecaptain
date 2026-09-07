@@ -123,3 +123,54 @@ it("cards끼리는 그대로다", () => {
   expect(r.slots).toBe(cards);
   expect(r.dropped).toEqual([]);
 });
+
+// ---- 번호 단계(process) 전환 (2026-09-07 DB-3) ----
+// 결론/각주에 대응하는 자리가 없어 결론과 각주는 소실 목록에 오른다. 단계 제목은 다른
+// 템플릿의 불릿과 같은 자리다: 순서 목록이라는 의미가 통해서 서로 오갈 수 있다.
+
+it("bullet_box에서 process로: 불릿이 단계 제목이 되고 결론과 각주는 소실 목록", () => {
+  const r = switchTemplate(bulletSlots, "process");
+  // 불릿 2개뿐이라 최소 단계 수(3개)를 채우려고 빈 제목 하나가 더 붙는다
+  expect(r.slots.template === "process" && r.slots.steps.map((s) => s.heading)).toEqual(["가", "나", ""]);
+  expect(r.dropped.join(" ")).toContain("결론");
+  expect(r.dropped.join(" ")).toContain("각주");
+});
+
+it("불릿이 6개보다 많으면 process로 옮길 때 초과분은 소실 목록에 오른다", () => {
+  const many: Slots = {
+    template: "bullet_box",
+    bullets: Array.from({ length: 8 }, (_, i) => ({ text: `항목${i}`, level: 0 as const })),
+    conclusion: "결", footnote: "",
+  };
+  const r = switchTemplate(many, "process");
+  expect(r.slots.template === "process" && r.slots.steps).toHaveLength(6);
+  expect(r.dropped.join(" ")).toContain("단계 2개");
+});
+
+it("process에서 bullet_box로: 단계 제목들을 불릿으로 모으고 부제와 보조 라벨은 소실 목록", () => {
+  const process: Slots = {
+    template: "process",
+    steps: [
+      { heading: "가", subtitle: "부제1", notes: ["라벨1"] },
+      { heading: "나", subtitle: "", notes: [] },
+      { heading: "다", subtitle: "", notes: ["라벨2", "라벨3"] },
+    ],
+  };
+  const r = switchTemplate(process, "bullet_box");
+  expect(r.slots.template === "bullet_box" && r.slots.bullets?.map((b) => b.text)).toEqual(["가", "나", "다"]);
+  expect(r.dropped.join(" ")).toContain("부제1");
+  expect(r.dropped.join(" ")).toContain("라벨1");
+  expect(r.dropped.join(" ")).toContain("라벨2");
+  expect(r.dropped.join(" ")).toContain("라벨3");
+});
+
+it("process끼리는 그대로다", () => {
+  const process: Slots = { template: "process", steps: [
+    { heading: "A", subtitle: "", notes: [] },
+    { heading: "B", subtitle: "", notes: [] },
+    { heading: "C", subtitle: "", notes: [] },
+  ] };
+  const r = switchTemplate(process, "process");
+  expect(r.slots).toBe(process);
+  expect(r.dropped).toEqual([]);
+});

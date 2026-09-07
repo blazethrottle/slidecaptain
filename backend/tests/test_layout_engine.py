@@ -15,6 +15,8 @@ from slidecaptain.models.deck import (
     Deck,
     DeckMeta,
     DividerSlots,
+    ProcessSlots,
+    ProcessStep,
     Slide,
     Structure,
     SummarySlots,
@@ -609,3 +611,131 @@ def test_cards_badge_overflow_warns_only_that_cards_badge_slot():
     plan = build_render_plan(deck, PRESET, METRICS).slides[0]
     assert "card0_badge" in _warned_slots(plan)
     assert "card1_badge" not in _warned_slots(plan)
+
+
+# ---- 번호 단계(process) 프레임 (2026-09-07 DB-3) ----
+# 벤치마크가 요구한 "플로우차트"의 실제 형태: 번호 배지 + 제목 + 부제(선택) + 오른쪽 보조
+# 라벨(선택, 최대 2개)을 담은 행 3~6개를 세로로 쌓는다. 번호는 데이터가 아니라 렌더 순서에서
+# 나온다.
+
+
+def _process_deck(n: int, **step_kwargs) -> Deck:
+    steps = [ProcessStep(heading=f"단계{i}", **step_kwargs) for i in range(n)]
+    return _deck([("process", ProcessSlots(steps=steps))])
+
+
+@pytest.mark.parametrize("n", [3, 4, 5, 6])
+def test_process_rows_do_not_overlap_and_stay_within_the_content_area(n):
+    from slidecaptain.metrics.capacity import content_geometry, process_geometry
+
+    plan = build_render_plan(_process_deck(n), PRESET, FAKE)
+    slide = plan.slides[0]
+    g = content_geometry(PRESET)
+    rows = [_frame(slide, f":step{i}") for i in range(n)]
+    for row in rows:
+        assert row.y >= g["content_top"] - 0.01
+        assert row.y + row.h <= g["content_bottom"] + 0.01
+    for a, b in zip(rows, rows[1:]):
+        assert a.y + a.h <= b.y + 0.01, "행이 겹친다"
+    # 배지는 그 행의 텍스트 블록보다 왼쪽에 있고, 세로로는 그 행의 범위 안에 있다
+    for i in range(n):
+        badge = _frame(slide, f":step{i}_badge")
+        text = rows[i]
+        assert badge.x + badge.w <= text.x + 0.01, "배지가 제목 블록과 겹친다"
+        assert badge.y >= text.y - 0.01
+        assert badge.y + badge.h <= text.y + text.h + 0.01
+    # 기하 함수 자체도 배지/제목/라벨 세 칸이 겹치지 않고 본문 폭 전체에 걸친다
+    pg = process_geometry(PRESET, n)
+    assert pg["badge_x"] == pytest.approx(PRESET.spacing.margin_left)
+    assert pg["badge_x"] + PRESET.spacing.process_badge_size <= pg["text_x"] + 0.01
+    assert pg["text_x"] + pg["text_w"] <= pg["label_x"] + 0.01
+    assert pg["label_x"] + pg["label_w"] == pytest.approx(PRESET.spacing.margin_left + g["content_width"])
+
+
+def test_process_row_height_shrinks_as_step_count_grows():
+    three = _frame(build_render_plan(_process_deck(3), PRESET, FAKE).slides[0], ":step0")
+    six = _frame(build_render_plan(_process_deck(6), PRESET, FAKE).slides[0], ":step0")
+    assert three.h > six.h
+
+
+def test_process_badge_radius_gives_the_pill_adjustment_of_half():
+    """번호 배지는 정사각형이고 반경이 짧은 변의 절반이라 라이터의 조정값이 정확히 0.5가
+    되어야 정원으로 그려진다 (DA-1: 조정값 0.5가 알약과 정원이 나오는 상한)."""
+    from slidecaptain.export.pptx_writer import _corner_adjustment
+
+    plan = build_render_plan(_process_deck(4), PRESET, FAKE)
+    for i in range(4):
+        badge = _frame(plan.slides[0], f":step{i}_badge")
+        assert badge.w == badge.h
+        assert _corner_adjustment(badge) == pytest.approx(0.5)
+
+
+def test_process_badge_numbers_come_from_render_order_not_from_data():
+    plan = build_render_plan(_process_deck(4), PRESET, FAKE)
+    slide = plan.slides[0]
+    numbers = [_frame(slide, f":step{i}_badge").paras[0].text for i in range(4)]
+    assert numbers == ["1", "2", "3", "4"]
+
+
+def test_process_frame_names_carry_role_tags_and_omit_labels_when_no_notes():
+    plan = build_render_plan(_process_deck(3), PRESET, FAKE)
+    names = {f.name for f in plan.slides[0].frames}
+    assert names == {
+        "ch01:title",
+        "ch01:step0_badge", "ch01:step0",
+        "ch01:step1_badge", "ch01:step1",
+        "ch01:step2_badge", "ch01:step2",
+        "ch01:page_number",
+    }
+
+
+def test_process_subtitle_and_notes_are_optional():
+    deck = _deck([(
+        "process",
+        ProcessSlots(steps=[
+            ProcessStep(heading="A", subtitle="부제", notes=["라벨1", "라벨2"]),
+            ProcessStep(heading="B"),
+            ProcessStep(heading="C"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    slide = plan.slides[0]
+    with_subtitle = _frame(slide, ":step0")
+    without_subtitle = _frame(slide, ":step1")
+    assert len(with_subtitle.paras) == len(without_subtitle.paras) + 1  # 부제 문단 하나만 늘어난다
+    names = {f.name for f in slide.frames}
+    assert "ch01:step0_labels" in names
+    assert "ch01:step1_labels" not in names
+    assert "ch01:step2_labels" not in names
+    labels = _frame(slide, ":step0_labels")
+    assert [p.text for p in labels.paras] == ["라벨1", "라벨2"]
+
+
+def test_process_heading_overflow_warns_only_that_step_heading_slot():
+    long_heading = "단계 제목이 지나치게 길어서 한 줄 높이를 넘긴다 " * 6
+    deck = _deck([(
+        "process",
+        ProcessSlots(steps=[
+            ProcessStep(heading=long_heading),
+            ProcessStep(heading="짧음"),
+            ProcessStep(heading="셋째"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert "step0_heading" in _warned_slots(plan)
+    assert "step1_heading" not in _warned_slots(plan)
+
+
+def test_process_label_overflow_warns_only_that_steps_label_slot():
+    long_label = "보조 라벨 문구가 지나치게 길어서 한 줄 높이를 넘긴다 " * 6
+    deck = _deck([(
+        "process",
+        ProcessSlots(steps=[
+            ProcessStep(heading="A", notes=[long_label]),
+            ProcessStep(heading="B", notes=["짧음"]),
+            ProcessStep(heading="C"),
+        ]),
+    )])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert "step0_label0" in _warned_slots(plan)
+    assert "step1_label0" not in _warned_slots(plan)

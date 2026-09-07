@@ -110,6 +110,24 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
           return card;
         }) };
       }
+      case "process": {
+        // step{i} 프레임은 제목(index 0)과 있으면 부제(index 1)가 이 순서로 쌓인다.
+        // step{i}_labels 프레임은 보조 라벨이 등록된 순서대로 쌓인다. step{i}_badge는
+        // 렌더 순서에서 자동으로 나오는 번호라 편집 대상이 아니다(2026-09-07 DB-3):
+        // 어느 case에도 안 걸려 조용히 무시된다(다른 곳에도 있는 안전한 무변화 규칙).
+        const m = /^step(\d+)(_labels)?$/.exec(slot);
+        if (!m) return slots;
+        const stepIndex = Number(m[1]);
+        const isLabels = m[2] !== undefined;
+        return { ...slots, steps: slots.steps.map((step, i) => {
+          if (i !== stepIndex) return step;
+          if (isLabels) {
+            return { ...step, notes: step.notes.map((n, j) => (j === (ref.index ?? 0) ? text : n)) };
+          }
+          if ((ref.index ?? 0) === 0) return { ...step, heading: text };
+          return { ...step, subtitle: text };
+        }) };
+      }
     }
     return slots;
   });

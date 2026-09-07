@@ -185,6 +185,43 @@ it("카드의 index는 배지 유무로 갈린다: 배지가 있으면 0이 배�
   expect(slots.template === "cards" && slots.cards[1].bullets[0].text).toBe("새 B 불릿");
 });
 
+it("번호 단계의 제목과 부제는 step{i} 프레임의 index로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "process", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "process",
+      steps: [
+        { heading: "첫 단계", subtitle: "부제", notes: ["라벨1", "라벨2"] },
+        { heading: "둘째 단계", subtitle: "", notes: [] },
+        { heading: "셋째 단계", subtitle: "", notes: [] },
+      ],
+    } }],
+  };
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "step0", index: 0 }, "새 제목");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].heading).toBe("새 제목");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0", index: 1 }, "새 부제");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].subtitle).toBe("새 부제");
+  expect(slots.template === "process" && slots.steps[1].heading).toBe("둘째 단계");  // 다른 단계는 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_labels", index: 0 }, "새 라벨1");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].notes[0]).toBe("새 라벨1");
+  expect(slots.template === "process" && slots.steps[0].notes[1]).toBe("라벨2");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_labels", index: 1 }, "새 라벨2");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].notes[1]).toBe("새 라벨2");
+
+  // 번호 배지는 렌더 순서에서 자동으로 나온다: 편집을 걸어도 아무 것도 바뀌지 않는다
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_badge", index: 0 }, "9") as Deck;
+  expect(next.slides[0].slots).toEqual(deck.slides[0].slots);
+});
+
 it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
   const deck: Deck = {
     ...bulletDeck(),

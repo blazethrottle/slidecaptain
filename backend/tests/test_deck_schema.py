@@ -10,6 +10,8 @@ from slidecaptain.models.deck import (
     Chapter,
     Deck,
     DeckMeta,
+    ProcessSlots,
+    ProcessStep,
     Slide,
     Structure,
     TableSlots,
@@ -190,6 +192,38 @@ def test_cards_slots_rejects_fewer_than_two_cards():
 def test_cards_slots_rejects_more_than_four_cards():
     with pytest.raises(ValidationError):
         CardsSlots(cards=[CardItem(heading=f"카드{i}") for i in range(5)])
+
+
+# ---- 번호 단계(process) 슬롯 검증 (2026-09-07 DB-3) ----
+
+
+def test_process_step_subtitle_and_notes_default_to_empty():
+    step = ProcessStep(heading="첫 단계")
+    assert step.subtitle == ""
+    assert step.notes == []
+
+
+def test_process_slots_accepts_three_to_six_steps():
+    for n in (3, 4, 5, 6):
+        slots = ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(n)])
+        assert len(slots.steps) == n
+
+
+def test_process_slots_rejects_fewer_than_three_steps():
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(2)])
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[])
+
+
+def test_process_slots_rejects_more_than_six_steps():
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(7)])
+
+
+def test_process_step_rejects_more_than_two_notes():
+    with pytest.raises(ValidationError):
+        ProcessStep(heading="단계", notes=["가", "나", "다"])
 
 
 def test_legacy_cover_audience_key_is_ignored_on_load():

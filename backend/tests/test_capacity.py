@@ -105,6 +105,7 @@ from slidecaptain.metrics.capacity import (
     char_hints,
     content_geometry,
     hangul_chars_per_line,
+    process_geometry,
 )
 from slidecaptain.models.deck import (
     BulletBoxSlots,
@@ -116,6 +117,8 @@ from slidecaptain.models.deck import (
     CompareSlots,
     Deck,
     DeckMeta,
+    ProcessSlots,
+    ProcessStep,
     Slide,
     Structure,
     SummarySlots,
@@ -338,3 +341,96 @@ def test_cards_contract_never_negative_with_large_padding_across_counts():
     p2 = apply_overrides(PRESET, {"spacing": {"box_padding": 40.0}})
     for n in (2, 3, 4):
         assert min(capacity_contract("cards", p2, card_count=n).values()) >= 0
+
+
+# ---- 번호 단계(process) 용량 계약 (2026-09-07 DB-3) ----
+# cards는 카드 수가 늘면 폭이 좁아진다(가로 축). process는 단계가 전폭 행으로 세로로 쌓이므로
+# 단계 수가 늘면 반대로 행 "높이"가 낮아진다(세로 축): capacity_contract/char_hints에 더한
+# step_count 인자는 그래서 가로가 아니라 세로 용량에 영향을 준다. 배지/제목/라벨 칸의 가로
+# 너비는 단계 수와 무관하므로 char_hints는 step_count가 바뀌어도 값이 그대로다: cards의
+# char_hints가 card_count에 따라 줄어드는 것과 정확히 반대다.
+
+
+def test_existing_eight_templates_contract_values_unchanged_by_process_signature():
+    """capacity_contract에 step_count 인자를 더해도 기존 8종(cards 포함) 계약은 그대로다."""
+    assert capacity_contract("cover", PRESET) == {
+        "cover_title_max_lines": 1, "subtitle_max_lines": 1, "date_max_lines": 1,
+    }
+    assert capacity_contract("divider", PRESET) == {
+        "section_no_max_lines": 1, "section_title_max_lines": 1,
+    }
+    assert capacity_contract("summary", PRESET) == {"points_max_lines": 14, "conclusion_max_lines": 2}
+    assert capacity_contract("bullet_box", PRESET) == {
+        "bullets_max_lines": 14, "conclusion_max_lines": 2, "footnote_max_lines": 1,
+    }
+    assert capacity_contract("table", PRESET) == {"rows_max_single_line": 16, "footnote_max_lines": 1}
+    assert capacity_contract("compare2", PRESET) == {
+        "card_heading_max_lines": 1, "card_bullets_max_lines": 11, "conclusion_max_lines": 2,
+    }
+    assert capacity_contract("callout", PRESET) == {"text_max_lines": 3}
+    assert capacity_contract("cards", PRESET) == {
+        "card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 12,
+        "card_tail_max_lines": 1,
+    }
+
+
+def test_process_geometry_row_height_shrinks_as_step_count_grows_but_x_fields_do_not():
+    three = process_geometry(PRESET, 3)
+    six = process_geometry(PRESET, 6)
+    assert three["row_h"] > six["row_h"]
+    assert three["badge_x"] == six["badge_x"]
+    assert three["text_x"] == six["text_x"]
+    assert three["text_w"] == six["text_w"]
+    assert three["label_x"] == six["label_x"]
+    assert three["label_w"] == six["label_w"]
+
+
+def test_process_geometry_rows_span_the_content_height_for_every_valid_count():
+    g = content_geometry(PRESET)
+    content_h = g["content_bottom"] - g["content_top"]
+    for n in (3, 4, 5, 6):
+        pg = process_geometry(PRESET, n)
+        assert n * pg["row_h"] + (n - 1) * pg["row_gap"] == pytest.approx(content_h)
+
+
+def test_process_char_hint_is_independent_of_step_count():
+    """가로 칸 너비는 단계 수와 무관하다: cards의 char_hints가 card_count로 줄어드는 것과 다르다."""
+    three = char_hints("process", PRESET, REAL, step_count=3)
+    six = char_hints("process", PRESET, REAL, step_count=6)
+    assert set(three) == {"단계 제목", "단계 부제", "보조 라벨"}
+    assert three == six
+
+
+def test_process_contract_answers_without_step_count_argument():
+    # capacity_contract("process", PRESET) 처럼 step_count를 생략하는 기존 호출부(service.py)가
+    # 죽지 않아야 한다: 기본값 3이 안전하다
+    contract = capacity_contract("process", PRESET)
+    assert set(contract) == {"step_heading_max_lines", "step_subtitle_max_lines", "step_label_max_lines"}
+    assert all(v >= 0 for v in contract.values())
+
+
+def _process_slots(n: int, subtitle: str = "") -> ProcessSlots:
+    return ProcessSlots(steps=[ProcessStep(heading=f"단계{i}", subtitle=subtitle) for i in range(n)])
+
+
+@pytest.mark.parametrize("step_count", [3, 4, 5, 6])
+def test_process_contract_boundary_of_subtitle_lines_fits_and_plus_one_overflows(step_count):
+    """단계 3, 4, 5, 6개 각각에서 계약대로 부제를 채우면 실측이 통과하는지. 행이 낮아질수록
+    (단계가 늘수록) 부제 상한도 함께 줄어야 한다(process_geometry의 row_h 축소가 그대로
+    반영됨을 실측으로 확인)."""
+    k = char_hints("process", PRESET, REAL, step_count=step_count)["단계 부제"]
+    n = capacity_contract("process", PRESET, step_count=step_count)["step_subtitle_max_lines"]
+
+    def slide(lines: int):
+        subtitle = " ".join([H * k] * lines) if lines > 0 else ""
+        return _slide("process", _process_slots(step_count, subtitle=subtitle))
+
+    if n > 0:
+        assert not _slot_warnings(slide(n), "step0_subtitle"), "계약대로 채웠는데 넘침 경고가 났다"
+    assert _slot_warnings(slide(n + 1), "step0_subtitle"), "계약보다 한 줄 더 넣었는데 경고가 없다"
+
+
+def test_process_contract_never_negative_with_large_row_gap_across_counts():
+    p2 = apply_overrides(PRESET, {"spacing": {"process_row_gap": 100.0}})
+    for n in (3, 4, 5, 6):
+        assert min(capacity_contract("process", p2, step_count=n).values()) >= 0

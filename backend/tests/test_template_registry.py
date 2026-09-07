@@ -75,6 +75,7 @@ def _minimal_slots(template: str):
         CompareSlots,
         CoverSlots,
         DividerSlots,
+        ProcessSlots,
         SummarySlots,
         TableSlots,
     )
@@ -94,6 +95,9 @@ def _minimal_slots(template: str):
         "cards": lambda: CardsSlots(cards=[
             {"heading": "카드 A", "bullets": [{"text": "항목", "level": 0}]},
             {"heading": "카드 B", "bullets": [{"text": "항목", "level": 0}]},
+        ]),
+        "process": lambda: ProcessSlots(steps=[
+            {"heading": f"단계{i}"} for i in range(3)
         ]),
     }[template]()
 

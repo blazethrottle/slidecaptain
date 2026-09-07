@@ -16,6 +16,7 @@ from slidecaptain.metrics.capacity import (
     max_lines,
     measure_bullets,
     measure_lines,
+    process_geometry,
 )
 from slidecaptain.metrics.color import readable_text_color
 from slidecaptain.metrics.line_breaker import break_paragraph
@@ -29,6 +30,7 @@ from slidecaptain.models.deck import (
     CompareSlots,
     CoverSlots,
     DividerSlots,
+    ProcessSlots,
     SummarySlots,
     TableSlots,
 )
@@ -630,6 +632,87 @@ def _build_cards(
     return SlidePlan(chapter_id=chapter.id, template="cards", frames=frames, warnings=warnings)
 
 
+def _build_process(
+    chapter: Chapter, slots: ProcessSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
+) -> SlidePlan:
+    """번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
+    실제 형태다. 번호는 데이터가 아니라 렌더 순서(i+1)에서 나온다: 장 제목이 슬롯이 아니라
+    구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
+
+    행마다 배지(둥근 사각형, 조정값 0.5)/제목+부제(선택)/보조 라벨(선택, 최대 2개)이 서로 다른
+    가로 칸에 있어 프레임 셋으로 나뉜다: 하나의 세로 텍스트 상자로는 "배지 왼쪽, 라벨 오른쪽"을
+    표현할 수 없다(cards가 배지/제목/불릿/꼬리를 세로로 쌓아 한 프레임에 담는 것과 다른 점: cards는
+    전부 같은 칸에서 위아래로 쌓이지만 process는 칸 자체가 가로로 나뉜다).
+    """
+    s, r, c = preset.spacing, preset.font_roles, preset.colors
+    g = slide_geometry(preset, eyebrow, subtitle)
+    n = len(slots.steps)
+    pg = process_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
+    row_h, row_gap = pg["row_h"], pg["row_gap"]
+    warnings: list[CapacityWarning] = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
+
+    badge_fill = c.accent1
+    badge_text_color = readable_text_color(badge_fill, light=c.background, dark=c.text)
+
+    frames = [_title_frame(chapter, preset, metrics, g)]
+    for i, step in enumerate(slots.steps):
+        name = f"step{i}"
+        row_y = pg["content_top"] + i * (row_h + row_gap)
+        frames.append(Frame(
+            name=f"{chapter.id}:{name}_badge",
+            x=pg["badge_x"], y=row_y, w=s.process_badge_size, h=s.process_badge_size,
+            fill=badge_fill, radius_pt=s.process_badge_size / 2, valign="middle",
+            paras=[Para(
+                text=str(i + 1), font_pt=r.footnote_pt, bold=True, color=badge_text_color, align="center",
+                lines=[str(i + 1)],
+            )],
+        ))
+        text_paras = [Para(
+            text=step.heading, font_pt=r.body_pt, bold=True, color=c.text,
+            lines=_para_lines(step.heading, pg["text_w"], r.body_pt, True, preset, metrics),
+        )]
+        if (hw := _fixed_height_warning(
+            chapter, f"{name}_heading", step.heading, pg["text_w"], s.process_heading_height,
+            r.body_pt, True, preset, metrics,
+        )) is not None:
+            warnings.append(hw)
+        if step.subtitle:
+            text_paras.append(Para(
+                text=step.subtitle, font_pt=r.subtitle_pt, color=c.ink_soft,
+                lines=_para_lines(step.subtitle, pg["text_w"], r.subtitle_pt, False, preset, metrics),
+            ))
+            if (sw := _fixed_height_warning(
+                chapter, f"{name}_subtitle", step.subtitle, pg["text_w"], pg["subtitle_h"],
+                r.subtitle_pt, False, preset, metrics,
+            )) is not None:
+                warnings.append(sw)
+        frames.append(Frame(
+            name=f"{chapter.id}:{name}", x=pg["text_x"], y=row_y, w=pg["text_w"], h=row_h,
+            paras=text_paras,
+        ))
+        if step.notes:
+            label_paras = []
+            for j, note in enumerate(step.notes):
+                label_paras.append(Para(
+                    text=note, font_pt=r.footnote_pt, color=c.text, align="right",
+                    lines=_para_lines(note, pg["label_w"], r.footnote_pt, False, preset, metrics),
+                ))
+                if (lw := _fixed_height_warning(
+                    chapter, f"{name}_label{j}", note, pg["label_w"], s.process_label_height,
+                    r.footnote_pt, False, preset, metrics,
+                )) is not None:
+                    warnings.append(lw)
+            frames.append(Frame(
+                name=f"{chapter.id}:{name}_labels", x=pg["label_x"], y=row_y, w=pg["label_w"], h=row_h,
+                paras=label_paras,
+            ))
+    frames.append(_page_number_frame(chapter, page_no, preset))
+    return SlidePlan(chapter_id=chapter.id, template="process", frames=frames, warnings=warnings)
+
+
 def build_slide(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
     eyebrow: str = "", subtitle: str = "",
@@ -665,4 +748,6 @@ def _dispatch(
         return _build_callout(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, CardsSlots):
         return _build_cards(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+    if isinstance(slots, ProcessSlots):
+        return _build_process(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

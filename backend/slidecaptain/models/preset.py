@@ -131,6 +131,19 @@ class Spacing(BaseModel):
     # 여유를 더한 값이다 ("문장 1~3줄"의 하드 상한을 3줄로 잡았다).
     callout_height: float = Field(default=84.0, gt=0)
     callout_radius_pt: float = Field(default=12.0, ge=0)
+    # 번호 단계(process) 전용 (2026-09-07 DB-3). card_heading_height 등 cards의 필드를 재사용하지
+    # 않는다: DA-4가 box_height를 callout에 재사용하지 않은 것과 같은 이유로, 재사용하면 한
+    # 템플릿의 조정이 다른 템플릿의 렌더까지 바꾼다. 행은 세로로 쌓이므로(cards는 가로) 배지와
+    # 라벨 칸의 가로 크기는 고정이고, 부제 영역만 행 높이(단계 수)에 따라 늘고 준다.
+    process_row_gap: float = Field(default=12.0, ge=0)
+    process_badge_size: float = Field(default=28.0, gt=0)  # 정사각형: 반경을 절반으로 주면 정원이 된다
+    process_badge_gap: float = Field(default=16.0, ge=0)
+    process_heading_height: float = Field(default=20.0, gt=0)
+    process_subtitle_gap: float = Field(default=4.0, ge=0)
+    process_label_width: float = Field(default=140.0, gt=0)
+    process_label_gap: float = Field(default=16.0, ge=0)
+    process_label_height: float = Field(default=14.0, gt=0)
+    process_label_line_gap: float = Field(default=4.0, ge=0)
 
 
 class Preset(BaseModel):

@@ -14,6 +14,7 @@ from slidecaptain.models.deck import (
     Deck,
     DeckMeta,
     DividerSlots,
+    ProcessSlots,
     SummarySlots,
     TableSlots,
 )
@@ -34,7 +35,8 @@ TEMPLATE_GUIDE = """\
 - compare2: 옵션 비교나 전후 대비 카드 2개 + 결론 박스
 - divider: 섹션 구분 간지
 - callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)
-- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)"""
+- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)
+- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)"""
 
 STYLE_RULES = """\
 문체 규칙:
@@ -54,6 +56,7 @@ _SLOTS_BY_TEMPLATE = {
     "divider": DividerSlots,
     "callout": CalloutSlots,
     "cards": CardsSlots,
+    "process": ProcessSlots,
 }
 
 _CONTRACT_LABELS = {
@@ -72,6 +75,9 @@ _CONTRACT_LABELS = {
     "text_max_lines": "강조 문장",
     "card_badge_max_lines": "카드 배지",
     "card_tail_max_lines": "카드 꼬리 라벨",
+    "step_heading_max_lines": "단계 제목",
+    "step_subtitle_max_lines": "단계 부제",
+    "step_label_max_lines": "단계 보조 라벨",
 }
 
 
@@ -124,7 +130,7 @@ def structure_response_schema() -> dict:
                             "type": "string",
                             "enum": [
                                 "cover", "summary", "bullet_box", "table", "compare2", "divider",
-                                "callout", "cards",
+                                "callout", "cards", "process",
                             ],
                         },
                         "source_refs": {"type": "array", "items": {"type": "string"}},
@@ -152,6 +158,9 @@ def _contract_block(template: str, contract: dict[str, int], char_hints: dict[st
         # 개수 제약은 max_lines 형태의 계약 딕셔너리에 담을 수 없는 값이라 여기서 별도로 넣는다
         # (2026-09-07 DB-2). AI가 실제로 만드는 cards 배열 길이(2~4)를 직접 겨냥한 문구다.
         lines.append("- 카드 개수: 2개 이상 4개 이하")
+    if template == "process":
+        # cards와 같은 이유: steps 배열 길이(3~6)는 max_lines 계약에 담기지 않는다 (2026-09-07 DB-3)
+        lines.append("- 단계 개수: 3개 이상 6개 이하")
     for key, value in contract.items():
         suffix = f" (한 줄짜리 항목 {value}개 기준)" if key in _ITEM_COUNT_KEYS else ""
         unit = "행" if key == "rows_max_single_line" else "줄"

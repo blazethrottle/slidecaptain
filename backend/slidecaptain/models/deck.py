@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, model_validator
 SCHEMA_VERSION = 1
 
 TemplateName = Literal[
-    "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards",
+    "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
 ]
 ReportType = Literal["research", "approval", "strategy"]
 
@@ -123,10 +123,31 @@ class CardsSlots(BaseModel):
     cards: list[CardItem] = Field(min_length=2, max_length=4)
 
 
+class ProcessStep(BaseModel):
+    """번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서
+    나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
+    subtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙).
+    """
+
+    heading: str
+    subtitle: str = ""
+    notes: list[str] = Field(default=[], max_length=2)
+
+
+class ProcessSlots(BaseModel):
+    """번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
+    실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가
+    내용이라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["process"] = "process"
+    steps: list[ProcessStep] = Field(min_length=3, max_length=6)
+
+
 Slots = Annotated[
     Union[
         CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots,
-        CalloutSlots, CardsSlots,
+        CalloutSlots, CardsSlots, ProcessSlots,
     ],
     Field(discriminator="template"),
 ]

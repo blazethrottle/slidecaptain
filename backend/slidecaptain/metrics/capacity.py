@@ -160,6 +160,37 @@ def cards_geometry(
     return {"card_w": card_w, "card_h": card_h, "inner_w": inner_w, "bullets_h": bullets_h}
 
 
+def process_geometry(
+    preset: Preset, step_count: int = 3, eyebrow: str = "", subtitle: str = ""
+) -> dict[str, float]:
+    """process 템플릿의 행 기하 (2026-09-07 DB-3). cards가 카드 수에 따라 폭을 좁히는 것과 같은
+    원리를 세로 축에 적용한다: cards는 카드가 가로로 늘어서 폭이 좁아지지만, process는 단계가
+    세로로 쌓이므로 단계가 늘수록 행 "높이"(row_h)가 낮아진다. badge_x/text_x/text_w/label_x/
+    label_w는 가로 좌표라 단계 수와 무관하다(cards의 card_w가 카드 수에 따라 변하는 것과 대비된다).
+
+    subtitle_h는 그 행에서 부제에 남는 세로 여유다: 제목(process_heading_height)과 그 아래
+    간격을 뺀 나머지이므로, 행이 낮아지면(단계가 늘면) 함께 줄어든다.
+    """
+    s = preset.spacing
+    g = content_geometry(preset, eyebrow, subtitle)
+    row_h = (g["content_bottom"] - g["content_top"] - s.process_row_gap * (step_count - 1)) / step_count
+    text_x = s.margin_left + s.process_badge_size + s.process_badge_gap
+    label_x = s.margin_left + g["content_width"] - s.process_label_width
+    text_w = label_x - s.process_label_gap - text_x
+    subtitle_h = row_h - s.process_heading_height - s.process_subtitle_gap
+    return {
+        "content_top": g["content_top"],
+        "row_h": row_h,
+        "row_gap": s.process_row_gap,
+        "badge_x": s.margin_left,
+        "text_x": text_x,
+        "text_w": text_w,
+        "label_x": label_x,
+        "label_w": s.process_label_width,
+        "subtitle_h": subtitle_h,
+    }
+
+
 def cover_geometry(preset: Preset) -> dict:
     """표지 프레임 기하 (x, w 와 칸별 (y, h)). y 리터럴의 프리셋 승격은 단계 5B 이월 항목이라 값은 그대로 둔다."""
     s = preset.spacing
@@ -189,7 +220,8 @@ def divider_geometry(preset: Preset) -> dict:
 
 
 def capacity_contract(
-    template: str, preset: Preset, eyebrow: str = "", subtitle: str = "", card_count: int = 2
+    template: str, preset: Preset, eyebrow: str = "", subtitle: str = "",
+    card_count: int = 2, step_count: int = 3,
 ) -> dict[str, int]:
     s = preset.spacing
     r = preset.font_roles
@@ -204,6 +236,9 @@ def capacity_contract(
     # card_count는 cards 템플릿에만 쓰인다. 기본값 2는 기존 7종 호출(card_count 인자를 주지
     # 않는 모든 호출부)의 결과를 그대로 유지한다 (2026-09-07 DB-2)
     cards = cards_geometry(preset, card_count, eyebrow, subtitle)
+    # step_count는 process 템플릿에만 쓰인다. 기본값 3은 이 인자를 주지 않는 기존 호출부의
+    # 결과를 그대로 유지한다 (2026-09-07 DB-3, card_count와 같은 이유)
+    process = process_geometry(preset, step_count, eyebrow, subtitle)
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
@@ -247,6 +282,11 @@ def capacity_contract(
             "card_bullets_max_lines": items_that_fit(cards["bullets_h"], r.body_pt, ls, s.bullet_gap),
             "card_tail_max_lines": max_lines(s.card_tail_height, r.footnote_pt, ls),
         },
+        "process": {
+            "step_heading_max_lines": max_lines(s.process_heading_height, r.body_pt, ls),
+            "step_subtitle_max_lines": max_lines(process["subtitle_h"], r.subtitle_pt, ls),
+            "step_label_max_lines": max_lines(s.process_label_height, r.footnote_pt, ls),
+        },
     }
     return contracts[template]
 
@@ -266,11 +306,18 @@ def hangul_chars_per_line(preset: Preset, face) -> int:
     return hangul_chars_for_width(width, preset.font_roles.body_pt, face, preset.spacing.safety_ratio)
 
 
-def char_hints(template: str, preset: Preset, metrics, card_count: int = 2) -> dict[str, int]:
+def char_hints(
+    template: str, preset: Preset, metrics, card_count: int = 2, step_count: int = 3
+) -> dict[str, int]:
     """템플릿별 환산 안내 (칸 이름 → 한 줄 한글 글자 수). 프롬프트 계약 블록이 그대로 이어 붙인다.
 
     card_count는 cards 템플릿에만 쓰인다: 카드 폭이 카드 수에 따라 달라지므로 한 줄 글자
     수도 함께 달라진다. 기본값 2는 이 인자를 주지 않는 기존 7종 호출의 결과를 그대로 유지한다.
+
+    step_count는 process 템플릿에만 쓰인다(2026-09-07 DB-3). cards와 달리 단계는 세로로
+    쌓이므로 배지/제목/라벨 칸의 가로 너비는 단계 수와 무관하다: 이 함수의 결과값은
+    step_count가 몇이든 항상 같다(그래도 시그니처를 맞춰 둔다: capacity_contract와 같은
+    이유로, 나중에 가로 배치가 바뀌어도 호출부를 다시 고칠 필요가 없다).
     """
     s, r = preset.spacing, preset.font_roles
     regular, bold = metrics.face(False), metrics.face(True)
@@ -305,5 +352,12 @@ def char_hints(template: str, preset: Preset, metrics, card_count: int = 2) -> d
                 cg["inner_w"] - s.bullet_indent, r.body_pt, regular, s.safety_ratio
             ),
             "카드 꼬리 라벨": hangul_chars_for_width(cg["inner_w"], r.footnote_pt, regular, s.safety_ratio),
+        }
+    if template == "process":
+        pg = process_geometry(preset, step_count)
+        return {
+            "단계 제목": hangul_chars_for_width(pg["text_w"], r.body_pt, bold, s.safety_ratio),
+            "단계 부제": hangul_chars_for_width(pg["text_w"], r.subtitle_pt, regular, s.safety_ratio),
+            "보조 라벨": hangul_chars_for_width(pg["label_w"], r.footnote_pt, regular, s.safety_ratio),
         }
     raise KeyError(template)

@@ -44,6 +44,18 @@ function collect(slots: Slots): Currency {
       });
       return { bullets, dropped };
     }
+    case "process": {
+      // cards의 배지/꼬리와 달리 단계 제목은 순서 목록이라는 점에서 다른 템플릿의 불릿과
+      // 같은 자리다: 불릿으로 모아 서로 오갈 수 있게 한다 (2026-09-07 DB-3). 부제와 보조
+      // 라벨은 대응하는 자리가 없어 소실 목록에 남긴다.
+      const dropped: string[] = [];
+      const bullets: Bullet[] = slots.steps.map((step) => ({ text: step.heading, level: 0 }));
+      slots.steps.forEach((step, i) => {
+        if (step.subtitle) dropped.push(`${i + 1}번째 단계 부제 "${step.subtitle}"`);
+        step.notes.forEach((note) => dropped.push(`${i + 1}번째 단계 보조 라벨 "${note}"`));
+      });
+      return { bullets, dropped };
+    }
   }
 }
 
@@ -95,6 +107,24 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
           emptyCard(c.bullets.slice(0, mid)),
           emptyCard(c.bullets.slice(mid)),
         ] },
+        dropped,
+      };
+    }
+    case "process": {
+      // 결론과 각주는 단계에 담을 자리가 없어 소실 목록에 오른다. 단계 제목은 불릿에서
+      // 옮겨 오되, 6개를 넘는 만큼은 자르고(소실 목록에 남긴다), 3개에 못 미치면 빈
+      // 제목으로 채운다(최소 개수를 항상 만족시킨다).
+      dropConclusion();
+      dropFootnote();
+      const MIN_STEPS = 3, MAX_STEPS = 6;
+      const headings = c.bullets.map((b) => b.text);
+      if (headings.length > MAX_STEPS) {
+        dropped.push(`단계 ${headings.length - MAX_STEPS}개 (최대 ${MAX_STEPS}개까지만 옮길 수 있음)`);
+      }
+      const kept = headings.slice(0, MAX_STEPS);
+      while (kept.length < MIN_STEPS) kept.push("");
+      return {
+        slots: { template: "process", steps: kept.map((heading) => ({ heading, subtitle: "", notes: [] })) },
         dropped,
       };
     }

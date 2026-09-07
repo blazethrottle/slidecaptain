@@ -502,7 +502,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards";
+            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards" | "process";
             /**
              * Source Refs
              * @default []
@@ -517,7 +517,7 @@ export interface components {
              */
             status: "ok" | "format_error";
             /** Slots */
-            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"]) | null;
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"]) | null;
             /**
              * Raw Text
              * @default
@@ -651,7 +651,7 @@ export interface components {
         /** CondenseChapterRequest */
         CondenseChapterRequest: {
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"];
             /**
              * Instructions
              * @default
@@ -1060,7 +1060,16 @@ export interface components {
              *       "safety_ratio": 0.97,
              *       "border_width_pt": 0.75,
              *       "callout_height": 84,
-             *       "callout_radius_pt": 12
+             *       "callout_radius_pt": 12,
+             *       "process_row_gap": 12,
+             *       "process_badge_size": 28,
+             *       "process_badge_gap": 16,
+             *       "process_heading_height": 20,
+             *       "process_subtitle_gap": 4,
+             *       "process_label_width": 140,
+             *       "process_label_gap": 16,
+             *       "process_label_height": 14,
+             *       "process_label_line_gap": 4
              *     }
              */
             spacing: components["schemas"]["Spacing"];
@@ -1086,6 +1095,41 @@ export interface components {
              * @default ko-KR
              */
             language: string;
+        };
+        /**
+         * ProcessSlots
+         * @description 번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
+         *     실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가
+         *     내용이라 공통 결론이 필수가 아니다.
+         */
+        ProcessSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "process";
+            /** Steps */
+            steps: components["schemas"]["ProcessStep"][];
+        };
+        /**
+         * ProcessStep
+         * @description 번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서
+         *     나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
+         *     subtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙).
+         */
+        ProcessStep: {
+            /** Heading */
+            heading: string;
+            /**
+             * Subtitle
+             * @default
+             */
+            subtitle: string;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
         };
         /** ProjectInfo */
         ProjectInfo: {
@@ -1159,7 +1203,7 @@ export interface components {
              */
             subtitle: string;
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"];
         };
         /** SlidePlan */
         SlidePlan: {
@@ -1364,6 +1408,51 @@ export interface components {
              * @default 12
              */
             callout_radius_pt: number;
+            /**
+             * Process Row Gap
+             * @default 12
+             */
+            process_row_gap: number;
+            /**
+             * Process Badge Size
+             * @default 28
+             */
+            process_badge_size: number;
+            /**
+             * Process Badge Gap
+             * @default 16
+             */
+            process_badge_gap: number;
+            /**
+             * Process Heading Height
+             * @default 20
+             */
+            process_heading_height: number;
+            /**
+             * Process Subtitle Gap
+             * @default 4
+             */
+            process_subtitle_gap: number;
+            /**
+             * Process Label Width
+             * @default 140
+             */
+            process_label_width: number;
+            /**
+             * Process Label Gap
+             * @default 16
+             */
+            process_label_gap: number;
+            /**
+             * Process Label Height
+             * @default 14
+             */
+            process_label_height: number;
+            /**
+             * Process Label Line Gap
+             * @default 4
+             */
+            process_label_line_gap: number;
         };
         /** Structure */
         Structure: {
