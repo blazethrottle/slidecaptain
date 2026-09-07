@@ -2330,6 +2330,8 @@
               "margin_bottom": 34.0,
               "title_height": 40.0,
               "title_gap": 16.0,
+              "eyebrow_gap": 4.0,
+              "subtitle_gap": 6.0,
               "footnote_height": 24.0,
               "footnote_gap": 8.0,
               "box_height": 56.0,
@@ -2519,6 +2521,16 @@
             "type": "string",
             "title": "Chapter Id"
           },
+          "eyebrow": {
+            "type": "string",
+            "title": "Eyebrow",
+            "default": ""
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle",
+            "default": ""
+          },
           "slots": {
             "oneOf": [
               {
@@ -2663,6 +2675,18 @@
             "minimum": 0.0,
             "title": "Title Gap",
             "default": 16.0
+          },
+          "eyebrow_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Eyebrow Gap",
+            "default": 4.0
+          },
+          "subtitle_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Subtitle Gap",
+            "default": 6.0
           },
           "footnote_height": {
             "type": "number",

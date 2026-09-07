@@ -38,7 +38,10 @@ def build_render_plan(deck: Deck, preset: Preset, metrics) -> RenderPlan:
         if slide is None:
             continue  # 내용이 아직 생성되지 않은 장
         page_no += 1
-        slides.append(build_slide(chapter, slide.slots, page_no, preset, metrics, presenter=deck.meta.presenter))
+        slides.append(build_slide(
+            chapter, slide.slots, page_no, preset, metrics,
+            presenter=deck.meta.presenter, eyebrow=slide.eyebrow, subtitle=slide.subtitle,
+        ))
     return RenderPlan(
         page_width_pt=preset.page_width_pt,
         page_height_pt=preset.page_height_pt,

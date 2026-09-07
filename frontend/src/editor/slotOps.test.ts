@@ -9,7 +9,7 @@ function bulletDeck(): Deck {
     meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "bullet_box",
       bullets: [{ text: "하나", level: 0 }, { text: "둘", level: 1 }],
       conclusion: "결론", footnote: "" } }],
@@ -33,7 +33,7 @@ it("표 칸은 row와 col로, 머리글은 row -1로 고친다", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "table", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "table", columns: ["구분", "내용"], rows: [["A", "값"]], footnote: "" } }],
   };
   let next = applyTextEdit(deck, { chapterId: "c1", slot: "table", row: 0, col: 1 }, "새 값");
@@ -53,7 +53,7 @@ it("카드의 index 0은 소제목, 이후는 불릿이다", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "compare2", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "compare2", conclusion: "결",
       left: { heading: "왼쪽", bullets: [{ text: "가", level: 0 }] },
       right: { heading: "오른쪽", bullets: [] } } }],
@@ -80,7 +80,7 @@ it("표 행 삭제와 열 병합", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "table", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "table", columns: ["구분", "내용", "비고"],
       rows: [["A", "값1", "메모1"], ["B", "값2", "메모2"]], footnote: "" } }],
   };
@@ -109,7 +109,7 @@ it("표지의 보고자 칸을 인라인 편집하면 메타의 presenter가 바
     schema_version: 1,
     meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [{ id: "c0", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
-    slides: [{ chapter_id: "c0", slots: { template: "cover", title: "t", subtitle: "", date: "" } }],
+    slides: [{ chapter_id: "c0", eyebrow: "", subtitle: "", slots: { template: "cover", title: "t", subtitle: "", date: "" } }],
   };
   const edited = applyTextEdit(deck, { chapterId: "c0", slot: "presenter", index: 0 }, "사업개발팀");
   expect(edited.meta.presenter).toBe("사업개발팀");

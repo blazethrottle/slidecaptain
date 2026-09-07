@@ -964,6 +964,8 @@ export interface components {
              *       "margin_bottom": 34,
              *       "title_height": 40,
              *       "title_gap": 16,
+             *       "eyebrow_gap": 4,
+             *       "subtitle_gap": 6,
              *       "footnote_height": 24,
              *       "footnote_gap": 8,
              *       "box_height": 56,
@@ -1072,6 +1074,16 @@ export interface components {
         Slide: {
             /** Chapter Id */
             chapter_id: string;
+            /**
+             * Eyebrow
+             * @default
+             */
+            eyebrow: string;
+            /**
+             * Subtitle
+             * @default
+             */
+            subtitle: string;
             /** Slots */
             slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
         };
@@ -1133,6 +1145,16 @@ export interface components {
              * @default 16
              */
             title_gap: number;
+            /**
+             * Eyebrow Gap
+             * @default 4
+             */
+            eyebrow_gap: number;
+            /**
+             * Subtitle Gap
+             * @default 6
+             */
+            subtitle_gap: number;
             /**
              * Footnote Height
              * @default 24

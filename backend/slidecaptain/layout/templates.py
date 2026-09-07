@@ -49,13 +49,63 @@ def _bullet_paras(bullets: list[Bullet], area_width_pt: float, preset: Preset, m
     ]
 
 
-def _title_frame(chapter: Chapter, preset: Preset, metrics) -> Frame:
+def slide_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dict[str, float]:
+    """이 슬라이드의 세로 좌표. 공통 슬롯 유무에 따라 제목과 본문이 내려간다 (2026-09-07 DA-4).
+
+    본문 상단을 빌더마다 따로 계산하면 새 슬롯이 어느 템플릿에서만 누락된다. 계산은 여기 하나뿐이고
+    `_content_geometry` 를 직접 부르는 곳도 이 함수뿐이다(테스트가 강제한다).
+    슬롯이 둘 다 비면 결과가 종전 값과 완전히 같아야 한다.
+    """
+
+    s, r = preset.spacing, preset.font_roles
+    g = dict(_content_geometry(preset))
+    eyebrow_h = r.eyebrow_pt * s.line_spacing if eyebrow else 0.0
+    subtitle_h = r.subtitle_pt * s.line_spacing if subtitle else 0.0
+    eyebrow_block = eyebrow_h + s.eyebrow_gap if eyebrow else 0.0
+    subtitle_block = subtitle_h + s.subtitle_gap if subtitle else 0.0
+    g["eyebrow_y"] = s.margin_top
+    g["eyebrow_h"] = eyebrow_h
+    g["title_y"] = s.margin_top + eyebrow_block
+    g["subtitle_y"] = g["title_y"] + s.title_height + s.subtitle_gap
+    g["subtitle_h"] = subtitle_h
+    g["content_top"] = g["content_top"] + eyebrow_block + subtitle_block
+    return g
+
+
+def _common_slot_frames(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
+                        preset: Preset, metrics) -> list[Frame]:
+    """값이 있을 때만 프레임을 만든다. 비어 있으면 편집 진입은 속성 패널이 맡는다 (DA-4 결정)."""
+
+    r, c = preset.font_roles, preset.colors
+    frames: list[Frame] = []
+    if eyebrow:
+        frames.append(Frame(
+            name=f"{chapter.id}:eyebrow",
+            x=preset.spacing.margin_left, y=g["eyebrow_y"], w=g["content_width"], h=g["eyebrow_h"],
+            paras=[Para(
+                text=eyebrow, font_pt=r.eyebrow_pt, bold=True, color=c.accent1,
+                lines=_para_lines(eyebrow, g["content_width"], r.eyebrow_pt, True, preset, metrics),
+            )],
+        ))
+    if subtitle:
+        frames.append(Frame(
+            name=f"{chapter.id}:subtitle",
+            x=preset.spacing.margin_left, y=g["subtitle_y"], w=g["content_width"], h=g["subtitle_h"],
+            paras=[Para(
+                text=subtitle, font_pt=r.subtitle_pt, color=c.ink_soft,
+                lines=_para_lines(subtitle, g["content_width"], r.subtitle_pt, False, preset, metrics),
+            )],
+        ))
+    return frames
+
+
+def _title_frame(chapter: Chapter, preset: Preset, metrics, g: dict | None = None) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
-    g = _content_geometry(preset)
+    g = g if g is not None else slide_geometry(preset)
     return Frame(
         name=f"{chapter.id}:title",
         x=s.margin_left,
-        y=s.margin_top,
+        y=g["title_y"],
         w=g["content_width"],
         h=s.title_height,
         paras=[Para(
@@ -67,7 +117,7 @@ def _title_frame(chapter: Chapter, preset: Preset, metrics) -> Frame:
 
 def _footnote_frame(chapter: Chapter, text: str, preset: Preset, metrics) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
-    g = _content_geometry(preset)
+    g = slide_geometry(preset)
     return Frame(
         name=f"{chapter.id}:footnote",
         x=s.margin_left,
@@ -98,7 +148,7 @@ def _page_number_frame(chapter: Chapter, page_no: int, preset: Preset) -> Frame:
 
 def _conclusion_box_frame(chapter: Chapter, text: str, y: float, preset: Preset, metrics) -> Frame:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
-    g = _content_geometry(preset)
+    g = slide_geometry(preset)
     inner_w = g["content_width"] - 2 * s.box_padding
     return Frame(
         name=f"{chapter.id}:conclusion",
@@ -130,7 +180,7 @@ def _measure_warning(
 def _conclusion_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> CapacityWarning | None:
     """결론 박스는 높이가 고정이므로, 굵은 글꼴 폭으로 실측해 초과를 잡는다."""
     s, r = preset.spacing, preset.font_roles
-    g = _content_geometry(preset)
+    g = slide_geometry(preset)
     inner_w = g["content_width"] - 2 * s.box_padding
     inner_h = s.box_height - 2 * s.box_padding
     capacity = max_lines(inner_h, r.box_pt, s.line_spacing)
@@ -160,7 +210,7 @@ def _fixed_height_warning(
 
 def _title_warning(chapter: Chapter, preset: Preset, metrics) -> CapacityWarning | None:
     s, r = preset.spacing, preset.font_roles
-    g = _content_geometry(preset)
+    g = slide_geometry(preset)
     return _fixed_height_warning(
         chapter, "title", chapter.topic, g["content_width"], s.title_height, r.title_pt, True,
         preset, metrics,
@@ -169,7 +219,7 @@ def _title_warning(chapter: Chapter, preset: Preset, metrics) -> CapacityWarning
 
 def _footnote_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> CapacityWarning | None:
     s, r = preset.spacing, preset.font_roles
-    g = _content_geometry(preset)
+    g = slide_geometry(preset)
     return _fixed_height_warning(
         chapter, "footnote", text, g["content_width"], s.footnote_height, r.footnote_pt, False,
         preset, metrics,
@@ -232,10 +282,11 @@ def _build_divider(
 
 
 def _build_bullet_box(
-    chapter: Chapter, slots: BulletBoxSlots, page_no: int, preset: Preset, metrics
+    chapter: Chapter, slots: BulletBoxSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
 ) -> SlidePlan:
     s = preset.spacing
-    g = _content_geometry(preset)
+    g = slide_geometry(preset, eyebrow, subtitle)
     bullets_h = g["content_bottom"] - g["content_top"] - s.box_height - s.box_gap
     warnings = []
     if (tw := _title_warning(chapter, preset, metrics)) is not None:
@@ -250,7 +301,7 @@ def _build_bullet_box(
     if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset, metrics),
+        _title_frame(chapter, preset, metrics, g),
         Frame(
             name=f"{chapter.id}:bullets",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=bullets_h,
@@ -265,10 +316,11 @@ def _build_bullet_box(
 
 
 def _build_summary(
-    chapter: Chapter, slots: SummarySlots, page_no: int, preset: Preset, metrics
+    chapter: Chapter, slots: SummarySlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
 ) -> SlidePlan:
     s = preset.spacing
-    g = _content_geometry(preset)
+    g = slide_geometry(preset, eyebrow, subtitle)
     points_top = g["content_top"] + s.box_height + s.summary_box_gap
     points_h = g["content_bottom"] - points_top
     warnings = []
@@ -282,7 +334,7 @@ def _build_summary(
     if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
         warnings.append(cw)
     frames = [
-        _title_frame(chapter, preset, metrics),
+        _title_frame(chapter, preset, metrics, g),
         _conclusion_box_frame(chapter, slots.conclusion, g["content_top"], preset, metrics),
         Frame(
             name=f"{chapter.id}:points",
@@ -325,10 +377,11 @@ def _table_col_widths(slots: TableSlots, frame_w: float, preset: Preset, metrics
 
 
 def _build_table(
-    chapter: Chapter, slots: TableSlots, page_no: int, preset: Preset, metrics
+    chapter: Chapter, slots: TableSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
 ) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
-    g = _content_geometry(preset)
+    g = slide_geometry(preset, eyebrow, subtitle)
     table_h = g["content_bottom"] - g["content_top"]
     col_widths = _table_col_widths(slots, g["content_width"], preset, metrics)
     lh = line_height_pt(r.table_pt, s.line_spacing)
@@ -356,7 +409,7 @@ def _build_table(
     if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset, metrics),
+        _title_frame(chapter, preset, metrics, g),
         Frame(
             name=f"{chapter.id}:table",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=table_h,
@@ -379,10 +432,11 @@ def _build_table(
 
 
 def _build_compare2(
-    chapter: Chapter, slots: CompareSlots, page_no: int, preset: Preset, metrics
+    chapter: Chapter, slots: CompareSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
 ) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
-    g = _content_geometry(preset)
+    g = slide_geometry(preset, eyebrow, subtitle)
     card = card_geometry(preset)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다 (2026-09-02 태스크 A)
     card_h, card_w, inner_w = card["card_h"], card["card_w"], card["inner_w"]
     warnings = []
@@ -415,7 +469,7 @@ def _build_compare2(
         )
 
     frames = [
-        _title_frame(chapter, preset, metrics),
+        _title_frame(chapter, preset, metrics, g),
         card_frame("left_card", slots.left, s.margin_left),
         card_frame("right_card", slots.right, s.margin_left + card_w + s.card_gap),
         _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset, metrics),
@@ -425,18 +479,31 @@ def _build_compare2(
 
 
 def build_slide(
-    chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = ""
+    chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
+    eyebrow: str = "", subtitle: str = "",
+) -> SlidePlan:
+    plan = _dispatch(chapter, slots, page_no, preset, metrics, presenter, eyebrow, subtitle)
+    # 표지와 간지는 그 자체가 제목 슬라이드라 공통 슬롯을 그리지 않는다
+    if (eyebrow or subtitle) and not isinstance(slots, (CoverSlots, DividerSlots)):
+        g = slide_geometry(preset, eyebrow, subtitle)
+        plan.frames = _common_slot_frames(chapter, g, eyebrow, subtitle, preset, metrics) + plan.frames
+    return plan
+
+
+def _dispatch(
+    chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str,
+    eyebrow: str, subtitle: str,
 ) -> SlidePlan:
     if isinstance(slots, CoverSlots):
         return _build_cover(chapter, slots, preset, metrics, presenter)
     if isinstance(slots, DividerSlots):
         return _build_divider(chapter, slots, page_no, preset, metrics)
     if isinstance(slots, SummarySlots):
-        return _build_summary(chapter, slots, page_no, preset, metrics)
+        return _build_summary(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, BulletBoxSlots):
-        return _build_bullet_box(chapter, slots, page_no, preset, metrics)
+        return _build_bullet_box(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, TableSlots):
-        return _build_table(chapter, slots, page_no, preset, metrics)
+        return _build_table(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, CompareSlots):
-        return _build_compare2(chapter, slots, page_no, preset, metrics)
+        return _build_compare2(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

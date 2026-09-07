@@ -29,7 +29,7 @@ const deckWithSlide: Deck = {
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [], conclusion: "결", footnote: "" } }],
 };
 
@@ -40,7 +40,7 @@ const deckWithEditableSlide: Deck = {
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 

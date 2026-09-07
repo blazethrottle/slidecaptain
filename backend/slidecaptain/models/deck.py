@@ -102,6 +102,11 @@ class Structure(BaseModel):
 
 class Slide(BaseModel):
     chapter_id: str
+    # 제목 위 분류 라벨과 제목 아래 한 문장 (2026-09-07 DA-4). 값이 없으면 자리를 차지하지 않는다.
+    # 각주는 슬롯 레벨에 이미 있어 여기 두지 않는다: 두 곳에 같은 개념이 생기고 통합은
+    # 다르게 해석되는 변경이라 스키마 버전 상향이 필요해진다 (적대 리뷰 확인)
+    eyebrow: str = ""
+    subtitle: str = ""
     slots: Slots
 
 

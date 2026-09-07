@@ -62,7 +62,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
       ...deck,
       slides: deck.slides.some((s) => s.chapter_id === chapterId)
         ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots } : s))
-        : [...deck.slides, { chapter_id: chapterId, slots }],
+        : [...deck.slides, { chapter_id: chapterId, slots, eyebrow: "", subtitle: "" }],  // 공통 슬롯은 생성이 채우지 않는다. 값은 사용자가 속성 패널에서 넣는다 (DA-4)
     };
     onReplace(next);  // 반영 저장은 스냅샷을 남긴다 (결정 1)
     setResult(null);

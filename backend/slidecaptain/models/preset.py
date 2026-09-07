@@ -95,6 +95,9 @@ class Spacing(BaseModel):
     margin_bottom: float = Field(default=34.0, ge=0)
     title_height: float = Field(default=40.0, gt=0)
     title_gap: float = Field(default=16.0, ge=0)
+    # 공통 슬롯의 간격 (2026-09-07 DA-4). 높이는 글자 크기와 행간에서 파생한다
+    eyebrow_gap: float = Field(default=4.0, ge=0)
+    subtitle_gap: float = Field(default=6.0, ge=0)
     footnote_height: float = Field(default=24.0, gt=0)
     footnote_gap: float = Field(default=8.0, ge=0)
     box_height: float = Field(default=56.0, gt=0)

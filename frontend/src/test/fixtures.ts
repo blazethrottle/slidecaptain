@@ -19,7 +19,7 @@ export function deckWith(bullets: string[], presenter = ""): Deck {
     meta: { title: "제목", report_type: "research", audience: "", presenter, preset_overrides: {} },
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "bullet_box", bullets: bullets.map((t) => ({ text: t, level: 0 as const })),
       conclusion: "결론", footnote: "" } }],
   };

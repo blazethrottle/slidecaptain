@@ -101,7 +101,7 @@ it("기존 슬라이드가 사라지는 승인은 확인을 거친다", async ()
   // c2 슬라이드의 소실로 확인 대화가 뜬다 (마지막 장을 삭제하면 승인 절 자체가 사라지므로 부적합)
   const deck = emptyDeck();
   deck.structure.chapters = [CH1, CH2];
-  deck.slides = [{ chapter_id: "c2", slots: {
+  deck.slides = [{ chapter_id: "c2", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [], conclusion: "결", footnote: "" } }];
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);

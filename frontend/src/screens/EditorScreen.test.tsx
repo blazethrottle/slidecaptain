@@ -29,7 +29,7 @@ const deck: Deck = {
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 
@@ -140,9 +140,9 @@ it("되돌린 서버 덱에 현재 장이 없으면 첫 장이 선택된다 (A5)
       { id: "c2", topic: "주제2", conclusion: "", template: "bullet_box", source_refs: [] },
     ] },
     slides: [
-      { chapter_id: "c1", slots: {
+      { chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
         template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } },
-      { chapter_id: "c2", slots: {
+      { chapter_id: "c2", eyebrow: "", subtitle: "", slots: {
         template: "bullet_box", bullets: [{ text: "둘", level: 0 }], conclusion: "결론", footnote: "" } },
     ],
   };

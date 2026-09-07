@@ -167,7 +167,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           failed = true;
           continue;
         }
-        current = { ...current, slides: [...current.slides, { chapter_id: chapter.id, slots: result.slots }] };
+        current = { ...current, slides: [...current.slides,
+          // 공통 슬롯은 생성이 채우지 않는다. 값은 사용자가 속성 패널에서 넣는다 (DA-4)
+          { chapter_id: chapter.id, slots: result.slots, eyebrow: "", subtitle: "" }] };
         try {
           await api.putDeck(project.name, current, false);
         } catch (e) {
