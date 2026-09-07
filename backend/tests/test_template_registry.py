@@ -29,7 +29,7 @@ def _structure_enum() -> set[str]:
 
 
 def test_declared_templates_are_not_empty():
-    assert len(TEMPLATES) >= 6
+    assert len(TEMPLATES) >= 7
 
 
 def test_structure_schema_enum_matches_declared_templates():
@@ -70,6 +70,7 @@ def test_layout_builder_answers_for_every_template(template):
 def _minimal_slots(template: str):
     from slidecaptain.models.deck import (
         BulletBoxSlots,
+        CalloutSlots,
         CompareSlots,
         CoverSlots,
         DividerSlots,
@@ -88,6 +89,7 @@ def _minimal_slots(template: str):
             left={"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
             right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
         ),
+        "callout": lambda: CalloutSlots(text="핵심 메시지 한 문장"),
     }[template]()
 
 

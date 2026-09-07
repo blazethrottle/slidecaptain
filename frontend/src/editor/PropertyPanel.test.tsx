@@ -41,3 +41,14 @@ it("장 주제와 템플릿이 각각 한 줄을 차지한다", () => {
   expect(template).not.toBeNull();
   expect(topic).not.toBe(template);
 });
+
+it("전환 드롭다운에는 편집 UI가 아직 없는 새 템플릿(callout)이 없다", () => {
+  // DB-1이 추가한 callout은 속성 패널 전용 UI가 없다: 여기서 고르면 편집할 수단이 없는
+  // 상태가 된다(DA-4/DB-1 SELECTABLE_TEMPLATES 규약). PropertyPanel.tsx도 StructureScreen.tsx와
+  // 같은 TEMPLATE_LABELS 기반 드롭다운을 쓰므로 같은 규약을 따라야 한다.
+  render(<PropertyPanel deck={deck} chapterId="c1" onApply={() => {}} />);
+  const select = screen.getByLabelText("템플릿") as HTMLSelectElement;
+  const values = Array.from(select.options).map((o) => o.value);
+  expect(values).not.toContain("callout");
+  expect(values).toHaveLength(6);
+});

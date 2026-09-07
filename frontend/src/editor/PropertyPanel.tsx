@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Deck, TemplateName } from "../api/client";
-import { TEMPLATE_LABELS } from "./labels";
+import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "./labels";
 import {
   addBullet, applyTextEdit, deleteTableRow, mergeTableColumns, removeBullet,
 } from "./slotOps";
@@ -66,8 +66,8 @@ export function PropertyPanel({ deck, chapterId, onApply }: {
             }
             onApply((d) => applyTemplateSwitch(d, chapterId, to).deck);
           }}>
-          {Object.entries(TEMPLATE_LABELS).map(([v, label]) => (
-            <option key={v} value={v}>{label}</option>
+          {SELECTABLE_TEMPLATES.map((v) => (
+            <option key={v} value={v}>{TEMPLATE_LABELS[v]}</option>
           ))}
         </select>
         </label>

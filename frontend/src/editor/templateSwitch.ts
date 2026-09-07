@@ -27,6 +27,10 @@ function collect(slots: Slots): Currency {
       return { bullets: [], dropped: ["표지 내용 전체"] };
     case "divider":
       return { bullets: [], dropped: ["간지 내용 전체"] };
+    case "callout":
+      // 밴드는 문장 하나뿐이다: bullet_box/summary의 conclusion과 같은 "그 장의 결론 한 줄"
+      // 의미이므로 같은 자리로 담아 다른 템플릿의 결론과 오갈 수 있게 한다
+      return { conclusion: slots.text, bullets: [], dropped: [] };
   }
 }
 
@@ -59,6 +63,12 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
     case "divider":
       dropBullets(); dropConclusion(); dropFootnote();
       return { slots: { template: "divider", section_no: "", section_title: "" }, dropped };
+    case "callout":
+      // 결론은 소실이 아니라 밴드 문장으로 이사한다(dropConclusion 을 부르지 않는다). 불릿과
+      // 각주는 밴드에 담을 자리가 없어 소실 목록에 오른다
+      dropBullets();
+      dropFootnote();
+      return { slots: { template: "callout", text: conclusion, tone: "surface1" }, dropped };
   }
 }
 

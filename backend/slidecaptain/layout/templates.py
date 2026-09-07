@@ -7,6 +7,7 @@
 from slidecaptain.metrics.capacity import (
     _content_geometry,
     content_geometry,
+    callout_geometry,
     card_geometry,
     cover_geometry,
     divider_geometry,
@@ -15,10 +16,12 @@ from slidecaptain.metrics.capacity import (
     measure_bullets,
     measure_lines,
 )
+from slidecaptain.metrics.color import readable_text_color
 from slidecaptain.metrics.line_breaker import break_paragraph
 from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
+    CalloutSlots,
     Chapter,
     CompareSlots,
     CoverSlots,
@@ -500,6 +503,47 @@ def _build_compare2(
     return SlidePlan(chapter_id=chapter.id, template="compare2", frames=frames, warnings=warnings)
 
 
+def _build_callout(
+    chapter: Chapter, slots: CalloutSlots, page_no: int, preset: Preset, metrics,
+    eyebrow: str = "", subtitle: str = "",
+) -> SlidePlan:
+    """전폭 강조 밴드 하나가 본문의 전부다 (2026-09-07 DB-1, 벤치마크 원형 2: 슬라이드 절반에서 관측).
+
+    글자색은 채움색(tone 역할)의 상대 휘도로 정한다: 역할 이름 대 글자색의 고정 매핑표를 쓰지
+    않는 이유는 DA-3처럼 프리셋 색값 자체가 나중에 바뀔 수 있어서다(metrics.color 참고).
+    가운데 정렬(align, valign)은 작은 결론 상자와 달리 밴드가 슬라이드에서 가장 큰 시각 요소라
+    내용 길이와 무관하게 균형 잡힌 배너로 보이게 하는 판단이다.
+    """
+    s, r, c = preset.spacing, preset.font_roles, preset.colors
+    g = slide_geometry(preset, eyebrow, subtitle)
+    band = callout_geometry(preset, eyebrow, subtitle)
+    warnings = []
+    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+        warnings.append(tw)
+    lines = measure_lines(slots.text, band["inner_w"], r.box_pt, metrics.face(True), s)
+    if lines > max_lines(band["inner_h"], r.box_pt, s.line_spacing):
+        lh = line_height_pt(r.box_pt, s.line_spacing)
+        warnings.append(_measure_warning(chapter, "text", lines * lh, band["inner_h"]))
+    fill = getattr(c, slots.tone)
+    text_color = readable_text_color(fill, light=c.background, dark=c.text)
+    frames = [
+        _title_frame(chapter, preset, metrics, g),
+        Frame(
+            name=f"{chapter.id}:text",
+            x=s.margin_left, y=band["band_y"], w=g["content_width"], h=band["band_h"],
+            fill=fill,
+            radius_pt=s.callout_radius_pt,
+            valign="middle",
+            paras=[Para(
+                text=slots.text, font_pt=r.box_pt, bold=True, color=text_color, align="center",
+                lines=_para_lines(slots.text, band["inner_w"], r.box_pt, True, preset, metrics),
+            )],
+        ),
+        _page_number_frame(chapter, page_no, preset),
+    ]
+    return SlidePlan(chapter_id=chapter.id, template="callout", frames=frames, warnings=warnings)
+
+
 def build_slide(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
     eyebrow: str = "", subtitle: str = "",
@@ -531,4 +575,6 @@ def _dispatch(
         return _build_table(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     if isinstance(slots, CompareSlots):
         return _build_compare2(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+    if isinstance(slots, CalloutSlots):
+        return _build_callout(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

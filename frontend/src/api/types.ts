@@ -396,6 +396,29 @@ export interface components {
             ok: boolean;
             usage: components["schemas"]["CallUsage"] | null;
         };
+        /**
+         * CalloutSlots
+         * @description 강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).
+         *
+         *     tone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이
+         *     따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,
+         *     채움 0건) 여기서 뺐다.
+         */
+        CalloutSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "callout";
+            /** Text */
+            text: string;
+            /**
+             * Tone
+             * @default surface1
+             * @enum {string}
+             */
+            tone: "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger";
+        };
         /** CapacityWarning */
         CapacityWarning: {
             /** Chapter Id */
@@ -434,7 +457,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider";
+            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout";
             /**
              * Source Refs
              * @default []
@@ -449,7 +472,7 @@ export interface components {
              */
             status: "ok" | "format_error";
             /** Slots */
-            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"]) | null;
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"]) | null;
             /**
              * Raw Text
              * @default
@@ -583,7 +606,7 @@ export interface components {
         /** CondenseChapterRequest */
         CondenseChapterRequest: {
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"];
             /**
              * Instructions
              * @default
@@ -986,7 +1009,9 @@ export interface components {
              *       "page_number_height": 16,
              *       "page_number_bottom": 28,
              *       "safety_ratio": 0.97,
-             *       "border_width_pt": 0.75
+             *       "border_width_pt": 0.75,
+             *       "callout_height": 84,
+             *       "callout_radius_pt": 12
              *     }
              */
             spacing: components["schemas"]["Spacing"];
@@ -1085,7 +1110,7 @@ export interface components {
              */
             subtitle: string;
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"];
         };
         /** SlidePlan */
         SlidePlan: {
@@ -1260,6 +1285,16 @@ export interface components {
              * @default 0.75
              */
             border_width_pt: number;
+            /**
+             * Callout Height
+             * @default 84
+             */
+            callout_height: number;
+            /**
+             * Callout Radius Pt
+             * @default 12
+             */
+            callout_radius_pt: number;
         };
         /** Structure */
         Structure: {

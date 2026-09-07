@@ -87,6 +87,10 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
         if (slot === "right_card") return { ...slots, right: editCard(slots.right) };
         return slots;
       }
+      case "callout":
+        // 밴드 문장 편집 경로. 속성 패널 전용 UI는 없다(DB-6 소관): 미리보기 인라인 편집만 쓴다
+        if (slot === "text") return { ...slots, text };
+        return slots;
     }
     return slots;
   });

@@ -5,6 +5,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import (
     Bullet,
     BulletBoxSlots,
+    CalloutSlots,
     Card,
     Chapter,
     CompareSlots,
@@ -17,7 +18,7 @@ from slidecaptain.models.deck import (
     SummarySlots,
     TableSlots,
 )
-from slidecaptain.models.preset import Preset
+from slidecaptain.models.preset import Preset, apply_overrides
 
 METRICS = FontMetrics.load_default()
 
@@ -443,3 +444,73 @@ def test_divider_multiline_title_warns():
     deck = _deck([("divider", DividerSlots(section_no="1", section_title=" ".join(["가" * 30] * 4)))])
     slide = build_render_plan(deck, PRESET, METRICS).slides[0]
     assert {w.slot for w in slide.warnings} == {"section_title"}
+
+
+# ---- 강조 밴드(callout) 프레임 (2026-09-07 DB-1) ----
+# 벤치마크 원형 2: 전폭 둥근 사각형에 문장 1~3줄. 좌표는 content_top=92, content_bottom=474
+# (기본 프리셋)에서 84pt 밴드를 세로 가운데(241.0)에 둔 값이다 (capacity.callout_geometry와 공유).
+
+
+def test_callout_frame_geometry_and_fill():
+    deck = _deck([("callout", CalloutSlots(text="핵심 메시지", tone="accent1"))])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    band = _frame(plan.slides[0], ":text")
+    assert (band.x, band.y, band.w, band.h) == (50.0, 241.0, 860.0, 84.0)
+    assert band.radius_pt == 12.0
+    assert band.fill == "0E8C7F"
+    assert band.valign == "middle"
+
+
+def test_callout_frame_names_carry_role_tags():
+    deck = _deck([("callout", CalloutSlots(text="핵심 메시지"))])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    names = {f.name for f in plan.slides[0].frames}
+    assert names == {"ch01:title", "ch01:text", "ch01:page_number"}
+
+
+def test_callout_default_tone_is_surface1():
+    assert CalloutSlots(text="기본값 확인").tone == "surface1"
+
+
+@pytest.mark.parametrize(
+    ("tone", "expected_color"),
+    [
+        ("ink", "FFFFFF"),  # 아주 어두운 채움: 밝은 글자
+        ("surface1", "202020"),  # 아주 밝은 채움(기본값): 어두운 글자
+        ("accent2", "202020"),  # 어두운 쪽이 근소하게 대비가 더 크다 (5.33 대 3.06)
+        ("accent1", "FFFFFF"),  # 밝은 쪽이 근소하게 대비가 더 크다 (4.14 대 3.94), 둘 다 AA 미달
+    ],
+)
+def test_callout_text_color_follows_fill_luminance_not_a_fixed_role_map(tone, expected_color):
+    """역할 이름 대 글자색의 고정 매핑표를 쓰지 않는다: 실제 색값의 대비로 판단해야 한다."""
+
+    deck = _deck([("callout", CalloutSlots(text="핵심 메시지", tone=tone))])
+    plan = build_render_plan(deck, PRESET, FAKE)
+    band = _frame(plan.slides[0], ":text")
+    assert band.paras[0].color == expected_color
+
+
+def test_callout_text_color_recomputes_when_preset_colors_change():
+    """고정 매핑표라면 프리셋이 바뀌어도 이전 판정을 그대로 돌려준다: 그렇지 않은지 확인한다."""
+
+    overridden = apply_overrides(PRESET, {"colors": {"ink": "F5F5F5"}})  # 원래 어두운 ink를 밝게 덮어쓴다
+    deck = _deck([("callout", CalloutSlots(text="핵심 메시지", tone="ink"))])
+    plan = build_render_plan(deck, overridden, FAKE)
+    band = _frame(plan.slides[0], ":text")
+    assert band.fill == "F5F5F5"
+    assert band.paras[0].color == "202020"  # 원래 매핑(ink -> 밝은 글자)이었다면 FFFFFF가 나왔을 값
+
+
+def test_callout_overflow_warns_on_the_text_slot():
+    long_text = "밴드 문장이 지나치게 길어서 고정 높이를 넘는다 " * 20
+    deck = _deck([("callout", CalloutSlots(text=long_text))])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert any(w.slot == "text" for w in plan.warnings)
+
+
+def test_callout_short_text_has_no_warning_and_single_line():
+    deck = _deck([("callout", CalloutSlots(text="짧은 강조 문장"))])
+    plan = build_render_plan(deck, PRESET, METRICS).slides[0]
+    assert plan.warnings == []
+    band = _frame(plan, ":text")
+    assert band.paras[0].lines == ["짧은 강조 문장"]

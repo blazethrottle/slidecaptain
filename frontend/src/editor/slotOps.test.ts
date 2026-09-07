@@ -130,6 +130,20 @@ it("아이브로우와 부제 편집이 슬라이드 레벨에 반영된다", ()
   expect(withSubtitle.slides[0].subtitle).toBe("새 문장");
 });
 
+it("강조 밴드 문장은 text 슬롯으로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "callout", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "callout", text: "옛 문장", tone: "surface1" } }],
+  };
+  const next = applyTextEdit(deck, { chapterId: "c1", slot: "text", index: 0 }, "새 문장");
+  const slots = next.slides[0].slots;
+  expect(slots.template === "callout" && slots.text).toBe("새 문장");
+  expect(slots.template === "callout" && slots.tone).toBe("surface1");  // 톤은 건드리지 않는다
+});
+
 it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
   const deck: Deck = {
     ...bulletDeck(),

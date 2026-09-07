@@ -4,7 +4,7 @@ import {
   type Chapter, type ChapterResult, type Deck, type GenerationUsage, type ProjectInfo, type TemplateName,
 } from "../api/client";
 import { formatUsage, sumUsage } from "../api/usage";
-import { TEMPLATE_LABELS } from "../editor/labels";
+import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
@@ -254,8 +254,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                   <td>
                     <select aria-label={`${i + 1}번 장 템플릿`} value={c.template}
                       onChange={(e) => update(i, { template: e.target.value as TemplateName })}>
-                      {Object.entries(TEMPLATE_LABELS).map(([v, label]) => (
-                        <option key={v} value={v}>{label}</option>
+                      {SELECTABLE_TEMPLATES.map((v) => (
+                        <option key={v} value={v}>{TEMPLATE_LABELS[v]}</option>
                       ))}
                     </select>
                   </td>

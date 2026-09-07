@@ -120,6 +120,24 @@ def card_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dict
     return {"card_w": card_w, "card_h": card_h, "inner_w": inner_w, "bullets_h": bullets_h}
 
 
+def callout_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dict[str, float]:
+    """강조 밴드(callout) 기하. 계약과 레이아웃 엔진이 함께 쓴다 (2026-09-07 DB-1).
+
+    밴드는 고정 높이이고 본문 영역 안에서 세로 가운데에 둔다: 전폭이지만 내용은 1~3줄이라
+    본문 전체를 채우면 시각적으로 헐렁해진다(벤치마크 원형 2: "전폭 둥근 사각형 ... 안에 한 문장").
+    """
+    s = preset.spacing
+    g = content_geometry(preset, eyebrow, subtitle)
+    band_h = s.callout_height
+    band_y = g["content_top"] + (g["content_bottom"] - g["content_top"] - band_h) / 2
+    return {
+        "band_y": band_y,
+        "band_h": band_h,
+        "inner_w": g["content_width"] - 2 * s.box_padding,
+        "inner_h": band_h - 2 * s.box_padding,
+    }
+
+
 def cover_geometry(preset: Preset) -> dict:
     """표지 프레임 기하 (x, w 와 칸별 (y, h)). y 리터럴의 프리셋 승격은 단계 5B 이월 항목이라 값은 그대로 둔다."""
     s = preset.spacing
@@ -160,6 +178,7 @@ def capacity_contract(
     cover = cover_geometry(preset)["fields"]
     divider = divider_geometry(preset)["fields"]
     card = card_geometry(preset, eyebrow, subtitle)
+    callout = callout_geometry(preset, eyebrow, subtitle)
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
@@ -193,6 +212,9 @@ def capacity_contract(
             "card_heading_max_lines": max_lines(s.card_heading_height, r.body_pt, ls),
             "card_bullets_max_lines": items_that_fit(card["bullets_h"], r.body_pt, ls, s.bullet_gap),
             "conclusion_max_lines": max_lines(box_inner_h, r.box_pt, ls),
+        },
+        "callout": {
+            "text_max_lines": max_lines(callout["inner_h"], r.box_pt, ls),
         },
     }
     return contracts[template]
@@ -236,4 +258,7 @@ def char_hints(template: str, preset: Preset, metrics) -> dict[str, int]:
     if template == "divider":
         w = divider_geometry(preset)["w"]
         return {"섹션 제목": hangul_chars_for_width(w, r.section_title_pt, bold, s.safety_ratio)}
+    if template == "callout":
+        band = callout_geometry(preset)
+        return {"밴드 안 한 줄": hangul_chars_for_width(band["inner_w"], r.box_pt, bold, s.safety_ratio)}
     raise KeyError(template)

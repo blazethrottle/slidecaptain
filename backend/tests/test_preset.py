@@ -196,3 +196,12 @@ def test_eyebrow_size_respects_the_floor_rule():
 
     with pytest.raises(ValidationError):
         Preset(font_roles={"eyebrow_pt": 0})
+
+
+def test_callout_geometry_constants_added():
+    """강조 밴드 전용 상수 (2026-09-07 DB-1). box_height(결론 상자)를 재사용하지 않는 이유:
+    같은 필드를 키우면 기존 6종의 결론 상자 높이도 따라 바뀐다."""
+
+    s = Preset().spacing
+    assert s.callout_height == 84.0
+    assert s.callout_radius_pt == 12.0

@@ -6,6 +6,7 @@
 
 from slidecaptain.models.deck import (
     BulletBoxSlots,
+    CalloutSlots,
     Chapter,
     CompareSlots,
     CoverSlots,
@@ -30,7 +31,8 @@ TEMPLATE_GUIDE = """\
 - bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)
 - table: 비교표, 데이터 표 (열 이름 + 행 + 선택 각주)
 - compare2: 옵션 비교나 전후 대비 카드 2개 + 결론 박스
-- divider: 섹션 구분 간지"""
+- divider: 섹션 구분 간지
+- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)"""
 
 STYLE_RULES = """\
 문체 규칙:
@@ -48,6 +50,7 @@ _SLOTS_BY_TEMPLATE = {
     "table": TableSlots,
     "compare2": CompareSlots,
     "divider": DividerSlots,
+    "callout": CalloutSlots,
 }
 
 _CONTRACT_LABELS = {
@@ -63,6 +66,7 @@ _CONTRACT_LABELS = {
     "rows_max_single_line": "표 행 수 (머리글 포함, 한 줄짜리 행 기준)",
     "card_heading_max_lines": "카드 소제목",
     "card_bullets_max_lines": "카드 하나의 불릿 전체",
+    "text_max_lines": "강조 문장",
 }
 
 
@@ -113,7 +117,9 @@ def structure_response_schema() -> dict:
                         "conclusion": {"type": "string"},
                         "template": {
                             "type": "string",
-                            "enum": ["cover", "summary", "bullet_box", "table", "compare2", "divider"],
+                            "enum": [
+                                "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout",
+                            ],
                         },
                         "source_refs": {"type": "array", "items": {"type": "string"}},
                     },

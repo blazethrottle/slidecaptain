@@ -99,12 +99,15 @@ import math
 
 from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.capacity import (
+    callout_geometry,
     card_geometry,
     char_hints,
+    content_geometry,
     hangul_chars_per_line,
 )
 from slidecaptain.models.deck import (
     BulletBoxSlots,
+    CalloutSlots,
     Card,
     Chapter,
     CompareSlots,
@@ -210,3 +213,37 @@ def test_hinted_chars_fit_one_line_in_each_context():
     assert char_hints("divider", PRESET, REAL) == {"섹션 제목": 35}
     assert char_hints("summary", PRESET, REAL) == {"본문 한 줄": 73}
     assert char_hints("table", PRESET, REAL) == {"본문 한 줄": 73}
+
+
+# ---- 강조 밴드(callout) 용량 계약 (2026-09-07 DB-1) ----
+# 밴드는 "문장 1~3줄"짜리 고정 높이라 계약 키는 하나뿐이다. 다른 템플릿처럼 계약과 실측 왕복을 붙인다.
+
+
+def test_capacity_contract_callout():
+    assert capacity_contract("callout", PRESET) == {"text_max_lines": 3}
+
+
+def test_callout_geometry_is_full_width_and_vertically_centered_in_the_content_area():
+    g = content_geometry(PRESET)
+    band = callout_geometry(PRESET)
+    assert band["band_h"] == PRESET.spacing.callout_height
+    top_gap = band["band_y"] - g["content_top"]
+    bottom_gap = g["content_bottom"] - (band["band_y"] + band["band_h"])
+    assert top_gap == pytest.approx(bottom_gap)  # 세로 가운데: 위아래 남는 여백이 같다
+
+
+def test_callout_char_hint_present_and_positive():
+    hints = char_hints("callout", PRESET, REAL)
+    assert set(hints) == {"밴드 안 한 줄"}
+    assert hints["밴드 안 한 줄"] > 0
+
+
+def test_callout_contract_boundary_of_lines_fits_and_plus_one_overflows():
+    k = char_hints("callout", PRESET, REAL)["밴드 안 한 줄"]
+    n = capacity_contract("callout", PRESET)["text_max_lines"]
+
+    def slots(lines: int) -> CalloutSlots:
+        return CalloutSlots(text=" ".join([H * k] * lines))
+
+    assert not _slot_warnings(_slide("callout", slots(n)), "text"), "계약대로 채웠는데 넘침 경고가 났다"
+    assert _slot_warnings(_slide("callout", slots(n + 1)), "text"), "계약보다 한 줄 더 넣었는데 경고가 없다"

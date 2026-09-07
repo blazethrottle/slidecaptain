@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 SCHEMA_VERSION = 1
 
-TemplateName = Literal["cover", "summary", "bullet_box", "table", "compare2", "divider"]
+TemplateName = Literal["cover", "summary", "bullet_box", "table", "compare2", "divider", "callout"]
 ReportType = Literal["research", "approval", "strategy"]
 
 
@@ -82,8 +82,24 @@ class DividerSlots(BaseModel):
     section_title: str
 
 
+class CalloutSlots(BaseModel):
+    """강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).
+
+    tone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이
+    따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,
+    채움 0건) 여기서 뺐다.
+    """
+
+    template: Literal["callout"] = "callout"
+    text: str
+    tone: Literal[
+        "ink", "ink_soft", "accent1", "accent2", "danger", "ok",
+        "surface1", "surface2", "surface3", "surface_danger",
+    ] = "surface1"
+
+
 Slots = Annotated[
-    Union[CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots],
+    Union[CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots, CalloutSlots],
     Field(discriminator="template"),
 ]
 

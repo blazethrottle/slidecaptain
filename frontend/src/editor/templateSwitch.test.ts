@@ -50,3 +50,37 @@ it("표지로 바꾸면 슬롯에 제목, 부제, 날짜만 남고 보고자와 
   const r = switchTemplate(bulletSlots, "cover");
   expect(r.slots).toEqual({ template: "cover", title: "", subtitle: "", date: "" });
 });
+
+// ---- 강조 밴드(callout) 전환 (2026-09-07 DB-1) ----
+// 문장 하나뿐인 템플릿이라 결론으로 옮기는 것이 자연스럽다: bullet_box의 conclusion과
+// summary의 conclusion이 이미 "그 장의 결론 한 줄"이라는 같은 의미이므로 callout의 text도
+// 그 자리와 오가게 한다. 불릿과 각주는 밴드에 담을 자리가 없어 소실 목록에 오른다.
+
+it("bullet_box에서 callout로: 결론이 밴드 문장이 되고 불릿과 각주는 소실 목록", () => {
+  const r = switchTemplate(bulletSlots, "callout");
+  expect(r.slots.template === "callout" && r.slots.text).toBe("결론");
+  expect(r.slots.template === "callout" && r.slots.tone).toBe("surface1");
+  expect(r.dropped.join(" ")).toContain("불릿");
+  expect(r.dropped.join(" ")).toContain("각주");
+});
+
+it("callout에서 summary로: 밴드 문장이 결론으로 이사하고 요점은 비어 있다", () => {
+  const callout: Slots = { template: "callout", text: "핵심 메시지", tone: "accent1" };
+  const r = switchTemplate(callout, "summary");
+  expect(r.slots.template === "summary" && r.slots.conclusion).toBe("핵심 메시지");
+  expect(r.slots.template === "summary" && r.slots.points).toEqual([]);
+  expect(r.dropped).toEqual([]);
+});
+
+it("callout에서 table로: 밴드 문장이 결론 취급으로 소실 목록에 오른다", () => {
+  const callout: Slots = { template: "callout", text: "핵심 메시지", tone: "accent1" };
+  const r = switchTemplate(callout, "table");
+  expect(r.dropped.join(" ")).toContain("핵심 메시지");
+});
+
+it("callout끼리는 그대로다", () => {
+  const callout: Slots = { template: "callout", text: "문장", tone: "surface1" };
+  const r = switchTemplate(callout, "callout");
+  expect(r.slots).toBe(callout);
+  expect(r.dropped).toEqual([]);
+});

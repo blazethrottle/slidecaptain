@@ -1,6 +1,9 @@
-from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Structure
+from slidecaptain.models.deck import CalloutSlots, Chapter, Deck, DeckMeta, Structure
 from slidecaptain.models.render import CapacityWarning
 from slidecaptain.pipeline.prompts import (
+    TEMPLATE_GUIDE,
+    _CONTRACT_LABELS,
+    _SLOTS_BY_TEMPLATE,
     build_chapter_prompt,
     build_condense_prompt,
     build_format_retry_prompt,
@@ -134,3 +137,42 @@ def test_contract_block_uses_korean_labels_for_cover_and_divider_keys():
         {"section_no_max_lines": 1, "section_title_max_lines": 1}, today="2026-09-02",
     )
     assert "- 섹션 제목: 최대 1줄" in prompt and "_max_lines" not in prompt
+
+
+# ---- 강조 밴드(callout) 등록 (2026-09-07 DB-1) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_callout():
+    lines = TEMPLATE_GUIDE.splitlines()
+    callout_lines = [ln for ln in lines if "callout" in ln]
+    assert len(callout_lines) == 1
+    # 기존 6종 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
+    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+
+
+def test_callout_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["callout"] is CalloutSlots
+    assert "text_max_lines" in _CONTRACT_LABELS
+
+
+def test_callout_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "callout" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_callout_contract_block_uses_korean_label_and_char_hint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="강조", template="callout")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"text_max_lines": 3}, today="2026-09-07", char_hints={"밴드 안 한 줄": 40},
+    )
+    assert "_max_lines" not in prompt
+    assert "최대 3줄" in prompt
+    assert "밴드 안 한 줄 약 40자" in prompt
+
+
+def test_callout_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("callout")
+    assert "text" in schema["properties"]
+    assert "tone" in schema["properties"]

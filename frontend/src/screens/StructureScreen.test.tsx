@@ -51,6 +51,21 @@ it("구조안을 생성해 초안 표를 보여준다", async () => {
   expect(screen.getByText(/9999/)).toBeInTheDocument();  // 자료에 없는 수치 경고
 });
 
+it("템플릿 드롭다운에는 편집 UI가 아직 없는 새 템플릿(callout)이 없다", async () => {
+  // DB-1이 백엔드에 callout을 등록해도, 속성 패널 전용 UI(DB-6)가 없는 한 구조안 화면에서
+  // 고를 수 있게 하면 고른 뒤 편집할 수단이 없는 상태가 된다.
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  const select = await screen.findByLabelText("1번 장 템플릿") as HTMLSelectElement;
+  const values = Array.from(select.options).map((o) => o.value);
+  expect(values).not.toContain("callout");
+  expect(values).toHaveLength(6);
+});
+
 it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
