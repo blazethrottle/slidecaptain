@@ -15,6 +15,11 @@ from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import (
     BulletBoxSlots,
+    CompareSlots,
+    CoverSlots,
+    DividerSlots,
+    SummarySlots,
+    TableSlots,
     Chapter,
     Deck,
     DeckMeta,
@@ -99,15 +104,115 @@ def test_slots_use_their_own_type_sizes():
     assert frames["subtitle"].paras[0].font_pt == PRESET.font_roles.subtitle_pt
 
 
-@pytest.mark.parametrize("template", sorted(set(get_args(TemplateName))))
-def test_every_builder_goes_through_the_shared_geometry_helper(template):
-    """빌더가 제 나름대로 본문 상단을 계산하면 새 슬롯이 그 템플릿에서만 누락된다."""
+def _deck_for(template: str, **slide_kwargs) -> Deck:
+    """템플릿별 최소 덱. 공통 슬롯 검증을 bullet_box 하나가 아니라 전 템플릿에 건다."""
 
-    source = inspect.getsource(templates_module)
-    builder = f'"{template}"'
+    slots = {
+        "cover": CoverSlots(title="제목", subtitle="부제", date="2026-09-07"),
+        "divider": DividerSlots(section_no="1", section_title="구분"),
+        "summary": SummarySlots(conclusion="결론", points=[{"text": "요점", "level": 0}]),
+        "bullet_box": BulletBoxSlots(bullets=[{"text": "항목", "level": 0}], conclusion="결론"),
+        "table": TableSlots(columns=["구분", "값"], rows=[["A", "1"]]),
+        "compare2": CompareSlots(
+            conclusion="결론",
+            left={"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
+            right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
+        ),
+    }[template]
+    return Deck(
+        meta=DeckMeta(title="공통 슬롯"),
+        structure=Structure(chapters=[Chapter(id="ch01", topic="주제", template=template)]),
+        slides=[Slide(chapter_id="ch01", slots=slots, **slide_kwargs)],
+    )
 
-    assert "def slide_geometry" in source or hasattr(templates_module, "slide_geometry")
-    assert builder in source
+
+CONTENT_TEMPLATES = ["summary", "bullet_box", "table", "compare2"]
+
+
+@pytest.mark.parametrize("template", CONTENT_TEMPLATES)
+def test_every_content_template_moves_its_body_down_for_the_slots(template):
+    """텍스트 매칭이 아니라 좌표로 검증한다. 종전 검사는 빌더가 헬퍼를 안 써도 통과했다."""
+
+    plain = _frames(_deck_for(template))
+    shifted = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
+    body = {"summary": "points", "bullet_box": "bullets", "table": "table", "compare2": "left_card"}[template]
+
+    assert shifted[body].y > plain[body].y
+
+
+@pytest.mark.parametrize("template", CONTENT_TEMPLATES)
+def test_body_never_overlaps_the_footer_elements_when_slots_are_present(template):
+    """카드 위치만 내려가고 높이가 그대로면 아래 요소를 침범한다 (2026-09-07 최종 리뷰 critical)."""
+
+    frames = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
+    body = {"summary": "points", "bullet_box": "bullets", "table": "table", "compare2": "left_card"}[template]
+    body_frame = frames[body]
+    bottom = body_frame.y + body_frame.h
+    # 세로로 겹치는지는 가로가 겹치는 것끼리만 따진다. compare2 의 두 카드는 나란히 있다.
+    # summary 는 결론 상자가 본문 위에 있으므로 아래에서 시작하는 것만 본다
+    def overlaps_horizontally(other):
+        return other.x < body_frame.x + body_frame.w and body_frame.x < other.x + other.w
+
+    below = [
+        f for f in frames.values()
+        if f is not body_frame and f.y >= body_frame.y and overlaps_horizontally(f)
+    ]
+
+    for other in below:
+        assert bottom <= other.y + 0.01, f"{template}: 본문 바닥 {bottom} 이 {other.name} 상단 {other.y} 를 침범"
+
+
+@pytest.mark.parametrize("template", ["cover", "divider"])
+def test_title_slides_ignore_the_common_slots(template):
+    """표지와 간지는 그 자체가 제목 슬라이드라 공통 슬롯을 그리지 않는다."""
+
+    plain = _frames(_deck_for(template))
+    with_slots = _frames(_deck_for(template, eyebrow="라벨", subtitle="문장"))
+
+    # 표지에는 자기 슬롯의 subtitle 프레임이 원래 있으므로 이름이 아니라 구성으로 본다
+    assert sorted(plain) == sorted(with_slots)
+    assert "eyebrow" not in with_slots
+    for name, frame in plain.items():
+        assert frame.y == with_slots[name].y
+
+
+def test_capacity_contract_accounts_for_the_common_slots():
+    """계약이 슬롯을 모르면 계약대로 채운 슬라이드가 값을 넣는 순간 초과 경고를 받는다."""
+
+    from slidecaptain.metrics.capacity import capacity_contract
+
+    plain = capacity_contract("bullet_box", PRESET)
+    shifted = capacity_contract("bullet_box", PRESET, eyebrow="라벨", subtitle="문장")
+
+    assert shifted["bullets_max_lines"] < plain["bullets_max_lines"]
+
+
+def test_contract_lines_still_fit_after_the_slots_push_content_down():
+    """계약과 실측의 왕복: 계약대로 채우면 넘침 경고가 없어야 한다."""
+
+    from slidecaptain.metrics.capacity import capacity_contract
+
+    contract = capacity_contract("bullet_box", PRESET, eyebrow="라벨", subtitle="문장")
+    bullets = [{"text": f"항목 {i}", "level": 0} for i in range(contract["bullets_max_lines"])]
+    deck = Deck(
+        meta=DeckMeta(title="계약 왕복"),
+        structure=Structure(chapters=[Chapter(id="ch01", topic="주제", template="bullet_box")]),
+        slides=[Slide(chapter_id="ch01", eyebrow="라벨", subtitle="문장",
+                      slots=BulletBoxSlots(bullets=bullets, conclusion="결론"))],
+    )
+    plan = build_render_plan(deck, PRESET, FontMetrics.from_bundled())
+
+    assert plan.slides[0].warnings == []
+
+
+def test_long_common_slot_text_raises_an_overflow_warning():
+    """제목과 각주에는 있는 넘침 경고가 이 두 슬롯에만 없었다 (2026-09-07 최종 리뷰 major)."""
+
+    long_text = "긴 아이브로우 문구를 넣어 한 줄을 넘기게 만든다 " * 6
+    deck = _deck_for("bullet_box", eyebrow=long_text)
+    plan = build_render_plan(deck, PRESET, FontMetrics.from_bundled())
+
+    assert any(w.slot == "eyebrow" for w in plan.slides[0].warnings)
 
 
 def test_shared_helper_reports_the_same_geometry_when_slots_are_empty():

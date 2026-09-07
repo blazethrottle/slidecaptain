@@ -292,3 +292,22 @@ def test_per_frame_border_width_overrides_the_plan_style(tmp_path):
 
     assert shapes[0].line.width == Pt(0.75)
     assert shapes[1].line.width == Pt(2.5)
+
+
+@pytest.mark.parametrize("bad", [-0.001, -10.0])
+def test_negative_radius_is_rejected_by_the_contract(bad):
+    """음수는 라이터가 클램프하기 전에 자료형이 막는다 (2026-09-07 최종 리뷰 minor)."""
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Frame(name="ch01:x", x=0, y=0, w=100, h=40, radius_pt=bad)
+
+
+def test_negative_border_width_is_rejected_by_the_contract():
+    """음수 두께는 python-pptx 가 예외를 던져 내보내기 전체를 멈춘다. 자료형에서 막는다."""
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Frame(name="ch01:x", x=0, y=0, w=100, h=40, border="112233", border_width_pt=-2.0)

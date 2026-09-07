@@ -81,13 +81,38 @@ def _content_geometry(preset: Preset) -> dict[str, float]:
     return content_box(preset)
 
 
-def card_geometry(preset: Preset) -> dict[str, float]:
+def common_slot_offset(preset: Preset, eyebrow: str = "", subtitle: str = "") -> float:
+    """공통 슬롯이 본문 상단을 밀어내는 양 (2026-09-07 DA-4 재작업).
+
+    이 계산의 진본은 여기 하나다. 레이아웃(`slide_geometry`)과 계약(`capacity_contract`,
+    `card_geometry`, `hangul_chars_per_line`)이 같은 값을 써야 한다. 종전에는 레이아웃만 알고
+    계약은 몰라서, compare2 카드가 내려간 위치에서 옛 높이로 그려져 결론 상자를 36pt 침범했다.
+    """
+
+    s, r = preset.spacing, preset.font_roles
+    offset = 0.0
+    if eyebrow:
+        offset += r.eyebrow_pt * s.line_spacing + s.eyebrow_gap
+    if subtitle:
+        offset += r.subtitle_pt * s.line_spacing + s.subtitle_gap
+    return offset
+
+
+def content_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dict[str, float]:
+    """공통 슬롯을 반영한 내용 영역. `_content_geometry` 를 직접 부르는 곳은 이 함수뿐이어야 한다."""
+
+    g = dict(_content_geometry(preset))
+    g["content_top"] = g["content_top"] + common_slot_offset(preset, eyebrow, subtitle)
+    return g
+
+
+def card_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dict[str, float]:
     """compare2 카드 기하. 계약과 레이아웃 엔진이 함께 쓴다 (2026-09-02: 종전에는 두 모듈이 다른 값을 계산했다).
 
     bullets_h 는 카드 소제목 영역과 그 아래 간격, 카드 안쪽 여백(위아래)을 뺀 불릿 가용 높이다.
     """
     s = preset.spacing
-    g = _content_geometry(preset)
+    g = content_geometry(preset, eyebrow, subtitle)
     card_h = g["content_bottom"] - g["content_top"] - s.box_height - s.box_gap
     card_w = (g["content_width"] - s.card_gap) / 2
     inner_w = card_w - 2 * s.box_padding
@@ -123,16 +148,18 @@ def divider_geometry(preset: Preset) -> dict:
     }
 
 
-def capacity_contract(template: str, preset: Preset) -> dict[str, int]:
+def capacity_contract(
+    template: str, preset: Preset, eyebrow: str = "", subtitle: str = ""
+) -> dict[str, int]:
     s = preset.spacing
     r = preset.font_roles
-    g = _content_geometry(preset)
+    g = content_geometry(preset, eyebrow, subtitle)
     content_h = g["content_bottom"] - g["content_top"]
     box_inner_h = s.box_height - 2 * s.box_padding
     ls = s.line_spacing
     cover = cover_geometry(preset)["fields"]
     divider = divider_geometry(preset)["fields"]
-    card = card_geometry(preset)
+    card = card_geometry(preset, eyebrow, subtitle)
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
@@ -181,7 +208,7 @@ def hangul_chars_per_line(preset: Preset, face) -> int:
 
     불릿 들여쓰기(level 0)를 뺀 폭 기준이다 (2026-09-02: 종전에는 들여쓰기를 빼지 않아 안내대로 쓴 한 어절이 두 줄로 꺾였다).
     """
-    g = _content_geometry(preset)
+    g = content_geometry(preset)  # 폭은 세로 슬롯에 영향받지 않지만 진입점을 하나로 둔다
     width = g["content_width"] - preset.spacing.bullet_indent
     return hangul_chars_for_width(width, preset.font_roles.body_pt, face, preset.spacing.safety_ratio)
 

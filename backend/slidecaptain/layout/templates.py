@@ -6,6 +6,7 @@
 
 from slidecaptain.metrics.capacity import (
     _content_geometry,
+    content_geometry,
     card_geometry,
     cover_geometry,
     divider_geometry,
@@ -58,18 +59,39 @@ def slide_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dic
     """
 
     s, r = preset.spacing, preset.font_roles
-    g = dict(_content_geometry(preset))
+    # 오프셋 산식의 진본은 capacity.common_slot_offset 이다. 레이아웃과 계약이 같은 값을 써야
+    # 카드 높이와 계약 상한이 어긋나지 않는다 (2026-09-07 재작업)
+    g = content_geometry(preset, eyebrow, subtitle)
     eyebrow_h = r.eyebrow_pt * s.line_spacing if eyebrow else 0.0
     subtitle_h = r.subtitle_pt * s.line_spacing if subtitle else 0.0
-    eyebrow_block = eyebrow_h + s.eyebrow_gap if eyebrow else 0.0
-    subtitle_block = subtitle_h + s.subtitle_gap if subtitle else 0.0
     g["eyebrow_y"] = s.margin_top
     g["eyebrow_h"] = eyebrow_h
-    g["title_y"] = s.margin_top + eyebrow_block
+    g["title_y"] = s.margin_top + (eyebrow_h + s.eyebrow_gap if eyebrow else 0.0)
     g["subtitle_y"] = g["title_y"] + s.title_height + s.subtitle_gap
     g["subtitle_h"] = subtitle_h
-    g["content_top"] = g["content_top"] + eyebrow_block + subtitle_block
     return g
+
+
+def common_slot_warnings(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
+                         preset: Preset, metrics) -> list[CapacityWarning]:
+    """제목과 각주에는 있던 넘침 경고를 이 두 슬롯에도 건다 (2026-09-07 최종 리뷰 major).
+
+    프레임 높이는 한 줄로 고정인데 텍스트는 폭에 따라 여러 줄로 꺾이므로, 경고가 없으면
+    긴 문구가 아래 요소를 소리 없이 침범한다.
+    """
+
+    r = preset.font_roles
+    warnings: list[CapacityWarning] = []
+    for slot, text, font_pt, bold, height in (
+        ("eyebrow", eyebrow, r.eyebrow_pt, True, g["eyebrow_h"]),
+        ("subtitle", subtitle, r.subtitle_pt, False, g["subtitle_h"]),
+    ):
+        warning = _fixed_height_warning(
+            chapter, slot, text, g["content_width"], height, font_pt, bold, preset, metrics
+        )
+        if warning is not None:
+            warnings.append(warning)
+    return warnings
 
 
 def _common_slot_frames(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
@@ -437,7 +459,7 @@ def _build_compare2(
 ) -> SlidePlan:
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
-    card = card_geometry(preset)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다 (2026-09-02 태스크 A)
+    card = card_geometry(preset, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다 (2026-09-02 태스크 A)
     card_h, card_w, inner_w = card["card_h"], card["card_w"], card["inner_w"]
     warnings = []
     if (tw := _title_warning(chapter, preset, metrics)) is not None:
@@ -487,6 +509,9 @@ def build_slide(
     if (eyebrow or subtitle) and not isinstance(slots, (CoverSlots, DividerSlots)):
         g = slide_geometry(preset, eyebrow, subtitle)
         plan.frames = _common_slot_frames(chapter, g, eyebrow, subtitle, preset, metrics) + plan.frames
+        plan.warnings = plan.warnings + common_slot_warnings(
+            chapter, g, eyebrow, subtitle, preset, metrics
+        )
     return plan
 
 

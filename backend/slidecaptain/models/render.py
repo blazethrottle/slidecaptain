@@ -5,7 +5,9 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import ConfigDict
+
+from pydantic import BaseModel, Field, model_validator
 
 
 class Para(BaseModel):
@@ -20,6 +22,9 @@ class Para(BaseModel):
 
 
 class TablePlan(BaseModel):
+    # 생성 후 대입도 검증한다. 종전에는 길이 검증을 setattr 로 우회할 수 있었다 (2026-09-07 리뷰)
+    model_config = ConfigDict(validate_assignment=True)
+
     col_widths_pt: list[float]
     header: list[str]
     rows: list[list[str]]
@@ -60,11 +65,11 @@ class Frame(BaseModel):
     # 모서리 반경(pt). None 이면 직각 사각형이다. 짧은 변의 절반 이상이면 알약이나 정원이 된다.
     # 라이터는 사각형과 둥근 사각형 두 가지만 쓴다: OVAL 은 조정 핸들이 없어(python-pptx 1.0.2 실측)
     # 폭과 높이가 다르면 눌린 타원이 되고, 그 순간 CSS 로 그리는 미리보기와 어긋난다 (2026-09-07 DA-1)
-    radius_pt: float | None = None
+    radius_pt: float | None = Field(default=None, ge=0)
     # 이 프레임만의 테두리 두께(pt). None 이면 RenderStyle.border_width_pt 를 쓴다.
     # 폴백 판단은 레이아웃 엔진이 하고 소비자는 값을 그대로 쓴다: 같은 기본값 규칙을 라이터와
     # 미리보기 두 곳에 따로 두면 세로 정렬 사고와 같은 계열의 어긋남이 생긴다
-    border_width_pt: float | None = None
+    border_width_pt: float | None = Field(default=None, ge=0)
 
 
 class CapacityWarning(BaseModel):

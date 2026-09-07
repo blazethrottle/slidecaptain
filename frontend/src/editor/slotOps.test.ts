@@ -115,3 +115,32 @@ it("표지의 보고자 칸을 인라인 편집하면 메타의 presenter가 바
   expect(edited.meta.presenter).toBe("사업개발팀");
   expect(edited.slides[0].slots).toEqual(deck.slides[0].slots);  // 슬롯은 건드리지 않는다
 });
+
+it("아이브로우와 부제 편집이 슬라이드 레벨에 반영된다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    slides: [{ chapter_id: "c1", eyebrow: "옛 라벨", subtitle: "옛 문장", slots: {
+      template: "bullet_box", bullets: [{ text: "항목", level: 0 }], conclusion: "결", footnote: "" } }],
+  };
+
+  const withEyebrow = applyTextEdit(deck, { chapterId: "c1", slot: "eyebrow", index: 0 }, "새 라벨");
+  const withSubtitle = applyTextEdit(withEyebrow, { chapterId: "c1", slot: "subtitle", index: 0 }, "새 문장");
+
+  expect(withSubtitle.slides[0].eyebrow).toBe("새 라벨");
+  expect(withSubtitle.slides[0].subtitle).toBe("새 문장");
+});
+
+it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "cover", title: "제목", subtitle: "옛 부제", date: "2026-09-07" } }],
+  };
+
+  const next = applyTextEdit(deck, { chapterId: "c1", slot: "subtitle", index: 0 }, "새 부제");
+  const slots = next.slides[0].slots;
+
+  expect(slots.template).toBe("cover");
+  expect(slots.template === "cover" && slots.subtitle).toBe("새 부제");
+  expect(next.slides[0].subtitle).toBe("");
+});

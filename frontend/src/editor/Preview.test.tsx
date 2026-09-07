@@ -166,9 +166,34 @@ it("표 칸별 채움이 있으면 그 색을, 없으면 머리행 단일 색을
   const { container } = render(<Preview slide={coloured} style={style} pageW={960} pageH={540}
     selected={null} onSelect={() => {}} onCommitText={() => {}} />);
 
-  const cells = Array.from(container.querySelectorAll('[data-frame="c3:table"] div > div > div'));
-  const backgrounds = cells.map((c) => (c as HTMLElement).style.background).filter(Boolean);
+  const cells = Array.from(container.querySelectorAll('[data-frame="c3:table"] div'))
+    .filter((el) => (el as HTMLElement).style.width !== "");
+  const backgrounds = cells.map((c) => (c as HTMLElement).style.background);
 
   expect(backgrounds.slice(0, 3)).toEqual(["rgb(244, 246, 247)", "rgb(27, 42, 58)", "rgb(14, 140, 127)"]);
   expect(backgrounds.slice(3, 6)).toEqual(["rgb(255, 255, 255)", "rgb(234, 242, 241)", "rgb(251, 243, 230)"]);
+});
+
+it("칸별 채움이 비면 머리행 칸들이 단일 색을 그대로 쓴다", () => {
+  const table = {
+    col_widths_pt: [200, 660], header: ["구분", "내용"], rows: [["A", "값"]],
+    font_pt: 12, header_fill: "F2F2F2", row_heights_pt: [22.8, 22.8],
+    header_lines: [["구분"], ["내용"]], cell_lines: [[["A"], ["값"]]],
+    header_fills: [], body_fills: [],
+  };
+  const plain: SlidePlan = {
+    chapter_id: "c4", template: "table", warnings: [],
+    frames: [{ name: "c4:table", x: 50, y: 92, w: 860, h: 200, fill: null, border: null,
+      valign: "top", paras: [], radius_pt: null, border_width_pt: null, table }],
+  };
+  const { container } = render(<Preview slide={plain} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+
+  // 칸에는 폭이 지정돼 있다. 칸 안의 줄 div 와 구분하려면 그 속성으로 거른다
+  const cells = Array.from(container.querySelectorAll('[data-frame="c4:table"] div'))
+    .filter((el) => (el as HTMLElement).style.width !== "");
+  const backgrounds = cells.map((c) => (c as HTMLElement).style.background);
+
+  expect(backgrounds.slice(0, 2)).toEqual(["rgb(242, 242, 242)", "rgb(242, 242, 242)"]);
+  expect(backgrounds.slice(2)).toEqual(["", ""]);
 });

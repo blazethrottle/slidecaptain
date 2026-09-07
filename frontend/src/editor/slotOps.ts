@@ -19,6 +19,20 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
       },
     };
   }
+  // 아이브로우와 부제는 슬롯이 아니라 슬라이드 레벨이다. 미리보기는 프레임 이름으로 편집을
+  // 열어 주므로 여기서 처리하지 않으면 고친 값이 조용히 사라진다 (2026-09-07 최종 리뷰 critical).
+  // 표지의 subtitle 은 자기 슬롯이라 슬라이드 레벨로 가로채면 안 된다
+  if (slot === "eyebrow" || slot === "subtitle") {
+    const target = deck.slides.find((s) => s.chapter_id === chapterId);
+    const isSlideLevel = slot === "eyebrow" || (target && target.slots.template !== "cover");
+    if (target && isSlideLevel) {
+      return {
+        ...deck,
+        slides: deck.slides.map((s) =>
+          s.chapter_id === chapterId ? { ...s, [slot]: text } : s),
+      };
+    }
+  }
   if (slot === "presenter") {
     // 표지의 보고자는 슬롯이 아니라 메타에 있다 (장 제목이 구조안에 있는 것과 같다). 2026-09-01
     return { ...deck, meta: { ...deck.meta, presenter: text } };

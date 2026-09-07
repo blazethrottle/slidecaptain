@@ -52,6 +52,45 @@ def test_char_hints_answers_for_every_template(template):
     assert isinstance(char_hints(template, PRESET, metrics), dict)
 
 
+@pytest.mark.parametrize("template", sorted(TEMPLATES))
+def test_layout_builder_answers_for_every_template(template):
+    """다섯 번째 자리. 종전 검사는 네 곳만 봐서 빌더 누락이 통과했다 (2026-09-07 최종 리뷰)."""
+
+    from slidecaptain.layout.templates import build_slide
+    from slidecaptain.metrics.font_metrics import FontMetrics
+    from slidecaptain.models.deck import Chapter
+
+    chapter = Chapter(id="ch01", topic="주제", template=template)
+    plan = build_slide(chapter, _minimal_slots(template), 1, PRESET, FontMetrics.from_bundled())
+
+    assert plan.template == template
+    assert plan.frames
+
+
+def _minimal_slots(template: str):
+    from slidecaptain.models.deck import (
+        BulletBoxSlots,
+        CompareSlots,
+        CoverSlots,
+        DividerSlots,
+        SummarySlots,
+        TableSlots,
+    )
+
+    return {
+        "cover": lambda: CoverSlots(title="제목", subtitle="부제", date="2026-09-07"),
+        "divider": lambda: DividerSlots(section_no="1", section_title="구분"),
+        "summary": lambda: SummarySlots(conclusion="결론", points=[{"text": "요점", "level": 0}]),
+        "bullet_box": lambda: BulletBoxSlots(bullets=[{"text": "항목", "level": 0}], conclusion="결론"),
+        "table": lambda: TableSlots(columns=["구분", "값"], rows=[["A", "1"]]),
+        "compare2": lambda: CompareSlots(
+            conclusion="결론",
+            left={"heading": "A", "bullets": [{"text": "왼쪽", "level": 0}]},
+            right={"heading": "B", "bullets": [{"text": "오른쪽", "level": 0}]},
+        ),
+    }[template]()
+
+
 def test_an_unregistered_template_is_rejected_loudly():
     """검사가 실제로 무엇을 잡는지 고정한다: 등록되지 않은 이름은 조용히 넘어가지 않는다."""
 
