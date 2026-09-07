@@ -1889,7 +1889,8 @@
           "fill": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9A-Fa-f]{6}$"
               },
               {
                 "type": "null"
@@ -1900,7 +1901,8 @@
           "border": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9A-Fa-f]{6}$"
               },
               {
                 "type": "null"
@@ -2243,6 +2245,7 @@
           },
           "color": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Color",
             "default": "202020"
           },
@@ -2460,6 +2463,7 @@
           },
           "text_color": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Text Color"
           },
           "box_padding_pt": {
@@ -2944,6 +2948,7 @@
           },
           "header_fill": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Header Fill"
           },
           "row_heights_pt": {
@@ -2980,7 +2985,8 @@
           },
           "header_fills": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{6}$"
             },
             "type": "array",
             "title": "Header Fills",
@@ -2988,7 +2994,8 @@
           },
           "body_fills": {
             "items": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{6}$"
             },
             "type": "array",
             "title": "Body Fills",

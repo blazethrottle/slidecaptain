@@ -311,3 +311,31 @@ def test_negative_border_width_is_rejected_by_the_contract():
 
     with pytest.raises(ValidationError):
         Frame(name="ch01:x", x=0, y=0, w=100, h=40, border="112233", border_width_pt=-2.0)
+
+
+@pytest.mark.parametrize("bad", ["ZZZZZZ", "FFF", "", "#FFFFFF", "FFFFFFF"])
+def test_frame_colours_must_be_six_digit_hex(bad):
+    """잘못된 색값은 라이터에서 내보내기 전체를 멈춘다. 자료형에서 막는다 (2026-09-07 최종 리뷰).
+
+    미리보기는 CSS 라 세 자리 축약을 정상으로 그리고 잘못된 값은 조용히 무시한다. 즉 화면은
+    멀쩡한데 파일만 안 나오는 상태가 생긴다.
+    """
+
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Frame(name="ch01:x", x=0, y=0, w=100, h=40, fill=bad)
+
+
+@pytest.mark.parametrize("field", ["header_fills", "body_fills"])
+def test_table_cell_colours_must_be_six_digit_hex(field):
+    from pydantic import ValidationError
+
+    from slidecaptain.models.render import TablePlan
+
+    with pytest.raises(ValidationError):
+        TablePlan(
+            col_widths_pt=[100.0, 100.0], header=["A", "B"], rows=[["1", "2"]],
+            font_pt=12.0, header_fill="EEF3F9", row_heights_pt=[24.0, 24.0],
+            **{field: ["FFFFFF", "FFF"]},
+        )

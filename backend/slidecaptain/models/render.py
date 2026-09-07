@@ -3,11 +3,16 @@
 여기 담긴 좌표와 글자 크기는 프리셋에서 계산된 결과이지, 조정 대상이 아니다.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import ConfigDict
 
 from pydantic import BaseModel, Field, model_validator
+
+# 색값은 알파 없는 6자리 16진수. 프리셋과 같은 규격이다.
+# 잘못된 값을 여기서 막지 않으면 python-pptx 가 예외를 던져 내보내기 전체가 멈추는데,
+# 미리보기는 CSS 라 세 자리 축약을 정상으로 그려서 화면만 멀쩡해 보인다 (2026-09-07 최종 리뷰)
+HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
 
 
 class Para(BaseModel):
@@ -15,7 +20,7 @@ class Para(BaseModel):
     level: int = 0
     font_pt: float
     bold: bool = False
-    color: str = "202020"
+    color: HexColor = "202020"
     align: Literal["left", "center", "right"] = "left"
     bullet: bool = False  # True면 라이터가 목록 표식(•)과 내어쓰기를 적용
     lines: list[str] = []  # 엔진의 어절 줄바꿈 결과. 미리보기 전용, 라이터는 읽지 않는다
@@ -29,15 +34,15 @@ class TablePlan(BaseModel):
     header: list[str]
     rows: list[list[str]]
     font_pt: float
-    header_fill: str
+    header_fill: HexColor
     row_heights_pt: list[float]  # 머리글 포함, 위에서부터
     header_lines: list[list[str]] = []  # 머리글 칸별 줄바꿈 결과 (미리보기 전용)
     cell_lines: list[list[list[str]]] = []  # 행 x 열 x 줄 (미리보기 전용)
     # 칸별 채움. 비면 header_fill 로 머리행 전체를 칠하고 본문은 칠하지 않는다(기존 동작).
     # 벤치마크의 표는 행 교차가 아니라 열 단위 색상 코딩이고 머리행도 칸마다 색이 다르다
     # (2026-09-07 실측: 표 4개 전수 조사). header_fill 하나로는 표현할 수 없다
-    header_fills: list[str] = []  # 머리행 칸별
-    body_fills: list[str] = []  # 본문 열별 (모든 본문 행에 같은 열 색을 쓴다)
+    header_fills: list[HexColor] = []  # 머리행 칸별
+    body_fills: list[HexColor] = []  # 본문 열별 (모든 본문 행에 같은 열 색을 쓴다)
 
     @model_validator(mode="after")
     def _cell_fill_lengths_match_columns(self) -> "TablePlan":
@@ -55,8 +60,8 @@ class Frame(BaseModel):
     y: float
     w: float
     h: float
-    fill: str | None = None
-    border: str | None = None
+    fill: HexColor | None = None
+    border: HexColor | None = None
     paras: list[Para] = []
     table: TablePlan | None = None
     # 세로 정렬. 미리보기가 그릴 수 있는 값만 허용하고, 라이터는 이 값을 모든 텍스트 도형에 항상 명시한다
@@ -95,7 +100,7 @@ class RenderStyle(BaseModel):
 
     korean_font: str
     latin_font: str
-    text_color: str
+    text_color: HexColor
     box_padding_pt: float
     line_spacing: float  # 행간 계수. 라이터가 font_pt에 곱해 고정 pt로 기록한다
     bullet_indent_pt: float
