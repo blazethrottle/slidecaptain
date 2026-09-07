@@ -149,8 +149,8 @@ def test_template_guide_gains_exactly_one_line_for_callout():
     lines = TEMPLATE_GUIDE.splitlines()
     callout_lines = [ln for ln in lines if "callout" in ln]
     assert len(callout_lines) == 1
-    # 기존 6종 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
-    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    # callout 자체 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)" in lines
 
 
 def test_callout_registered_in_slot_map_and_contract_labels():
@@ -189,8 +189,8 @@ def test_template_guide_gains_exactly_one_line_for_cards():
     lines = TEMPLATE_GUIDE.splitlines()
     cards_lines = [ln for ln in lines if "cards" in ln]
     assert len(cards_lines) == 1
-    # 기존 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
-    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    # cards와 callout 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)" in lines
     assert "- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)" in lines
 
 
@@ -249,8 +249,7 @@ def test_template_guide_gains_exactly_one_line_for_process():
     lines = TEMPLATE_GUIDE.splitlines()
     process_lines = [ln for ln in lines if "process" in ln]
     assert len(process_lines) == 1
-    # 기존 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
-    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    # process와 cards 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
     assert "- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)" in lines
 
 
@@ -306,8 +305,7 @@ def test_template_guide_gains_exactly_one_line_for_matrix():
     lines = TEMPLATE_GUIDE.splitlines()
     matrix_lines = [ln for ln in lines if "matrix" in ln]
     assert len(matrix_lines) == 1
-    # 기존 문구는 손대지 않는다 (DB-5 전면 재작성 전까지)
-    assert "- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)" in lines
+    # matrix와 process 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
     assert "- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)" in lines
 
 
@@ -353,3 +351,123 @@ def test_matrix_chapter_schema_matches_slot_model():
     rows_field = schema["properties"]["rows"]
     assert rows_field.get("minItems") == 3
     assert rows_field.get("maxItems") == 6
+
+
+# ---- 생성 계약 정비 (2026-09-07 DB-5) ----
+# TEMPLATE_GUIDE 10종 전면 재작성: bullet_box의 지위 부여 표현("가장 흔한")을 없애고 모든
+# 항목을 "이런 내용일 때 쓴다"라는 내용 조건으로 통일하며, 폴백(bullet_box)을 목록 마지막에
+# 명시한다. callout/cards/process/matrix는 이미 이 형식이었으므로 문구 자체는 그대로다
+# (앞선 4개 테스트가 그 불변을 확인한다).
+
+
+def test_template_guide_lists_exactly_ten_templates():
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    assert len(lines) == 10
+
+
+def test_template_guide_every_entry_states_a_content_condition():
+    # 모든 항목이 "이런 내용일 때 쓴다"로 통일됐는지 확인한다: 지위나 빈도가 아니라 조건으로 고르게 한다
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    for ln in lines:
+        assert "때 쓴다" in ln, ln
+
+
+def test_template_guide_drops_status_language_from_bullet_box():
+    # "가장 흔한"이 bullet_box에 사실상 기본값 지위를 줘 쏠림의 직접 원인이 됐다 (계획서 DB-5 1항)
+    assert "가장 흔한" not in TEMPLATE_GUIDE
+    assert "기본값" not in TEMPLATE_GUIDE
+
+
+def test_template_guide_states_bullet_box_as_fallback_and_lists_it_last():
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    assert lines[-1].startswith("- bullet_box:")
+    assert "맞지 않" in lines[-1]  # 위 조건 중 어디에도 맞지 않을 때 쓰는 폴백임을 스스로 밝힌다
+
+
+def test_template_guide_bullet_box_still_lists_its_slots():
+    # 지위 표현만 빠지고 구성 요소(불릿/결론 박스/각주) 정보는 그대로 남아야 한다
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- bullet_box:")]
+    assert len(lines) == 1
+    assert "불릿" in lines[0] and "결론 박스" in lines[0] and "각주" in lines[0]
+
+
+# ---- 장별 프롬프트의 슬롯 안내 (DB-5 2항) ----
+# 계약 블록은 이미 그 장의 템플릿 하나로 좁혀져 있어(실측: 계약 블록 136자 / 전체 1,243자)
+# 새 템플릿 4종의 슬롯 의미를 추가해도 분량 부담이 없다. 기존 6종은 필드 이름만으로 뜻이
+# 분명해(bullets, conclusion, columns/rows 등) 안내를 넣지 않는다.
+
+
+def test_legacy_template_chapter_prompt_has_no_slot_notes_line():
+    deck = _deck_two_chapters()
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "슬롯 안내" not in prompt
+
+
+def test_callout_chapter_prompt_explains_tone_slot():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="강조", template="callout")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES, {"text_max_lines": 3}, today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "tone" in prompt
+
+
+def test_cards_chapter_prompt_explains_badge_tail_and_emphasis_slots():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="카드", template="cards")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 5,
+         "card_tail_max_lines": 1},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "badge" in prompt and "tail" in prompt and "emphasis" in prompt
+
+
+def test_process_chapter_prompt_explains_notes_slot():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="절차", template="process")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"step_heading_max_lines": 1, "step_subtitle_max_lines": 3, "step_label_max_lines": 1},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "notes" in prompt
+
+
+def test_matrix_chapter_prompt_explains_category_primary_items_slots():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="비교", template="matrix")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"row_category_max_lines": 2, "row_primary_max_lines": 1, "row_items_max_lines": 4},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "category" in prompt and "primary" in prompt and "items" in prompt
+
+
+# ---- 형식 재시도 프롬프트의 실패 사유 (DB-5 3항) ----
+
+
+def test_format_retry_prompt_includes_reason_line_when_given():
+    retry = build_format_retry_prompt(
+        "기본", raw_text="깨진 응답", reason="cards: List should have at least 2 items"
+    )
+    assert "실패 사유" in retry
+    assert "cards: List should have at least 2 items" in retry
+
+
+def test_format_retry_prompt_omits_reason_line_when_absent():
+    retry = build_format_retry_prompt("기본", raw_text="깨진 응답")
+    assert "실패 사유" not in retry
+    assert "깨진 응답" in retry
+
+
+def test_format_retry_prompt_reason_empty_string_is_same_as_absent():
+    # 사유가 없을 때(기본값 미지정)와 빈 문자열일 때가 안전하게 같은 결과를 내야 한다
+    without_reason = build_format_retry_prompt("기본", raw_text="원문")
+    empty_reason = build_format_retry_prompt("기본", raw_text="원문", reason="")
+    assert without_reason == empty_reason

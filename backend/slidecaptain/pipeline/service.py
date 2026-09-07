@@ -167,13 +167,29 @@ class ChapterResult(BaseModel):
     usage: GenerationUsage
 
 
-def _try_parse(parse: Callable[[Any], Any], response: ProviderResponse) -> Any | None:
+def _validation_reason(exc: Exception) -> str:
+    """검증 실패를 한 줄로 요약한다 (2026-09-07 DB-5): 형식 재시도 프롬프트의 실패 사유로 쓴다.
+
+    ValidationError.errors()의 loc과 msg만 이어 붙인다: str(e)의 기본 표현은 여러 줄이고
+    pydantic 문서 URL까지 붙어 "한 줄"이라는 요구에 맞지 않는다.
+    """
+    if isinstance(exc, ValidationError):
+        parts = [
+            f"{'.'.join(str(p) for p in err['loc']) or '(전체)'}: {err['msg']}"
+            for err in exc.errors()
+        ]
+        return "; ".join(parts)
+    return str(exc)
+
+
+def _try_parse(parse: Callable[[Any], Any], response: ProviderResponse) -> tuple[Any | None, str]:
+    """(parsed, reason)을 돌려준다. reason은 실패 사유 한 줄이며 성공하면 빈 문자열이다."""
     if response.structured is None:
-        return None
+        return None, "구조화된 응답이 없습니다"
     try:
-        return parse(normalize_payload(response.structured))
-    except (ValidationError, KeyError, TypeError, ValueError):
-        return None
+        return parse(normalize_payload(response.structured)), ""
+    except (ValidationError, KeyError, TypeError, ValueError) as e:
+        return None, _validation_reason(e)
 
 
 class GenerationService:
@@ -212,13 +228,15 @@ class GenerationService:
     ) -> tuple[Any | None, str, bool]:
         """게이트 1 (형식): 실패 시 1회 재시도. (parsed, raw_text, retried)를 돌려준다."""
         response = await self._complete(prompt, schema, purpose, collector)
-        parsed = _try_parse(parse, response)
+        parsed, reason = _try_parse(parse, response)
         if parsed is not None:
             return parsed, response.raw_text, False
         retry = await self._complete(
-            build_format_retry_prompt(prompt, response.raw_text), schema, "format_retry", collector
+            build_format_retry_prompt(prompt, response.raw_text, reason),
+            schema, "format_retry", collector,
         )
-        return _try_parse(parse, retry), retry.raw_text, True
+        retried_parsed, _ = _try_parse(parse, retry)
+        return retried_parsed, retry.raw_text, True
 
     def _emit_usage(
         self,
@@ -339,7 +357,7 @@ class GenerationService:
                 except ProviderError:
                     condense_response = None  # 축약 호출 실패로 유효한 초안을 잃지 않는다
                 if condense_response is not None:
-                    condensed_slots = _try_parse(parse, condense_response)
+                    condensed_slots, _ = _try_parse(parse, condense_response)
                     if condensed_slots is not None:
                         slots = condensed_slots
                         raw = condense_response.raw_text

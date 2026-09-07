@@ -28,17 +28,17 @@ REPORT_TYPE_GUIDES: dict[str, str] = {
 }
 
 TEMPLATE_GUIDE = """\
-사용할 수 있는 템플릿:
-- cover: 표지 (제목, 부제, 날짜). 보고자는 앱이 별도로 채우므로 적지 않는다. 첫 장에 쓴다
-- summary: 핵심 요약 (결론 강조 박스 + 요점 목록)
-- bullet_box: 가장 흔한 본문 장 (불릿 + 결론 박스 + 선택 각주)
-- table: 비교표, 데이터 표 (열 이름 + 행 + 선택 각주)
-- compare2: 옵션 비교나 전후 대비 카드 2개 + 결론 박스
-- divider: 섹션 구분 간지
+사용할 수 있는 템플릿 (아래에서 내용에 맞는 조건을 고른다. 어느 조건에도 맞지 않으면 목록 맨 마지막 bullet_box를 쓴다):
+- cover: 덱의 첫 장일 때 쓴다 (제목, 부제, 날짜. 보고자는 앱이 별도로 채우므로 적지 않는다)
+- divider: 섹션을 나눌 때 쓴다 (구분 간지 한 장)
+- summary: 핵심 결론 하나와 요점 목록으로 정리되는 내용일 때 쓴다 (결론 강조 박스 + 요점 목록)
+- table: 여러 항목을 같은 기준의 열로 비교하는 데이터일 때 쓴다 (열 이름 + 행 + 선택 각주)
+- compare2: 옵션 두 개나 전후를 나란히 대비하는 내용일 때 쓴다 (카드 2개 + 결론 박스)
 - callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)
 - cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)
 - process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)
-- matrix: 분류 기준으로 항목을 대조할 때 쓴다 (행 3~6개, 왼쪽 분류/가운데 대표 항목/오른쪽 나열, 대표 항목과 나열은 선택)"""
+- matrix: 분류 기준으로 항목을 대조할 때 쓴다 (행 3~6개, 왼쪽 분류/가운데 대표 항목/오른쪽 나열, 대표 항목과 나열은 선택)
+- bullet_box: 위 조건 중 어디에도 맞지 않는 일반 본문일 때 쓴다 (불릿 + 결론 박스 + 선택 각주)"""
 
 STYLE_RULES = """\
 문체 규칙:
@@ -155,6 +155,37 @@ _ITEM_COUNT_KEYS = {
     "points_max_lines", "bullets_max_lines", "card_bullets_max_lines", "row_items_max_lines",
 }
 
+# 새 템플릿 4종의 슬롯 의미 한 줄 안내 (2026-09-07 DB-5). 기존 6종은 필드 이름만으로 뜻이
+# 분명해(bullets, conclusion, columns/rows 등) 안내가 필요 없었다. 새 템플릿은 이름만으로
+# 용도가 갈리지 않는 필드가 있다: cards의 badge/tail/emphasis, process의 notes, matrix의
+# category/primary/items, callout의 tone(색 역할 이름). 계약 블록은 이미 그 장의 템플릿
+# 하나로 좁혀져 있어(실측: 계약 블록 136자 / 전체 1,243자) 분량 부담 없이 여기 추가한다.
+_SLOT_NOTES: dict[str, str] = {
+    "callout": (
+        "tone은 문장의 성격에 맞는 색 역할을 고른다: danger는 위험이나 우려, ok는 긍정이나 달성, "
+        "accent1과 accent2는 일반 강조, 나머지(ink 계열과 surface 계열)는 중립 배경이다"
+    ),
+    "cards": (
+        "badge는 카드 위쪽 짧은 라벨, tail은 카드 아래쪽 짧은 라벨이다(둘 다 선택, 없으면 비운다). "
+        "emphasis를 true로 하면 그 카드만 어두운 채움과 강조 테두리로 도드라진다: 추천안이나 "
+        "핵심 카드 하나에만 true를 쓰고 나머지는 false로 둔다"
+    ),
+    "process": (
+        "notes는 단계 오른쪽에 붙는 보조 라벨 목록이다(선택, 최대 2개): 기간이나 담당처럼 짧은 "
+        "부가 정보만 담는다. 단계 번호는 데이터에 넣지 않는다: 순서대로 자동으로 매겨진다"
+    ),
+    "matrix": (
+        "category는 그 행의 분류축 이름(필수)이다. primary는 그 분류의 대표 항목 한 줄(선택), "
+        "items는 그 분류에 속하는 항목 나열(선택)이다: 대표 항목이나 나열 중 없는 쪽은 비운다"
+    ),
+}
+
+
+def _slot_notes_block(template: str) -> str:
+    """새 템플릿 4종의 슬롯 안내 한 줄. 해당 없는 템플릿은 빈 문자열이라 프롬프트가 바뀌지 않는다."""
+    note = _SLOT_NOTES.get(template)
+    return f"슬롯 안내: {note}\n\n" if note else ""
+
 
 def _contract_block(template: str, contract: dict[str, int], char_hints: dict[str, int] | None = None) -> str:
     if not contract:
@@ -216,7 +247,7 @@ def build_chapter_prompt(
 - 이 장의 결론: {chapter.conclusion or "미정 (자료에서 도출)"}
 - 템플릿: {chapter.template}
 
-{_contract_block(chapter.template, contract, char_hints)}
+{_slot_notes_block(chapter.template)}{_contract_block(chapter.template, contract, char_hints)}
 
 {STYLE_RULES}
 {extra}{sources_part}"""
@@ -226,12 +257,17 @@ def chapter_response_schema(template: str) -> dict:
     return _SLOTS_BY_TEMPLATE[template].model_json_schema()
 
 
-def build_format_retry_prompt(base_prompt: str, raw_text: str) -> str:
+def build_format_retry_prompt(base_prompt: str, raw_text: str, reason: str = "") -> str:
     # 매 호출이 새 세션이라 직전 응답이 모델 컨텍스트에 없다: 실패 원문을 동봉한다 (결정 12)
+    # reason은 실패 사유 한 줄이다 (2026-09-07 DB-5): cards/process/matrix처럼 개수 제약이
+    # 있는 템플릿은 원문만으로 "무엇이" 규칙을 어겼는지 AI가 스스로 못 짚는 경우가 잦았다.
+    # 비어 있으면 이 줄을 아예 넣지 않는다: 사유를 특정하기 애매한 실패도 안전하게 동작해야 한다.
+    reason_line = f"\n실패 사유: {reason}" if reason else ""
     return (
         base_prompt
         + "\n\n직전 시도의 응답이 요구한 JSON 형식에 맞지 않았다. 실패한 응답은 다음과 같다:\n"
         + raw_text[:2000]
+        + reason_line
         + "\n\n스키마를 정확히 지켜 처음부터 다시 생성하라."
     )
 
