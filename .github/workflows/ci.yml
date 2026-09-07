@@ -33,6 +33,9 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
 
+      - name: 공개 저장소 추적 파일과 이력 감사
+        run: python scripts/audit_public_repo.py --history
+
       - name: 체크아웃 줄바꿈 바이트 검사 (bat 는 CRLF, 셸 픽스처는 LF)
         shell: python
         run: |
@@ -64,9 +67,6 @@ jobs:
       - name: 프런트 설치
         working-directory: frontend
         run: npm ci
-
-      - name: 공개 저장소 추적 파일과 이력 감사
-        run: python scripts/audit_public_repo.py --history
 
       - name: 백엔드 테스트
         working-directory: backend

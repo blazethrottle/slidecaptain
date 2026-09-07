@@ -16,6 +16,12 @@
 - 식별 문자열 검사는 사용자 계정이 든 경로(``C:\\Users\\<계정>``, ``/Users/<계정>``)만
   본다. 사람 이름이나 회사 이름 자체는 추측으로 잡지 않는다. 자리표시자(``<...>``,
   ``%...%``, ``$...``)와 공용 계정(Public, Default, Shared 등)은 통과시킨다.
+- 파일명 규칙은 이름만 본다. ``credentials_test.py`` 처럼 산문이 아닌 확장자에 비밀 조각이
+  들어간 정상 파일은 오탐으로 잡힌다. 막히면 이름을 바꾸거나 견본 조각(example, sample,
+  template)을 넣는다. 반대로 이름에 단서가 없는 비밀 파일(``oauth_token.txt`` 등)은
+  ``_KNOWN_SECRET_FILENAMES`` 에 없으면 이름으로는 잡히지 않고 내용 규칙에만 의존한다.
+- ``--history`` 는 ``git log -p`` 전체 출력을 한 번에 메모리에 올린다. 184커밋 기준 약 1.2초이나
+  대용량 텍스트 파일이 이력에 끼면 느려진다 (2026-09-07 실측: 81MB 파일 1개로 6.8초).
 - ``--history`` 의 식별 문자열 검사는 ``_IDENTITY_EXEMPT_COMMITS`` 의 커밋을 건너뛴다.
   이 저장소의 과거 계정명 유입 2건은 사용자 결정(2026-09-07)으로 이력에 남기기로 했고,
   그 결정이 새 유입까지 덮지 않도록 예외는 커밋 해시로만 한정한다. 이력을 재작성하면
@@ -59,6 +65,14 @@ _PILOT_NOTE = re.compile(r"\d{4}-\d{2}-\d{2}-파일럿-관찰지\.md\Z")
 _COMMIT_HEADER = re.compile(rb"(?m)^([0-9a-f]{40})\0\n\n")
 _SECRET_NAME_TOKENS = frozenset({"credential", "credentials", "secret", "secrets"})
 _SAMPLE_NAME_TOKENS = frozenset({"example", "sample", "template"})
+# 산문 확장자에서 조각이 여럿이면 비밀 파일이 아니라 비밀을 다루는 문서로 본다
+# (2026-09-07 독립 리뷰 발견 1: credential_flow_docs.md 류가 커밋을 막았다).
+# 조각이 하나면(credentials.md) 확장자와 무관하게 잡는다. 내용 규칙은 산문에도 그대로 적용된다
+_PROSE_EXTENSIONS = frozenset({".md", ".markdown", ".rst", ".adoc"})
+# 토큰 규칙으로는 잡히지 않지만 실제로 흔한 비밀 파일명 (2026-09-07 독립 리뷰 발견 4)
+_KNOWN_SECRET_FILENAMES = frozenset(
+    {"id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", ".npmrc", ".netrc", "kubeconfig"}
+)
 _NAME_TOKEN_SEPARATORS = re.compile(r"[-_.]+")
 
 
@@ -98,10 +112,17 @@ _PLACEHOLDER_VALUE = re.compile(rb"your|example|placeholder|changeme|dummy", re.
 # Windows 는 드라이브 접두어가 있어 대소문자를 가리지 않아도 URL 과 헷갈리지 않는다.
 # POSIX 는 대문자로 시작하는 사용자 폴더만 본다. 소문자까지 보면 REST 경로의 사용자 목록
 # 엔드포인트를 계정 경로로 오인한다 (2026-09-07 설계 판단)
+# 백슬래시를 하나 이상 받는다. JSON 이나 로그에 직렬화된 경로는 두 개씩이다
+# (2026-09-07 독립 리뷰 발견 3). 원 유출은 단일 백슬래시 평문이었고 그것도 그대로 잡는다
 _WINDOWS_ACCOUNT_PATH = _bytes_pattern(
-    rb"[a-z]:", rb"\\", rb"users", rb"\\", rb"([^\\\r\n\"']{1,64})", flags=re.IGNORECASE
+    rb"[a-z]:", rb"\\+", rb"users", rb"\\+", rb"([^\\\r\n\"']{1,64})", flags=re.IGNORECASE
 )
-_POSIX_ACCOUNT_PATH = _bytes_pattern(rb"/", rb"Users", rb"/", rb"([^/\r\n\"'\s]{1,64})")
+# 앞에 단어나 경로 조각이 붙으면 사용자 홈이 아니라 리소스 경로다(소스 폴더 아래의 사용자
+# 리소스 폴더, URL 의 사용자 엔드포인트). 절대 경로 자리에서만 본다 (2026-09-07 독립 리뷰 발견 2).
+# 예시 경로를 주석에 그대로 적으면 이 파일 자신이 걸린다. 앞선 회차에서 같은 실수를 했다
+_POSIX_ACCOUNT_PATH = _bytes_pattern(
+    rb"(?<![A-Za-z0-9_./-])", rb"/", rb"Users", rb"/", rb"([^/\r\n\"'\s]{1,64})"
+)
 _SHARED_ACCOUNT_SEGMENTS = frozenset(
     {b"public", b"default", b"default user", b"all users", b"shared"}
 )
@@ -208,10 +229,18 @@ def _is_secret_filename(name: str) -> bool:
         return True
     if Path(lowered).suffix in _PRIVATE_KEY_EXTENSIONS:
         return True
+    if lowered in _KNOWN_SECRET_FILENAMES:
+        return True
     tokens = _name_tokens(lowered)
     if tokens & _SAMPLE_NAME_TOKENS:
         return False
-    return bool(tokens & _SECRET_NAME_TOKENS)
+    if not tokens & _SECRET_NAME_TOKENS:
+        return False
+    if Path(lowered).suffix in _PROSE_EXTENSIONS:
+        # 산문 확장자는 이름 조각이 여럿일 때만 문서로 본다. aws.credentials 처럼 확장자
+        # 자체가 단서인 경우를 놓치지 않도록 판정은 이름 전체 조각으로 한다
+        return len(_name_tokens(Path(lowered).stem)) <= 1
+    return True
 
 
 def _is_placeholder_account(segment: bytes) -> bool:
