@@ -114,8 +114,9 @@ def test_cancellation_and_expiry_do_not_report_connected(tmp_path, monkeypatch):
 
 
 def test_launch_settings_disable_tools_and_keep_sandbox():
-    args = codex_command(Path("/native/codex"))
-    assert args[:2] == ["/native/codex", "app-server"]
+    cli = Path("/native/codex")
+    args = codex_command(cli)
+    assert args[:2] == [str(cli), "app-server"]
     for value in ['features.shell_tool=false', 'features.browser_use=false', 'features.hooks=false',
                   'features.apps=false', 'web_search="disabled"', 'sandbox_mode="read-only"']:
         assert value in args

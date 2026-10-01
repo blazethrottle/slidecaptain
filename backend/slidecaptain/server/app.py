@@ -18,6 +18,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Literal
 from urllib.parse import urlparse
 
+import anyio
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -289,17 +290,21 @@ def create_app(
         except asyncio.CancelledError:
             # Status checks run in a worker. Cancelling this request must not
             # leave a lease acquired later by that worker permanently busy.
-            try:
-                await asyncio.shield(acquiring)
-            except Exception:
-                pass
-            else:
-                await asyncio.to_thread(lease.__exit__, None, None, None)
+            # Middleware's AnyIO scope repeats cancellation at await points;
+            # asyncio.shield alone protects the worker, not this cleanup.
+            with anyio.CancelScope(shield=True):
+                try:
+                    await asyncio.shield(acquiring)
+                except Exception:
+                    pass
+                else:
+                    await asyncio.to_thread(lease.__exit__, None, None, None)
             raise
         try:
             yield GenerationService(selected_provider, metrics, requested_model=ai_connections.selection.model)
         finally:
-            await asyncio.to_thread(lease.__exit__, None, None, None)
+            with anyio.CancelScope(shield=True):
+                await asyncio.to_thread(lease.__exit__, None, None, None)
 
     def _now_iso() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")

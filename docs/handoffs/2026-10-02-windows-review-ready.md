@@ -19,6 +19,14 @@
 - 폼 자동 검사(jsdom): 기본 null, 실제 0분, 같은 회차 복원, 복원 직후 임시 저장, 타회차 거절, JSON 다운로드를 확인했다. 독립 리뷰에서 발견한 복원 후 임시 저장 누락을 수정하고 재검토했다.
 - 독립 검토: 지정 준비 도구·폼·배치·테스트·가이드 5파일에서 차단 사항 없음. 실제 Windows 실행은 이 결과에 포함되지 않는다.
 
+## 첫 Windows CI에서 발견한 결함과 보완
+
+개발본 공개 커밋 `dea22f5`의 macOS CI는 통과했고 Windows CI는 백엔드에서 실패했다. 정상 파일의 닫기 전 `fstat`와 닫은 뒤 경로 `stat`를 같은 시간 의미로 비교한 것이 내보내기·이력 검사에 연쇄 실패를 일으켰다. [Microsoft 문서](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-writefile)는 모든 쓰기 핸들이 닫혀야 마지막 쓰기 시각이 완전히 갱신된다고 설명한다. CPython 3.13의 [경로 stat](https://github.com/python/cpython/blob/v3.13.7/Modules/posixmodule.c)와 [핸들 stat](https://github.com/python/cpython/blob/v3.13.7/Python/fileutils.c)은 Windows ctime의 의미도 다르다.
+
+경로와 핸들 사이에서만 생성 시각을 같은 기준으로 비교하고, 같은 핸들의 읽기 전후 변경 시각 검사는 유지했다. 쓰기 핸들에서 확보한 identity와 해시를 닫은 뒤 읽은 바이트에 연결하며, 다시 읽기 직전 같은 바이트의 다른 inode로 교체하는 간격도 거절한다. 게시 직전·직후 검사와 POSIX의 전체 메타데이터 대조를 유지했다. 수정은 독립 반례 검토를 거쳤다.
+
+또한 요청 취소가 반복 전달될 때 생성 잠금 정리가 중단되는 결함을 로컬에서도 재현해 AnyIO 취소 보호 구간으로 수정했다. 로그인 확인 지연·실패와 생성 중 취소의 회귀를 추가했다. Codex CLI 테스트의 POSIX 경로 고정은 플랫폼의 Path 표현을 검증하도록 바로잡았다. 수정 뒤 전체 백엔드 **1,964 통과 / 1 건너뜀**이다. Windows CI 재실행은 GitHub의 최신 `codex/phase-5b` 커밋에서 확인한다. 실제 회사 PC의 PowerPoint 검사와 사람 판정은 여전히 별개다.
+
 공개 파일 감사·Git diff 검사 후 선택한 개발 파일만 커밋하며 원격 반영과 CI 결과는 GitHub에서 확인한다. 이번 커밋의 CI에서도 새 배치 파일의 CRLF를 검사한다. 로컬 실행 증거와 선택 파일 해시는 저장소 밖 `publication-20261002/logs/`에 보관한다.
 
 ## 회사 PC에서 이어갈 것

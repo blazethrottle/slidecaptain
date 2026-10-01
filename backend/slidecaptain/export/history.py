@@ -81,6 +81,14 @@ def _signature(info: os.stat_result) -> tuple:
     return (info.st_dev, info.st_ino, info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
 
 
+def _path_fd_signature(info: os.stat_result, *, windows: bool) -> tuple:
+    # CPython Windows path stat uses birth time for ctime, while fstat may use
+    # ChangeTime. Only cross-kind comparisons normalize to the same birth time.
+    # Raw fstat signatures still detect ChangeTime changes during a read.
+    result = _signature(info)
+    return result[:5] + (info.st_birthtime_ns,) if windows else result
+
+
 def _directory_identity(directory: Path) -> tuple | None:
     try:
         info = directory.lstat()
@@ -104,7 +112,9 @@ def _read_regular(path: Path, *, reader: _Directory, digest: bool = False) -> tu
     fd = reader.open(path.name, flags)
     with os.fdopen(fd, "rb") as stream:
         opened = os.fstat(stream.fileno())
-        if _signature(opened) != _signature(before) or not stat.S_ISREG(opened.st_mode):
+        windows = os.name == "nt"
+        if (_path_fd_signature(opened, windows=windows) != _path_fd_signature(before, windows=windows)
+                or not stat.S_ISREG(opened.st_mode)):
             raise OSError("File replaced")
         if digest:
             sha = hashlib.sha256()
@@ -115,7 +125,7 @@ def _read_regular(path: Path, *, reader: _Directory, digest: bool = False) -> tu
             value = stream.read(_MAX_RECORD_BYTES + 1)
             if len(value) > _MAX_RECORD_BYTES:
                 raise OSError("Record too large")
-        if _signature(os.fstat(stream.fileno())) != _signature(before):
+        if _signature(os.fstat(stream.fileno())) != _signature(opened):
             raise OSError("File changed")
     if _signature(reader.stat(path.name)) != _signature(before):
         raise OSError("File replaced")

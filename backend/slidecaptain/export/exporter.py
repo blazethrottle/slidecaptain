@@ -90,6 +90,31 @@ def _create_staged(reader, name: str, owned: dict):
         raise
 
 
+def _stream_digest(stream) -> str:
+    stream.seek(0)
+    digest = hashlib.sha256()
+    while chunk := stream.read(history._READ_CHUNK):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _seal_staged(path, written_info, expected_digest, reader, *, windows=None):
+    """Bind post-close bytes to the inode and bytes captured by the writer."""
+    windows = os.name == "nt" if windows is None else windows
+    current = reader.stat(path.name)
+    written = history._path_fd_signature(written_info, windows=windows)
+    completed = history._path_fd_signature(current, windows=windows)
+    # Windows finalizes last-write time on close; creation identity and size
+    # must still match. POSIX preserves the existing full metadata comparison.
+    matches = written[:4] == completed[:4] and written[5] == completed[5] if windows else written == completed
+    if not matches:
+        raise OSError("Staged export file changed")
+    actual_digest, signature = history._read_regular(path, reader=reader, digest=True)
+    if actual_digest != expected_digest or signature != history._signature(current):
+        raise OSError("Staged export file changed")
+    return actual_digest, signature
+
+
 def export_deck_data(
     deck: Deck,
     out_dir: str | Path,
@@ -118,30 +143,34 @@ def export_deck_data(
         with os.fdopen(fd, "w+b") as stream:
             write_pptx(plan, stream)
             stream.flush()
-            owned[tmp_file.name] = history._signature(os.fstat(stream.fileno()))
+            expected_digest = _stream_digest(stream)
+            written_info = os.fstat(stream.fileno())
         require_directory_identity(out_dir, identity)
         require_directory_identity(tmp, stage_identity)
-        if not history._still_same(tmp_file, owned[tmp_file.name], staging):
-            raise OSError("Staged export file changed")
-        digest, owned[tmp_file.name] = history._read_regular(tmp_file, reader=staging, digest=True)
+        digest, owned[tmp_file.name] = _seal_staged(tmp_file, written_info, expected_digest, staging)
         quality.artifact_sha256 = digest
         tmp_quality = tmp / "deck.quality.json"
         fd = _create_staged(staging, tmp_quality.name, owned)
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        raw_quality = quality.model_dump_json(indent=2).encode("utf-8")
+        with os.fdopen(fd, "wb") as stream:
             if staging.windows is not None:
                 staging.windows.verify_fd(stream.fileno(), tmp_quality.name)
-            owned[tmp_quality.name] = history._signature(os.fstat(stream.fileno()))
-            stream.write(quality.model_dump_json(indent=2))
+            stream.write(raw_quality)
+            stream.flush()
+            written_info = os.fstat(stream.fileno())
         # Track the completed bytes, then require them unchanged before linking.
-        raw_quality, owned[tmp_quality.name] = history._read_regular(tmp_quality, reader=staging)
+        _, owned[tmp_quality.name] = _seal_staged(tmp_quality, written_info, hashlib.sha256(raw_quality).hexdigest(), staging)
         tmp_provenance = tmp / 'deck.provenance.json'
         provenance = ExportProvenance(rule_version='export-provenance-v1', producer_id='slidecaptain',
                                       producer_run_id=uuid.uuid4().hex, input_fingerprint=quality.input_fingerprint,
                                       artifact_sha256=quality.artifact_sha256)
         fd = _create_staged(staging, tmp_provenance.name, owned)
-        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-            stream.write(provenance.model_dump_json(indent=2))
-        raw_provenance, owned[tmp_provenance.name] = history._read_regular(tmp_provenance, reader=staging)
+        raw_provenance = provenance.model_dump_json(indent=2).encode('utf-8')
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(raw_provenance)
+            stream.flush()
+            written_info = os.fstat(stream.fileno())
+        _, owned[tmp_provenance.name] = _seal_staged(tmp_provenance, written_info, hashlib.sha256(raw_provenance).hexdigest(), staging)
         expected_hashes = {tmp_file.name: quality.artifact_sha256,
                            tmp_quality.name: hashlib.sha256(raw_quality).hexdigest(),
                            tmp_provenance.name: hashlib.sha256(raw_provenance).hexdigest()}
