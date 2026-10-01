@@ -72,6 +72,18 @@ def test_model_override():
     assert SubscriptionProvider().model == "sonnet"
 
 
+def test_generation_uses_the_same_resolved_cli_as_login_status(monkeypatch, tmp_path):
+    cli = tmp_path / "specific-claude.exe"
+    captured = {}
+    monkeypatch.setattr(sub, "resolve_cli_path", lambda: cli)
+    monkeypatch.setattr(sub, "query", _fake_query(_result(structured={}), captured=captured))
+    asyncio.run(SubscriptionProvider().complete("question", {}))
+    assert captured["options"].cli_path == cli
+    monkeypatch.setattr(sub, "resolve_cli_path", lambda: None)
+    with pytest.raises(ProviderNotAvailable):
+        asyncio.run(SubscriptionProvider().complete("question", {}))
+
+
 def test_cli_not_found_maps_to_not_available(monkeypatch):
     from claude_agent_sdk import CLINotFoundError
 
@@ -475,12 +487,11 @@ def test_build_call_usage_logs_raw_usage_handles_non_dict_model_usage_value(capl
     assert "model_usage_in=None" in msg
 
 
-def test_build_call_usage_ignores_non_dict_model_usage_entries():
+def test_build_call_usage_handles_non_dict_model_usage_entries_without_partial_totals():
     """D2-5 리뷰 반영: model_usage 값이 dict 가 아닌 이상값이어도 build_call_usage 본체가 예외를 내지 않는다.
 
-    유효한 항목이 하나도 없으면 usage dict 로 폴백하고(token_source="usage"), 유효 항목과 이상값이
-    섞여 있으면 유효 항목만 합산한다. SDK 파서가 CLI 의 modelUsage 를 변환 없이 옮기므로 이 경로는
-    이론상 열려 있다.
+    유효한 항목이 하나도 없으면 usage dict 로 폴백한다(token_source="usage"). 2026-09-28 정정:
+    유효 항목과 이상값이 섞여 있으면 부분 합계와 단일 모델 추정을 하지 않는다.
     """
     only_bad = _result(
         model_usage={"weird-model": "not-a-dict"},
@@ -498,8 +509,8 @@ def test_build_call_usage_ignores_non_dict_model_usage_entries():
     )
     usage = build_call_usage(mixed, None)
     assert usage.token_source == "model_usage"
-    assert (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens) == (10, 4, 1)
-    assert usage.model == "claude-sonnet-4-5-20250929"
+    assert (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens, usage.cache_creation_tokens) == (None, None, None, None)
+    assert usage.model is None
 
 
 def test_build_call_usage_ignores_non_dict_usage_field():

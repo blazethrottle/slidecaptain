@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Frame, Para, SlidePlan, RenderPlan } from "../api/client";
+import { DiagramPreview } from "./DiagramPreview";
+import { ChartPreview } from "./ChartPreview";
 
 export type FrameRef = { chapterId: string; slot: string };
 export type TextRef = FrameRef & { index?: number; row?: number; col?: number };
@@ -71,7 +73,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (f.name.endsWith(":page_number")) return;
+          if (f.name.endsWith(":page_number") || f.name.endsWith(":chart_conditions")) return;
           startEdit(ref, p.text);
         }}
       >
@@ -81,7 +83,8 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
           </span>
         )}
         {p.lines.map((line, j) => (
-          <div key={j} style={{ whiteSpace: "pre" }}>{line || " "}</div>
+          <div key={j} style={{ whiteSpace: "pre" }}>{p.line_runs?.[j]?.length ?
+            p.line_runs[j].map((run,k)=><span key={k} style={{fontWeight:run.bold?700:400,color:`#${run.color}`}}>{run.text}</span>) : line || " "}</div>
         ))}
       </div>
     );
@@ -129,7 +132,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
   };
 
   return (
-    <div ref={holder} className="preview-holder">
+    <div ref={holder} className="preview-holder" style={{ height: pageH * scale }}>
       <div className={editable ? "preview-canvas" : "preview-canvas stale"}
         style={{
           width: pageW, height: pageH, position: "relative", background: "#ffffff",
@@ -138,6 +141,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
         }}
         onClick={() => { setEditing(null); onSelect(null); }}
       >
+        {slide.diagram && <DiagramPreview page={slide.diagram} style={style} />}
         {slide.frames.map((f) => {
           const ref = frameRef(f);
           const boxed = f.fill != null || f.border != null;
@@ -170,7 +174,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
                 if (!f.name.endsWith(":page_number")) onSelect(ref);
               }}
             >
-              {f.table ? renderTable(f) : f.paras.map((p, i) => renderPara(f, p, i))}
+              {f.chart ? <ChartPreview frame={f} /> : f.table ? renderTable(f) : f.paras.map((p, i) => renderPara(f, p, i))}
             </div>
           );
         })}

@@ -25,6 +25,7 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ValidationError
 
 from slidecaptain.models.deck import Deck, DeckMeta
+from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
@@ -165,6 +166,17 @@ def _validate_read_name(name: str) -> None:
         )
 
 
+def load_source_directory(directory: Path) -> dict[str, str]:
+    """Read CLI source inputs with the same names and encoding as project sources."""
+    if not directory.exists():
+        return {}
+    return {
+        _nfc(path.name): decode_source_bytes(path.read_bytes(), path.name)
+        for path in sorted(directory.iterdir())
+        if path.is_file() and not path.name.startswith(".")
+    }
+
+
 class ProjectStore(Protocol):
     """저장소 인터페이스 (설계서 2.2). 파일 구현 외의 구현(DB 등)으로 교체 가능하게 한다."""
 
@@ -190,6 +202,7 @@ class ProjectStore(Protocol):
     def read_upload(self, name: str, filename: str) -> bytes | None: ...
     def delete_upload(self, name: str, filename: str) -> None: ...
     def exports_dir(self, name: str) -> Path: ...
+    def export_history_dir(self, name: str) -> Path: ...
     def append_usage(self, name: str, line: str) -> None: ...
     def load_global_preset(self) -> Preset: ...
     def save_global_preset(self, preset: Preset) -> None: ...
@@ -376,6 +389,8 @@ class FileProjectStore:
     def save_deck(
         self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
     ) -> str:
+        # 모델을 직접 편집해 도식 참조나 필드를 훼손했어도 저장/스냅샷을 쓰지 않는다.
+        deck = Deck.model_validate(_evidence_input(deck))
         name = _nfc(name)
         with self.locked(name):
             d = self._project_dir(name)
@@ -527,6 +542,14 @@ class FileProjectStore:
     def exports_dir(self, name: str) -> Path:
         name = _nfc(name)
         return self._project_dir(name) / "exports"
+
+    def export_history_dir(self, name: str) -> Path:
+        """History remains accessible when the deck needs recovery; never mkdir."""
+        name = _nfc(name)
+        directory = self._project_dir_any(name)
+        if directory.is_symlink():
+            raise InvalidName("프로젝트 폴더의 바로가기로 검수 이력을 조회할 수 없습니다.")
+        return directory / "exports"
 
     # -- AI 사용량 기록 ------------------------------------------------------
 

@@ -48,7 +48,7 @@ def resolve_cli_path() -> Path | None:
     override = os.environ.get(ENV_CLI)
     if override:
         p = Path(override)
-        return p if p.is_file() else None
+        return p if p.is_file() and p.suffix.lower() not in _SHIM_SUFFIXES else None
     bundled = _bundled_cli_path()
     if bundled.is_file():
         return bundled
@@ -77,15 +77,16 @@ def _cli_version(cli: Path, timeout_sec: float) -> str | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return proc.stdout.decode("utf-8", errors="replace").strip()[:60] or None
+    version = re.search(r"\b\d+\.\d+\.\d+(?:[-+][a-zA-Z0-9.]+)?\b", proc.stdout.decode("utf-8", errors="replace"))
+    return version.group(0) if version else None
 
 
 def check_login(timeout_sec: float = 10.0, cli: Path | None = None) -> LoginStatus:
     """`claude auth status`를 실행해 로그인 상태를 읽는다. 어떤 실패도 예외로 올리지 않고 error 필드로 보고한다."""
     try:
         return _check_login(timeout_sec, cli)
-    except Exception as e:  # 표시용 조회가 서버 오류(500)로 번지지 않게 하는 마지막 방어 (2026-09-01 리뷰 반영)
-        return LoginStatus(error=f"로그인 상태를 확인하는 중 오류가 났습니다: {e}")
+    except Exception:  # 오류 원문에 자격 증명이 섞일 수 있어 공개하지 않는다
+        return LoginStatus(error="로그인 상태를 확인하는 중 오류가 났습니다. Claude Code 설치를 확인해 주세요.")
 
 
 def _check_login(timeout_sec: float, cli: Path | None) -> LoginStatus:
@@ -102,20 +103,17 @@ def _check_login(timeout_sec: float, cli: Path | None) -> LoginStatus:
         )
     except subprocess.TimeoutExpired:
         return LoginStatus(error=f"Claude CLI가 {timeout_sec:g}초 안에 응답하지 않았습니다.")
-    except OSError as e:
-        return LoginStatus(error=f"Claude CLI를 실행하지 못했습니다: {e}")
+    except OSError:
+        return LoginStatus(error="Claude CLI를 실행하지 못했습니다. 설치와 실행 권한을 확인해 주세요.")
     # 종료 코드가 0이 아니어도 JSON이 있으면 해석한다 (로그아웃 상태가 0이 아닌 코드로 끝날 수 있다)
     data = _extract_json(proc.stdout.decode("utf-8", errors="replace"))
     logged_in = data.get("loggedIn") if data is not None else None
     if not isinstance(logged_in, bool):
         # JSON이 아니거나 loggedIn 키가 없으면 "로그인 안 됨"이 아니라 "확인하지 못함"이다 (2026-09-01 리뷰 반영)
-        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
-        stderr = re.sub(r"[\w.+-]+@[\w-]+\.[\w.-]+", "<이메일>", stderr)  # 오류 문구에 계정이 실리지 않게 한다
-        detail = f": {stderr[:200]}" if stderr else ""
         why = "응답에 로그인 여부(loggedIn)가 없습니다" if data is not None else "응답을 해석하지 못했습니다"
         return LoginStatus(
             cli_version=_cli_version(cli, timeout_sec),
-            error=f"Claude CLI의 {why}(종료 코드 {proc.returncode}){detail}",
+            error=f"Claude CLI의 {why}(종료 코드 {proc.returncode})",
         )
     email = data.get("email")
     method = data.get("authMethod")

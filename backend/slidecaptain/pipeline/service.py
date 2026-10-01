@@ -15,10 +15,13 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from slidecaptain.layout.templates import build_slide
 from slidecaptain.metrics.capacity import capacity_contract, char_hints, count_capacity_table, worst_case_counts
 from slidecaptain.metrics.font_metrics import FontMetrics
-from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Slots, Structure
+from slidecaptain.models.deck import Chapter, Deck, DeckMeta, GeneratedChapter, GeneratedSlots, Structure
+from slidecaptain.models.diagram import DiagramInput
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import CapacityWarning
+from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.normalize import collect_strings, normalize_payload
+from slidecaptain.pipeline.diagram_generation import DiagramDraft, GenerateDiagramRequest, diagram_prompt, parse_diagram_draft
 from slidecaptain.pipeline.numbers import find_unverified_numbers
 from slidecaptain.pipeline.prompts import (
     build_chapter_prompt,
@@ -29,10 +32,17 @@ from slidecaptain.pipeline.prompts import (
     structure_response_schema,
 )
 from slidecaptain.pipeline.provider import AIProvider, CallUsage, ProviderError, ProviderResponse
+from slidecaptain.pipeline.story import chapter_derived_numbers, parse_story_structure, require_current_story
+from slidecaptain.pipeline.rewrite import RewriteDraft, parse_story_rewrite, rewrite_prompt
 
 _LOG = logging.getLogger("slidecaptain.pipeline.service")
 
-_SLOTS_ADAPTER: TypeAdapter = TypeAdapter(Slots)
+_SLOTS_ADAPTER: TypeAdapter = TypeAdapter(GeneratedSlots)
+
+
+class DiagramGenerationUnsupported(ValueError):
+    def __init__(self):
+        super().__init__("기존 도식의 AI 재생성, 축약과 도식이 포함된 전체 구조안 재생성은 아직 지원하지 않습니다. 도식 내용은 작성 창에서 수정할 수 있습니다.")
 
 # 원시 호출 1건의 목적 (단계 5A 묶음 C 가정 2). 형식 게이트의 재시도는 항상 format_retry다
 _CallPurpose = Literal["generate", "format_retry", "condense"]
@@ -94,7 +104,7 @@ class UsageRecord(BaseModel):
     """로컬 기록 1줄에 실릴 값 (태스크 C3에서 ai-usage.jsonl에 append). 내용은 담지 않는다(가정 4)."""
 
     ts: str
-    kind: Literal["structure", "chapter", "condense"]
+    kind: Literal["structure", "chapter", "condense", "rewrite", "diagram"]
     chapter_id: str | None
     outcome: Literal["ok", "format_error", "failed"]
     requested_model: str | None
@@ -158,13 +168,35 @@ class StructureResult(BaseModel):
 
 class ChapterResult(BaseModel):
     status: Literal["ok", "format_error"]
-    slots: Slots | None = None
+    slots: GeneratedSlots | None = None
     raw_text: str = ""
     warnings: list[CapacityWarning] = []
     unverified_numbers: list[str] = []
     format_retried: bool = False
     condensed: bool = False
     usage: GenerationUsage
+
+
+class StoryRewriteResult(BaseModel):
+    status: Literal["ok", "format_error"]
+    deck: Deck | None = None
+    base_etag: str = ""
+    sources_fingerprint: str = ""
+    raw_text: str = ""
+    unverified_numbers: list[str] = []
+    format_retried: bool = False
+    usage: GenerationUsage
+
+
+class DiagramGenerationResult(BaseModel):
+    status: Literal["ok", "format_error"]
+    diagram: DiagramInput | None = None
+    raw_text: str = ""
+    unverified_numbers: list[str] = []
+    format_retried: bool = False
+    usage: GenerationUsage
+    base_etag: str = ""
+    sources_fingerprint: str = ""
 
 
 def _validation_reason(exc: Exception) -> str:
@@ -182,12 +214,14 @@ def _validation_reason(exc: Exception) -> str:
     return str(exc)
 
 
-def _try_parse(parse: Callable[[Any], Any], response: ProviderResponse) -> tuple[Any | None, str]:
+def _try_parse(
+    parse: Callable[[Any], Any], response: ProviderResponse, *, normalize: bool = True,
+) -> tuple[Any | None, str]:
     """(parsed, reason)을 돌려준다. reason은 실패 사유 한 줄이며 성공하면 빈 문자열이다."""
     if response.structured is None:
         return None, "구조화된 응답이 없습니다"
     try:
-        return parse(normalize_payload(response.structured)), ""
+        return parse(normalize_payload(response.structured) if normalize else response.structured), ""
     except (ValidationError, KeyError, TypeError, ValueError) as e:
         return None, _validation_reason(e)
 
@@ -225,23 +259,24 @@ class GenerationService:
         parse: Callable[[Any], Any],
         purpose: _CallPurpose,
         collector: _UsageCollector,
+        *, normalize: bool = True,
     ) -> tuple[Any | None, str, bool]:
         """게이트 1 (형식): 실패 시 1회 재시도. (parsed, raw_text, retried)를 돌려준다."""
         response = await self._complete(prompt, schema, purpose, collector)
-        parsed, reason = _try_parse(parse, response)
+        parsed, reason = _try_parse(parse, response, normalize=normalize)
         if parsed is not None:
             return parsed, response.raw_text, False
         retry = await self._complete(
             build_format_retry_prompt(prompt, response.raw_text, reason),
             schema, "format_retry", collector,
         )
-        retried_parsed, _ = _try_parse(parse, retry)
+        retried_parsed, _ = _try_parse(parse, retry, normalize=normalize)
         return retried_parsed, retry.raw_text, True
 
     def _emit_usage(
         self,
         on_usage: Callable[[UsageRecord], None] | None,
-        kind: Literal["structure", "chapter", "condense"],
+        kind: Literal["structure", "chapter", "condense", "rewrite", "diagram"],
         chapter_id: str | None,
         outcome: Literal["ok", "format_error", "failed"],
         summary: GenerationUsage,
@@ -262,6 +297,60 @@ class GenerationService:
         except Exception:
             _LOG.warning("사용량 콜백(on_usage) 실행 중 오류", exc_info=True)
 
+    async def generate_diagram(
+        self, deck: Deck, request: GenerateDiagramRequest, sources: dict[str, str],
+        on_usage: Callable[[UsageRecord], None] | None = None,
+    ) -> DiagramGenerationResult:
+        prompt, evidence = diagram_prompt(deck, request, sources)
+        collector = _UsageCollector()
+        outcome: Literal["ok", "format_error", "failed"] = "failed"
+        summary: GenerationUsage | None = None
+        try:
+            diagram, raw, retried = await self._call_with_format_gate(
+                prompt, DiagramDraft.model_json_schema(),
+                lambda payload: parse_diagram_draft(payload, request.chapter_id, evidence),
+                "generate", collector, normalize=False,
+            )
+            summary = collector.summary()
+            outcome = "ok" if diagram is not None else "format_error"
+            texts = [] if diagram is None else [
+                text for node in diagram.nodes for text in (node.content, *node.caveats)
+            ] + [edge.label for edge in diagram.edges]
+            return DiagramGenerationResult(
+                status=outcome, diagram=diagram, raw_text=raw,
+                unverified_numbers=find_unverified_numbers(texts, [item.excerpt for item in evidence]),
+                format_retried=retried, usage=summary,
+            )
+        finally:
+            self._emit_usage(on_usage, "diagram", request.chapter_id, outcome,
+                             summary if summary is not None else collector.summary())
+
+    async def rewrite_story(
+        self, deck: Deck, brief: ReportBrief, sources: dict[str, str], instructions: str = "",
+        on_usage: Callable[[UsageRecord], None] | None = None,
+    ) -> StoryRewriteResult:
+        prompt = rewrite_prompt(deck, brief, sources, instructions)
+        collector = _UsageCollector()
+        outcome: Literal["ok", "format_error", "failed"] = "failed"
+        summary = None
+        try:
+            candidate, raw, retried = await self._call_with_format_gate(
+                prompt, RewriteDraft.model_json_schema(),
+                lambda payload: parse_story_rewrite(payload, deck, brief, sources),
+                "generate", collector, normalize=False,
+            )
+            summary = collector.summary()
+            outcome = "ok" if candidate is not None else "format_error"
+            texts = [] if candidate is None else [text for c in candidate.structure.story_plan.claims for text in (c.statement, *c.caveats)]
+            if candidate is not None:
+                texts += candidate.structure.story_plan.unanswered_questions
+            return StoryRewriteResult(
+                status=outcome, deck=candidate, raw_text=raw, format_retried=retried, usage=summary,
+                unverified_numbers=find_unverified_numbers(texts, list(sources.values()) + [deck.meta.title]),
+            )
+        finally:
+            self._emit_usage(on_usage, "rewrite", None, outcome, summary or collector.summary())
+
     async def generate_structure(
         self,
         meta: DeckMeta,
@@ -269,12 +358,15 @@ class GenerationService:
         target_chapters: int | None = None,
         instructions: str = "",
         on_usage: Callable[[UsageRecord], None] | None = None,
+        *, brief: ReportBrief | None = None,
     ) -> StructureResult:
-        prompt = build_structure_prompt(meta, sources, target_chapters, instructions)
+        prompt = build_structure_prompt(meta, sources, target_chapters, instructions, brief)
 
         def parse(payload: Any) -> Structure:
+            if brief is not None:
+                return parse_story_structure(payload, meta, brief, sources)
             chapters = [
-                Chapter(
+                GeneratedChapter(
                     id=f"c{i}",  # id는 서버가 부여한다 (설계 결정 10)
                     topic=ch["topic"],
                     conclusion=ch["conclusion"],
@@ -290,7 +382,8 @@ class GenerationService:
         summary: GenerationUsage | None = None
         try:
             structure, raw, retried = await self._call_with_format_gate(
-                prompt, structure_response_schema(), parse, "generate", collector
+                prompt, structure_response_schema(planned=brief is not None), parse, "generate", collector,
+                normalize=brief is None,
             )
             summary = collector.summary()  # C-3: 한 번만 계산해 반환값과 _emit_usage에 같은 객체를 넘긴다
             if structure is None:
@@ -300,6 +393,9 @@ class GenerationService:
                     usage=summary,
                 )
             texts = [t for ch in structure.chapters for t in (ch.topic, ch.conclusion)]
+            if structure.story_plan is not None:
+                texts += [t for c in structure.story_plan.claims for t in (c.statement, *c.caveats)]
+                texts += structure.story_plan.unanswered_questions
             outcome = "ok"
             return StructureResult(
                 status="ok",
@@ -431,11 +527,14 @@ class GenerationService:
         chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
         if chapter is None:
             raise ValueError(f"구조안에 없는 장입니다: {chapter_id}")
+        if chapter.template == "diagram":
+            raise DiagramGenerationUnsupported()
         return chapter
 
     def _chapter_prompt(
         self, deck: Deck, chapter: Chapter, sources: dict[str, str], preset: Preset, instructions: str
     ) -> str:
+        require_current_story(deck, sources)
         # 프롬프트에는 근거로 매핑된 자료만 넣되, 매핑이 비면 전체로 폴백한다 (설계 결정 11).
         # cover와 divider의 자료 생략은 build_chapter_prompt가 처리한다
         chapter_sources = {n: sources[n] for n in chapter.source_refs if n in sources} or sources
@@ -482,6 +581,7 @@ class GenerationService:
             warnings=warnings,
             unverified_numbers=find_unverified_numbers(
                 texts, list(sources.values()) + [deck.meta.title]
+                + chapter_derived_numbers(deck.structure.story_plan, chapter)
             ),
             format_retried=retried,
             condensed=condensed,

@@ -1,0 +1,148 @@
+{
+  "deck": {
+    "schema_version": 1,
+    "meta": {
+      "title": "합성 비교",
+      "report_type": "research",
+      "audience": "",
+      "presenter": "",
+      "preset_overrides": {}
+    },
+    "structure": {
+      "chapters": [
+        {
+          "id": "c1",
+          "topic": "두 팀 비교",
+          "conclusion": "조건 확인",
+          "template": "bullet_box",
+          "source_refs": [
+            "synthetic.md"
+          ]
+        }
+      ],
+      "story_plan": {
+        "version": "q2b-v1",
+        "brief": {
+          "decision_question": "두 팀 만족도를 비교할 수 있는가?",
+          "audience": "",
+          "report_type": "research",
+          "reading_profile": "미지정",
+          "constraints": []
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source_id": "synthetic.md",
+            "locator": {
+              "line_start": 2,
+              "line_end": 2
+            },
+            "value": "80%",
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": {
+              "definition": "긍정 응답 수 / 전체 응답 수",
+              "unit": "%",
+              "entity": "A팀",
+              "period": {
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "grain": "month",
+                "aggregation": "ratio",
+                "coverage": "complete"
+              },
+              "denominator": {
+                "kind": "population",
+                "definition": "전체 설문 응답 수"
+              }
+            },
+            "source_revision": "6bca0642ad07ce838883761e69891b77c1d8982b271dfa447e8e251ba97ccf20",
+            "excerpt": "A팀 응답 만족도 80%, 2026년 1월 전체 응답자 기준."
+          },
+          {
+            "id": "e2",
+            "source_id": "synthetic.md",
+            "locator": {
+              "line_start": 3,
+              "line_end": 3
+            },
+            "value": "70%",
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": {
+              "definition": "긍정 응답 수 / 전체 응답 수",
+              "unit": "%",
+              "entity": "B팀",
+              "period": {
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "grain": "month",
+                "aggregation": "ratio",
+                "coverage": "complete"
+              },
+              "denominator": {
+                "kind": "population",
+                "definition": "전체 설문 응답 수"
+              }
+            },
+            "source_revision": "6bca0642ad07ce838883761e69891b77c1d8982b271dfa447e8e251ba97ccf20",
+            "excerpt": "B팀 응답 만족도 70%, 2026년 1월 전체 응답자 기준."
+          }
+        ],
+        "claims": [
+          {
+            "id": "k1",
+            "statement": "동일 설문 기준으로 두 팀을 비교한다",
+            "kind": "proposal",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "caveats": [
+              "설문 방식의 동일성은 별도 확인"
+            ]
+          }
+        ],
+        "answer_claim_ids": [
+          "k1"
+        ],
+        "chapters": [
+          {
+            "chapter_id": "c1",
+            "role": "answer",
+            "claim_ids": [
+              "k1"
+            ]
+          }
+        ],
+        "unanswered_questions": [],
+        "comparisons": [
+          {
+            "id": "cmp1",
+            "claim_id": "k1",
+            "left_evidence_id": "e1",
+            "right_evidence_id": "e2",
+            "axis": "entity"
+          }
+        ],
+        "comparison_results": [
+          {
+            "comparison_id": "cmp1",
+            "rule_version": "q2b-v1",
+            "status": "compatible",
+            "reasons": []
+          }
+        ],
+        "input_fingerprint": "94568db1f6bb57d69a9272e90688f2acf2b508033067b19fa2fdb98c094bb801"
+      }
+    },
+    "slides": []
+  },
+  "sources": {
+    "synthetic.md": "합성 자료\nA팀 응답 만족도 80%, 2026년 1월 전체 응답자 기준.\nB팀 응답 만족도 70%, 2026년 1월 전체 응답자 기준."
+  }
+}

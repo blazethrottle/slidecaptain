@@ -1,24 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, messageOf, type Deck, type ProjectInfo } from "../api/client";
+import { api, messageOf, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
+import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
+import { ExportQualitySummary } from "./ExportQualitySummary";
+import { ExportHistoryPanel } from "./ExportHistoryPanel";
 import { RecoveryScreen } from "./RecoveryScreen";
 import { SourcesScreen } from "./SourcesScreen";
 import { StructureScreen } from "./StructureScreen";
 
-export type Tab = "sources" | "structure" | "editor";
+export type Tab = "sources" | "structure" | "editor" | "history";
 
 export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack: () => void }) {
   const [deck, setDeck] = useState<Deck | null>(null);
   const [tab, setTab] = useState<Tab>("sources");
   const [error, setError] = useState("");
-  const [exportPath, setExportPath] = useState("");
+  const [exportResult, setExportResult] = useState<{ projectName: string; result: ExportResult } | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [historyRevision, setHistoryRevision] = useState(0);
   const [showRecovery, setShowRecovery] = useState(false);
   const [generating, setGenerating] = useState(false);  // 구조안 승인 후 장별 순차 생성 진행 중 (쓰기 포크 차단)
+  const [diagramGenerating, setDiagramGenerating] = useState(false);
   const [leaving, setLeaving] = useState(false);        // 화면 이탈 전 플러시 진행 중: 모든 이탈 경로 버튼을 잠근다
-  const [dirty, setDirty] = useState(false);            // 편집 탭 또는 자료 탭에 저장하지 않은 변경이 있다 (beforeunload 경고용)
+  const [dirty, setDirty] = useState(false);            // 현재 화면에 저장하지 않은 변경이 있다 (beforeunload 경고용)
   // 자료 탭의 XLSX 업로드가 진행 중이다(계획서 B4 가정 7). generating과 합치지 않는다: 구조안 탭은
   // 생성 중에는 잠그지 않는 예외가 있는데, 업로드는 자료 탭 안의 일이라 구조안 탭까지 잠가야 FC-17이 막힌다
   const [uploading, setUploading] = useState(false);
@@ -26,6 +31,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   // AI 전송 고지 대화 상자 (계획서 B3): 열려 있는 동안 사용자의 선택을 담을 resolve 함수를 들고 있는다.
   // null이 아니면 대화 상자가 열려 있다는 뜻이라 다른 상태와 함께 잠금 조건에도 쓴다
   const [consentResolve, setConsentResolve] = useState<((granted: boolean) => void) | null>(null);
+  const [consentStatus, setConsentStatus] = useState<AppStatus | undefined>(undefined);
   const flushScreen = useRef<null | (() => Promise<boolean>)>(null);
   // leaveScreen이 flush 실패의 일반 배너를 띄우기 전에 확인한다: onConflict가 이미 그 실패를
   // 설명했으면(플러시 도중 412) 중복 배너를 생략한다 (A5b 리뷰 발견 3)
@@ -40,7 +46,9 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   // AI 전송 고지 관문(계획서 B3): 동의가 없는 상태에서 첫 AI 호출이 이 프롬프터를 부른다.
   // 대화 상자를 열고 사용자의 선택을 기다리는 프라미스를 돌려준다
   useEffect(() => {
-    setConsentPrompter(() => new Promise<boolean>((resolve) => { setConsentResolve(() => resolve); }));
+    setConsentPrompter((status) => new Promise<boolean>((resolve) => {
+      setConsentStatus(status); setConsentResolve(() => resolve);
+    }));
     return () => setConsentPrompter(null);
   }, []);
 
@@ -57,17 +65,18 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       // returnValue도 함께 설정한다: preventDefault만으로는 확인 대화를 띄우지 않는
       // 구형 구현이 있다 (A5b 리뷰 발견 5)
-      if (dirty || uploading || generating) { e.preventDefault(); e.returnValue = ""; }
+      if (dirty || uploading || generating || diagramGenerating) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty, uploading, generating]);
+  }, [dirty, uploading, generating, diagramGenerating]);
 
   if (project.status === "needs_recovery") {
     return (
       <main>
         <h1>{project.title}</h1>
         <RecoveryScreen project={project} onBack={onBack} />
+        <ExportHistoryPanel projectName={project.name} readOnly />
       </main>
     );
   }
@@ -80,6 +89,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           <>
             <p role="alert">{error}</p>
             <button onClick={onBack}>목록으로</button>
+            <ExportHistoryPanel projectName={project.name} readOnly />
           </>
         ) : (
           <p>불러오는 중...</p>
@@ -105,7 +115,7 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       const flushed = await flushScreen.current();
       if (flushed) {
         setDirty(false);
-      } else if (!justConflicted.current) {
+      } else if (!justConflicted.current && tab !== "history") {
         setError(`마지막 편집을 저장하지 못해 ${action} 중단했습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.`);
       }
       return flushed;
@@ -115,7 +125,10 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   };
 
   const switchTab = async (t: Tab) => {
-    if (await leaveScreen("이동을")) setTab(t);
+    if (await leaveScreen("이동을")) {
+      setError("");
+      setTab(t);
+    }
   };
   const goBack = async () => {
     if (await leaveScreen("이동을")) onBack();
@@ -126,14 +139,15 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
 
   const doExport = async () => {
     setExporting(true);
-    setExportPath("");
+    setExportResult(null);
     try {
       // 보류 중 자동 저장 플러시 (결정 1). 실패하면 마지막 편집이 빠진 채 내보내지므로 중단한다
       // (2026-08-29 태스크 16 리뷰 반영)
       if (!(await leaveScreen("내보내기를"))) return;
       await api.createSnapshot(project.name);  // 내보내기 직전 복구 지점 (결정 1)
       const r = await api.exportDeck(project.name);
-      setExportPath(r.path);
+      setExportResult({ projectName: project.name, result: r });
+      setHistoryRevision(value => value + 1);
     } catch (e) {
       setError(messageOf(e));
     } finally {
@@ -146,7 +160,8 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const onConflict = () => { justConflicted.current = true; setHasConflict(true); };
   // AI 전송 고지 대화 상자가 열린 동안은 leaving과 같은 조건으로 내비게이션을 잠근다 (계획서 B3)
   const dialogOpen = consentResolve !== null;
-  const reloadDeck = () => {
+  const reloadDeck = async () => {
+    if (tab === "history" && !(await leaveScreen("다시 읽기를"))) return;
     setHasConflict(false);
     setDirty(false);  // 서버 내용으로 자식 화면을 다시 마운트하므로 미저장 변경이 없다
     setDeck(null);
@@ -164,46 +179,52 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           {/* 다른 헤더 버튼과 같은 조건으로 잠근다: 업로드 진행 중 눌러 자료 화면이 통째로
               언마운트되면, 나중에 응답한 업로드 결과가 화면에 영구히 반영되지 않는다(B 묶음
               최종 리뷰 major F-1) */}
-          <button onClick={reloadDeck} disabled={generating || uploading || leaving || dialogOpen}
-            title={generating ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
+          <button onClick={reloadDeck} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
+            title={generating || diagramGenerating ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 다시 읽을 수 있습니다" : undefined}>서버 내용 다시 읽기</button>
         </p>
       )}
       <header>
-        <button onClick={goBack} disabled={generating || uploading || leaving || dialogOpen}
-          title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+        <button onClick={goBack} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
+          title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
             : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>목록으로</button>
         <h1>{deck.meta.title}</h1>
         <nav>
-          <button aria-pressed={tab === "sources"} disabled={generating || uploading || leaving || dialogOpen}
+          <button aria-pressed={tab === "sources"} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
             onClick={() => switchTab("sources")}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>자료</button>
           {/* 구조안 탭은 generating으로는 잠그지 않는 예외지만(진행 표시가 그 화면에 있다), 업로드는
               자료 탭 안의 일이라 여기까지 잠가야 FC-17이 막힌다(계획서 B4 가정 7) */}
-          <button aria-pressed={tab === "structure"} disabled={uploading || leaving || dialogOpen}
+          <button aria-pressed={tab === "structure"} disabled={diagramGenerating || uploading || leaving || dialogOpen}
             onClick={() => switchTab("structure")}
-            title={uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>구조안</button>
+            title={diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>구조안</button>
           <button aria-pressed={tab === "editor"}
-            disabled={!hasSlides || generating || uploading || leaving || dialogOpen}
+            disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
             onClick={() => switchTab("editor")}
-            title={generating
+            title={generating || diagramGenerating
               ? "AI 생성이 끝나면 이동할 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
-              : hasSlides ? undefined : "구조안을 승인하고 내용을 생성하면 열립니다"}>편집</button>
+              : hasSlides ? undefined : "도식을 직접 작성할 수 있습니다"}>편집</button>
           <button onClick={doExport}
-            disabled={!hasSlides || exporting || generating || uploading || leaving || dialogOpen}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
-              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>PPTX 내보내기</button>
-          <button onClick={openRecovery} disabled={generating || uploading || leaving || dialogOpen}
-            title={generating ? "AI 생성이 끝나면 이동할 수 있습니다"
+            disabled={!hasSlides || exporting || generating || diagramGenerating || uploading || leaving || dialogOpen}
+            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+              : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : "내용과 시각 품질을 검수하지 않은 초안으로 내보냅니다"}>초안 PPTX 내보내기</button>
+          <button onClick={openRecovery} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
+            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>스냅샷 복구</button>
+          <button aria-pressed={!showRecovery && tab === "history"} onClick={() => switchTab("history")}
+            disabled={showRecovery || exporting || generating || diagramGenerating || uploading || leaving || dialogOpen}
+            title={showRecovery ? "복구 화면의 목록으로 버튼을 눌러 닫으면 이력을 열 수 있습니다" : undefined}>검수 이력</button>
         </nav>
       </header>
+      <AISettingsPanel disabled={generating || diagramGenerating || uploading || leaving || dialogOpen} />
       {dialogOpen && (
-        <AiConsentDialog onConfirm={() => closeConsentDialog(true)} onCancel={() => closeConsentDialog(false)} />
+        <AiConsentDialog statusSnapshot={consentStatus} onConfirm={() => closeConsentDialog(true)} onCancel={() => closeConsentDialog(false)} />
       )}
-      {exportPath && <p className="export-path">내보내기 완료: {exportPath} (PowerPoint에서 여세요)</p>}
+      <p className="quality-notice">현재 산출물은 검수 전 초안입니다. 보고 흐름, 근거와 실제 PowerPoint 표시를 확인한 뒤 제출해 주세요.</p>
+      {exportResult?.projectName === project.name && <ExportQualitySummary result={exportResult.result} />}
       {showRecovery && (
         <RecoveryScreen project={project} onConflict={onConflict} onBack={() => {
           setShowRecovery(false);
@@ -223,14 +244,17 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
       )}
       {!showRecovery && tab === "structure" && (
         <StructureScreen project={project} deck={deck} onDeckChange={setDeck}
-          onDone={() => setTab("editor")} onBusyChange={setGenerating} onConflict={onConflict} />
+          onDone={() => setTab("editor")} onBusyChange={setGenerating} onConflict={onConflict}
+          onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty} />
       )}
-      {!showRecovery && tab === "editor" && hasSlides && (
+      {!showRecovery && tab === "editor" && (
         <EditorScreen project={project} deck={deck} onDeckChange={setDeck}
           onEditorReady={(f) => { flushScreen.current = f; }}
           onConflictHint={() => { justConflicted.current = true; }}
-          onDirtyChange={setDirty} />
+          onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} />
       )}
+      {!showRecovery && tab === "history" && <ExportHistoryPanel key={historyRevision} projectName={project.name} busy={exporting}
+        onScreenReady={guard => { flushScreen.current = guard; }} onDirtyChange={setDirty} />}
     </main>
   );
 }

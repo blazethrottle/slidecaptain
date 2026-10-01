@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type RenderPlan } from "../api/client";
 import { editorReducer } from "./deckStore";
+import { pruneChangedSpans } from "../editor/expressionEditing";
 
 export type SaveState = "저장됨" | "저장 대기" | "저장 중" | "저장 실패";
 export type Timings = { measureMs: number; saveMs: number };
@@ -34,7 +35,8 @@ export function useDeckEditor(
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
-  const snapshotNext = useRef(false);  // AI 반영 등 의미 시점의 다음 저장
+  const snapshotNext = useRef(0);  // 의미 변경 요청의 세대: 늦은 PUT이 새 요청을 지우지 않는다
+  const snapshotSaved = useRef(0);
   const savedDeck = useRef(initialDeck);
   const deck = state.present;
   const deckRef = useRef(deck);
@@ -47,15 +49,27 @@ export function useDeckEditor(
   const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));
   const inFlight = useRef(0);
 
+  const reportConflict = useCallback((message: string) => {
+    // 응답 직후 같은 microtask에서 이어지는 저장도 막는다. React 상태 반영을 기다리지 않는다.
+    conflictRef.current = true;
+    setConflict(true);
+    setSaveError(message);
+    setSaveState("저장 실패");
+    onConflictRef.current?.();
+  }, []);
+
   const doPut = useCallback(async (target: Deck): Promise<boolean> => {
+    if (conflictRef.current) return false;
     if (target === savedDeck.current) return true;  // 저장할 것이 없다 (되돌리기로 저장본과 같아진 경우 포함)
-    const snapshot = firstSave.current || snapshotNext.current;
+    const snapshotGeneration = snapshotNext.current;
+    const snapshot = firstSave.current || snapshotGeneration > snapshotSaved.current;
     inFlight.current += 1;
     setSaveState("저장 중");
     try {
       await api.putDeck(projectName, target, snapshot);
+      if (conflictRef.current) return false;  // 다른 확인 요청에서 관측한 충돌을 늦은 저장 성공으로 지우지 않는다
       firstSave.current = false;
-      snapshotNext.current = false;
+      snapshotSaved.current = Math.max(snapshotSaved.current, snapshotGeneration);
       savedDeck.current = target;
       setSaveError("");
       onDeckChangeRef.current(target);
@@ -69,9 +83,10 @@ export function useDeckEditor(
       return doPut(residual);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {
-        setConflict(true);
-        onConflictRef.current?.();
+        reportConflict(messageOf(e));
+        return false;
       }
+      if (conflictRef.current) return false;
       setSaveError(messageOf(e));
       // 실패한 내용을 그 사이에 되돌려 화면이 마지막 저장본과 같아졌으면 서버와 화면이 일치하므로 '저장됨' 이 맞다.
       // 이 경우 덱이 바뀌지 않아 자동 저장 효과가 다시 돌지 않으므로 여기서 표시를 정한다
@@ -80,7 +95,7 @@ export function useDeckEditor(
     } finally {
       inFlight.current -= 1;
     }
-  }, [projectName]);
+  }, [projectName, reportConflict]);
 
   const saveNow = useCallback((target: Deck): Promise<boolean> => {
     const next = saveChain.current.then(() => doPut(target));
@@ -95,17 +110,18 @@ export function useDeckEditor(
   useEffect(() => {
     let cancelled = false;
     const t = setTimeout(() => {
-      api.measure(deck)
+      api.measure(deck, projectName)
         .then((p) => { if (!cancelled) { setPlan(p); setPlanDeck(deck); setMeasureError(""); } })
         .catch((e) => { if (!cancelled) setMeasureError(messageOf(e)); });
     }, timings.measureMs);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [deck, timings.measureMs, measureTick]);
+  }, [deck, projectName, timings.measureMs, measureTick]);
 
   const remeasure = useCallback(() => setMeasureTick((n) => n + 1), []);
 
   // 자동 저장: 디바운스 (결정 1). 대기 중임을 표시해 "저장됨" 오표시를 막는다
   useEffect(() => {
+    if (conflict) return;
     if (deck === savedDeck.current) {
       // 되돌리기로 저장본과 같아졌다. 진행 중 저장이 없으면 표시를 되돌린다 (FC-03).
       // 진행 중 저장이 있으면 그 착지 처리가 잔여 변경을 보고 표시를 정한다
@@ -113,7 +129,6 @@ export function useDeckEditor(
       return;
     }
     // 충돌 상태에서는 자동 저장을 멈춘다: 사용자가 서버 내용으로 되돌리기 전까지는 다시 시도하지 않는다
-    if (conflict) return;
     setSaveState("저장 대기");
     const t = setTimeout(() => { void saveNow(deck); }, timings.saveMs);
     return () => clearTimeout(t);
@@ -122,27 +137,40 @@ export function useDeckEditor(
   // 플러시: 진행 중 저장이 끝난 뒤 잔여 편집까지 즉시 저장한다 (결정 1. 내보내기와 화면 이탈 전에 부모가 부른다)
   // 성공 여부를 반환해, 저장 실패 시 내보내기나 이탈을 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
   const flushSave = useCallback(async (): Promise<boolean> => {
-    if (conflict) {  // 충돌 상태에서는 시도하지 않는다: reloadFromServer로 먼저 해소해야 한다
+    if (conflictRef.current) {  // 충돌 상태에서는 시도하지 않는다: reloadFromServer로 먼저 해소해야 한다
       onConflictRef.current?.();
       return false;
     }
     await saveChain.current;
+    if (conflictRef.current) return false;
     if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
     return true;
-  }, [saveNow, conflict]);
+  }, [saveNow]);
 
   // 언마운트 플러시: 탭 전환이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
   useEffect(() => () => {
     if (!conflictRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);
 
-  const apply = useCallback((edit: (d: Deck) => Deck) => {
-    dispatch({ type: "edit", deck: edit(deckRef.current) });
+  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean }) => {
+    const next = pruneChangedSpans(deckRef.current, edit(deckRef.current));
+    if (next !== deckRef.current && options?.snapshot) snapshotNext.current += 1;
+    dispatch({ type: "edit", deck: next });
   }, []);
 
   const replace = useCallback((next: Deck) => {
-    snapshotNext.current = true;
+    snapshotNext.current += 1;
     dispatch({ type: "edit", deck: next });
+  }, []);
+
+  const acceptSaved = useCallback((next: Deck) => {
+    // A guarded server transaction already saved this exact Deck and snapshot.
+    savedDeck.current = next;
+    deckRef.current = next;
+    snapshotSaved.current = snapshotNext.current;
+    dispatch({type:"edit",deck:next});
+    setSaveState("저장됨");setSaveError("");
+    onDeckChangeRef.current(next);
   }, []);
 
   const undo = useCallback(() => dispatch({ type: "undo" }), []);
@@ -152,12 +180,15 @@ export function useDeckEditor(
   // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다)
   const reloadFromServer = useCallback(async (): Promise<void> => {
     try {
+      await saveChain.current;
       const serverDeck = await api.getDeck(projectName);
       dispatch({ type: "reset", deck: serverDeck });
       savedDeck.current = serverDeck;
       firstSave.current = true;
-      snapshotNext.current = false;
+      snapshotNext.current = 0;
+      snapshotSaved.current = 0;
       setSaveError("");
+      conflictRef.current = false;
       setConflict(false);
       setSaveState("저장됨");
       onDeckChangeRef.current(serverDeck);
@@ -173,6 +204,6 @@ export function useDeckEditor(
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
-    apply, replace, undo, redo, flushSave, remeasure, reloadFromServer, retrySave,
+    apply, replace, acceptSaved, undo, redo, flushSave, remeasure, reloadFromServer, retrySave, reportConflict,
   };
 }

@@ -7,7 +7,10 @@ from typing import Annotated, Literal
 
 from pydantic import ConfigDict
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_serializer, model_validator
+
+from slidecaptain.models.diagram_render import DiagramRenderPlan, DiagramReviewStatus
+from slidecaptain.models.expression import ChartPlan, TextRun
 
 # 색값은 알파 없는 6자리 16진수. 프리셋과 같은 규격이다.
 # 잘못된 값을 여기서 막지 않으면 python-pptx 가 예외를 던져 내보내기 전체가 멈추는데,
@@ -24,6 +27,25 @@ class Para(BaseModel):
     align: Literal["left", "center", "right"] = "left"
     bullet: bool = False  # True면 라이터가 목록 표식(•)과 내어쓰기를 적용
     lines: list[str] = []  # 엔진의 어절 줄바꿈 결과. 미리보기 전용, 라이터는 읽지 않는다
+    runs: list[TextRun] = Field(default_factory=list)
+    line_runs: list[list[TextRun]] = Field(default_factory=list)
+
+    @model_serializer(mode='wrap')
+    def legacy_serialization(self,handler):
+        result=handler(self)
+        if not self.runs:
+            result.pop('runs',None)
+        if not self.line_runs:
+            result.pop('line_runs',None)
+        return result
+
+    @model_validator(mode='after')
+    def exact_text(self):
+        if self.runs and ''.join(run.text for run in self.runs)!=self.text:
+            raise ValueError('강조 run은 원문 전체를 보존해야 합니다.')
+        if self.line_runs and [''.join(run.text for run in line) for line in self.line_runs]!=self.lines:
+            raise ValueError('줄별 강조 run과 줄바꿈 결과가 일치해야 합니다.')
+        return self
 
 
 class TablePlan(BaseModel):
@@ -64,6 +86,7 @@ class Frame(BaseModel):
     border: HexColor | None = None
     paras: list[Para] = []
     table: TablePlan | None = None
+    chart: ChartPlan | None = None
     # 세로 정렬. 미리보기가 그릴 수 있는 값만 허용하고, 라이터는 이 값을 모든 텍스트 도형에 항상 명시한다
     # (2026-09-02 Critical 묶음 태스크 B: 채움 프레임이 python-pptx 자동도형 기본값 ctr 을 상속해 미리보기와 어긋났다)
     valign: Literal["top", "middle"] = "top"
@@ -76,6 +99,19 @@ class Frame(BaseModel):
     # 미리보기 두 곳에 따로 두면 세로 정렬 사고와 같은 계열의 어긋남이 생긴다
     border_width_pt: float | None = Field(default=None, ge=0)
 
+    @model_serializer(mode='wrap')
+    def legacy_serialization(self,handler):
+        result=handler(self)
+        if self.chart is None:
+            result.pop('chart',None)
+        return result
+
+    @model_validator(mode='after')
+    def chart_only(self):
+        if self.chart is not None and (self.table is not None or self.paras):
+            raise ValueError('차트 프레임에 원래 표나 문장을 중복 렌더할 수 없습니다.')
+        return self
+
 
 class CapacityWarning(BaseModel):
     chapter_id: str
@@ -85,11 +121,33 @@ class CapacityWarning(BaseModel):
     available_pt: float
 
 
+class DiagramPagePlan(BaseModel):
+    """내부 계산에서 만든 도식 페이지. 외부 저장본의 승인 기록이 아니다."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    rule_version: Literal["q3b-render-v1"] = "q3b-render-v1"
+    input_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    layout: DiagramRenderPlan
+    headers: list[Frame]
+    background: HexColor
+    review: DiagramReviewStatus = Field(default_factory=DiagramReviewStatus)
+
+
 class SlidePlan(BaseModel):
     chapter_id: str
     template: str
     frames: list[Frame]
     warnings: list[CapacityWarning] = []
+    diagram: DiagramPagePlan | None = None
+
+    @model_validator(mode="after")
+    def _diagram_is_complete_page(self) -> "SlidePlan":
+        if self.diagram is not None and (
+            self.frames or self.warnings or self.chapter_id != self.diagram.layout.diagram_id
+        ):
+            raise ValueError("도식 페이지에는 같은 ID의 전체 도식만 포함해야 합니다")
+        return self
 
 
 class RenderStyle(BaseModel):

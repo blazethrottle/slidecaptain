@@ -368,12 +368,12 @@ def test_template_guide_covers_every_declared_template():
     """
     from typing import get_args
 
-    from slidecaptain.models.deck import TemplateName
+    from slidecaptain.models.deck import GeneratedTemplateName
 
     lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
     named = {ln.removeprefix("- ").split(":")[0].strip() for ln in lines}
 
-    assert named == set(get_args(TemplateName))
+    assert named == set(get_args(GeneratedTemplateName))
 
 
 def test_template_guide_every_entry_states_a_content_condition():

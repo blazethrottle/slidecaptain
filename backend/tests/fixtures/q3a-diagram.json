@@ -1,0 +1,98 @@
+{
+  "sources": {
+    "합성 도식 자료.md": "합성 운영에서는 접수 담당자가 요청을 받는다.\n합성 운영에서는 검토 담당자가 요청을 검토한다.\n합성 운영에서는 접수 후 요청을 검토 담당자에게 전달한다."
+  },
+  "evidence": [
+    {
+      "id": "e1",
+      "source_id": "합성 도식 자료.md",
+      "locator": {
+        "line_start": 1,
+        "line_end": 1
+      },
+      "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+      "excerpt": "합성 운영에서는 접수 담당자가 요청을 받는다."
+    },
+    {
+      "id": "e2",
+      "source_id": "합성 도식 자료.md",
+      "locator": {
+        "line_start": 2,
+        "line_end": 2
+      },
+      "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+      "excerpt": "합성 운영에서는 검토 담당자가 요청을 검토한다."
+    },
+    {
+      "id": "e3",
+      "source_id": "합성 도식 자료.md",
+      "locator": {
+        "line_start": 3,
+        "line_end": 3
+      },
+      "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+      "excerpt": "합성 운영에서는 접수 후 요청을 검토 담당자에게 전달한다."
+    }
+  ],
+  "diagram": {
+    "version": "q3a-v1",
+    "id": "synthetic-flow",
+    "canvas": {
+      "page_size": "preset",
+      "reading_profile": "report"
+    },
+    "layout_variant": "flow_horizontal",
+    "nodes": [
+      {
+        "id": "intake",
+        "role": "step",
+        "content": "요청 접수",
+        "kind": "fact",
+        "evidence_ids": [
+          "e1"
+        ],
+        "caveats": []
+      },
+      {
+        "id": "review",
+        "role": "decision",
+        "content": "요청 검토",
+        "kind": "fact",
+        "evidence_ids": [
+          "e2"
+        ],
+        "caveats": []
+      },
+      {
+        "id": "pilot",
+        "role": "outcome",
+        "content": "자동 알림 도입 제안",
+        "kind": "proposal",
+        "evidence_ids": [],
+        "caveats": [
+          "효과와 비용은 확인하지 않았다."
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "handoff",
+        "from_node_id": "intake",
+        "to_node_id": "review",
+        "relation": "flow",
+        "label": "검토 요청 전달",
+        "evidence_ids": [
+          "e3"
+        ]
+      },
+      {
+        "id": "suggestion",
+        "from_node_id": "review",
+        "to_node_id": "pilot",
+        "relation": "proposal",
+        "label": "알림 도입 제안",
+        "evidence_ids": []
+      }
+    ]
+  }
+}

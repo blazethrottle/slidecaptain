@@ -69,7 +69,7 @@ it("callout에서 summary로: 밴드 문장이 결론으로 이사하고 요점�
   const r = switchTemplate(callout, "summary");
   expect(r.slots.template === "summary" && r.slots.conclusion).toBe("핵심 메시지");
   expect(r.slots.template === "summary" && r.slots.points).toEqual([]);
-  expect(r.dropped).toEqual([]);
+  expect(r.dropped).toEqual(['강조 색 역할 "accent1"']);
 });
 
 it("callout에서 table로: 밴드 문장이 결론 취급으로 소실 목록에 오른다", () => {
@@ -245,4 +245,9 @@ it("matrix끼리는 그대로다", () => {
   const r = switchTemplate(matrix, "matrix");
   expect(r.slots).toBe(matrix);
   expect(r.dropped).toEqual([]);
+});
+
+it('명시적으로 지정한 강조 색과 카드 강조도 전환 손실로 알린다',()=>{
+ expect(switchTemplate({template:'callout',text:'메시지',tone:'danger'},'summary').dropped.join(' ')).toContain('강조 색');
+ expect(switchTemplate({template:'cards',cards:[{badge:'',heading:'A',tail:'',bullets:[],emphasis:true},{badge:'',heading:'B',tail:'',bullets:[],emphasis:false}]},'bullet_box').dropped.join(' ')).toContain('카드 강조');
 });

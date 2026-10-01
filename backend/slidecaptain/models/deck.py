@@ -6,15 +6,20 @@
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+from slidecaptain.models.diagram import DiagramInput, parse_diagram_spec
+from slidecaptain.models.story import ReportType, StoryPlan
+from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
+from slidecaptain.models.change_review import DocumentChangeReview
 
 SCHEMA_VERSION = 1
 
-TemplateName = Literal[
+GeneratedTemplateName = Literal[
     "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
     "matrix",
 ]
-ReportType = Literal["research", "approval", "strategy"]
+TemplateName = Literal[GeneratedTemplateName, "diagram"]
 
 
 class Bullet(BaseModel):
@@ -168,13 +173,24 @@ class MatrixSlots(BaseModel):
     rows: list[MatrixRow] = Field(min_length=3, max_length=6)
 
 
-Slots = Annotated[
+class DiagramSlots(BaseModel):
+    """도식의 의미 입력만 저장한다. 배치/검수 결과는 계산 출력에만 존재한다."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
+
+    template: Literal["diagram"] = "diagram"
+    diagram: DiagramInput
+    footnote: str = ""
+
+
+GeneratedSlots = Annotated[
     Union[
         CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots,
         CalloutSlots, CardsSlots, ProcessSlots, MatrixSlots,
     ],
     Field(discriminator="template"),
 ]
+Slots = Annotated[Union[GeneratedSlots, DiagramSlots], Field(discriminator="template")]
 
 
 class Chapter(BaseModel):
@@ -185,8 +201,13 @@ class Chapter(BaseModel):
     source_refs: list[str] = []
 
 
+class GeneratedChapter(Chapter):
+    template: GeneratedTemplateName
+
+
 class Structure(BaseModel):
     chapters: list[Chapter] = []
+    story_plan: StoryPlan | None = None
 
 
 class Slide(BaseModel):
@@ -197,6 +218,26 @@ class Slide(BaseModel):
     eyebrow: str = ""
     subtitle: str = ""
     slots: Slots
+    chart: ChartSpec | None = None
+    text_spans: list[TextSpan] = Field(default_factory=list,max_length=100)
+
+    @model_serializer(mode='wrap')
+    def expression_serialization(self,handler):
+        result=handler(self)
+        if self.chart is None:
+            result.pop('chart',None)
+        if not self.text_spans:
+            result.pop('text_spans',None)
+        return result
+
+    @model_validator(mode='after')
+    def expression_contract(self):
+        if self.chart is not None and not isinstance(self.slots,TableSlots):
+            raise ValueError('비교 차트는 원래 표 데이터를 보존하는 table 슬라이드에서만 사용할 수 있습니다.')
+        if self.text_spans and isinstance(self.slots,DiagramSlots):
+            raise ValueError('도식 문장의 부분 강조는 아직 지원하지 않습니다.')
+        validate_spans(self)
+        return self
 
 
 class DeckMeta(BaseModel):
@@ -212,6 +253,14 @@ class Deck(BaseModel):
     meta: DeckMeta
     structure: Structure = Structure()
     slides: list[Slide] = []
+    document_review: 'DocumentChangeReview | None' = None
+
+    @model_serializer(mode='wrap')
+    def document_review_serialization(self,handler):
+        payload=handler(self)
+        if self.document_review is None:
+            payload.pop('document_review',None)
+        return payload
 
     @model_validator(mode="after")
     def _schema_version_supported(self) -> "Deck":
@@ -250,4 +299,21 @@ class Deck(BaseModel):
                     f"장 {chapter.id}의 template({chapter.template})이 "
                     f"슬롯 template({slide.slots.template})과 다릅니다"
                 )
+            if isinstance(slide.slots, DiagramSlots):
+                if slide.slots.diagram.id != chapter.id:
+                    raise ValueError("도식 ID는 연결된 장 ID와 같아야 합니다")
+                evidence = self.structure.story_plan.evidence if self.structure.story_plan else []
+                parse_diagram_spec(slide.slots.diagram, evidence=evidence)
+            if slide.chart is not None:
+                plan=self.structure.story_plan
+                comparison=next((c for c in plan.comparisons if c.id==slide.chart.comparison_id),None) if plan else None
+                story_chapter=next((c for c in plan.chapters if c.chapter_id==slide.chapter_id),None) if plan else None
+                if comparison is None or story_chapter is None or comparison.claim_id not in story_chapter.claim_ids:
+                    raise ValueError('이 장의 기존 주장에 연결된 등록 비교를 선택해 주세요.')
+        for chapter in self.structure.chapters:
+            if chapter.template == "diagram":
+                if chapter.id not in seen_slide_chapters:
+                    raise ValueError(f"도식 장 {chapter.id}에는 도식 내용이 필요합니다")
+                if not chapter.topic.strip():
+                    raise ValueError("도식 장의 제목은 비어 있을 수 없습니다")
         return self

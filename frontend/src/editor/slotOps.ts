@@ -10,10 +10,12 @@ function updateSlide(deck: Deck, chapterId: string, f: (s: Slots) => Slots): Dec
 
 export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
   const { chapterId, slot } = ref;
+  if (deck.structure.chapters.some(c => c.id === chapterId && c.template === "diagram")) return deck;
   if (slot === "title") {
     return {
       ...deck,
       structure: {
+        ...deck.structure,
         chapters: deck.structure.chapters.map((c) =>
           c.id === chapterId ? { ...c, topic: text } : c),
       },
@@ -212,7 +214,7 @@ export function reorderChapters(deck: Deck, from: number, to: number): Deck {
   const chapters = [...deck.structure.chapters];
   const [moved] = chapters.splice(from, 1);
   chapters.splice(to, 0, moved);
-  return { ...deck, structure: { chapters } };
+  return { ...deck, structure: { ...deck.structure, chapters } };
 }
 
 export function setPresetOverride(
@@ -223,4 +225,27 @@ export function setPresetOverride(
   groupValues[key] = value;
   overrides[group] = groupValues;
   return { ...deck, meta: { ...deck.meta, preset_overrides: overrides } };
+}
+
+/** 신규 템플릿 속성 변경도 일반 편집 이력과 저장 경로를 사용한다. */
+export function editTemplateSlots(deck: Deck, chapterId: string, edit: (slots: Slots) => Slots): Deck {
+  return updateSlide(deck, chapterId, slots => slots.template === 'diagram' ? slots : edit(slots));
+}
+
+export function setSlideField(deck: Deck, chapterId: string, field: 'eyebrow' | 'subtitle', text: string): Deck {
+  return {...deck, slides: deck.slides.map(s => s.chapter_id === chapterId && s.slots.template !== 'diagram' ? {...s, [field]: text} : s)};
+}
+
+export function changeTemplateItems(deck: Deck, chapterId: string, action: 'add' | 'remove', index?: number): Deck {
+  return editTemplateSlots(deck, chapterId, s => {
+    const change = <T,>(items: T[], min: number, max: number, item: T): T[] => {
+      if (action === 'add') return items.length < max ? [...items, item] : items;
+      return items.length > min && index !== undefined && Number.isInteger(index) && index >= 0 && index < items.length
+        ? items.filter((_, i) => i !== index) : items;
+    };
+    if (s.template === 'cards') return {...s, cards: change(s.cards, 2, 4, {heading: '', badge: '', tail: '', emphasis: false, bullets: []})};
+    if (s.template === 'process') return {...s, steps: change(s.steps, 3, 6, {heading: '', subtitle: '', notes: []})};
+    if (s.template === 'matrix') return {...s, rows: change(s.rows, 3, 6, {category: '', primary: '', items: []})};
+    return s;
+  });
 }

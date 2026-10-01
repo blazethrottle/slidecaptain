@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, messageOf, type AppStatus, type ProjectInfo } from "../api/client";
+import { AISettingsPanel } from "./AISettingsPanel";
 
 /** 상태 응답을 한 줄 문구로 바꾼다 (계획서 2026-09-01 태스크 4, 파일럿 관찰 5). */
 function describeStatus(status: AppStatus): string {
@@ -12,8 +13,7 @@ function describeStatus(status: AppStatus): string {
       + `마지막 생성 성공: ${last}`;
   }
   if (login.logged_in === false) {
-    return "AI 연결: 로그인되지 않았습니다. 터미널에서 claude 명령으로 로그인한 뒤 "
-      + "서버 창을 닫고 SlideCaptain실행.bat을 다시 실행해 주세요.";
+    return "AI 연결: 로그인되지 않았습니다. AI 연결 및 모델 화면에서 로그인해 주세요.";
   }
   const version = login.cli_version ? `, CLI ${login.cli_version}` : "";
   return `AI 연결: 확인하지 못했습니다 (${login.error ?? "원인 미상"}${version}).`;
@@ -29,9 +29,13 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   useEffect(() => {
     api.listProjects().then(setProjects).catch((e) => setError(messageOf(e)));
     // 상태 조회 실패는 목록 표시를 막지 않는다 (오류 영역이 아니라 상태 줄에만 남긴다)
-    api.getStatus()
-      .then((s) => setStatusLine(describeStatus(s)))
+    const refresh = () => api.getStatus()
+      .then((s) => setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
+        ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s)))
       .catch(() => setStatusLine("AI 연결 상태를 불러오지 못했습니다."));
+    void refresh();
+    window.addEventListener("slidecaptain:ai-selection", refresh);
+    return () => window.removeEventListener("slidecaptain:ai-selection", refresh);
   }, []);
 
   const create = async () => {
@@ -47,6 +51,7 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
     <main className="project-list">
       <h1>Slide Captain</h1>
       <p className="ai-status" role="status">{statusLine}</p>
+      <AISettingsPanel />
       {error && <p role="alert">{error}</p>}
       <section>
         <h2>새 프로젝트</h2>

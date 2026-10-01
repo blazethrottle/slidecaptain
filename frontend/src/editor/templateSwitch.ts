@@ -7,7 +7,7 @@ type Currency = {
   dropped: string[];  // 어느 템플릿으로 가든 옮길 수 없는 원본 내용
 };
 
-function collect(slots: Slots): Currency {
+function collect(slots: Exclude<Slots, { template: "diagram" }>): Currency {
   switch (slots.template) {
     case "bullet_box":
       return { conclusion: slots.conclusion, bullets: slots.bullets ?? [],
@@ -30,7 +30,7 @@ function collect(slots: Slots): Currency {
     case "callout":
       // 밴드는 문장 하나뿐이다: bullet_box/summary의 conclusion과 같은 "그 장의 결론 한 줄"
       // 의미이므로 같은 자리로 담아 다른 템플릿의 결론과 오갈 수 있게 한다
-      return { conclusion: slots.text, bullets: [], dropped: [] };
+      return { conclusion: slots.text, bullets: [], dropped: [`강조 색 역할 "${slots.tone}"`] };
     case "cards": {
       // 카드에는 conclusion/footnote에 대응하는 자리가 없다: 불릿만 모으고 배지, 소제목,
       // 꼬리 라벨은 각 카드별로 소실 목록에 남긴다 (2026-09-07 DB-2)
@@ -40,6 +40,7 @@ function collect(slots: Slots): Currency {
         if (card.badge) dropped.push(`${i + 1}번째 카드 배지 "${card.badge}"`);
         if (card.heading) dropped.push(`${i + 1}번째 카드 소제목 "${card.heading}"`);
         if (card.tail) dropped.push(`${i + 1}번째 카드 꼬리 라벨 "${card.tail}"`);
+        if (card.emphasis) dropped.push(`${i + 1}번째 카드 강조`);
         bullets.push(...(card.bullets ?? []));
       });
       return { bullets, dropped };
@@ -72,6 +73,8 @@ function collect(slots: Slots): Currency {
 }
 
 export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; dropped: string[] } {
+  // 도식에는 기존 슬롯과 호환되는 의미 변환이 없다. 읽기 전용 경계를 유지한다.
+  if (slots.template === "diagram" || to === "diagram") return { slots, dropped: [] };
   if (slots.template === to) return { slots, dropped: [] };
   const c = collect(slots);
   const dropped = [...c.dropped];
@@ -170,15 +173,22 @@ export function switchTemplate(slots: Slots, to: TemplateName): { slots: Slots; 
 
 export function applyTemplateSwitch(deck: Deck, chapterId: string, to: TemplateName):
   { deck: Deck; dropped: string[] } {
+  if (to === "diagram" || deck.structure.chapters.some(c => c.id === chapterId && c.template === "diagram")) {
+    return { deck, dropped: [] };
+  }
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
+  if (slide?.slots.template === to) return { deck, dropped: [] };
   const result = slide ? switchTemplate(slide.slots, to) : null;
+  const expressionLosses: string[] = [];
+  if (slide?.chart) expressionLosses.push(`차트 표시 (${slide.chart.kind === 'bar' ? '가로' : '세로'} 막대, 비교 ${slide.chart.comparison_id})`);
+  if (slide?.text_spans?.length) expressionLosses.push(`부분 강조 ${slide.text_spans.length}개`);
   const next: Deck = {
     ...deck,
-    structure: { chapters: deck.structure.chapters.map((ch) =>
+    structure: { ...deck.structure, chapters: deck.structure.chapters.map((ch) =>
       ch.id === chapterId ? { ...ch, template: to } : ch) },
     slides: result
-      ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots: result.slots } : s))
+      ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots: result.slots, ...(s.chart ? { chart: null } : {}), ...(s.text_spans?.length ? { text_spans: [] } : {}) } : s))
       : deck.slides,
   };
-  return { deck: next, dropped: result?.dropped ?? [] };
+  return { deck: next, dropped: [...(result?.dropped ?? []), ...expressionLosses] };
 }

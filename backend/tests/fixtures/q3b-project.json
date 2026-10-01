@@ -1,0 +1,905 @@
+{
+  "sources": {
+    "합성 도식 자료.md": "합성 운영에서는 접수 담당자가 요청을 받는다.\n합성 운영에서는 검토 담당자가 요청을 검토한다.\n합성 운영에서는 접수 후 요청을 검토 담당자에게 전달한다."
+  },
+  "deck": {
+    "schema_version": 1,
+    "meta": {
+      "title": "합성 도식 보고",
+      "report_type": "research",
+      "audience": "",
+      "presenter": "",
+      "preset_overrides": {}
+    },
+    "structure": {
+      "chapters": [
+        {
+          "id": "cover",
+          "topic": "합성 보고",
+          "conclusion": "",
+          "template": "cover",
+          "source_refs": []
+        },
+        {
+          "id": "synthetic-flow",
+          "topic": "요청 처리 흐름",
+          "conclusion": "",
+          "template": "diagram",
+          "source_refs": []
+        }
+      ],
+      "story_plan": {
+        "version": "q2a-v1",
+        "brief": {
+          "decision_question": "요청을 어떻게 처리하는가?",
+          "audience": "",
+          "report_type": "research",
+          "reading_profile": "미지정",
+          "constraints": []
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source_id": "합성 도식 자료.md",
+            "locator": {
+              "line_start": 1,
+              "line_end": 1
+            },
+            "value": null,
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": null,
+            "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+            "excerpt": "합성 운영에서는 접수 담당자가 요청을 받는다."
+          },
+          {
+            "id": "e2",
+            "source_id": "합성 도식 자료.md",
+            "locator": {
+              "line_start": 2,
+              "line_end": 2
+            },
+            "value": null,
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": null,
+            "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+            "excerpt": "합성 운영에서는 검토 담당자가 요청을 검토한다."
+          },
+          {
+            "id": "e3",
+            "source_id": "합성 도식 자료.md",
+            "locator": {
+              "line_start": 3,
+              "line_end": 3
+            },
+            "value": null,
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": null,
+            "source_revision": "ff3ab3b506893c95265751c1d326290a5ae75998aad308b30ca07b550fd2ce35",
+            "excerpt": "합성 운영에서는 접수 후 요청을 검토 담당자에게 전달한다."
+          }
+        ],
+        "claims": [
+          {
+            "id": "claim",
+            "statement": "접수 뒤 검토한다.",
+            "kind": "fact",
+            "evidence_ids": [
+              "e1",
+              "e2",
+              "e3"
+            ],
+            "caveats": []
+          }
+        ],
+        "answer_claim_ids": [
+          "claim"
+        ],
+        "chapters": [
+          {
+            "chapter_id": "synthetic-flow",
+            "role": "answer",
+            "claim_ids": [
+              "claim"
+            ]
+          }
+        ],
+        "unanswered_questions": [],
+        "comparisons": [],
+        "comparison_results": [],
+        "derivations": [],
+        "derived_values": [],
+        "input_fingerprint": "3d4a09056eacb1562ed062670c6872abd82be4d1c5c2beabf180c5a63fb41cdb"
+      }
+    },
+    "slides": [
+      {
+        "chapter_id": "synthetic-flow",
+        "eyebrow": "합성 운영",
+        "subtitle": "접수부터 검토까지",
+        "slots": {
+          "template": "diagram",
+          "diagram": {
+            "version": "q3a-v1",
+            "id": "synthetic-flow",
+            "canvas": {
+              "page_size": "preset",
+              "reading_profile": "report"
+            },
+            "nodes": [
+              {
+                "id": "intake",
+                "role": "step",
+                "content": "요청 접수",
+                "kind": "fact",
+                "evidence_ids": [
+                  "e1"
+                ],
+                "caveats": []
+              },
+              {
+                "id": "review",
+                "role": "decision",
+                "content": "요청 검토",
+                "kind": "fact",
+                "evidence_ids": [
+                  "e2"
+                ],
+                "caveats": []
+              },
+              {
+                "id": "pilot",
+                "role": "outcome",
+                "content": "자동 알림 도입 제안",
+                "kind": "proposal",
+                "evidence_ids": [],
+                "caveats": [
+                  "효과와 비용은 확인하지 않았다."
+                ]
+              }
+            ],
+            "edges": [
+              {
+                "id": "handoff",
+                "from_node_id": "intake",
+                "to_node_id": "review",
+                "relation": "flow",
+                "label": "검토 요청 전달",
+                "evidence_ids": [
+                  "e3"
+                ]
+              },
+              {
+                "id": "suggestion",
+                "from_node_id": "review",
+                "to_node_id": "pilot",
+                "relation": "proposal",
+                "label": "알림 도입 제안",
+                "evidence_ids": []
+              }
+            ],
+            "layout_variant": "flow_horizontal"
+          },
+          "footnote": "합성 자료"
+        }
+      },
+      {
+        "chapter_id": "cover",
+        "eyebrow": "",
+        "subtitle": "",
+        "slots": {
+          "template": "cover",
+          "title": "합성 보고",
+          "subtitle": "",
+          "date": ""
+        }
+      }
+    ]
+  },
+  "render_plan": {
+    "page_width_pt": 960.0,
+    "page_height_pt": 540.0,
+    "style": {
+      "korean_font": "Noto Sans KR",
+      "latin_font": "Noto Sans KR",
+      "text_color": "202020",
+      "box_padding_pt": 10.0,
+      "line_spacing": 1.4,
+      "bullet_indent_pt": 18.0,
+      "bullet_gap_pt": 6.0,
+      "table_cell_pad_x_pt": 6.0,
+      "table_cell_pad_y_pt": 3.0,
+      "border_width_pt": 0.75,
+      "bullet_char": "•",
+      "bullet_font": "Arial"
+    },
+    "slides": [
+      {
+        "chapter_id": "cover",
+        "template": "cover",
+        "frames": [
+          {
+            "name": "cover:cover_title",
+            "x": 80.0,
+            "y": 200.0,
+            "w": 800.0,
+            "h": 48.0,
+            "fill": null,
+            "border": null,
+            "paras": [
+              {
+                "text": "합성 보고",
+                "level": 0,
+                "font_pt": 28.0,
+                "bold": true,
+                "color": "202020",
+                "align": "left",
+                "bullet": false,
+                "lines": [
+                  "합성 보고"
+                ]
+              }
+            ],
+            "table": null,
+            "valign": "top",
+            "radius_pt": null,
+            "border_width_pt": null
+          },
+          {
+            "name": "cover:subtitle",
+            "x": 80.0,
+            "y": 260.0,
+            "w": 800.0,
+            "h": 24.0,
+            "fill": null,
+            "border": null,
+            "paras": [
+              {
+                "text": "",
+                "level": 0,
+                "font_pt": 14.0,
+                "bold": false,
+                "color": "1F4E79",
+                "align": "left",
+                "bullet": false,
+                "lines": [
+                  ""
+                ]
+              }
+            ],
+            "table": null,
+            "valign": "top",
+            "radius_pt": null,
+            "border_width_pt": null
+          },
+          {
+            "name": "cover:date",
+            "x": 80.0,
+            "y": 430.0,
+            "w": 400.0,
+            "h": 18.0,
+            "fill": null,
+            "border": null,
+            "paras": [
+              {
+                "text": "",
+                "level": 0,
+                "font_pt": 12.0,
+                "bold": false,
+                "color": "202020",
+                "align": "left",
+                "bullet": false,
+                "lines": [
+                  ""
+                ]
+              }
+            ],
+            "table": null,
+            "valign": "top",
+            "radius_pt": null,
+            "border_width_pt": null
+          },
+          {
+            "name": "cover:presenter",
+            "x": 80.0,
+            "y": 452.0,
+            "w": 400.0,
+            "h": 18.0,
+            "fill": null,
+            "border": null,
+            "paras": [
+              {
+                "text": "",
+                "level": 0,
+                "font_pt": 12.0,
+                "bold": false,
+                "color": "202020",
+                "align": "left",
+                "bullet": false,
+                "lines": [
+                  ""
+                ]
+              }
+            ],
+            "table": null,
+            "valign": "top",
+            "radius_pt": null,
+            "border_width_pt": null
+          }
+        ],
+        "warnings": [],
+        "diagram": null
+      },
+      {
+        "chapter_id": "synthetic-flow",
+        "template": "diagram",
+        "frames": [],
+        "warnings": [],
+        "diagram": {
+          "rule_version": "q3b-render-v1",
+          "input_fingerprint": "e6ddf69f74905b819c16c4cafac37d40c00e365f800e459c5d7449f7ff550644",
+          "layout": {
+            "diagram_id": "synthetic-flow",
+            "page_width_pt": 960.0,
+            "page_height_pt": 540.0,
+            "content_bounds": {
+              "x": 50.0,
+              "y": 136.3,
+              "w": 860.0,
+              "h": 337.7
+            },
+            "reading_profile": "report",
+            "layout_variant": "flow_horizontal",
+            "korean_font": "Noto Sans KR",
+            "latin_font": "Noto Sans KR",
+            "border_width_pt": 0.75,
+            "nodes": [
+              {
+                "node": {
+                  "id": "intake",
+                  "role": "step",
+                  "content": "요청 접수",
+                  "kind": "fact",
+                  "evidence_ids": [
+                    "e1"
+                  ],
+                  "caveats": []
+                },
+                "display_name": "요청 접수",
+                "bounds": {
+                  "x": 50.375,
+                  "y": 245.15,
+                  "w": 214.8125,
+                  "h": 119.99999999999999
+                },
+                "texts": [
+                  {
+                    "text": "사실 / 단계",
+                    "lines": [
+                      "사실 / 단계"
+                    ],
+                    "bounds": {
+                      "x": 60.375,
+                      "y": 255.15,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": true,
+                    "color": "202020"
+                  },
+                  {
+                    "text": "요청 접수",
+                    "lines": [
+                      "요청 접수"
+                    ],
+                    "bounds": {
+                      "x": 60.375,
+                      "y": 281.95,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": false,
+                    "color": "202020"
+                  }
+                ],
+                "fill": "EEF3F9",
+                "border": "D0D7E2"
+              },
+              {
+                "node": {
+                  "id": "review",
+                  "role": "decision",
+                  "content": "요청 검토",
+                  "kind": "fact",
+                  "evidence_ids": [
+                    "e2"
+                  ],
+                  "caveats": []
+                },
+                "display_name": "요청 검토",
+                "bounds": {
+                  "x": 372.59375,
+                  "y": 245.15,
+                  "w": 214.8125,
+                  "h": 119.99999999999999
+                },
+                "texts": [
+                  {
+                    "text": "사실 / 판단",
+                    "lines": [
+                      "사실 / 판단"
+                    ],
+                    "bounds": {
+                      "x": 382.59375,
+                      "y": 255.15,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": true,
+                    "color": "202020"
+                  },
+                  {
+                    "text": "요청 검토",
+                    "lines": [
+                      "요청 검토"
+                    ],
+                    "bounds": {
+                      "x": 382.59375,
+                      "y": 281.95,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": false,
+                    "color": "202020"
+                  }
+                ],
+                "fill": "EEF3F9",
+                "border": "D0D7E2"
+              },
+              {
+                "node": {
+                  "id": "pilot",
+                  "role": "outcome",
+                  "content": "자동 알림 도입 제안",
+                  "kind": "proposal",
+                  "evidence_ids": [],
+                  "caveats": [
+                    "효과와 비용은 확인하지 않았다."
+                  ]
+                },
+                "display_name": "자동 알림 도입 제안",
+                "bounds": {
+                  "x": 694.8125,
+                  "y": 245.15,
+                  "w": 214.8125,
+                  "h": 119.99999999999999
+                },
+                "texts": [
+                  {
+                    "text": "제안 / 결과",
+                    "lines": [
+                      "제안 / 결과"
+                    ],
+                    "bounds": {
+                      "x": 704.8125,
+                      "y": 255.15,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": true,
+                    "color": "202020"
+                  },
+                  {
+                    "text": "자동 알림 도입 제안",
+                    "lines": [
+                      "자동 알림 도입 제안"
+                    ],
+                    "bounds": {
+                      "x": 704.8125,
+                      "y": 281.95,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": false,
+                    "color": "202020"
+                  },
+                  {
+                    "text": "조건: 효과와 비용은 확인하지 않았다.",
+                    "lines": [
+                      "조건: 효과와 비용은 확인하지 않았다."
+                    ],
+                    "bounds": {
+                      "x": 704.8125,
+                      "y": 308.75,
+                      "w": 194.8125,
+                      "h": 16.799999999999997
+                    },
+                    "font_pt": 12.0,
+                    "line_height_pt": 16.799999999999997,
+                    "bold": false,
+                    "color": "202020"
+                  }
+                ],
+                "fill": "EEF3F9",
+                "border": "D0D7E2"
+              }
+            ],
+            "edges": [
+              {
+                "edge": {
+                  "id": "handoff",
+                  "from_node_id": "intake",
+                  "to_node_id": "review",
+                  "relation": "flow",
+                  "label": "검토 요청 전달",
+                  "evidence_ids": [
+                    "e3"
+                  ]
+                },
+                "start": {
+                  "side": "right",
+                  "point": {
+                    "x": 265.1875,
+                    "y": 326.95000000000005
+                  }
+                },
+                "end": {
+                  "side": "left",
+                  "point": {
+                    "x": 372.59375,
+                    "y": 326.95000000000005
+                  }
+                },
+                "label": {
+                  "text": "흐름: 검토 요청 전달",
+                  "lines": [
+                    "흐름: 검토 요청",
+                    "전달"
+                  ],
+                  "bounds": {
+                    "x": 275.1875,
+                    "y": 280.35,
+                    "w": 87.40625,
+                    "h": 33.599999999999994
+                  },
+                  "font_pt": 12.0,
+                  "line_height_pt": 16.799999999999997,
+                  "bold": false,
+                  "color": "202020"
+                },
+                "stroke": "solid",
+                "dash_pattern_pt": [],
+                "line_cap": "butt",
+                "color": "202020",
+                "arrow_points": [
+                  {
+                    "x": 372.59375,
+                    "y": 326.95000000000005
+                  },
+                  {
+                    "x": 366.59375,
+                    "y": 323.95000000000005
+                  },
+                  {
+                    "x": 366.59375,
+                    "y": 329.95000000000005
+                  }
+                ]
+              },
+              {
+                "edge": {
+                  "id": "suggestion",
+                  "from_node_id": "review",
+                  "to_node_id": "pilot",
+                  "relation": "proposal",
+                  "label": "알림 도입 제안",
+                  "evidence_ids": []
+                },
+                "start": {
+                  "side": "right",
+                  "point": {
+                    "x": 587.40625,
+                    "y": 352.15
+                  }
+                },
+                "end": {
+                  "side": "left",
+                  "point": {
+                    "x": 694.8125,
+                    "y": 352.15
+                  }
+                },
+                "label": {
+                  "text": "제안: 알림 도입 제안\n주체: 요청 검토\n대상: 자동 알림 도입 제안",
+                  "lines": [
+                    "제안: 알림 도입",
+                    "제안",
+                    "주체: 요청 검토",
+                    "대상: 자동 알림",
+                    "도입 제안"
+                  ],
+                  "bounds": {
+                    "x": 597.40625,
+                    "y": 255.15,
+                    "w": 87.40625,
+                    "h": 83.99999999999999
+                  },
+                  "font_pt": 12.0,
+                  "line_height_pt": 16.799999999999997,
+                  "bold": false,
+                  "color": "202020"
+                },
+                "stroke": "dashed",
+                "dash_pattern_pt": [
+                  3.0,
+                  2.25
+                ],
+                "line_cap": "butt",
+                "color": "202020",
+                "arrow_points": []
+              }
+            ]
+          },
+          "headers": [
+            {
+              "name": "synthetic-flow:eyebrow",
+              "x": 50.0,
+              "y": 36.0,
+              "w": 860.0,
+              "h": 14.7,
+              "fill": null,
+              "border": null,
+              "paras": [
+                {
+                  "text": "합성 운영",
+                  "level": 0,
+                  "font_pt": 10.5,
+                  "bold": true,
+                  "color": "0E8C7F",
+                  "align": "left",
+                  "bullet": false,
+                  "lines": [
+                    "합성 운영"
+                  ]
+                }
+              ],
+              "table": null,
+              "valign": "top",
+              "radius_pt": null,
+              "border_width_pt": null
+            },
+            {
+              "name": "synthetic-flow:subtitle",
+              "x": 50.0,
+              "y": 100.7,
+              "w": 860.0,
+              "h": 19.599999999999998,
+              "fill": null,
+              "border": null,
+              "paras": [
+                {
+                  "text": "접수부터 검토까지",
+                  "level": 0,
+                  "font_pt": 14.0,
+                  "bold": false,
+                  "color": "24384A",
+                  "align": "left",
+                  "bullet": false,
+                  "lines": [
+                    "접수부터 검토까지"
+                  ]
+                }
+              ],
+              "table": null,
+              "valign": "top",
+              "radius_pt": null,
+              "border_width_pt": null
+            },
+            {
+              "name": "synthetic-flow:title",
+              "x": 50.0,
+              "y": 54.7,
+              "w": 860.0,
+              "h": 40.0,
+              "fill": null,
+              "border": null,
+              "paras": [
+                {
+                  "text": "요청 처리 흐름",
+                  "level": 0,
+                  "font_pt": 20.0,
+                  "bold": true,
+                  "color": "202020",
+                  "align": "left",
+                  "bullet": false,
+                  "lines": [
+                    "요청 처리 흐름"
+                  ]
+                }
+              ],
+              "table": null,
+              "valign": "top",
+              "radius_pt": null,
+              "border_width_pt": null
+            },
+            {
+              "name": "synthetic-flow:footnote",
+              "x": 50.0,
+              "y": 482.0,
+              "w": 860.0,
+              "h": 24.0,
+              "fill": null,
+              "border": null,
+              "paras": [
+                {
+                  "text": "합성 자료",
+                  "level": 0,
+                  "font_pt": 9.0,
+                  "bold": false,
+                  "color": "202020",
+                  "align": "left",
+                  "bullet": false,
+                  "lines": [
+                    "합성 자료"
+                  ]
+                }
+              ],
+              "table": null,
+              "valign": "top",
+              "radius_pt": null,
+              "border_width_pt": null
+            },
+            {
+              "name": "synthetic-flow:page_number",
+              "x": 850.0,
+              "y": 512.0,
+              "w": 60.0,
+              "h": 16.0,
+              "fill": null,
+              "border": null,
+              "paras": [
+                {
+                  "text": "2",
+                  "level": 0,
+                  "font_pt": 9.0,
+                  "bold": false,
+                  "color": "202020",
+                  "align": "right",
+                  "bullet": false,
+                  "lines": [
+                    "2"
+                  ]
+                }
+              ],
+              "table": null,
+              "valign": "top",
+              "radius_pt": null,
+              "border_width_pt": null
+            }
+          ],
+          "background": "FFFFFF",
+          "review": {
+            "semantic": "not_run",
+            "browser": "not_run",
+            "powerpoint": "not_run",
+            "reader": "not_run"
+          }
+        }
+      }
+    ]
+  },
+  "preset": {
+    "fonts": {
+      "korean": "Noto Sans KR",
+      "latin": "Noto Sans KR"
+    },
+    "font_roles": {
+      "cover_title_pt": 28.0,
+      "section_title_pt": 24.0,
+      "eyebrow_pt": 10.5,
+      "title_pt": 20.0,
+      "subtitle_pt": 14.0,
+      "body_pt": 12.0,
+      "box_pt": 12.0,
+      "table_pt": 12.0,
+      "footnote_pt": 9.0,
+      "page_number_pt": 9.0
+    },
+    "colors": {
+      "text": "202020",
+      "accent": "1F4E79",
+      "box_fill": "EEF3F9",
+      "table_header_fill": "F2F2F2",
+      "border": "D0D7E2",
+      "background": "FFFFFF",
+      "ink": "1B2A3A",
+      "ink_soft": "24384A",
+      "accent1": "0E8C7F",
+      "accent2": "C8860B",
+      "danger": "C0473B",
+      "ok": "2E9E5B",
+      "surface1": "EAF2F1",
+      "surface2": "F4F6F7",
+      "surface3": "FBF3E6",
+      "surface_danger": "FBEEEC",
+      "rule": "DCE3E5"
+    },
+    "spacing": {
+      "margin_left": 50.0,
+      "margin_right": 50.0,
+      "margin_top": 36.0,
+      "margin_bottom": 34.0,
+      "title_height": 40.0,
+      "title_gap": 16.0,
+      "eyebrow_gap": 4.0,
+      "subtitle_gap": 6.0,
+      "footnote_height": 24.0,
+      "footnote_gap": 8.0,
+      "box_height": 56.0,
+      "box_gap": 8.0,
+      "box_padding": 10.0,
+      "summary_box_gap": 12.0,
+      "line_spacing": 1.4,
+      "bullet_gap": 6.0,
+      "bullet_indent": 18.0,
+      "card_gap": 20.0,
+      "card_heading_height": 24.0,
+      "card_heading_gap": 8.0,
+      "card_badge_height": 16.0,
+      "card_badge_gap": 6.0,
+      "card_tail_height": 16.0,
+      "card_tail_gap": 8.0,
+      "cover_indent": 30.0,
+      "table_min_col_width": 60.0,
+      "table_cell_pad_x": 6.0,
+      "table_cell_pad_y": 3.0,
+      "page_number_width": 60.0,
+      "page_number_height": 16.0,
+      "page_number_bottom": 28.0,
+      "safety_ratio": 0.97,
+      "border_width_pt": 0.75,
+      "callout_height": 84.0,
+      "callout_radius_pt": 12.0,
+      "process_row_gap": 12.0,
+      "process_badge_size": 28.0,
+      "process_badge_gap": 16.0,
+      "process_heading_height": 20.0,
+      "process_subtitle_gap": 4.0,
+      "process_label_width": 140.0,
+      "process_label_gap": 16.0,
+      "process_label_height": 14.0,
+      "matrix_row_gap": 12.0,
+      "matrix_category_width": 140.0,
+      "matrix_category_gap": 16.0,
+      "matrix_items_width": 220.0,
+      "matrix_items_gap": 16.0
+    },
+    "bullet_marker": {
+      "char": "•",
+      "font": "Arial"
+    },
+    "page_width_pt": 960.0,
+    "page_height_pt": 540.0,
+    "language": "ko-KR"
+  }
+}

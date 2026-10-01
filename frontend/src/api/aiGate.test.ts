@@ -63,6 +63,24 @@ it("grantConsent로 미리 동의해 두면 프롬프터를 부르지 않는다"
   expect(prompter).not.toHaveBeenCalled();
 });
 
+it("서비스나 모델 식별값이 바뀌면 다시 동의를 받는다", async () => {
+  const prompter = vi.fn().mockResolvedValue(true);
+  setConsentPrompter(prompter);
+  await ensureConsent("claude-sonnet-one");
+  await ensureConsent("claude-sonnet-one");
+  await ensureConsent("chatgpt-model-two");
+  expect(prompter).toHaveBeenCalledTimes(2);
+  expect(hasConsent("chatgpt-model-two")).toBe(true);
+  expect(hasConsent("claude-sonnet-one")).toBe(false);
+});
+
+it("동의 대화 상자에서 오류가 나도 다음 시도는 다시 열린다", async () => {
+  const prompter = vi.fn().mockRejectedValueOnce(new Error("closed")).mockResolvedValueOnce(true);
+  setConsentPrompter(prompter);
+  await expect(ensureConsent("one")).rejects.toThrow("closed");
+  expect(await ensureConsent("two")).toBe(true);
+});
+
 it("sessionStorage가 던져도 죽지 않는다", async () => {
   const original = Object.getOwnPropertyDescriptor(window, "sessionStorage");
   Object.defineProperty(window, "sessionStorage", {

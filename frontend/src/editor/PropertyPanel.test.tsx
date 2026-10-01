@@ -42,13 +42,36 @@ it("장 주제와 템플릿이 각각 한 줄을 차지한다", () => {
   expect(topic).not.toBe(template);
 });
 
-it("전환 드롭다운에는 편집 UI가 아직 없는 새 템플릿(callout)이 없다", () => {
-  // DB-1이 추가한 callout은 속성 패널 전용 UI가 없다: 여기서 고르면 편집할 수단이 없는
-  // 상태가 된다(DA-4/DB-1 SELECTABLE_TEMPLATES 규약). PropertyPanel.tsx도 StructureScreen.tsx와
-  // 같은 TEMPLATE_LABELS 기반 드롭다운을 쓰므로 같은 규약을 따라야 한다.
+it("전환 드롭다운은 편집 가능한 신규 4종을 제공한다", () => {
+  // DB-6 속성 편집을 제공한 신규 템플릿도 선택할 수 있다.
   render(<PropertyPanel deck={deck} chapterId="c1" onApply={() => {}} />);
   const select = screen.getByLabelText("템플릿") as HTMLSelectElement;
   const values = Array.from(select.options).map((o) => o.value);
-  expect(values).not.toContain("callout");
-  expect(values).toHaveLength(6);
+  expect(values).toEqual(expect.arrayContaining(["callout", "cards", "process", "matrix"]));
+  expect(values).toHaveLength(10);
+});
+
+it('공통 빈 아이브로우와 부제를 속성 패널에서 추가할 수 있다', async()=>{
+ const onApply=vi.fn();render(<PropertyPanel deck={deck} chapterId='c1' onApply={onApply}/>);
+ await userEvent.type(screen.getByLabelText('아이브로우'),'새');
+ const next=onApply.mock.calls[0][0](deck);expect(next.slides[0].eyebrow).toBe('새');
+});
+it('손실 전환 취소는 적용도 전환 요청도 하지 않는다',async()=>{
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(false),onApply=vi.fn(),onSwitchTemplate=vi.fn();
+ render(<PropertyPanel deck={deck} chapterId='c1' onApply={onApply} onSwitchTemplate={onSwitchTemplate}/>);
+ await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');
+ expect(confirm).toHaveBeenCalled();expect(onApply).not.toHaveBeenCalled();expect(onSwitchTemplate).not.toHaveBeenCalled();confirm.mockRestore();
+});
+it('카드의 빈 선택 필드와 강조, 불릿 추가를 편집할 수 있다',async()=>{
+ const d:Deck={...deck,structure:{chapters:[{...deck.structure.chapters[0],template:'cards'}]},slides:[{...deck.slides[0],slots:{template:'cards',cards:[{heading:'A',badge:'',tail:'',emphasis:false,bullets:[]},{heading:'B',badge:'',tail:'',emphasis:false,bullets:[]}]}}]};
+ const onApply=vi.fn();render(<PropertyPanel deck={d} chapterId='c1' onApply={onApply}/>);
+ expect(screen.getByLabelText('카드 1 삭제')).toBeDisabled();
+ await userEvent.type(screen.getByLabelText('1번 카드 배지'),'새');
+ let s=onApply.mock.calls.at(-1)![0](d).slides[0].slots;expect(s.cards[0].badge).toBe('새');
+ await userEvent.click(screen.getByLabelText('1번 카드 강조'));s=onApply.mock.calls.at(-1)![0](d).slides[0].slots;expect(s.cards[0].emphasis).toBe(true);
+ await userEvent.click(screen.getByText('1번 카드 불릿 추가'));s=onApply.mock.calls.at(-1)![0](d).slides[0].slots;expect(s.cards[0].bullets).toHaveLength(1);
+});
+it('단계 보조 라벨 상한은 2개이며 빈 부제 입력을 제공한다',()=>{
+ const d:Deck={...deck,structure:{chapters:[{...deck.structure.chapters[0],template:'process'}]},slides:[{...deck.slides[0],slots:{template:'process',steps:[{heading:'A',subtitle:'',notes:['x','y']},{heading:'B',subtitle:'',notes:[]},{heading:'C',subtitle:'',notes:[]}]}}]};
+ render(<PropertyPanel deck={d} chapterId='c1' onApply={vi.fn()}/>);expect(screen.getByLabelText('1번 단계 부제')).toHaveValue('');expect(screen.getByText('1번 단계 보조 라벨 추가')).toBeDisabled();
 });

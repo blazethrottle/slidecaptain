@@ -70,13 +70,13 @@ describe("AI 연결 상태 한 줄", () => {
     expect(await screen.findByText(/마지막 생성 성공: 아직 없음/)).toBeInTheDocument();
   });
 
-  it("로그인되지 않았으면 로그인 후 재실행 안내를 보여준다", async () => {
+  it("로그인되지 않았으면 연결 화면 안내를 보여준다", async () => {
     vi.mocked(api.getStatus).mockResolvedValue({
       ...LOGGED_IN, login: { logged_in: false, auth_method: null, account: null, cli_version: null, error: null },
     });
     render(<ProjectList onOpen={() => {}} />);
     const line = await screen.findByText(/로그인되지 않았습니다/);
-    expect(line).toHaveTextContent("SlideCaptain실행.bat");
+    expect(line).toHaveTextContent("AI 연결 및 모델 화면");
   });
 
   it("확인하지 못하면 사유와 CLI 버전을 함께 보여준다", async () => {

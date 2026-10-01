@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck, type UploadResult } from "../api/client";
 import { SourcesScreen } from "./SourcesScreen";
+import { deferred } from "../test/fixtures";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -56,6 +57,50 @@ it("새 자료 이름에 확장자가 없으면 .md를 붙인다", async () => {
   await userEvent.type(screen.getByLabelText("새 자료 이름"), "리서치");
   await userEvent.click(screen.getByText("자료 추가"));
   expect(api.writeSource).toHaveBeenCalledWith("p1", "리서치.md", "");
+});
+
+it("다른 자료를 기다리는 동안 편집한 본문을 늦은 응답이 덮지 않는다", async () => {
+  const pending = deferred<{ text: string }>();
+  vi.mocked(api.listSources).mockResolvedValue(["first.md", "second.md"]);
+  vi.mocked(api.readSource).mockResolvedValueOnce({ text: "첫 원문" }).mockReturnValue(pending.promise);
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));
+  const box = await screen.findByLabelText("자료 내용");
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  await userEvent.type(box, " 수정 중");
+  await act(async () => pending.resolve({ text: "둘째 원문" }));
+  expect(screen.getByLabelText("자료 내용")).toHaveValue("첫 원문 수정 중");
+  expect(screen.getByRole("heading", { name: "first.md" })).toBeInTheDocument();
+});
+
+it("자료 선택이 바뀌면 먼저 요청한 파일의 늦은 응답을 버린다", async () => {
+  const pending = deferred<{ text: string }>();
+  vi.mocked(api.listSources).mockResolvedValue(["first.md", "second.md"]);
+  vi.mocked(api.readSource).mockReturnValueOnce(pending.promise).mockResolvedValue({ text: "둘째 원문" });
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  expect(await screen.findByLabelText("자료 내용")).toHaveValue("둘째 원문");
+  await act(async () => pending.resolve({ text: "첫 원문" }));
+  expect(screen.getByLabelText("자료 내용")).toHaveValue("둘째 원문");
+});
+
+it("다른 자료를 저장한 늦은 응답이 현재 본문의 저장 기준을 바꾸지 않는다", async () => {
+  const pending = deferred<{ ok: boolean }>();
+  const dirty = vi.fn();
+  vi.mocked(api.listSources).mockResolvedValue(["first.md", "second.md"]);
+  vi.mocked(api.readSource).mockResolvedValueOnce({ text: "첫 원문" }).mockResolvedValue({ text: "둘째 원문" });
+  vi.mocked(api.writeSource).mockReturnValue(pending.promise);
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} onDirtyChange={dirty} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));
+  await screen.findByLabelText("자료 내용");
+  await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
+  expect(screen.getByRole("button", { name: "자료 저장" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  await waitFor(() => expect(screen.getByLabelText("자료 내용")).toHaveValue("둘째 원문"));
+  await act(async () => pending.resolve({ ok: true }));
+  fireEvent.change(screen.getByLabelText("자료 내용"), { target: { value: "첫 원문" } });
+  expect(dirty).toHaveBeenLastCalledWith(true);
 });
 
 describe("자료 파일 업로드", () => {

@@ -3,17 +3,22 @@
 실행은 CLI의 serve 서브커맨드가 담당하며 127.0.0.1 전용으로 바인딩한다 (로컬 웹앱).
 """
 
+import asyncio
+import hashlib
+import hmac
 import logging
+import secrets
 import threading
 import time
 import unicodedata
 from collections.abc import Callable
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,14 +27,50 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from slidecaptain import __version__
 from slidecaptain.export.exporter import export_deck_data
+from slidecaptain.export.locking import ExportBusyError
+from slidecaptain.export.history import HistoryNotFound, HistoryReadError, read_export_history
+from slidecaptain.export.reviews import (
+    ReviewConflict, ReviewDeckConflict, ReviewInputs, ReviewPagesError,
+    append_export_review, read_export_reviews,
+)
+from slidecaptain.models.export_history import ExportHistoryDetail, ExportHistoryPage
+from slidecaptain.models.export_reviews import ExportReviewRequest, ExportReviews
+from slidecaptain.models.export_qualification import (
+    ExportQualification, FinalPublication, IndependentReviewRequest, QualificationRequest,
+)
+from slidecaptain.export.qualification import (
+    QualificationConflict, QualificationDeckConflict, append_independent_review,
+    publish_final, read_export_qualification, render_export,
+)
 from slidecaptain.layout.engine import build_render_plan
+from slidecaptain.layout.diagram_page import DiagramRenderBlocked
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Deck, Slots
 from slidecaptain.models.preset import Preset, apply_overrides
+from slidecaptain.models.numeric_review import NumericReviewReport
+from slidecaptain.pipeline.numeric_review import assess_numeric_review
+from slidecaptain.models.semantic_review import SemanticSuspectReport
+from slidecaptain.pipeline.semantic_review import assess_semantic_suspects
 from slidecaptain.models.render import RenderPlan
 from slidecaptain.pipeline.auth_status import LoginStatus, check_login
+from slidecaptain.pipeline.connections import AIConnections, AISelection, AISettings, ConnectionConflict, LoginAttempt, ProviderId
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
-from slidecaptain.pipeline.service import ChapterResult, GenerationService, StructureResult
+from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
+from slidecaptain.models.quality import QualityReport
+from slidecaptain.pipeline.service import ChapterResult, DiagramGenerationResult, DiagramGenerationUnsupported, GenerationService, StructureResult, StoryRewriteResult
+from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest, diagram_prompt
+from slidecaptain.pipeline.rewrite import ProtectedEvidenceChanged, rewrite_prompt, sources_fingerprint, validate_rewrite
+from slidecaptain.pipeline.story_repair import StoryRepairRequest, StoryRepairResult, repair_story
+from slidecaptain.models.document_changes import (
+    DocumentChangeRequest, DocumentChangeApplyRequest, DocumentChangePreview,
+    EvidenceMigrationRequest, EvidenceMigrationApplyRequest,
+)
+from slidecaptain.pipeline.document_changes import (
+    evidence_fingerprint, preview_document_change, apply_document_change,
+    preview_evidence_migration, apply_evidence_migration,
+)
+from slidecaptain.models.story import ChapterRole, ReportBrief
+from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.storage.file_store import (
     DeckConflict,
@@ -134,20 +175,24 @@ class UploadResult(BaseModel):
 
 
 class AppStatus(BaseModel):
-    provider: Literal["subscription", "none"]
+    provider: Literal["subscription", "none", "claude", "chatgpt"]
     login: LoginStatus
     model: str | None = None
+    selection_id: str | None = None
     last_generation_at: str | None = None  # 프로세스 메모리에만 기록, 재시작 시 초기화
     checked_at: str = Field(description="로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)")
 
 
 class ExportResult(BaseModel):
     path: str
+    quality_path: str
+    quality: QualityReport
 
 
 class GenerateStructureRequest(BaseModel):
     target_chapters: int | None = Field(default=None, ge=1)
     instructions: str = ""
+    brief: ReportBrief | None = None
 
 
 class GenerateChapterRequest(BaseModel):
@@ -157,6 +202,29 @@ class GenerateChapterRequest(BaseModel):
 class CondenseChapterRequest(BaseModel):
     slots: Slots  # 화면이 들고 있는 현재 슬롯 (미저장 수정 포함. 설계 결정 13)
     instructions: str = ""
+
+
+class ReconcileDiagramRequest(BaseModel):
+    deck: Deck
+    chapter_id: str
+    role: ChapterRole
+    claim_ids: list[str] = Field(min_length=1)
+
+
+class RewriteStoryRequest(BaseModel):
+    brief: ReportBrief
+    instructions: str = Field(default="", max_length=8_000)
+
+
+class ApplyStoryRewriteRequest(BaseModel):
+    deck: Deck
+    sources_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class DocumentChangeBasis(BaseModel):
+    base_etag: str
+    sources_fingerprint: str
+    evidence_fingerprints: dict[str, str]
 
 
 def _require_ai_consent(x_ai_consent: str | None) -> None:
@@ -183,8 +251,15 @@ def create_app(
     provider: AIProvider | None = None,
     static_dir: Path | None = None,
     login_checker: Callable[[], LoginStatus] | None = None,
+    ai_connections: AIConnections | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Slide Captain", version=__version__)
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        if ai_connections is not None:
+            await asyncio.to_thread(ai_connections.close)
+
+    app = FastAPI(title="Slide Captain", version=__version__, lifespan=lifespan)
     metrics = FontMetrics.load_default()  # 앱 수명 동안 1회 로드
     # requested_model은 프로바이더가 실제로 요청한 별칭이다(응답에 담긴 실제 모델과 다른 축.
     # 단계 5A 묶음 C 가정 1과 6, 태스크 C3). SubscriptionProvider 외의 프로바이더가 model 속성이
@@ -197,7 +272,34 @@ def create_app(
     checker = login_checker or check_login
     # 앱 상태 (계획서 2026-09-01 태스크 4): 로그인 확인 캐시와 마지막 생성 성공 시각. 파일에 남기지 않는다
     status_state: dict = {"login": None, "login_at_mono": 0.0, "checked_at": "", "last_generation_at": None}
+    generation_success: dict[tuple[str, str], str] = {}
+    # Restart invalidates pending confirmations. Never expose/save signing keys.
+    document_change_secret = secrets.token_bytes(32)
     status_lock = threading.Lock()  # 동기 라우트가 스레드풀에서 겹쳐도 CLI를 한 번만 띄운다
+
+    @asynccontextmanager
+    async def generation_service(selection_id):
+        if ai_connections is None:
+            yield _require_service()
+            return
+        lease = ai_connections.generation(selection_id)
+        acquiring = asyncio.create_task(asyncio.to_thread(lease.__enter__))
+        try:
+            selected_provider = await asyncio.shield(acquiring)
+        except asyncio.CancelledError:
+            # Status checks run in a worker. Cancelling this request must not
+            # leave a lease acquired later by that worker permanently busy.
+            try:
+                await asyncio.shield(acquiring)
+            except Exception:
+                pass
+            else:
+                await asyncio.to_thread(lease.__exit__, None, None, None)
+            raise
+        try:
+            yield GenerationService(selected_provider, metrics, requested_model=ai_connections.selection.model)
+        finally:
+            await asyncio.to_thread(lease.__exit__, None, None, None)
 
     def _now_iso() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")
@@ -206,6 +308,9 @@ def create_app(
         """구조안 생성, 장별 생성, 축약이 status == "ok"로 끝나면 마지막 성공 시각을 갱신한다."""
         if getattr(result, "status", None) == "ok":
             status_state["last_generation_at"] = _now_iso()
+            if ai_connections is not None:
+                selection = ai_connections.selection
+                generation_success[(selection.provider, selection.model)] = status_state["last_generation_at"]
 
     def _append_usage(name: str, record) -> None:
         """생성 서비스의 on_usage 콜백 (단계 5A 묶음 C 태스크 C3, 가정 4와 5).
@@ -237,7 +342,12 @@ def create_app(
             origin = request.headers.get("origin")
             if origin is not None and urlparse(origin).hostname not in _ALLOWED_ORIGIN_HOSTS:
                 return JSONResponse(status_code=403, content={"detail": _PROTECTION_MESSAGE})
-        return await call_next(request)
+        response = await call_next(request)
+        parts = request.url.path.split("/")
+        is_history = len(parts) >= 5 and parts[1:3] == ["api", "projects"] and parts[4] == "exports"
+        if request.url.path == "/api/status" or request.url.path.startswith("/api/ai/") or is_history:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(StorageError)
     async def storage_error_handler(request, exc: StorageError):
@@ -247,6 +357,24 @@ def create_app(
     @app.exception_handler(ProviderError)
     async def provider_error_handler(request, exc: ProviderError):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(ConnectionConflict)
+    async def connection_conflict_handler(request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(QualityExportBlocked)
+    @app.exception_handler(DiagramRenderBlocked)
+    @app.exception_handler(DiagramGenerationUnsupported)
+    async def quality_export_error_handler(request, exc: QualityExportBlocked):
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(StaleStoryPlan)
+    async def stale_story_handler(request, exc: StaleStoryPlan):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "stale_story_plan"})
+
+    @app.exception_handler(ProtectedEvidenceChanged)
+    async def protected_evidence_error(request: Request, exc: ProtectedEvidenceChanged):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "rewrite_protected_evidence"})
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(request, exc: RequestValidationError):
@@ -270,9 +398,9 @@ def create_app(
             )
         return service
 
-    def _load_sources(name: str) -> dict[str, str]:
+    def _load_sources(name: str, *, allow_empty: bool = False) -> dict[str, str]:
         files = store.list_sources(name)
-        if not files:
+        if not files and not allow_empty:
             raise HTTPException(
                 422,
                 "입력 자료가 없습니다. 자료 화면에서 파일을 추가하거나, "
@@ -334,7 +462,12 @@ def create_app(
     def get_render_plan(name: str):
         deck = store.load_deck(name)
         preset = _preset_for(deck)
-        return build_render_plan(deck, preset, metrics)
+        return build_render_plan(deck, preset, metrics, sources=_load_sources(name, allow_empty=True))
+
+    @app.post("/api/projects/{name}/render-plan", response_model=RenderPlan)
+    def measure_project_deck(name: str, deck: Deck):
+        with store.locked(name):
+            return build_render_plan(deck, _preset_for(deck), metrics, sources=_load_sources(name, allow_empty=True))
 
     @app.post("/api/render-plan", response_model=RenderPlan)
     def measure_deck(deck: Deck):
@@ -342,19 +475,372 @@ def create_app(
         preset = _preset_for(deck)
         return build_render_plan(deck, preset, metrics)
 
+    @app.post("/api/projects/{name}/story-plan/diagram", response_model=Deck)
+    def reconcile_diagram(
+        name: str,
+        req: ReconcileDiagramRequest,
+        response: Response,
+        if_match: str | None = Header(default=None),
+    ):
+        """도식 장과 기존 보고 계획을 확인만 한다. 저장과 AI 호출은 하지 않는다."""
+        with store.locked(name):
+            current, etag = store.load_deck_with_etag(name)
+            expected_etag = if_match.strip('"') if if_match is not None else None
+            if expected_etag is not None and expected_etag != etag:
+                raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+            sources = _load_sources(name)
+            try:
+                reconciled = reconcile_diagram_story_plan(
+                    req.deck, req.chapter_id, req.role, req.claim_ids, sources, base_deck=current,
+                )
+            except StaleStoryPlan:
+                raise
+            except ValidationError as exc:
+                message = exc.errors(include_input=False, include_url=False)[0]["msg"]
+                raise HTTPException(422, message.removeprefix("Value error, ")) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            response.headers["ETag"] = f'"{etag}"'
+            return reconciled
+
+    def _rewrite_base(name: str, if_match: str | None):
+        if not if_match:
+            raise HTTPException(428, "재작성 기준 저장본을 확인해야 합니다. 프로젝트를 다시 열어 주세요.")
+        deck, etag = store.load_deck_with_etag(name)
+        if if_match.strip('"') != etag:
+            raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+        return deck, etag
+
+    def _rewrite_invalid(exc: ValueError):
+        if isinstance(exc, (ProtectedEvidenceChanged, StaleStoryPlan)):
+            raise exc
+        message = exc.errors(include_input=False, include_url=False)[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
+        raise HTTPException(422, message.removeprefix("Value error, ")) from exc
+
+    def _document_basis(name: str, if_match: str | None, expected_sources: str | None = None):
+        deck, etag = _rewrite_base(name, if_match)
+        sources = _load_sources(name, allow_empty=True)
+        revision = sources_fingerprint(sources)
+        if expected_sources is not None and expected_sources != revision:
+            raise HTTPException(409, "자료가 확인한 기준과 다릅니다. 입력을 보존하고 변경 기준을 다시 확인해 주세요.")
+        project_scope = unicodedata.normalize("NFC", name).encode("utf-8")
+        key = hmac.new(document_change_secret, b"document-change-project-v1\0" + project_scope, hashlib.sha256).digest()
+        return deck, etag, sources, revision, key
+
+    @app.get("/api/projects/{name}/document-changes/basis", response_model=DocumentChangeBasis)
+    def get_document_change_basis(name: str, response: Response, if_match: str | None = Header(default=None)):
+        with store.locked(name):
+            deck, etag, sources, revision, key = _document_basis(name, if_match)
+            response.headers["Cache-Control"] = "no-store"
+            return DocumentChangeBasis(base_etag=f'"{etag}"', sources_fingerprint=revision,
+                evidence_fingerprints={e.id: evidence_fingerprint(e) for e in deck.structure.story_plan.evidence}
+                    if deck.structure.story_plan else {})
+
+    def _check_document_render(candidate, sources):
+        build_render_plan(candidate, _preset_for(candidate), metrics, sources=sources)
+
+    def _check_document_sources(name, revision):
+        if sources_fingerprint(_load_sources(name, allow_empty=True)) != revision:
+            raise HTTPException(409, "변경 확인 중 자료가 바뀌었습니다. 후보를 보존하고 변경 기준을 다시 확인해 주세요.")
+
+    @app.post("/api/projects/{name}/document-changes/preview", response_model=DocumentChangePreview)
+    def preview_document(name: str, req: DocumentChangeRequest, if_match: str | None = Header(default=None)):
+        with store.locked(name):
+            base, etag, sources, revision, key = _document_basis(name, if_match, req.expected_source_fingerprint)
+            try:
+                result = preview_document_change(base, req.candidate, sources, key)
+                _check_document_render(result.candidate, sources)
+                _check_document_sources(name, revision)
+                return result
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+
+    @app.post("/api/projects/{name}/document-changes/apply", response_model=Deck)
+    def apply_document(name: str, req: DocumentChangeApplyRequest, response: Response, if_match: str | None = Header(default=None)):
+        with store.locked(name):
+            base, etag, sources, revision, key = _document_basis(name, if_match, req.expected_source_fingerprint)
+            try:
+                candidate = apply_document_change(base, req.candidate, sources, key, req.confirmation_token, req.acknowledged_loss_ids)
+                _check_document_render(candidate, sources)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            _check_document_sources(name, revision)
+            saved = store.save_deck(name, candidate, snapshot=True, expected_etag=etag)
+            response.headers["ETag"] = f'"{saved}"'
+            return candidate
+
+    @app.post("/api/projects/{name}/evidence-migrations/preview", response_model=DocumentChangePreview)
+    def preview_migration(name: str, req: EvidenceMigrationRequest, if_match: str | None = Header(default=None)):
+        with store.locked(name):
+            base, etag, sources, revision, key = _document_basis(name, if_match, req.expected_source_fingerprint)
+            try:
+                result = preview_evidence_migration(base, req, sources, key)
+                _check_document_render(result.candidate, sources)
+                _check_document_sources(name, revision)
+                return result
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+
+    @app.post("/api/projects/{name}/evidence-migrations/apply", response_model=Deck)
+    def apply_migration(name: str, req: EvidenceMigrationApplyRequest, response: Response, if_match: str | None = Header(default=None)):
+        with store.locked(name):
+            base, etag, sources, revision, key = _document_basis(name, if_match, req.expected_source_fingerprint)
+            try:
+                selection_request = EvidenceMigrationRequest.model_validate(req.model_dump(exclude={"confirmation_token", "acknowledged_loss_ids"}))
+                candidate = apply_evidence_migration(base, selection_request, sources, key, req.confirmation_token, req.acknowledged_loss_ids)
+                _check_document_render(candidate, sources)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            _check_document_sources(name, revision)
+            saved = store.save_deck(name, candidate, snapshot=True, expected_etag=etag)
+            response.headers["ETag"] = f'"{saved}"'
+            return candidate
+
+    @app.post("/api/projects/{name}/story-plan/rewrite", response_model=StoryRewriteResult)
+    async def preview_story_rewrite(
+        name: str, req: RewriteStoryRequest, if_match: str | None = Header(default=None),
+        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
+        with store.locked(name):
+            deck, etag = _rewrite_base(name, if_match)
+            sources = _load_sources(name, allow_empty=True)
+            try:
+                rewrite_prompt(deck, req.brief, sources, req.instructions)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            revision = sources_fingerprint(sources)
+        # threading.RLock을 AI await 너머로 유지하지 않는다.
+        async with generation_service(x_ai_selection) as svc:
+            result = await svc.rewrite_story(deck, req.brief, sources, req.instructions,
+                                            on_usage=lambda rec: _append_usage(name, rec))
+            with store.locked(name):
+                _rewrite_base(name, etag)
+                if sources_fingerprint(_load_sources(name, allow_empty=True)) != revision:
+                    raise HTTPException(409, "재작성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.")
+            _record_success(result)
+        result.base_etag = f'"{etag}"'
+        result.sources_fingerprint = revision
+        return result
+
+    @app.post("/api/projects/{name}/story-plan/rewrite/apply", response_model=Deck)
+    def apply_story_rewrite(
+        name: str, req: ApplyStoryRewriteRequest, response: Response,
+        if_match: str | None = Header(default=None),
+    ):
+        with store.locked(name):
+            base, etag = _rewrite_base(name, if_match)
+            sources = _load_sources(name, allow_empty=True)
+            if sources_fingerprint(sources) != req.sources_fingerprint:
+                raise HTTPException(409, "미리보기 이후 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.")
+            try:
+                validate_rewrite(base, req.deck, sources)
+                _preset_for(req.deck)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            saved = store.save_deck(name, req.deck, snapshot=True, expected_etag=etag)
+            response.headers["ETag"] = f'"{saved}"'
+            return req.deck
+
+    @app.post("/api/projects/{name}/story-plan/repair", response_model=StoryRepairResult)
+    async def preview_story_repair(
+        name: str, req: StoryRepairRequest, request: Request,
+        if_match: str | None = Header(default=None),
+        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
+        with store.locked(name):
+            deck, etag = _rewrite_base(name, if_match)
+            sources = _load_sources(name)
+            try:
+                rewrite_prompt(deck, req.brief, sources, req.instructions)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            revision = sources_fingerprint(sources)
+        cancelled = [False]
+        def unchanged():
+            try:
+                with store.locked(name):
+                    current, current_etag = store.load_deck_with_etag(name)
+                    return current_etag == etag and sources_fingerprint(_load_sources(name)) == revision and (
+                        ai_connections is None or ai_connections.selection_id == x_ai_selection)
+            except (StorageError, HTTPException):
+                return False
+        async with generation_service(x_ai_selection) as svc:
+            running = asyncio.create_task(repair_story(deck, sources, req, svc._provider, metrics,
+                base_etag=f'"{etag}"', source_revision=revision, unchanged=unchanged,
+                cancelled=lambda: cancelled[0], on_usage=lambda rec: _append_usage(name, rec)))
+            async def watch_disconnect():
+                while not running.done():
+                    if await request.is_disconnected():
+                        cancelled[0] = True
+                        running.cancel()
+                        return
+                    await asyncio.sleep(0.2)
+            watcher = asyncio.create_task(watch_disconnect())
+            try:
+                result = await running
+            finally:
+                watcher.cancel()
+                await asyncio.gather(watcher, return_exceptions=True)
+            # A late change cannot make an old candidate applicable. Keep it for review.
+            if not unchanged() and result.status != "stopped":
+                result.status = "stopped"
+                result.reason = "기준 저장본·자료·모델 선택이 바뀌었습니다. 후보를 적용하지 마세요."
+            return result
+
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
-    def export_project(name: str):
-        # 잠금 안에서 읽기부터 내보내기까지 한 단위로 묶는다: 잠금 밖이면 동시 내보내기의
-        # 스캔과 이동이 겹쳐 같은 버전 번호를 돌려주고 파일이 조용히 유실된다 (A1 재현 실측)
+    def export_project(name: str, final: bool = False):
+        # 이 프로세스의 편집과 입력 읽기를 직렬화한다. 웹/CLI 간 버전 선택과
+        # 두 파일 게시의 공통 잠금은 exporter가 맡는다. 잠금 순서를 뒤집지 않는다.
         with store.locked(name):
             deck = store.load_deck(name)
             _preset_for(deck)  # 내보내기 전에 overrides부터 검증한다 (파일 직접 수정 대비)
-            path = export_deck_data(deck, store.exports_dir(name), global_preset=store.load_global_preset())
-        return ExportResult(path=str(path))
+            sources = {filename: store.read_source(name, filename) for filename in store.list_sources(name)}
+            try:
+                path = export_deck_data(
+                    deck, store.exports_dir(name), global_preset=store.load_global_preset(),
+                    final=final, sources=sources,
+                )
+            except ExportBusyError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail="내보내기 파일을 저장하지 못했습니다. 출력 폴더의 권한과 여유 공간을 확인하고 "
+                           "문제가 계속되면 로컬 디스크의 다른 폴더에서 다시 시도해 주세요.",
+                ) from exc
+            quality_path = path.with_suffix(".quality.json")
+            quality = QualityReport.model_validate_json(quality_path.read_text(encoding="utf-8"))
+        return ExportResult(path=str(path), quality_path=str(quality_path), quality=quality)
 
     @app.get("/api/projects/{name}/snapshots", response_model=list[SnapshotInfo])
     def list_snapshots(name: str):
         return store.list_snapshots(name)
+
+    def _export_history(name: str, *, export_id: str | None = None, offset: int = 0, limit: int = 20):
+        with store.locked(name):
+            directory = store.export_history_dir(name)
+            fingerprint = error = None
+            try:
+                deck = store.load_deck(name)
+                preset = apply_overrides(store.load_global_preset(), deck.meta.preset_overrides)
+                sources = {filename: store.read_source(name, filename) for filename in store.list_sources(name)}
+                plan = build_render_plan(deck, preset, metrics, sources=sources)
+                fingerprint = assess_quality(deck, preset, plan, sources=sources).input_fingerprint
+            except (StorageError, OSError, ValueError):
+                error = "현재 저장된 덱, 프리셋 또는 자료를 읽지 못해 현재 입력과 대조하지 못했습니다. 과거 기록은 그대로 표시합니다."
+            try:
+                return read_export_history(
+                    directory, current_fingerprint=fingerprint, current_error=error,
+                    export_id=export_id, offset=offset, limit=limit,
+                )
+            except HistoryNotFound as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except HistoryReadError as exc:
+                raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/projects/{name}/exports", response_model=ExportHistoryPage)
+    def list_export_history(name: str, response: Response, offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):
+        response.headers["Cache-Control"] = "no-store"
+        return _export_history(name, offset=offset, limit=limit)
+
+    @app.get("/api/projects/{name}/exports/{export_id}", response_model=ExportHistoryDetail)
+    def get_export_history(name: str, export_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        return _export_history(name, export_id=export_id)
+
+    def _review_inputs(name: str) -> ReviewInputs:
+        # ETag and fingerprint come from the same loaded Deck, under the caller's
+        # project lock. Broken current inputs never hide immutable review history.
+        base_etag = None
+        try:
+            deck, etag = store.load_deck_with_etag(name)
+            base_etag = f'"{etag}"'
+            preset = apply_overrides(store.load_global_preset(), deck.meta.preset_overrides)
+            sources = {filename: store.read_source(name, filename) for filename in store.list_sources(name)}
+            plan = build_render_plan(deck, preset, metrics, sources=sources)
+            fingerprint = assess_quality(deck, preset, plan, sources=sources).input_fingerprint
+            return ReviewInputs(base_etag, fingerprint, None)
+        except (StorageError, OSError, ValueError):
+            return ReviewInputs(base_etag, None, "현재 저장된 덱, 프리셋 또는 자료를 읽지 못해 검수 기준을 확인하지 못했습니다. 과거 기록은 그대로 표시합니다.")
+
+    @app.get("/api/projects/{name}/exports/{export_id}/reviews", response_model=ExportReviews)
+    def get_export_reviews(name: str, export_id: str):
+        with store.locked(name):
+            directory = store.export_history_dir(name)
+            try:
+                return read_export_reviews(directory, export_id, _review_inputs(name))
+            except HistoryNotFound as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except HistoryReadError as exc:
+                raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/api/projects/{name}/exports/{export_id}/reviews", response_model=ExportReviews)
+    def create_export_review(
+        name: str, export_id: str, req: ExportReviewRequest, if_match: str | None = Header(default=None),
+    ):
+        if if_match is None:
+            raise HTTPException(428, "검수를 시작한 덱의 기준이 필요합니다. 검수 기록을 다시 조회해 주세요.")
+        # Lock order matches export: project first, cross-process output lock next.
+        with store.locked(name):
+            directory = store.export_history_dir(name)
+            try:
+                return append_export_review(directory, export_id, req, if_match, lambda: _review_inputs(name))
+            except HistoryNotFound as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except ReviewDeckConflict as exc:
+                raise HTTPException(412, str(exc)) from exc
+            except ReviewPagesError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except HistoryReadError as exc:
+                # Invalid path syntax is a validation error; unsafe stored files
+                # also fail closed without returning local path or OS details.
+                raise HTTPException(422, str(exc)) from exc
+            except (ReviewConflict, ExportBusyError) as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except OSError as exc:
+                raise HTTPException(409, "검수 기록을 안전하게 저장하지 못했습니다. 입력을 보존한 뒤 다시 조회해 주세요.") from exc
+
+    def _qualification_trust_path():
+        root = getattr(store, 'root', None)
+        return Path(root) / 'review-trust.json' if root is not None else None
+
+    def _qualification_action(name, export_id, action, request=None, if_match=None):
+        if request is not None and if_match is None:
+            raise HTTPException(428, '검수를 시작한 덱의 기준이 필요합니다. 제출 관문을 다시 조회해 주세요.')
+        with store.locked(name):
+            directory = store.export_history_dir(name)
+            try:
+                if request is None:
+                    return read_export_qualification(directory, export_id, _review_inputs(name), _qualification_trust_path())
+                return action(directory, export_id, request, if_match, lambda: _review_inputs(name), _qualification_trust_path())
+            except HistoryNotFound as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except QualificationDeckConflict as exc:
+                raise HTTPException(412, str(exc)) from exc
+            except (QualificationConflict, ExportBusyError) as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except HistoryReadError as exc:
+                raise HTTPException(422, str(exc)) from exc
+            except OSError as exc:
+                raise HTTPException(409, '제출 증거를 안전하게 저장하지 못했습니다. 입력을 보존한 뒤 다시 조회해 주세요.') from exc
+
+    @app.get('/api/projects/{name}/exports/{export_id}/qualification', response_model=ExportQualification)
+    def get_qualification(name: str, export_id: str):
+        return _qualification_action(name, export_id, None)
+
+    @app.post('/api/projects/{name}/exports/{export_id}/render', response_model=ExportQualification)
+    def create_native_render(name: str, export_id: str, req: QualificationRequest, if_match: str | None = Header(default=None)):
+        return _qualification_action(name, export_id, render_export, req, if_match)
+
+    @app.post('/api/projects/{name}/exports/{export_id}/independent-reviews', response_model=ExportQualification)
+    def create_independent_review(name: str, export_id: str, req: IndependentReviewRequest, if_match: str | None = Header(default=None)):
+        return _qualification_action(name, export_id, append_independent_review, req, if_match)
+
+    @app.post('/api/projects/{name}/exports/{export_id}/publish-final', response_model=FinalPublication)
+    def create_final_publication(name: str, export_id: str, req: QualificationRequest, if_match: str | None = Header(default=None)):
+        return _qualification_action(name, export_id, publish_final, req, if_match)
 
     @app.post("/api/projects/{name}/snapshots/{snapshot_id}/restore", response_model=Deck)
     def restore_snapshot(
@@ -478,6 +964,11 @@ def create_app(
 
     @app.get("/api/status", response_model=AppStatus)
     def get_status():
+        if ai_connections is not None:
+            selection, selection_id, login = ai_connections.selected_status()
+            return AppStatus(provider=selection.provider, model=selection.model, login=login,
+                             selection_id=selection_id, checked_at=_now_iso(),
+                             last_generation_at=generation_success.get((selection.provider, selection.model)))
         # 동기 함수라 스레드풀에서 실행된다: CLI 프로세스 대기가 이벤트 루프를 막지 않는다
         with status_lock:
             now = time.monotonic()
@@ -496,39 +987,139 @@ def create_app(
             checked_at=status_state["checked_at"],
         )
 
-    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
-    async def generate_structure(
-        name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None)
+    def connections():
+        if ai_connections is None:
+            raise HTTPException(503, "연결 설정을 사용할 수 없습니다. 최신 앱을 실행해 주세요.")
+        return ai_connections
+
+    @app.get("/api/ai/settings", response_model=AISettings)
+    def get_ai_settings():
+        return connections().settings()
+
+    @app.put("/api/ai/selection", response_model=AISelection)
+    def select_ai(selection: AISelection):
+        try:
+            return connections().select(selection)
+        except ConnectionConflict:
+            raise
+        except ValueError as e:
+            raise HTTPException(422, str(e)) from None
+        except OSError:
+            raise HTTPException(503, "AI 연결 설정을 저장하지 못했습니다. 폴더 권한을 확인해 주세요.") from None
+
+    @app.post("/api/ai/providers/{provider_id}/login", response_model=LoginAttempt)
+    def start_ai_login(provider_id: ProviderId):
+        return connections().start_login(provider_id)
+
+    @app.get("/api/ai/providers/{provider_id}/login", response_model=LoginAttempt)
+    def get_ai_login(provider_id: ProviderId):
+        return connections().login_status(provider_id)
+
+    @app.delete("/api/ai/providers/{provider_id}/login", response_model=LoginAttempt)
+    def cancel_ai_login(provider_id: ProviderId):
+        return connections().cancel_login(provider_id)
+
+    @app.post("/api/projects/{name}/review/numbers", response_model=NumericReviewReport)
+    def review_numbers(name: str, deck: Deck):
+        # Read the current editor draft without saving or replacing it.
+        sources = _load_sources(name)
+        return assess_numeric_review(deck, sources)
+
+    @app.post("/api/projects/{name}/review/semantics", response_model=SemanticSuspectReport)
+    def review_semantics(name: str, deck: Deck):
+        with store.locked(name):
+            return assess_semantic_suspects(deck, _load_sources(name, allow_empty=True))
+
+    def _diagram_base(name: str, if_match: str | None):
+        if not if_match:
+            raise HTTPException(428, "도식 초안의 기준 저장본을 확인해야 합니다. 프로젝트를 다시 열어 주세요.")
+        deck, etag = store.load_deck_with_etag(name)
+        if if_match.strip('"') != etag:
+            raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+        return deck, etag
+
+    @app.post("/api/projects/{name}/generate/diagram", response_model=DiagramGenerationResult)
+    async def generate_diagram(
+        name: str, req: GenerateDiagramRequest, if_match: str | None = Header(default=None),
+        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
     ):
         _require_ai_consent(x_ai_consent)
-        svc = _require_service()
-        deck = store.load_deck(name)
-        sources = _load_sources(name)
-        result = await svc.generate_structure(
-            deck.meta, sources, req.target_chapters, req.instructions,
-            on_usage=lambda rec: _append_usage(name, rec),
-        )
-        _record_success(result)
+        with store.locked(name):
+            deck, etag = _diagram_base(name, if_match)
+            sources = _load_sources(name, allow_empty=True)
+            try:
+                diagram_prompt(deck, req, sources)
+            except ValueError as exc:
+                _rewrite_invalid(exc)
+            revision = sources_fingerprint(sources)
+
+        def require_unchanged_base():
+            with store.locked(name):
+                try:
+                    current_etag = store.deck_etag(name)
+                except (StorageError, OSError) as exc:
+                    raise DeckConflict("도식 생성 중 기준 저장본을 읽을 수 없게 되었습니다. 프로젝트를 다시 열어 주세요.") from exc
+                if current_etag != etag:
+                    raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+                try:
+                    current_revision = sources_fingerprint(_load_sources(name, allow_empty=True))
+                except (StorageError, OSError, HTTPException) as exc:
+                    raise HTTPException(409, "도식 생성 중 자료를 읽을 수 없게 되었습니다. 자료를 확인한 뒤 다시 작성해 주세요.") from exc
+                if current_revision != revision:
+                    raise HTTPException(409, "도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.")
+
+        # The lease may await login status. Recheck both after acquiring it and after generation.
+        # Never hold the file-store RLock across either await.
+        async with generation_service(x_ai_selection) as svc:
+            require_unchanged_base()
+            result = await svc.generate_diagram(deck, req, sources, on_usage=lambda rec: _append_usage(name, rec))
+            require_unchanged_base()
+            _record_success(result)
+        result.base_etag = f'"{etag}"'
+        result.sources_fingerprint = revision
         return result
+
+    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
+    async def generate_structure(
+        name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None),
+        x_ai_selection: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
+        deck = store.load_deck(name)
+        if any(ch.template == "diagram" for ch in deck.structure.chapters):
+            raise DiagramGenerationUnsupported()
+        async with generation_service(x_ai_selection) as svc:
+            sources = _load_sources(name)
+            result = await svc.generate_structure(
+                deck.meta, sources, req.target_chapters, req.instructions,
+                on_usage=lambda rec: _append_usage(name, rec),
+                brief=req.brief,
+            )
+            _record_success(result)
+            return result
 
     @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult)
     async def generate_chapter(
         name: str, chapter_id: str, req: GenerateChapterRequest,
         x_ai_consent: str | None = Header(default=None),
+        x_ai_selection: str | None = Header(default=None),
     ):
         _require_ai_consent(x_ai_consent)
-        svc = _require_service()
         deck = store.load_deck(name)
-        if all(ch.id != chapter_id for ch in deck.structure.chapters):
-            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-        preset = _preset_for(deck)
-        sources = _load_sources(name)
-        result = await svc.generate_chapter(
-            deck, chapter_id, sources, preset, req.instructions,
-            on_usage=lambda rec: _append_usage(name, rec),
-        )
-        _record_success(result)
-        return result
+        chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
+        if chapter is not None and chapter.template == "diagram":
+            raise DiagramGenerationUnsupported()
+        async with generation_service(x_ai_selection) as svc:
+            if all(ch.id != chapter_id for ch in deck.structure.chapters):
+                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+            preset = _preset_for(deck)
+            sources = _load_sources(name)
+            result = await svc.generate_chapter(
+                deck, chapter_id, sources, preset, req.instructions,
+                on_usage=lambda rec: _append_usage(name, rec),
+            )
+            _record_success(result)
+            return result
 
     @app.post(
         "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
@@ -537,27 +1128,30 @@ def create_app(
     async def condense_chapter(
         name: str, chapter_id: str, req: CondenseChapterRequest,
         x_ai_consent: str | None = Header(default=None),
+        x_ai_selection: str | None = Header(default=None),
     ):
         _require_ai_consent(x_ai_consent)
-        svc = _require_service()
         deck = store.load_deck(name)
         chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
-        if chapter is None:
-            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-        if req.slots.template != chapter.template:
-            raise HTTPException(
-                422,
-                f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
-                "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+        if req.slots.template == "diagram" or (chapter is not None and chapter.template == "diagram"):
+            raise DiagramGenerationUnsupported()
+        async with generation_service(x_ai_selection) as svc:
+            if chapter is None:
+                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+            if req.slots.template != chapter.template:
+                raise HTTPException(
+                    422,
+                    f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
+                    "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+                )
+            preset = _preset_for(deck)
+            sources = _load_sources(name)
+            result = await svc.condense_chapter(
+                deck, chapter_id, req.slots, sources, preset, req.instructions,
+                on_usage=lambda rec: _append_usage(name, rec),
             )
-        preset = _preset_for(deck)
-        sources = _load_sources(name)
-        result = await svc.condense_chapter(
-            deck, chapter_id, req.slots, sources, preset, req.instructions,
-            on_usage=lambda rec: _append_usage(name, rec),
-        )
-        _record_success(result)
-        return result
+            _record_success(result)
+            return result
 
     if static_dir is not None and static_dir.is_dir():
         # 빌드된 화면을 같은 주소에서 서빙한다 (결정 7). API 라우트가 먼저 등록되어 우선한다

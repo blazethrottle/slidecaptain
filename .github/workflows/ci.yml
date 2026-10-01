@@ -41,8 +41,9 @@ jobs:
         run: |
           import subprocess
           from pathlib import Path
-          bat = Path("SlideCaptain실행.bat").read_bytes()
-          assert b"\r\n" in bat, "batch file must be CRLF"
+          for name in ("SlideCaptain실행.bat", "Windows검수준비.bat"):
+              bat = Path(name).read_bytes()
+              assert b"\r\n" in bat, f"{name} must be CRLF"
           for name in ("backend/tests/fixtures/eol/probe.sh", "backend/tests/fixtures/eol/probe.command"):
               data = Path(name).read_bytes()
               assert data and b"\r" not in data, f"{name} must be LF"

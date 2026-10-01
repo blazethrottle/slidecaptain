@@ -28,12 +28,29 @@ from slidecaptain.pipeline.provider import (
     ProviderNotAvailable,
     ProviderResponse,
 )
+from slidecaptain.pipeline.auth_status import resolve_cli_path
 
 _LOG = logging.getLogger("slidecaptain.pipeline.subscription")
 
 # CLI 기본 모델(opus 계열)은 사소한 호출에도 사용량이 크다 (2026-08-28 스파이크 실측).
 # 별칭을 써서 세부 버전 교체에 흔들리지 않게 한다.
 DEFAULT_MODEL = "sonnet"
+
+
+def _sum_model_tokens(model_usage: dict, field: str) -> int | None:
+    """전 모델이 명시한 음이 아닌 정수만 합산한다. 부분 합계는 반환하지 않는다."""
+    if not model_usage:
+        return None
+    total = 0
+    for entry in model_usage.values():
+        if not isinstance(entry, dict):
+            return None
+        value = entry.get(field)
+        # bool은 int의 하위 타입이다. 문자열/실수의 강제 변환도 측정값을 만들므로 금지한다.
+        if type(value) is not int or value < 0:
+            return None
+        total += value
+    return total
 
 
 def _log_raw_usage_line(result: ResultMessage) -> None:
@@ -49,8 +66,8 @@ def _log_raw_usage_line(result: ResultMessage) -> None:
     본 동작에 영향을 주면 안 되므로 예외를 삼킨다.
     """
     try:
-        usage_dict = result.usage
-        model_usage_raw = result.model_usage
+        usage_dict = result.usage if isinstance(result.usage, dict) else {}
+        model_usage_raw = result.model_usage if isinstance(result.model_usage, dict) else {}
 
         usage_keys = sorted(usage_dict.keys()) if usage_dict else []
         model_usage_keys = sorted(model_usage_raw.keys()) if model_usage_raw else []
@@ -63,20 +80,11 @@ def _log_raw_usage_line(result: ResultMessage) -> None:
         else:
             usage_in = usage_out = usage_cache_read = usage_cache_create = None
 
-        # model_usage 의 값이 dict 가 아닌 이상값이어도(실측되지 않은 SDK 버전 등) 예외 없이
-        # 넘어간다: 유효한 항목이 하나도 없으면 0이 아니라 None(미확인)으로 남긴다.
-        valid_entries = (
-            [mu for mu in model_usage_raw.values() if isinstance(mu, dict)] if model_usage_raw else []
-        )
-        if valid_entries:
-            model_usage_in = sum(int(mu.get("inputTokens", 0)) for mu in valid_entries)
-            model_usage_out = sum(int(mu.get("outputTokens", 0)) for mu in valid_entries)
-            model_usage_cache_read = sum(int(mu.get("cacheReadInputTokens", 0)) for mu in valid_entries)
-            model_usage_cache_create = sum(
-                int(mu.get("cacheCreationInputTokens", 0)) for mu in valid_entries
-            )
-        else:
-            model_usage_in = model_usage_out = model_usage_cache_read = model_usage_cache_create = None
+        # 진단 로그도 앱 값과 같은 결측 규칙을 따른다. 정상 모델만 더하면 과소 집계된다.
+        model_usage_in = _sum_model_tokens(model_usage_raw, "inputTokens")
+        model_usage_out = _sum_model_tokens(model_usage_raw, "outputTokens")
+        model_usage_cache_read = _sum_model_tokens(model_usage_raw, "cacheReadInputTokens")
+        model_usage_cache_create = _sum_model_tokens(model_usage_raw, "cacheCreationInputTokens")
 
         cost_present = "있음" if result.total_cost_usd is not None else "없음"
 
@@ -102,16 +110,16 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     둘 다 없으면 `token_source="none"`. 어느 경우든 토큰이 없으면 화면은 "토큰 미확인" 을 쓴다. 모델 문자열은 스트림에서
     처음 본 `AssistantMessage.model` 을 우선하고, 없으면 `model_usage` 의 키가
     1개일 때만 그것을 쓴다. 비용은 SDK 가 이미 합산해 주는 `total_cost_usd` 를
-    그대로 옮긴다(없는 값을 0으로 바꾸지 않는다).
+    그대로 옮긴다(없는 값을 0으로 바꾸지 않는다). 토큰은 모델마다 해당 필드가
+    유효해야 합산하며, 누락되거나 잘못된 필드는 None으로 남긴다.
     """
     _log_raw_usage_line(result)
 
-    # D2-5 리뷰 반영: SDK 파서는 CLI 의 modelUsage 를 변환 없이 옮기므로 값이 dict 가 아닌 항목이 올 수
-    # 있다. 그런 항목은 없는 것으로 보고(합산과 모델 추정에서 제외) 유효 항목이 없으면 usage dict 로 폴백한다.
-    model_usage = {
-        key: value for key, value in (result.model_usage or {}).items() if isinstance(value, dict)
-    }
-    usage_dict = result.usage if isinstance(result.usage, dict) else {}  # model_usage 항목 필터와 대칭
+    # SDK 파서는 CLI 값을 그대로 옮긴다. 잘못된 모델 항목을 버리면 부분 합계가 되므로
+    # 보존하고 필드별 합산에서 미확인으로 처리한다 (2026-09-28 결측 계약 정정).
+    model_usage = result.model_usage if isinstance(result.model_usage, dict) else {}
+    has_model_entry = any(isinstance(entry, dict) for entry in model_usage.values())
+    usage_dict = result.usage if isinstance(result.usage, dict) else {}
 
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -119,14 +127,12 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
     cache_creation_tokens: int | None = None
     token_source: Literal["model_usage", "usage", "none"]
 
-    if model_usage:
+    if has_model_entry:
         token_source = "model_usage"
-        input_tokens = sum(int(mu.get("inputTokens", 0)) for mu in model_usage.values())
-        output_tokens = sum(int(mu.get("outputTokens", 0)) for mu in model_usage.values())
-        cache_read_tokens = sum(int(mu.get("cacheReadInputTokens", 0)) for mu in model_usage.values())
-        cache_creation_tokens = sum(
-            int(mu.get("cacheCreationInputTokens", 0)) for mu in model_usage.values()
-        )
+        input_tokens = _sum_model_tokens(model_usage, "inputTokens")
+        output_tokens = _sum_model_tokens(model_usage, "outputTokens")
+        cache_read_tokens = _sum_model_tokens(model_usage, "cacheReadInputTokens")
+        cache_creation_tokens = _sum_model_tokens(model_usage, "cacheCreationInputTokens")
     elif usage_dict:
         # D2 관통 실측(2026-09-06, 실호출 1회): usage dict 는 세션 누적이 아니라 마지막 턴의 값이다
         # (input_tokens 2 대 model_usage 합 2,239). 그 값을 "대략" 으로 보여주면 천 배 작은 숫자가 되므로
@@ -138,7 +144,7 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
 
     if assistant_model:
         model = assistant_model
-    elif len(model_usage) == 1:
+    elif has_model_entry and len(model_usage) == 1:
         model = next(iter(model_usage))
     else:
         model = None
@@ -166,7 +172,11 @@ class SubscriptionProvider:
         self.timeout_s = timeout_s
 
     async def complete(self, prompt: str, schema: dict) -> ProviderResponse:
+        cli = resolve_cli_path()
+        if cli is None:
+            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 네이티브 CLI 설치와 경로 설정을 확인해 주세요.")
         options = ClaudeAgentOptions(
+            cli_path=cli,
             tools=[],  # 도구 없이 순수 생성만
             setting_sources=[],  # 사용자 설정 격리: CLAUDE.md와 스킬이 생성에 개입하지 못하게
             # 구조화 출력 경로는 생성 1턴 + 구조화 출력 정리 1턴을 쓴다: 2가 실측 최소값이다

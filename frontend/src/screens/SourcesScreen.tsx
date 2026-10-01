@@ -33,7 +33,7 @@ export function SourcesScreen({
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
-  // 보고 정보가 저장본과 다르거나 업로드가 진행 중이면 참 (부모의 beforeunload 경고용, 계획서 B4 가정 7)
+  // 보고 정보/자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
   onDirtyChange?: (dirty: boolean) => void;
   onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 탭 전환 전에 플러시하도록
   onConflict?: () => void;  // 저장이 412를 받으면 부모가 배너를 띄운다
@@ -42,6 +42,13 @@ export function SourcesScreen({
   const [files, setFiles] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [text, setText] = useState("");
+  const textRef = useRef(text);
+  textRef.current = text;
+  const savedText = useRef("");
+  const sourceDirty = selected !== null && text !== savedText.current;
+  const sourceRequest = useRef(0);
+  const [sourceSaving, setSourceSaving] = useState(false);
+  const sourceSavePending = useRef(false);
   const [newName, setNewName] = useState("");
   const [meta, setMeta] = useState(deck.meta);
   const metaRef = useRef(meta);
@@ -54,13 +61,16 @@ export function SourcesScreen({
   const [truncationNotice, setTruncationNotice] = useState("");  // 잘린 파일 알림 (오류 아님, 결과 안내와 별도)
   const [uploading, setUploading] = useState(false);  // 업로드 진행 중 (계획서 B4 가정 7)
   const mountedRef = useRef(true);
-  useEffect(() => () => { mountedRef.current = false; }, []);  // 언마운트 뒤 setState를 건너뛰기 위한 방어용 ref
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; ++sourceRequest.current; };
+  }, []);
 
   // 두 신호가 서로 덮지 않도록 한 효과에서 계산해 올린다: 보고 정보 미저장 또는 업로드 진행 중이면 참
   // (계획서 B4 가정 7)
   useEffect(() => {
-    onDirtyChange?.(!metaEqual(meta, savedMeta.current) || uploading);
-  }, [meta, uploading, onDirtyChange]);
+    onDirtyChange?.(!metaEqual(meta, savedMeta.current) || uploading || sourceDirty);
+  }, [meta, uploading, sourceDirty, onDirtyChange]);
 
   const doSaveMeta = useCallback(async (target: Deck["meta"]): Promise<boolean> => {
     setSaving(true);
@@ -70,7 +80,7 @@ export function SourcesScreen({
       savedMeta.current = target;
       onDeckChange(updated);
       setNotice("보고 정보를 저장했습니다.");
-      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current));
+      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== savedText.current);
       return true;
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {
@@ -95,7 +105,18 @@ export function SourcesScreen({
   }, [doSaveMeta]);
 
   useEffect(() => {
-    onScreenReady?.(flushMeta);
+    onScreenReady?.(async () => {
+      if (textRef.current !== savedText.current) {
+        setNotice("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+        return false;
+      }
+      const saved = await flushMeta();
+      if (textRef.current !== savedText.current) {
+        setNotice("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+        return false;
+      }
+      return saved;
+    });
     return () => onScreenReady?.(null);  // 다음 화면이 이 화면의 낡은 플러시를 들고 있지 않게 한다
   }, [onScreenReady, flushMeta]);
 
@@ -105,27 +126,51 @@ export function SourcesScreen({
   useEffect(reload, [project.name]);
 
   const open = async (f: string) => {
+    if (textRef.current !== savedText.current) {
+      setNotice("다른 자료를 열기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+      return;
+    }
+    const request = ++sourceRequest.current;
     try {
       const s = await api.readSource(project.name, f);
+      if (request !== sourceRequest.current || !mountedRef.current) return;
+      if (textRef.current !== savedText.current) {
+        setNotice("수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.");
+        return;
+      }
       setSelected(f);
       setText(s.text);
+      savedText.current = s.text;
       setNotice("");
     } catch (e) {
-      setNotice(messageOf(e));
+      if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
     }
   };
 
   const saveText = async () => {
-    if (selected === null) return;
+    if (selected === null || sourceSavePending.current) return;
+    const request = sourceRequest.current;
+    sourceSavePending.current = true;
+    setSourceSaving(true);
     try {
       await api.writeSource(project.name, selected, text);
+      if (request !== sourceRequest.current || !mountedRef.current) return;
+      savedText.current = text;
+      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== text);
       setNotice("자료를 저장했습니다.");
     } catch (e) {
-      setNotice(messageOf(e));
+      if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
+    } finally {
+      sourceSavePending.current = false;
+      if (mountedRef.current) setSourceSaving(false);
     }
   };
 
   const addFile = async () => {
+    if (textRef.current !== savedText.current) {
+      setNotice("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
+      return;
+    }
     const base = newName.trim();
     const f = base.includes(".") ? base : `${base}.md`;
     try {
@@ -139,6 +184,10 @@ export function SourcesScreen({
   };
 
   const importFiles = async (list: FileList | File[]) => {
+    if (textRef.current !== savedText.current) {
+      setNotice("파일을 가져오기 전에 수정한 자료 내용을 저장해 주세요.");
+      return;
+    }
     const items = Array.from(list);
     if (items.length === 0) return;
     // 업로드가 이미 진행 중이면 겹쳐 시작하지 않는다: 먼저 응답한 쪽의 finally가 onBusyChange(false)를
@@ -290,11 +339,11 @@ export function SourcesScreen({
           <div>
             <h3>{selected}</h3>
             <div className="field">
-              <textarea aria-label="자료 내용" rows={16} value={text}
+              <textarea aria-label="자료 내용" rows={16} value={text} disabled={saving || uploading || sourceSaving}
                 onChange={(e) => setText(e.target.value)} />
             </div>
             <div className="actions">
-              <button onClick={saveText}>자료 저장</button>
+              <button onClick={saveText} disabled={sourceSaving}>자료 저장</button>
             </div>
           </div>
         )}

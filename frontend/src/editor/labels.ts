@@ -11,12 +11,10 @@ export const TEMPLATE_LABELS: Record<TemplateName, string> = {
   cards: "카드 나열",
   process: "번호 단계",
   matrix: "분류 매트릭스",
+  diagram: "관계 도식",
 };
 
-// 구조안 화면과 속성 패널의 템플릿 드롭다운이 고를 수 있는 목록. TEMPLATE_LABELS 와 분리한
-// 이유: 새 템플릿의 편집 UI(속성 패널 분기, 항목 추가와 삭제)는 DB-6 소관이라, 여기서
-// 고르면 편집할 수단이 없는 상태가 된다. DB-6 이 새 템플릿을 준비되는 대로 여기에 더한다.
-// cards(DB-2)와 process(DB-3)와 matrix(DB-4)도 같은 이유로 아직 넣지 않는다.
+// 의미 입력 도식은 별도 작성창에서 다룬다. 나머지 템플릿은 속성 편집을 제공한다.
 export const SELECTABLE_TEMPLATES: TemplateName[] = [
-  "cover", "summary", "bullet_box", "table", "compare2", "divider",
+  "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process", "matrix",
 ];

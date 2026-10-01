@@ -4,8 +4,9 @@
 용량 계약 딕셔너리, 글자 수 환산 함수. 여기에 레이아웃 빌더까지 다섯이다.
 
 한 곳이라도 빠뜨리면 그 템플릿을 쓰는 순간 KeyError 나 ValueError 가 나고, 생성 라우트는
-이를 잡지 않으므로 사용자에게 500 오류가 간다. 이 테스트는 `TemplateName` 을 단일 출처로
-놓고 다섯 곳이 같은 집합인지 확인한다. 새 템플릿을 더하는 모든 작업이 여기에 걸린다.
+이를 잡지 않으므로 사용자에게 500 오류가 간다. 이 테스트는 `GeneratedTemplateName`을
+기준으로 생성 가능한 다섯 곳의 집합을 확인한다. 저장 전용 diagram의 덱 렌더 경로는
+test_project_diagrams에서 검사하고 생성 계약에 섞이지 않는지도 확인한다 (2026-09-20).
 """
 
 from typing import get_args
@@ -14,11 +15,11 @@ import pytest
 
 from slidecaptain.metrics.capacity import capacity_contract, char_hints
 from slidecaptain.metrics.font_metrics import FontMetrics
-from slidecaptain.models.deck import TemplateName
+from slidecaptain.models.deck import GeneratedTemplateName, TemplateName
 from slidecaptain.models.preset import Preset
 from slidecaptain.pipeline.prompts import _SLOTS_BY_TEMPLATE, structure_response_schema
 
-TEMPLATES = set(get_args(TemplateName))
+TEMPLATES = set(get_args(GeneratedTemplateName))
 PRESET = Preset()
 
 
@@ -30,6 +31,7 @@ def _structure_enum() -> set[str]:
 
 def test_declared_templates_are_not_empty():
     assert len(TEMPLATES) >= 7
+    assert set(get_args(TemplateName)) == TEMPLATES | {"diagram"}
 
 
 def test_structure_schema_enum_matches_declared_templates():
