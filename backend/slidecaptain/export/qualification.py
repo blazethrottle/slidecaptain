@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from slidecaptain.export import history, renderer, reviews
+from slidecaptain.export import exporter, history, renderer, reviews
 from slidecaptain.models.export_qualification import (
     ExportProvenance, ExportQualification, FinalPublication, IndependentReceipt,
     IndependentReviewRecord, IndependentReviewRequest, NativeRenderRecord,
@@ -183,10 +183,12 @@ def _read_binary(directory, name, reader, limit):
         raise QualificationConflict(_CHANGED)
     flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NONBLOCK', 0)
     with os.fdopen(reader.open(name, flags), 'rb') as stream:
-        if history._signature(os.fstat(stream.fileno())) != history._signature(before):
+        opened = os.fstat(stream.fileno())
+        windows = os.name == 'nt'
+        if history._path_fd_signature(opened, windows=windows) != history._path_fd_signature(before, windows=windows):
             raise QualificationConflict(_CHANGED)
         data = stream.read(limit + 1)
-        if len(data) > limit or history._signature(os.fstat(stream.fileno())) != history._signature(before):
+        if len(data) > limit or history._signature(os.fstat(stream.fileno())) != history._signature(opened):
             raise QualificationConflict(_CHANGED)
     if not history._still_same(directory / name, history._signature(before), reader):
         raise QualificationConflict(_CHANGED)
@@ -353,7 +355,10 @@ def _publish_bytes(directory, reader, name, data, verify):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-            signature = history._signature(os.fstat(stream.fileno()))
+            written_info = os.fstat(stream.fileno())
+            signature = history._signature(written_info)
+        _, signature = exporter._seal_staged(directory / temp_name, written_info,
+                                              hashlib.sha256(data).hexdigest(), reader)
         verify()
         if not history._still_same(directory / temp_name, signature, reader):
             raise QualificationConflict(_CHANGED)

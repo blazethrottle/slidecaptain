@@ -67,9 +67,12 @@ def pinned_directory(directory: Path):
     pinned = Pinned()
     try:
         for path in [*reversed(resolved.parents), resolved]:
-            # FILE_READ_ATTRIBUTES, share READ|WRITE, OPEN_EXISTING,
+            # FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, share READ|WRITE,
+            # OPEN_EXISTING,
             # BACKUP_SEMANTICS (directories) | OPEN_REPARSE_POINT (no final symlink).
-            handle = create(str(path), 0x80, 0x1 | 0x2, None, 3, 0x02000000 | 0x00200000, None)
+            # Attribute-only access is exempt from Windows sharing checks;
+            # listing access makes the omitted FILE_SHARE_DELETE block rename.
+            handle = create(str(path), 0x1 | 0x80, 0x1 | 0x2, None, 3, 0x02000000 | 0x00200000, None)
             if handle == invalid:
                 raise ctypes.WinError(ctypes.get_last_error())
             handles.append(handle)

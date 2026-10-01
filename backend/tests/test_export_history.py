@@ -361,15 +361,17 @@ def test_transient_directory_symlink_never_returns_external_records(client, stor
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Requires native Windows file handles")
-def test_windows_directory_handles_prevent_rename_and_release_after_query(client, store):
+@pytest.mark.parametrize("rename_parent", [False, True])
+def test_windows_directory_handles_prevent_rename_and_release_after_query(client, store, rename_parent):
     from slidecaptain.export import history
     exported = publish(client, store)
     directory = Path(exported["path"]).parent
-    moved = directory.with_name("exports-moved")
+    target = directory.parent if rename_parent else directory
+    moved = target.with_name(target.name + "-moved")
     with history._pin_directory(directory, history._directory_identity(directory)) as reader:
         with pytest.raises(OSError):
-            directory.rename(moved)
+            target.rename(moved)
         data, _ = history._read_regular(Path(exported["path"]), reader=reader, digest=True)
         assert data == exported["quality"]["artifact_sha256"]
-    directory.rename(moved)
-    moved.rename(directory)
+    target.rename(moved)
+    moved.rename(target)

@@ -5,6 +5,7 @@ not a wall clock, orders records. File reads/writes bind to the same directory
 handle used for history so path swaps cannot redirect publication elsewhere.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -16,7 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from slidecaptain.export import history
+from slidecaptain.export import exporter, history
 from slidecaptain.export.locking import ExportBusyError, export_directory_lock
 from slidecaptain.models.export_reviews import (
     CATEGORIES, ExportReviewCategoryState, ExportReviewRecord, ExportReviewRequest, ExportReviews,
@@ -237,7 +238,11 @@ def _review_lock(directory: Path, reader):
             # O_CREAT so a substituted symlink cannot create an external file.
             before = reader.stat(_LOCK_NAME)
         else:
-            before = os.fstat(fd)
+            try:
+                before = reader.stat(_LOCK_NAME)
+            except BaseException:
+                os.close(fd)
+                raise
     if fd is None:
         if not stat.S_ISREG(before.st_mode):
             raise ReviewConflict(_CHANGED)
@@ -245,12 +250,16 @@ def _review_lock(directory: Path, reader):
                          | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     with os.fdopen(fd, "r+b") as handle:
         signature = history._signature(before)
-        if (not stat.S_ISREG(os.fstat(handle.fileno()).st_mode)
-                or history._signature(os.fstat(handle.fileno())) != signature
+        opened = os.fstat(handle.fileno())
+        windows = os.name == "nt"
+        if (not stat.S_ISREG(opened.st_mode)
+                or history._path_fd_signature(opened, windows=windows)
+                    != history._path_fd_signature(before, windows=windows)
                 or not history._still_same(directory / _LOCK_NAME, signature, reader)):
             raise ReviewConflict(_CHANGED)
         with export_directory_lock(directory, handle=handle):
-            if not history._still_same(directory / _LOCK_NAME, signature, reader):
+            if (history._signature(os.fstat(handle.fileno())) != history._signature(opened)
+                    or not history._still_same(directory / _LOCK_NAME, signature, reader)):
                 raise ReviewConflict(_CHANGED)
             yield signature
 
@@ -285,7 +294,10 @@ def _publish_record(directory: Path, record: ExportReviewRecord, reader, verify:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-            signature = history._signature(os.fstat(stream.fileno()))
+            written_info = os.fstat(stream.fileno())
+            signature = history._signature(written_info)
+        _, signature = exporter._seal_staged(directory / temp_name, written_info,
+                                              hashlib.sha256(data).hexdigest(), reader)
         verify()
         if not history._still_same(directory / temp_name, signature, reader):
             raise ReviewConflict(_CHANGED)

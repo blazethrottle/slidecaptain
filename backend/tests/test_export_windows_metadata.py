@@ -89,3 +89,34 @@ def test_same_bytes_replacement_between_seal_stat_and_verified_read_is_rejected(
     reader.stat = swapped
     with pytest.raises(OSError, match='Staged export file changed'):
         exporter._seal_staged(path, written, hashlib.sha256(b'data').hexdigest(), reader, windows=True)
+
+
+@pytest.mark.parametrize('operation', ['review_lock', 'qualification_read'])
+def test_review_evidence_reads_accept_cross_kind_times_but_reject_handle_changes(tmp_path, monkeypatch, operation):
+    from slidecaptain.export import qualification, reviews
+
+    name = reviews._LOCK_NAME if operation == 'review_lock' else 'page.png'
+    (tmp_path / name).write_bytes(b'data')
+    reader = reader_for(tmp_path)
+    real_fstat = history.os.fstat
+    canonical = history._path_fd_signature
+    monkeypatch.setattr(history, '_path_fd_signature', lambda value, **kwargs: canonical(value, windows=True))
+    calls = 0
+    damage = False
+    def changed(fd):
+        nonlocal calls
+        calls += 1
+        actual = real_fstat(fd)
+        return info(actual, st_ctime_ns=actual.st_ctime_ns + 100 + (1 if damage and calls > 1 else 0))
+    monkeypatch.setattr(history.os, 'fstat', changed)
+
+    def read():
+        if operation == 'review_lock':
+            with reviews._review_lock(tmp_path, reader):
+                pass
+        else:
+            assert qualification._read_binary(tmp_path, name, reader, 4) == b'data'
+    read()
+    calls, damage = 0, True
+    with pytest.raises((reviews.ReviewConflict, qualification.QualificationConflict)):
+        read()
