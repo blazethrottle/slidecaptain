@@ -22,12 +22,7 @@ from slidecaptain.models.deck import (
 from slidecaptain.models.render import CapacityWarning
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.story import StoryDraft, story_chapter_context, story_input_block
-
-REPORT_TYPE_GUIDES: dict[str, str] = {
-    "research": "연구분석형: 목표와 배경, 결과 요약, 결과 상세, 반드시 필요한 사항, 출처 순서로 장을 구성한다",
-    "approval": "승인요청형: 핵심 요약과 요청사항, 배경과 문제, 대안 비교와 추천, 실행 계획과 리스크 순서로 장을 구성한다",
-    "strategy": "전략기획형: 핵심 결론, 현황, 문제와 변화, 전략 방향과 근거, 실행 로드맵 순서로 장을 구성한다",
-}
+from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES, REPORT_TYPE_RULES
 
 TEMPLATE_GUIDE = """\
 사용할 수 있는 템플릿 (아래에서 내용에 맞는 조건을 고른다. 어느 조건에도 맞지 않으면 목록 맨 마지막 bullet_box를 쓴다):
@@ -137,6 +132,8 @@ def build_structure_prompt(
 - 보고 유형: {REPORT_TYPE_GUIDES[report_type]}
 - 피보고자: {audience or "미지정"}
 {count_line}
+
+{REPORT_TYPE_RULES}
 
 {TEMPLATE_GUIDE}
 
@@ -326,12 +323,17 @@ def build_chapter_prompt(
         "" if chapter.template in ("cover", "divider") else "\n" + _sources_block(sources)
     )
     audience = deck.structure.story_plan.brief.audience if deck.structure.story_plan else deck.meta.audience
+    report_type = deck.structure.story_plan.brief.report_type if deck.structure.story_plan else deck.meta.report_type
     return f"""당신은 보고 슬라이드 한 장의 내용을 채운다.
 
 보고 정보:
 - 덱 제목: {deck.meta.title}
 - 피보고자: {audience or "미지정"}
 - 오늘 날짜: {today}
+- 보고 유형: {REPORT_TYPE_GUIDES[report_type]}
+
+유형별 구성은 전체 문서의 참고다. 지정한 한 장의 역할과 근거에 맞는 내용만 채우고 다른 장을 추가하지 않는다.
+{REPORT_TYPE_RULES}
 
 덱 전체 구조 (맥락으로만 참고):
 {structure_lines}

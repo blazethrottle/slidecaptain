@@ -72,6 +72,29 @@ def generate(payloads):
     return result, service, stub
 
 
+@pytest.mark.parametrize("first,last,expected", [
+    ("answer", "answer", "answer_not_in_summary"),
+    ("answer", "invalid", "invalid_response"),
+    ("invalid", "answer", "answer_not_in_summary"),
+    ("answer", "ok", None),
+])
+def test_final_structure_failure_explains_answer_connection(first, last, expected):
+    def response(kind):
+        payload = deepcopy(PAYLOAD)
+        if kind == "answer":
+            # 모든 주장은 배치했으나 핵심 답변만 action 역할에 연결한 완전 합성 사례.
+            payload["chapters"][0]["role"] = "action"
+        elif kind == "invalid":
+            payload["claims"][0]["id"] = "private input cannot become a public error code"
+        return payload
+
+    result, _, stub = generate([response(first), response(last)])
+    assert result.status == ("ok" if last == "ok" else "format_error")
+    assert result.format_issue == expected
+    assert result.format_retried and len(stub.calls) == 2
+    assert "answer_claim_ids의 모든 ID" in stub.calls[0][0]
+
+
 def test_question_to_bound_plan_and_chapter_context():
     result, service, stub = generate([PAYLOAD, SLOTS])
     assert result.status == "ok"

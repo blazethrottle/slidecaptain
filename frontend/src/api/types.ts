@@ -1276,7 +1276,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results";
             /**
              * Audience
              * @default
@@ -2994,7 +2994,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results";
             /**
              * Reading Profile
              * @default 미지정
@@ -3606,6 +3606,8 @@ export interface components {
              * @default false
              */
             format_retried: boolean;
+            /** Format Issue */
+            format_issue?: ("answer_not_in_summary" | "invalid_response") | null;
             usage: components["schemas"]["GenerationUsage"];
         };
         /** SummarySlots */

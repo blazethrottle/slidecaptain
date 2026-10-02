@@ -21,6 +21,27 @@ const deck: Deck = {
   slides: [],
 };
 
+it.each([
+  ["weekly", "주간 업무 보고"], ["business", "일반 업무 보고"], ["monthly", "월간 보고"],
+  ["data", "데이터 설명 보고"], ["research", "리서치 결과 보고"],
+  ["project", "프로젝트 보고"], ["results", "결과 보고"],
+  ["approval", "승인요청"], ["strategy", "전략기획"],
+])("보고 유형 %s를 선택해 저장하고 다시 연다", async (value, label) => {
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  const onDeckChange = vi.fn();
+  const initial: Deck = { ...deck, meta: { ...deck.meta, report_type: value === "research" ? "approval" : "research" } };
+  const view = render(<SourcesScreen project={project} deck={initial} onDeckChange={onDeckChange} />);
+  await userEvent.selectOptions(screen.getByLabelText("보고 유형"), screen.getByRole("option", { name: label }));
+  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
+  await waitFor(() => expect(onDeckChange).toHaveBeenCalled());
+  const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
+  expect(saved.meta.report_type).toBe(value);
+  view.unmount();
+  render(<SourcesScreen project={project} deck={saved} onDeckChange={onDeckChange} />);
+  expect(screen.getByLabelText("보고 유형")).toHaveValue(value);
+});
+
 it("자료 목록을 보여주고 파일을 열어 저장한다", async () => {
   vi.mocked(api.listSources).mockResolvedValue(["자료.md"]);
   vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });

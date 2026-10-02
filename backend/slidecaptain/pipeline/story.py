@@ -245,6 +245,7 @@ def story_input_block(brief: ReportBrief, sources: dict[str, str], *, preserve_c
 {brief.model_dump_json()}
 
 - 질문에 답하는 핵심 주장을 answer_claim_ids로 지정한다. 자유 문자열 요약으로 주장 연결을 대신하지 않는다.
+- answer_claim_ids의 모든 ID는 role이 answer인 장의 claim_ids에도 연결한다. action이나 evidence 역할 장에만 연결하면 안 된다. 템플릿 이름과 role은 별개다.
 - evidence에는 자료 파일명과 아래 [L번호]의 행 범위(line_start, line_end, 양끝 포함)를 적는다.
   발췌와 자료 리비전은 코드가 원문에서 만든다. 이를 생성하지 않는다. value는 해당 범위의 원문 표기를 그대로 쓰고 없는 값/단위/기간/주체/분모는 null로 남긴다.
 - claims는 고유 id, statement, kind(fact/inference/proposal/unknown), evidence_ids, caveats를 가진다.

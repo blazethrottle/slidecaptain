@@ -3919,7 +3919,13 @@
             "enum": [
               "research",
               "approval",
-              "strategy"
+              "strategy",
+              "weekly",
+              "business",
+              "monthly",
+              "data",
+              "project",
+              "results"
             ],
             "title": "Report Type",
             "default": "research"
@@ -8236,7 +8242,13 @@
             "enum": [
               "research",
               "approval",
-              "strategy"
+              "strategy",
+              "weekly",
+              "business",
+              "monthly",
+              "data",
+              "project",
+              "results"
             ],
             "title": "Report Type",
             "default": "research"
@@ -9507,6 +9519,21 @@
             "type": "boolean",
             "title": "Format Retried",
             "default": false
+          },
+          "format_issue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "answer_not_in_summary",
+                  "invalid_response"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format Issue"
           },
           "usage": {
             "$ref": "#/components/schemas/GenerationUsage"

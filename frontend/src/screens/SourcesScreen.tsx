@@ -2,10 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type ProjectInfo, type UploadResult } from "../api/client";
 
 const REPORT_TYPES = [
-  ["research", "연구분석"],
+  ["weekly", "주간 업무 보고"],
+  ["business", "일반 업무 보고"],
+  ["monthly", "월간 보고"],
+  ["data", "데이터 설명 보고"],
+  ["research", "리서치 결과 보고"],
+  ["project", "프로젝트 보고"],
+  ["results", "결과 보고"],
   ["approval", "승인요청"],
   ["strategy", "전략기획"],
-] as const;
+] as const satisfies ReadonlyArray<readonly [Deck["meta"]["report_type"], string]>;
 
 // 로드 후 상한을 넘어 잘린 자리를 설명하는 note는 이 접두사로 시작한다(backend/slidecaptain/sources/xlsx.py
 // _build_extraction). 이 note만 잘림 알림으로 따로 빼고, 나머지(계산값 없음 건수 등)는 결과 안내

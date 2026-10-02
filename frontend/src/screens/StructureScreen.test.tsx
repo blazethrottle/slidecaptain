@@ -110,6 +110,20 @@ it("형식 오류면 원문과 재시도 경로를 보여준다", async () => {
   expect(screen.getByRole("button", { name: "다시 생성" })).toBeInTheDocument();
 });
 
+it("핵심 답변 연결 실패는 입력 오류로 안내하지 않고 다시 생성 경로를 제공한다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({ status: "format_error", structure: null,
+    usage: emptyUsage(), raw_text: "synthetic", unverified_numbers: [], format_retried: true,
+    format_issue: "answer_not_in_summary" });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  const field = screen.getByLabelText("문서의 주안점 및 원하는 결과 입력");
+  await userEvent.type(field, "다음 주 계획 강조");
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  expect(await screen.findByText(/핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/원문을 확인하고/)).not.toBeInTheDocument();
+  expect(field).toHaveValue("다음 주 계획 강조");
+  expect(screen.getByRole("button", { name: "다시 생성" })).toBeEnabled();
+});
+
 it("기존 슬라이드가 사라지는 승인은 확인을 거친다", async () => {
   // 장 2개 중 슬라이드가 있는 c2만 삭제한다: 초안에 CH1이 남아 승인 버튼이 유지되고,
   // c2 슬라이드의 소실로 확인 대화가 뜬다 (마지막 장을 삭제하면 승인 절 자체가 사라지므로 부적합)
@@ -403,14 +417,28 @@ it("승인 루프에서 모든 장이 실패해도 실패 단서가 보인다", 
   )).toBeInTheDocument();
 });
 
-it("목표 장수와 지시사항이 각각 한 줄을 차지하고 지시사항 입력란이 5줄이다", () => {
+it("목표 장수와 주안점이 각각 한 줄을 차지하고 주안점 입력란이 5줄이다", () => {
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
   const target = screen.getByLabelText("목표 장수");
-  const instructions = screen.getByLabelText("지시사항");
+  const instructions = screen.getByLabelText("문서의 주안점 및 원하는 결과 입력");
   expect(instructions).toHaveAttribute("rows", "5");
   const targetField = target.closest(".field");
   const instructionsField = instructions.closest(".field");
   expect(targetField).not.toBeNull();
   expect(instructionsField).not.toBeNull();
   expect(targetField).not.toBe(instructionsField);  // 한 줄 배치로 회귀하면 같은 조상이 되거나 null이 된다
+});
+
+it("주안점을 생성에 전달하고 실패해도 입력을 보존한다", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({ status: "format_error", structure: null,
+    usage: emptyUsage(), raw_text: "synthetic", unverified_numbers: [], format_retried: true });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  const field = screen.getByLabelText("문서의 주안점 및 원하는 결과 입력");
+  await userEvent.type(field, "이번 주 진행과 다음 주 계획");
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByText(/형식에 맞게 읽지 못했습니다/);
+  expect(api.generateStructure).toHaveBeenCalledWith("p1", expect.objectContaining({
+    instructions: "이번 주 진행과 다음 주 계획",
+  }));
+  expect(field).toHaveValue("이번 주 진행과 다음 주 계획");
 });

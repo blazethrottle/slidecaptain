@@ -13,6 +13,7 @@ from slidecaptain.models.story import (
 from slidecaptain.models.comparison import EvidenceComparison
 from slidecaptain.models.derivation import Derivation
 from slidecaptain.pipeline.normalize import normalize_text
+from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES, REPORT_TYPE_RULES
 from slidecaptain.pipeline.story import (
     StaleStoryPlan, _require_current_evidence, require_current_story, story_fingerprint, story_input_block,
 )
@@ -108,6 +109,8 @@ def rewrite_prompt(deck: Deck, brief: ReportBrief, sources: dict[str, str], inst
         "새 주장과 기존 본문은 다를 수 있으며 본문은 별도 재검토됩니다. "
         "핵심 답변은 answer 장에 연결하고 현재 장 구성으로 답할 수 없는 질문은 unanswered_questions에 남기세요. "
         "사실/추정/제안/미확인과 비교 조건, 가정, 한계를 구분하세요. 엠대시와 중점은 생성 문구에 쓰지 마세요.\n"
+        + "보고 유형: " + REPORT_TYPE_GUIDES[brief.report_type] + "\n" + REPORT_TYPE_RULES + "\n"
+        + "유형별 구성보다 기존 장과 편집의 보존 계약을 우선한다. 기존 장에서 다루지 못하는 내용은 확인할 질문으로 남긴다.\n"
         + story_input_block(brief, sources, preserve_chapter_ids=True) + "\n기존 편집과 보존 계약:\n" + context
         + "\n사용자 지시사항:\n" + instructions
     )

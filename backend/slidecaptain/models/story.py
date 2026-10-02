@@ -3,6 +3,7 @@
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_serializer, model_validator
+from pydantic_core import PydanticCustomError
 
 from slidecaptain.models.comparison import (
     ComparisonAssessment, EvidenceComparison, MetricBasis, assess_comparison,
@@ -11,7 +12,9 @@ from slidecaptain.models.derivation import Derivation, DerivedValue, derive_valu
 
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$", max_length=64)]
-ReportType = Literal["research", "approval", "strategy"]
+ReportType = Literal[
+    "research", "approval", "strategy", "weekly", "business", "monthly", "data", "project", "results",
+]
 ChapterRole = Literal["answer", "context", "evidence", "risk", "action", "cover", "divider"]
 
 
@@ -144,7 +147,7 @@ class StoryPlan(StoryModel):
         if assigned != claim_ids:
             raise ValueError("보고 계획에 어느 장에도 연결되지 않은 주장이 있습니다")
         if not answer_ids <= answers:
-            raise ValueError("핵심 답변의 주장은 답변 역할의 장에 연결해야 합니다")
+            raise PydanticCustomError("answer_not_in_summary", "핵심 답변의 주장은 답변 역할의 장에 연결해야 합니다")
         if any(c.kind == "unknown" for c in self.claims) and not self.unanswered_questions:
             raise ValueError("미확인 주장이 있으면 확인할 질문을 남겨야 합니다")
         if self.version == "q2a-v1" and (

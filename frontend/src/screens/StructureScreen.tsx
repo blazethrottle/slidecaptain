@@ -99,7 +99,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         } } : {}),
       });
       if (result.status === "format_error") {
-        setError("AI 응답을 형식에 맞게 읽지 못했습니다. 원문을 확인하고 다시 생성해 주세요.");
+        setError(result.format_issue === "answer_not_in_summary"
+          ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요."
+          : "AI 응답을 형식에 맞게 읽지 못했습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요.");
         setRawText(result.raw_text);
         setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
       } else if (result.structure) {
@@ -275,8 +277,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           </label>
         </div>
         <div className="field">
-          <label>지시사항
-            <textarea aria-label="지시사항" rows={5} value={instructions}
+          <label>문서의 주안점 및 원하는 결과 입력
+            <textarea aria-label="문서의 주안점 및 원하는 결과 입력" rows={5} value={instructions}
               onChange={(e) => setInstructions(e.target.value)} />
           </label>
         </div>
