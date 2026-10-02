@@ -27,6 +27,7 @@ include = ["slidecaptain*"]
 version = { attr = "slidecaptain.__version__" }
 
 [tool.setuptools.package-data]
+"slidecaptain" = ["ui/*", "ui/**/*"]
 "slidecaptain.metrics" = ["assets/*.json"]
 "slidecaptain.fonts" = ["assets/*"]
 

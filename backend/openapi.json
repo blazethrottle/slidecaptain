@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Slide Captain",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/preset": {
@@ -1887,6 +1887,22 @@
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Get Health",
+        "operationId": "get_health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           }

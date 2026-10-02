@@ -63,7 +63,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: 백엔드 설치
-        run: python -m pip install -e "./backend[dev]"
+        run: python -m pip install -c backend/requirements-release.txt -e "./backend[dev]"
 
       - name: 프런트 설치
         working-directory: frontend
@@ -91,3 +91,34 @@ jobs:
       - name: 화면 빌드
         working-directory: frontend
         run: npm run build
+
+      - name: 로컬 릴리스 패키지 빌드
+        run: |
+          python -m pip install uv
+          python scripts/build_release.py --out-dir "${{ runner.temp }}/slidecaptain-release"
+
+      - name: 새 환경에 배포본 설치
+        shell: python
+        run: |
+          import os
+          import subprocess
+          import sys
+          import zipfile
+          from pathlib import Path
+          output = Path(os.environ['RUNNER_TEMP']) / 'slidecaptain-release'
+          target = Path(os.environ['RUNNER_TEMP']) / 'slidecaptain-installed'
+          bundles = list(output.glob('slidecaptain-*-local.zip'))
+          assert len(bundles) == 1
+          with zipfile.ZipFile(bundles[0]) as archive:
+              archive.extractall(target)
+          launchers = list(target.rglob('release_launcher.py'))
+          assert len(launchers) == 1
+          launcher = launchers[0]
+          subprocess.run([sys.executable, str(launcher), '--install-only'], check=True)
+          python = launcher.parent / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run([sys.executable, 'scripts/smoke_release.py', '--python', str(python)], check=True)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: local-release-${{ matrix.os }}
+          path: ${{ runner.temp }}/slidecaptain-release/*

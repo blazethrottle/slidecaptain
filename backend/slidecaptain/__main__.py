@@ -104,12 +104,21 @@ def _run_quality(args) -> int:
     return 0 if report.final_export_allowed else 2
 
 
+def _find_ui_dir() -> Path | None:
+    """Prefer the wheel's UI, then a built frontend in a source checkout."""
+    package_dir = Path(__file__).resolve().parent
+    for directory in (package_dir / "ui", package_dir.parent.parent / "frontend" / "dist"):
+        if (directory / "index.html").is_file():
+            return directory
+    return None
+
+
 def _build_serve_app(data_dir: Path, model: str | None, provider: str | None = None):
     from slidecaptain.pipeline.connections import AIConnections, AISelection
     from slidecaptain.server.app import create_app
     from slidecaptain.storage.file_store import FileProjectStore
 
-    ui_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    ui_dir = _find_ui_dir()
     manager = AIConnections(data_dir / "ai-settings.json")
     if provider is not None or model is not None:
         chosen = provider or manager.selection.provider
@@ -142,8 +151,7 @@ def _run_serve(args) -> int:
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
-    ui_dir = Path(__file__).resolve().parents[2] / "frontend" / "dist"
-    if not ui_dir.is_dir():
+    if _find_ui_dir() is None:
         print(
             "화면 파일이 아직 없어 API만 제공합니다. "
             "frontend 폴더에서 npm run build를 실행하면 화면이 함께 제공됩니다."

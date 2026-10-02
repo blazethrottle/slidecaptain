@@ -8,6 +8,14 @@
 
 ## 실행
 
+### 배포본 설치 (0.2.0)
+
+[GitHub Releases](https://github.com/blazethrottle/slidecaptain/releases/latest)에서 `slidecaptain-0.2.0-local.zip`을 받아 새 폴더에 압축을 푼다. Python 3.13 이상이 설치되어 있어야 하며, 최초 설치에는 인터넷 연결이 필요하다. Windows는 `SlideCaptain.bat`, macOS는 `SlideCaptain.command`를 연다. 배포본에는 빌드된 화면과 고정된 Python 의존성 목록이 포함되어 Node.js와 개발 도구가 필요하지 않다. macOS에서 실행 권한이나 보안 확인이 필요한 경우 ZIP 안의 시작 안내를 따른다.
+
+새 버전은 별도 폴더에 풀고 기존 서버를 종료한 뒤 실행한다. 기본 자료 폴더 `~/slidecaptain-projects`와 AI 로그인 정보는 설치 폴더 밖에 유지된다. 새 버전에서 문제가 생기면 서버를 종료하고 이전 버전 폴더의 실행 파일을 연다. 설치기는 프로젝트나 로그인 정보를 삭제하지 않는다. 현재 배포는 본인 계정으로 사용하는 로컬 앱이다.
+
+### 소스에서 실행
+
 - **macOS**: 저장소 루트의 `SlideCaptain실행.command`를 더블클릭한다. 이 창이 서버 창이며, 창을 닫거나 Ctrl+C를 누르면 서버가 멈춘다.
 - **Windows**: 저장소 루트의 `SlideCaptain실행.bat`를 더블클릭한다. 별도 서버 창이 뜬다.
 

@@ -967,6 +967,15 @@ def create_app(
             store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
         return UploadResult(filename=filename, chars=len(text), sheets=None, cells=None, truncated=False, notes=[])
 
+    @app.get("/api/health")
+    def get_health():
+        # Launchers check app identity and UI readiness without invoking AI login.
+        return {
+            "product": "slidecaptain",
+            "version": __version__,
+            "ui_ready": static_dir is not None and (static_dir / "index.html").is_file(),
+        }
+
     @app.get("/api/status", response_model=AppStatus)
     def get_status():
         if ai_connections is not None:
