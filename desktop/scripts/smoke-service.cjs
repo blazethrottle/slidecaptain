@@ -8,8 +8,11 @@ const http = require("node:http");
 const root = path.resolve(__dirname, "../.."),
   version = require("../package.json").version;
 async function main() {
-  const folder = await fs.mkdtemp(
-      path.join(os.tmpdir(), "slidecaptain-desktop-smoke-"),
+  // The service reports canonical export paths. Canonicalize the temp folder too
+  // (Windows 8.3 names and junctions, macOS /var -> /private/var) so the
+  // containment check below compares like with like.
+  const folder = await fs.realpath(
+      await fs.mkdtemp(path.join(os.tmpdir(), "slidecaptain-desktop-smoke-")),
     ),
     data = path.join(folder, "projects");
   const executable = process.argv[2],
