@@ -67,6 +67,14 @@ def _key_body() -> str:
     return "Ab1_Cd2-Ef3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3ab"
 
 
+def _account_path(account: str, *, posix: bool = False, drive: str = "C") -> str:
+    """계정 경로를 조각으로 조립한다. 소스에 리터럴을 두면 이 파일 자신이 감사에 걸린다."""
+
+    if posix:
+        return "/" + "Users" + "/" + account + "/Projects"
+    return drive + ":" + "\\" + "Users" + "\\" + account + "\\" + ".claude"
+
+
 def _private_key_header(modifier: str) -> str:
     return "-----BEGIN " + modifier + "PRIVATE" + " KEY-----"
 
@@ -507,6 +515,231 @@ def test_invalid_utf8_index_path_is_reported_without_crashing(tmp_path):
     assert result.returncode == 1
     assert "금지 디렉터리: projects/caf" in result.stdout
     assert result.stderr == ""
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "google-credentials.json",
+        "secret_key.py",
+        ".secrets",
+        "client_secret.json",
+        "aws.credentials",
+    ],
+)
+def test_rejects_secret_filename_variants(tmp_path, filename):
+    root = _repository(tmp_path)
+    _write(root, filename)
+    _track(root, filename)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"비밀 파일: {filename}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "secretary.py",
+        "credentialing_notes.md",
+        "credentials.example.json",
+        "secrets.sample.yml",
+        "secret.template.env.md",
+    ],
+)
+def test_allows_secret_like_words_and_example_files(tmp_path, filename):
+    root = _repository(tmp_path)
+    _write(root, filename)
+    _track(root, filename)
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        lambda: _account_path("hgildong"),
+        lambda: _account_path("hgildong", posix=True),
+        lambda: _account_path("hgildong", drive="d").lower(),
+    ],
+)
+def test_rejects_user_account_path_in_document_body(tmp_path, builder):
+    root = _repository(tmp_path)
+    _write(root, "CLAUDE.md", f"# 개발 메모\n\n- 경로는 {builder()} 에 있다\n")
+    _track(root, "CLAUDE.md")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "식별 문자열: CLAUDE.md" in result.stdout
+    assert "hgildong" not in result.stdout
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "예비본 C:\\Users\\<사용자명>\\.claude\\tools 를 PATH 앞에 둔다",
+        "경로는 C:\\Users\\<username>\\AppData 형태다",
+        "%USERPROFILE% 또는 C:\\Users\\%USERNAME%\\AppData 를 쓴다",
+        "공용 폴더는 C:\\Users\\Public\\Documents 다",
+        "홈은 /Users/<사용자명>/Projects 로 적는다",
+        "홈 경로는 ~/Projects/slidecaptain 이다",
+    ],
+)
+def test_allows_placeholder_and_shared_user_paths(tmp_path, line):
+    root = _repository(tmp_path)
+    _write(root, "README.md", f"# 문서\n\n- {line}\n")
+    _track(root, "README.md")
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_history_reports_identity_string_removed_from_working_tree(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "CLAUDE.md", f"- 경로는 {_account_path('hgildong')} 다\n")
+    _track(root, "CLAUDE.md")
+    _commit(root, "add note")
+    _write(root, "CLAUDE.md", "- 경로는 C:\\Users\\<사용자명>\\tools 다\n")
+    _track(root, "CLAUDE.md")
+    _commit(root, "anonymise note")
+
+    current = _run(root)
+    historical = _run(root, "--history")
+
+    assert current.returncode == 0
+    assert historical.returncode == 1
+    assert "식별 문자열(이력): CLAUDE.md" in historical.stdout
+    assert "hgildong" not in historical.stdout
+
+
+def test_tracked_but_deleted_path_still_matches_path_rules(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "docs/reviews/leak.md")
+    _write(root, "app.py")
+    _track(root, "docs/reviews/leak.md", "app.py")
+    _commit(root, "add review record")
+    root.joinpath("docs", "reviews", "leak.md").unlink()
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "리뷰 기록: docs/reviews/leak.md" in result.stdout
+
+
+def test_untracked_tool_directory_does_not_produce_findings(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, ".gitignore", ".venv/\nnode_modules/\n")
+    _write(root, "app.py")
+    _track(root, ".gitignore", "app.py")
+    _write(root, ".venv/lib/credentials.json")
+    _write(root, "node_modules/pkg/secret_key.py")
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "credential_flow_docs.md",
+        "no-secrets-policy.md",
+        "oauth-credentials-guide.md",
+        "top-secret-recipe.md",
+        "credentials-faq.md",
+    ],
+)
+def test_allows_prose_documents_that_merely_discuss_secrets(tmp_path, filename):
+    """산문 확장자에서 조각이 여럿이면 문서로 본다. 내용 규칙은 그대로 적용된다."""
+
+    root = _repository(tmp_path)
+    _write(root, filename)
+    _track(root, filename)
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("filename", ["credentials.md", "secrets.md", "secret.md"])
+def test_rejects_prose_document_named_exactly_after_a_secret(tmp_path, filename):
+    root = _repository(tmp_path)
+    _write(root, filename)
+    _track(root, filename)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"비밀 파일: {filename}" in result.stdout
+
+
+def test_rejects_prose_document_with_key_content_despite_name_exemption(tmp_path):
+    root = _repository(tmp_path)
+    _write(root, "credential_flow_docs.md", f"예시 키는 {_fake_key()} 형태다\n")
+    _track(root, "credential_flow_docs.md")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "비밀 패턴: credential_flow_docs.md" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "filename",
+    ["id_rsa", "id_ed25519", ".npmrc", ".netrc", "kubeconfig", "id_dsa"],
+)
+def test_rejects_well_known_credential_filenames(tmp_path, filename):
+    root = _repository(tmp_path)
+    _write(root, filename)
+    _track(root, filename)
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert f"비밀 파일: {filename}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "라우트는 src" + "/" + "Users" + "/routes.py 에 있다",
+        "엔드포인트는 https://api.example.invalid" + "/" + "Users" + "/123 이다",
+        "폴더 구조는 app" + "/" + "Users" + "/Detail 이다",
+    ],
+)
+def test_allows_resource_paths_that_are_not_account_homes(tmp_path, line):
+    root = _repository(tmp_path)
+    _write(root, "architecture.md", f"# 구조\n\n- {line}\n")
+    _track(root, "architecture.md")
+
+    result = _run(root)
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_rejects_json_escaped_windows_account_path(tmp_path):
+    """JSON 이나 로그에 직렬화된 경로는 백슬래시가 두 개씩이다."""
+
+    root = _repository(tmp_path)
+    escaped = "C:" + "\\\\" + "Users" + "\\\\" + "hgildong" + "\\\\" + ".claude"
+    _write(root, "settings.json", '{"path": "' + escaped + '"}\n')
+    _track(root, "settings.json")
+
+    result = _run(root)
+
+    assert result.returncode == 1
+    assert "식별 문자열: settings.json" in result.stdout
+    assert "hgildong" not in result.stdout
 
 
 def test_module_omits_unused_historical_diff_and_documents_binary_history_limit():

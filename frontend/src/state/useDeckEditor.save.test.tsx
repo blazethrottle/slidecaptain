@@ -127,6 +127,47 @@ it("PUT이 412를 돌려주면 conflict가 참이고, 이후 편집에는 PUT이
   expect(api.putDeck).toHaveBeenCalledTimes(1);
 });
 
+it("진행 중 저장의 412 뒤 대기하던 flush는 PUT을 다시 보내지 않는다", async () => {
+  const pending = deferred<{ ok: boolean }>();
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.putDeck).mockReset().mockReturnValue(pending.promise);
+  const { result } = renderHook(() =>
+    useDeckEditor("p1", S, stableNoop, { measureMs: 0, saveMs: 100000 }));
+  await act(async () => { result.current.apply(() => E1); });
+  let first!: Promise<boolean>;
+  let second!: Promise<boolean>;
+  await act(async () => { first = result.current.flushSave(); });
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalledOnce());
+  await act(async () => { second = result.current.flushSave(); });
+  await act(async () => { pending.reject(new ApiError(412, "다른 창의 저장")); });
+  expect(await first).toBe(false);
+  expect(await second).toBe(false);
+  expect(api.putDeck).toHaveBeenCalledOnce();
+  expect(result.current.conflict).toBe(true);
+});
+
+it("다른 확인 요청의 충돌을 늦은 저장 성공이 해소하지 않는다", async () => {
+  const pending = deferred<{ ok: boolean }>();
+  const changed = vi.fn();
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.putDeck).mockReset().mockReturnValue(pending.promise);
+  const { result } = renderHook(() =>
+    useDeckEditor("p1", S, changed, { measureMs: 0, saveMs: 100000 }));
+  await act(async () => { result.current.apply(() => E1); });
+  let saving!: Promise<boolean>;
+  await act(async () => { saving = result.current.flushSave(); });
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalledOnce());
+  await act(async () => { result.current.reportConflict("도식 연결 확인 중 저장 충돌"); });
+  await act(async () => { pending.resolve({ ok: true }); });
+  expect(await saving).toBe(false);
+  expect(result.current.conflict).toBe(true);
+  expect(result.current.saveState).toBe("저장 실패");
+  expect(result.current.saveError).toContain("도식 연결 확인");
+  expect(changed).not.toHaveBeenCalled();
+  expect(await result.current.flushSave()).toBe(false);
+  expect(api.putDeck).toHaveBeenCalledOnce();
+});
+
 it("reloadFromServer는 서버 덱을 읽어 되돌리고 저장됨으로 만들며 부모에도 알린다 (A5)", async () => {
   const serverDeck = deckWith(["서버본"]);
   vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
@@ -219,4 +260,13 @@ describe.each(Array.from({ length: 30 }, (_, i) => i + 1))("무작위 시나리�
     await waitFor(() => expect(result.current.saveState, trace.join("\n")).toBe("저장됨"));
     expect(bulletsOf(server), trace.join("\n")).toEqual(bulletsOf(result.current.deck));
   });
+});
+
+it('의미 전환 snapshot 옵션은 다음 저장만 남기고 일반 편집에는 확대하지 않는다',async()=>{
+ vi.mocked(api.measure).mockResolvedValue(planWith(['하나']));vi.mocked(api.putDeck).mockResolvedValue({ok:true});
+ const {result}=renderHook(()=>useDeckEditor('p1',S,stableNoop,{measureMs:0,saveMs:100000}));
+ await act(async()=>{result.current.apply(()=>E1);});await act(async()=>{await result.current.flushSave();});
+ await act(async()=>{result.current.apply(()=>E2,{snapshot:true});});await act(async()=>{await result.current.flushSave();});
+ await act(async()=>{result.current.apply(()=>E1);});await act(async()=>{await result.current.flushSave();});
+ expect(vi.mocked(api.putDeck).mock.calls.map(c=>c[2])).toEqual([true,true,false]);
 });

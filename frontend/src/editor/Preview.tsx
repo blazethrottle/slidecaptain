@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Frame, Para, SlidePlan, RenderPlan } from "../api/client";
+import { DiagramPreview } from "./DiagramPreview";
+import { ChartPreview } from "./ChartPreview";
 
 export type FrameRef = { chapterId: string; slot: string };
 export type TextRef = FrameRef & { index?: number; row?: number; col?: number };
@@ -71,7 +73,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
         }}
         onClick={(e) => {
           e.stopPropagation();
-          if (f.name.endsWith(":page_number")) return;
+          if (f.name.endsWith(":page_number") || f.name.endsWith(":chart_conditions")) return;
           startEdit(ref, p.text);
         }}
       >
@@ -81,10 +83,16 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
           </span>
         )}
         {p.lines.map((line, j) => (
-          <div key={j} style={{ whiteSpace: "pre" }}>{line || " "}</div>
+          <div key={j} style={{ whiteSpace: "pre" }}>{p.line_runs?.[j]?.length ?
+            p.line_runs[j].map((run,k)=><span key={k} style={{fontWeight:run.bold?700:400,color:`#${run.color}`}}>{run.text}</span>) : line || " "}</div>
         ))}
       </div>
     );
+  };
+
+  const cellFill = (t: NonNullable<Frame["table"]>, rowIdx: number, col: number) => {
+    if (rowIdx === -1) return `#${t.header_fills?.length ? t.header_fills[col] : t.header_fill}`;
+    return t.body_fills?.length ? `#${t.body_fills[col]}` : undefined;
   };
 
   const renderTable = (f: Frame) => {
@@ -94,12 +102,13 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
     const renderRow = (cells: string[][], texts: string[], rowIdx: number, bold: boolean) => (
       <div key={rowIdx} style={{
         display: "flex", height: t.row_heights_pt[rowIdx + 1],
-        background: rowIdx === -1 ? `#${t.header_fill}` : undefined,
         fontWeight: bold ? 700 : 400,
       }}>
         {cells.map((lines, col) => (
           <div key={col} style={{
             width: t.col_widths_pt[col], boxSizing: "border-box",
+            // 칸 채움은 라이터와 같은 규칙이다: 칸별 목록이 있으면 그것을, 없으면 머리행만 단일 색
+            background: cellFill(t, rowIdx, col),
             padding: `${style.table_cell_pad_y_pt}px ${style.table_cell_pad_x_pt}px`,
             border: `0.5px solid ${TABLE_LINE}`, fontSize: t.font_pt,
             lineHeight: String(style.line_spacing), overflow: "hidden",
@@ -123,7 +132,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
   };
 
   return (
-    <div ref={holder} className="preview-holder">
+    <div ref={holder} className="preview-holder" style={{ height: pageH * scale }}>
       <div className={editable ? "preview-canvas" : "preview-canvas stale"}
         style={{
           width: pageW, height: pageH, position: "relative", background: "#ffffff",
@@ -132,6 +141,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
         }}
         onClick={() => { setEditing(null); onSelect(null); }}
       >
+        {slide.diagram && <DiagramPreview page={slide.diagram} style={style} />}
         {slide.frames.map((f) => {
           const ref = frameRef(f);
           const boxed = f.fill != null || f.border != null;
@@ -147,7 +157,13 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
                 position: "absolute", left: f.x, top: f.y, width: f.w, height: f.h,
                 boxSizing: "border-box",
                 background: f.fill ? `#${f.fill}` : undefined,
-                border: f.border ? `${style.border_width_pt}px solid #${f.border}` : undefined,
+                // 테두리 두께는 프레임 값이 있으면 그것을 쓴다. 라이터도 같은 규칙이다
+                border: f.border
+                  ? `${f.border_width_pt ?? style.border_width_pt}px solid #${f.border}`
+                  : undefined,
+                // 모서리 반경. CSS 는 반경 합이 변을 넘으면 브라우저가 비례 축소하므로,
+                // 짧은 변의 절반 이상이면 라이터의 조정값 0.5(알약, 정원)와 같은 모양이 된다
+                borderRadius: f.radius_pt != null ? f.radius_pt : undefined,
                 padding: boxed ? style.box_padding_pt : 0,
                 display: f.valign === "middle" ? "flex" : undefined,
                 flexDirection: f.valign === "middle" ? "column" : undefined,
@@ -158,7 +174,7 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
                 if (!f.name.endsWith(":page_number")) onSelect(ref);
               }}
             >
-              {f.table ? renderTable(f) : f.paras.map((p, i) => renderPara(f, p, i))}
+              {f.chart ? <ChartPreview frame={f} /> : f.table ? renderTable(f) : f.paras.map((p, i) => renderPara(f, p, i))}
             </div>
           );
         })}

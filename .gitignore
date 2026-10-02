@@ -40,6 +40,9 @@ Desktop.ini
 .env
 .env.*
 !.env.example
+.slidecaptain-codex/
+ai-settings.json
+review-trust.json
 
 # 회사 자료(오피스 파일)가 저장소 폴더에 놓여도 개인 GitHub로 올라가지 않도록 막는다 (2026-09-01. 파일럿 중 docs/pilot과 루트에 xlsx, pptx가 놓인 것을 발견)
 # 2026-09-02 단계 5A D1: 위치와 관계없이 전부 무시하고, 단계 5A B가 만들 비기밀 합성 XLSX 픽스처만 예외로 허용한다

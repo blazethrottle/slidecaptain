@@ -112,7 +112,22 @@ def test_check_login_when_output_is_not_json(tmp_path, monkeypatch):
     status = check_login(cli=tmp_path / "claude.exe")
     assert status.logged_in is None
     assert "해석하지 못했습니다" in status.error
-    assert status.cli_version == "Some banner text"  # 해석 실패 시 CLI 버전(--version 출력)을 동봉한다
+    assert status.cli_version is None  # 버전 번호가 아닌 원시 출력은 공개하지 않는다
+
+
+def test_auth_errors_do_not_publish_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr(auth_status.subprocess, "run", _fake_run(
+        stdout=b"unexpected response", stderr=b"account@example.com bearer-private-material", returncode=1))
+    status = check_login(cli=tmp_path / "claude.exe")
+    assert "bearer-private-material" not in status.model_dump_json()
+    assert "account@example.com" not in status.model_dump_json()
+
+
+def test_env_override_also_rejects_batch_shim(tmp_path, monkeypatch):
+    shim = tmp_path / "claude.cmd"
+    shim.write_text("echo example")
+    monkeypatch.setenv("SLIDECAPTAIN_CLAUDE_CLI", str(shim))
+    assert resolve_cli_path() is None
 
 
 def test_check_login_when_logged_in_key_missing(tmp_path, monkeypatch):

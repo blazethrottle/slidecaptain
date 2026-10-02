@@ -9,7 +9,7 @@ function bulletDeck(): Deck {
     meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "bullet_box",
       bullets: [{ text: "하나", level: 0 }, { text: "둘", level: 1 }],
       conclusion: "결론", footnote: "" } }],
@@ -33,7 +33,7 @@ it("표 칸은 row와 col로, 머리글은 row -1로 고친다", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "table", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "table", columns: ["구분", "내용"], rows: [["A", "값"]], footnote: "" } }],
   };
   let next = applyTextEdit(deck, { chapterId: "c1", slot: "table", row: 0, col: 1 }, "새 값");
@@ -53,7 +53,7 @@ it("카드의 index 0은 소제목, 이후는 불릿이다", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "compare2", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "compare2", conclusion: "결",
       left: { heading: "왼쪽", bullets: [{ text: "가", level: 0 }] },
       right: { heading: "오른쪽", bullets: [] } } }],
@@ -80,7 +80,7 @@ it("표 행 삭제와 열 병합", () => {
     ...bulletDeck(),
     structure: { chapters: [
       { id: "c1", topic: "주제", conclusion: "", template: "table", source_refs: [] }] },
-    slides: [{ chapter_id: "c1", slots: {
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
       template: "table", columns: ["구분", "내용", "비고"],
       rows: [["A", "값1", "메모1"], ["B", "값2", "메모2"]], footnote: "" } }],
   };
@@ -109,9 +109,163 @@ it("표지의 보고자 칸을 인라인 편집하면 메타의 presenter가 바
     schema_version: 1,
     meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
     structure: { chapters: [{ id: "c0", topic: "표지", conclusion: "", template: "cover", source_refs: [] }] },
-    slides: [{ chapter_id: "c0", slots: { template: "cover", title: "t", subtitle: "", date: "" } }],
+    slides: [{ chapter_id: "c0", eyebrow: "", subtitle: "", slots: { template: "cover", title: "t", subtitle: "", date: "" } }],
   };
   const edited = applyTextEdit(deck, { chapterId: "c0", slot: "presenter", index: 0 }, "사업개발팀");
   expect(edited.meta.presenter).toBe("사업개발팀");
   expect(edited.slides[0].slots).toEqual(deck.slides[0].slots);  // 슬롯은 건드리지 않는다
+});
+
+it("아이브로우와 부제 편집이 슬라이드 레벨에 반영된다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    slides: [{ chapter_id: "c1", eyebrow: "옛 라벨", subtitle: "옛 문장", slots: {
+      template: "bullet_box", bullets: [{ text: "항목", level: 0 }], conclusion: "결", footnote: "" } }],
+  };
+
+  const withEyebrow = applyTextEdit(deck, { chapterId: "c1", slot: "eyebrow", index: 0 }, "새 라벨");
+  const withSubtitle = applyTextEdit(withEyebrow, { chapterId: "c1", slot: "subtitle", index: 0 }, "새 문장");
+
+  expect(withSubtitle.slides[0].eyebrow).toBe("새 라벨");
+  expect(withSubtitle.slides[0].subtitle).toBe("새 문장");
+});
+
+it("강조 밴드 문장은 text 슬롯으로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "callout", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "callout", text: "옛 문장", tone: "surface1" } }],
+  };
+  const next = applyTextEdit(deck, { chapterId: "c1", slot: "text", index: 0 }, "새 문장");
+  const slots = next.slides[0].slots;
+  expect(slots.template === "callout" && slots.text).toBe("새 문장");
+  expect(slots.template === "callout" && slots.tone).toBe("surface1");  // 톤은 건드리지 않는다
+});
+
+it("카드의 index는 배지 유무로 갈린다: 배지가 있으면 0이 배지, 없으면 0이 소제목", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "cards", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "cards",
+      cards: [
+        { badge: "신규", heading: "카드 A", bullets: [{ text: "가", level: 0 }], tail: "자세히", emphasis: false },
+        { badge: "", heading: "카드 B", bullets: [{ text: "나", level: 0 }], tail: "", emphasis: false },
+      ],
+    } }],
+  };
+  // card0: 배지가 있는 카드. index 0=배지, 1=소제목, 2=불릿, 3=꼬리 라벨
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 0 }, "새 배지");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].badge).toBe("새 배지");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 1 }, "새 소제목");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].heading).toBe("새 소제목");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 2 }, "새 불릿");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].bullets[0].text).toBe("새 불릿");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card0", index: 3 }, "새 꼬리");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[0].tail).toBe("새 꼬리");
+
+  // card1: 배지도 꼬리도 없는 카드. index 0=소제목, 1=불릿
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card1", index: 0 }, "새 B 제목");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[1].heading).toBe("새 B 제목");
+  expect(slots.template === "cards" && slots.cards[0].heading).toBe("카드 A");  // 다른 카드는 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "card1", index: 1 }, "새 B 불릿");
+  slots = next.slides[0].slots;
+  expect(slots.template === "cards" && slots.cards[1].bullets[0].text).toBe("새 B 불릿");
+});
+
+it("번호 단계의 제목과 부제는 step{i} 프레임의 index로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "process", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "process",
+      steps: [
+        { heading: "첫 단계", subtitle: "부제", notes: ["라벨1", "라벨2"] },
+        { heading: "둘째 단계", subtitle: "", notes: [] },
+        { heading: "셋째 단계", subtitle: "", notes: [] },
+      ],
+    } }],
+  };
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "step0", index: 0 }, "새 제목");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].heading).toBe("새 제목");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0", index: 1 }, "새 부제");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].subtitle).toBe("새 부제");
+  expect(slots.template === "process" && slots.steps[1].heading).toBe("둘째 단계");  // 다른 단계는 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_labels", index: 0 }, "새 라벨1");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].notes[0]).toBe("새 라벨1");
+  expect(slots.template === "process" && slots.steps[0].notes[1]).toBe("라벨2");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_labels", index: 1 }, "새 라벨2");
+  slots = next.slides[0].slots;
+  expect(slots.template === "process" && slots.steps[0].notes[1]).toBe("새 라벨2");
+
+  // 번호 배지는 렌더 순서에서 자동으로 나온다: 편집을 걸어도 아무 것도 바뀌지 않는다
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "step0_badge", index: 0 }, "9") as Deck;
+  expect(next.slides[0].slots).toEqual(deck.slides[0].slots);
+});
+
+it("행렬의 분류/대표 항목/나열은 row{i}_category, row{i}_primary, row{i}_items 프레임으로 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "matrix", source_refs: [] }] },
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "matrix",
+      rows: [
+        { category: "강점", primary: "대표1", items: ["항목1", "항목2"] },
+        { category: "약점", primary: "", items: [] },
+        { category: "기회", primary: "", items: [] },
+      ],
+    } }],
+  };
+  let next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_category", index: 0 }, "새 분류");
+  let slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].category).toBe("새 분류");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_primary", index: 0 }, "새 대표");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].primary).toBe("새 대표");
+  expect(slots.template === "matrix" && slots.rows[1].category).toBe("약점");  // 다른 행은 그대로
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_items", index: 0 }, "새 항목1");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].items[0]).toBe("새 항목1");
+  expect(slots.template === "matrix" && slots.rows[0].items[1]).toBe("항목2");
+
+  next = applyTextEdit(deck, { chapterId: "c1", slot: "row0_items", index: 1 }, "새 항목2");
+  slots = next.slides[0].slots;
+  expect(slots.template === "matrix" && slots.rows[0].items[1]).toBe("새 항목2");
+});
+
+it("표지의 subtitle 은 슬라이드 레벨이 아니라 자기 슬롯을 고친다", () => {
+  const deck: Deck = {
+    ...bulletDeck(),
+    slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
+      template: "cover", title: "제목", subtitle: "옛 부제", date: "2026-09-07" } }],
+  };
+
+  const next = applyTextEdit(deck, { chapterId: "c1", slot: "subtitle", index: 0 }, "새 부제");
+  const slots = next.slides[0].slots;
+
+  expect(slots.template).toBe("cover");
+  expect(slots.template === "cover" && slots.subtitle).toBe("새 부제");
+  expect(next.slides[0].subtitle).toBe("");
 });

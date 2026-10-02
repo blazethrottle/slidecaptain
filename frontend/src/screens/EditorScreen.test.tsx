@@ -1,7 +1,8 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck, type Preset, type RenderPlan } from "../api/client";
 import { EditorScreen } from "./EditorScreen";
+import { deferred } from "../test/fixtures";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -29,7 +30,7 @@ const deck: Deck = {
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 
@@ -140,9 +141,9 @@ it("되돌린 서버 덱에 현재 장이 없으면 첫 장이 선택된다 (A5)
       { id: "c2", topic: "주제2", conclusion: "", template: "bullet_box", source_refs: [] },
     ] },
     slides: [
-      { chapter_id: "c1", slots: {
+      { chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
         template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } },
-      { chapter_id: "c2", slots: {
+      { chapter_id: "c2", eyebrow: "", subtitle: "", slots: {
         template: "bullet_box", bullets: [{ text: "둘", level: 0 }], conclusion: "결론", footnote: "" } },
     ],
   };
@@ -200,4 +201,45 @@ it("Ctrl+Z가 직전 편집을 되돌린다", async () => {
     const slots = last.slides[0].slots;
     expect(slots.template === "bullet_box" && slots.bullets?.[0].text).toBe("하나");
   });
+});
+
+it('템플릿 전환 전에 미저장 내용을 저장하고 다음 저장에서 이전본 스냅샷을 요청한다',async()=>{
+ vi.mocked(api.measure).mockResolvedValue(plan);vi.mocked(api.putDeck).mockResolvedValue({ok:true});vi.mocked(api.getPreset).mockResolvedValue(preset);
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
+ let flush:(()=>Promise<boolean>)|null=null;
+ render(<EditorScreen project={project} deck={deck} onDeckChange={()=>{}} onEditorReady={f=>{flush=f;}} timings={{measureMs:0,saveMs:100000}}/>);
+ await userEvent.type(screen.getByLabelText('아이브로우'),'새');
+ await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');
+ await waitFor(()=>expect(screen.getByLabelText('템플릿')).toHaveValue('cards'));
+ expect(api.putDeck).toHaveBeenCalledTimes(1);
+ expect(vi.mocked(api.putDeck).mock.calls[0][1].slides[0].eyebrow).toBe('새');
+ await act(async()=>{await flush!();});
+ expect(api.putDeck).toHaveBeenCalledTimes(2);
+ expect(vi.mocked(api.putDeck).mock.calls[1][2]).toBe(true);
+ expect(vi.mocked(api.putDeck).mock.calls[1][1].slides[0].slots.template).toBe('cards');
+ confirm.mockRestore();
+});
+it('전환 전 저장의 412는 템플릿과 편집 내용을 보존한다',async()=>{
+ vi.mocked(api.measure).mockResolvedValue(plan);vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412,'다른 창 저장'));vi.mocked(api.getPreset).mockResolvedValue(preset);
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
+ render(<EditorScreen project={project} deck={deck} onDeckChange={()=>{}} timings={{measureMs:0,saveMs:100000}}/>);
+ await userEvent.type(screen.getByLabelText('아이브로우'),'새');await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');
+ expect(await screen.findByText(/다른 창 저장/)).toBeInTheDocument();expect(screen.getByLabelText('템플릿')).toHaveValue('bullet_box');expect(screen.getByLabelText('아이브로우')).toHaveValue('새');confirm.mockRestore();
+});
+it('전환 대기 중 중복 요청과 늦은 응답은 새 편집을 덮지 않는다',async()=>{
+ const saving=deferred<{ok:boolean}>();
+ vi.mocked(api.measure).mockResolvedValue(plan);vi.mocked(api.putDeck).mockImplementationOnce(()=>saving.promise).mockResolvedValue({ok:true});vi.mocked(api.getPreset).mockResolvedValue(preset);
+ const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
+ render(<EditorScreen project={project} deck={deck} onDeckChange={()=>{}} timings={{measureMs:0,saveMs:100000}}/>);
+ await userEvent.type(screen.getByLabelText('아이브로우'),'먼저');
+ await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');
+ await waitFor(()=>expect(api.putDeck).toHaveBeenCalledTimes(1));
+ expect(document.querySelector('.editor-screen')).toHaveAttribute('inert');
+ // 프로그램/늦은 이벤트는 inert를 우회할 수 있다. deck identity 가드도 필요하다.
+ fireEvent.change(screen.getByLabelText('템플릿'),{target:{value:'process'}});
+ fireEvent.change(screen.getByLabelText('아이브로우'),{target:{value:'나중'}});
+ await act(async()=>saving.resolve({ok:true}));
+ await waitFor(()=>expect(document.querySelector('.editor-screen')).not.toHaveAttribute('inert'));
+ expect(screen.getByLabelText('템플릿')).toHaveValue('bullet_box');expect(screen.getByLabelText('아이브로우')).toHaveValue('나중');
+ expect(vi.mocked(api.putDeck).mock.calls.every(c=>c[1].slides[0].slots.template==='bullet_box')).toBe(true);confirm.mockRestore();
 });

@@ -1,29 +1,18 @@
 """덱 + 프리셋 + 폰트 실측 → 렌더 계획. 같은 입력은 항상 같은 출력을 낸다."""
 
+from slidecaptain.layout.diagram_page import build_diagram_render_plan
+from slidecaptain.layout.style import style_from_preset
 from slidecaptain.layout.templates import build_slide
-from slidecaptain.models.deck import Deck
+from slidecaptain.models.deck import Deck, DiagramSlots
+from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
-from slidecaptain.models.render import RenderPlan, RenderStyle
+from slidecaptain.models.render import RenderPlan
+from slidecaptain.layout.expression import apply_text_spans, build_comparison_chart
 
 
-def _style_from_preset(preset: Preset) -> RenderStyle:
-    return RenderStyle(
-        korean_font=preset.fonts.korean,
-        latin_font=preset.fonts.latin,
-        text_color=preset.colors.text,
-        box_padding_pt=preset.spacing.box_padding,
-        line_spacing=preset.spacing.line_spacing,
-        bullet_indent_pt=preset.spacing.bullet_indent,
-        bullet_gap_pt=preset.spacing.bullet_gap,
-        table_cell_pad_x_pt=preset.spacing.table_cell_pad_x,
-        table_cell_pad_y_pt=preset.spacing.table_cell_pad_y,
-        border_width_pt=preset.spacing.border_width_pt,
-        bullet_char=preset.bullet_marker.char,
-        bullet_font=preset.bullet_marker.font,
-    )
-
-
-def build_render_plan(deck: Deck, preset: Preset, metrics) -> RenderPlan:
+def build_render_plan(deck: Deck, preset: Preset, metrics, *, sources: dict[str,str] | None = None) -> RenderPlan:
+    # model_construct/후속 편집으로 우회한 도식 필드도 버리지 않고 검사한다.
+    deck = Deck.model_validate(_evidence_input(deck))
     chapters = {ch.id: ch for ch in deck.structure.chapters}
     for slide in deck.slides:
         if slide.chapter_id not in chapters:
@@ -38,10 +27,31 @@ def build_render_plan(deck: Deck, preset: Preset, metrics) -> RenderPlan:
         if slide is None:
             continue  # 내용이 아직 생성되지 않은 장
         page_no += 1
-        slides.append(build_slide(chapter, slide.slots, page_no, preset, metrics, presenter=deck.meta.presenter))
+        if isinstance(slide.slots, DiagramSlots):
+            diagram = build_diagram_render_plan(
+                slide.slots.diagram, preset, metrics,
+                evidence=deck.structure.story_plan.evidence if deck.structure.story_plan else [],
+                title=chapter.topic, eyebrow=slide.eyebrow, subtitle=slide.subtitle,
+                footnote=slide.slots.footnote, page_no=page_no,
+            )
+            slides.extend(diagram.slides)
+            continue
+        page=build_slide(
+            chapter, slide.slots, page_no, preset, metrics,
+            presenter=deck.meta.presenter, eyebrow=slide.eyebrow, subtitle=slide.subtitle,
+        )
+        if slide.chart is not None:
+            frame=next(item for item in page.frames if item.table is not None)
+            chart,caption=build_comparison_chart(deck,slide,frame,preset,metrics,sources)
+            page.frames=[item for item in page.frames if item is not frame]
+            page.frames.extend([chart,caption])
+            page.warnings=[warning for warning in page.warnings if warning.slot!='table']
+        if slide.text_spans:
+            apply_text_spans(slide,page,preset,metrics)
+        slides.append(page)
     return RenderPlan(
         page_width_pt=preset.page_width_pt,
         page_height_pt=preset.page_height_pt,
-        style=_style_from_preset(preset),
+        style=style_from_preset(preset),
         slides=slides,
     )

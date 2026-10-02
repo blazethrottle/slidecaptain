@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Slide Captain",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "paths": {
     "/api/preset": {
@@ -346,6 +346,53 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Measure Project Deck",
+        "operationId": "measure_project_deck_api_projects__name__render_plan_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderPlan"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/render-plan": {
@@ -387,6 +434,646 @@
         }
       }
     },
+    "/api/projects/{name}/story-plan/diagram": {
+      "post": {
+        "summary": "Reconcile Diagram",
+        "description": "도식 장과 기존 보고 계획을 확인만 한다. 저장과 AI 호출은 하지 않는다.",
+        "operationId": "reconcile_diagram_api_projects__name__story_plan_diagram_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconcileDiagramRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/document-changes/basis": {
+      "get": {
+        "summary": "Get Document Change Basis",
+        "operationId": "get_document_change_basis_api_projects__name__document_changes_basis_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChangeBasis"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/document-changes/preview": {
+      "post": {
+        "summary": "Preview Document",
+        "operationId": "preview_document_api_projects__name__document_changes_preview_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChangePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/document-changes/apply": {
+      "post": {
+        "summary": "Apply Document",
+        "operationId": "apply_document_api_projects__name__document_changes_apply_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentChangeApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/evidence-migrations/preview": {
+      "post": {
+        "summary": "Preview Migration",
+        "operationId": "preview_migration_api_projects__name__evidence_migrations_preview_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceMigrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentChangePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/evidence-migrations/apply": {
+      "post": {
+        "summary": "Apply Migration",
+        "operationId": "apply_migration_api_projects__name__evidence_migrations_apply_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvidenceMigrationApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/story-plan/rewrite": {
+      "post": {
+        "summary": "Preview Story Rewrite",
+        "operationId": "preview_story_rewrite_api_projects__name__story_plan_rewrite_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
+            }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RewriteStoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryRewriteResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/story-plan/rewrite/apply": {
+      "post": {
+        "summary": "Apply Story Rewrite",
+        "operationId": "apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyStoryRewriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/story-plan/repair": {
+      "post": {
+        "summary": "Preview Story Repair",
+        "operationId": "preview_story_repair_api_projects__name__story_plan_repair_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
+            }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoryRepairRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryRepairResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{name}/export": {
       "post": {
         "summary": "Export Project",
@@ -400,6 +1087,16 @@
               "type": "string",
               "title": "Name"
             }
+          },
+          {
+            "name": "final",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Final"
+            }
           }
         ],
         "responses": {
@@ -409,6 +1106,506 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExportResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports": {
+      "get": {
+        "summary": "List Export History",
+        "operationId": "list_export_history_api_projects__name__exports_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportHistoryPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}": {
+      "get": {
+        "summary": "Get Export History",
+        "operationId": "get_export_history_api_projects__name__exports__export_id__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportHistoryDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}/reviews": {
+      "get": {
+        "summary": "Get Export Reviews",
+        "operationId": "get_export_reviews_api_projects__name__exports__export_id__reviews_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportReviews"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Export Review",
+        "operationId": "create_export_review_api_projects__name__exports__export_id__reviews_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportReviews"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}/qualification": {
+      "get": {
+        "summary": "Get Qualification",
+        "operationId": "get_qualification_api_projects__name__exports__export_id__qualification_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportQualification"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}/render": {
+      "post": {
+        "summary": "Create Native Render",
+        "operationId": "create_native_render_api_projects__name__exports__export_id__render_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QualificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportQualification"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}/independent-reviews": {
+      "post": {
+        "summary": "Create Independent Review",
+        "operationId": "create_independent_review_api_projects__name__exports__export_id__independent_reviews_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndependentReviewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportQualification"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/exports/{export_id}/publish-final": {
+      "post": {
+        "summary": "Create Final Publication",
+        "operationId": "create_final_publication_api_projects__name__exports__export_id__publish_final_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Export Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QualificationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalPublication"
                 }
               }
             }
@@ -696,6 +1893,22 @@
         }
       }
     },
+    "/api/health": {
+      "get": {
+        "summary": "Get Health",
+        "operationId": "get_health_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "Get Status",
@@ -707,6 +1920,382 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AppStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/settings": {
+      "get": {
+        "summary": "Get Ai Settings",
+        "operationId": "get_ai_settings_api_ai_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/selection": {
+      "put": {
+        "summary": "Select Ai",
+        "operationId": "select_ai_api_ai_selection_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISelection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/providers/{provider_id}/login": {
+      "post": {
+        "summary": "Start Ai Login",
+        "operationId": "start_ai_login_api_ai_providers__provider_id__login_post",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "claude",
+                "chatgpt"
+              ],
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginAttempt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "Get Ai Login",
+        "operationId": "get_ai_login_api_ai_providers__provider_id__login_get",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "claude",
+                "chatgpt"
+              ],
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginAttempt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Cancel Ai Login",
+        "operationId": "cancel_ai_login_api_ai_providers__provider_id__login_delete",
+        "parameters": [
+          {
+            "name": "provider_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "claude",
+                "chatgpt"
+              ],
+              "type": "string",
+              "title": "Provider Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginAttempt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/review/numbers": {
+      "post": {
+        "summary": "Review Numbers",
+        "operationId": "review_numbers_api_projects__name__review_numbers_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NumericReviewReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/review/semantics": {
+      "post": {
+        "summary": "Review Semantics",
+        "operationId": "review_semantics_api_projects__name__review_semantics_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Deck"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticSuspectReport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/generate/diagram": {
+      "post": {
+        "summary": "Generate Diagram",
+        "operationId": "generate_diagram_api_projects__name__generate_diagram_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
+            "name": "x-ai-consent",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Consent"
+            }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateDiagramRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagramGenerationResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -742,6 +2331,22 @@
                 }
               ],
               "title": "X-Ai-Consent"
+            }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
             }
           }
         ],
@@ -817,6 +2422,22 @@
               ],
               "title": "X-Ai-Consent"
             }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
+            }
           }
         ],
         "requestBody": {
@@ -891,6 +2512,22 @@
               ],
               "title": "X-Ai-Consent"
             }
+          },
+          {
+            "name": "x-ai-selection",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Ai-Selection"
+            }
           }
         ],
         "requestBody": {
@@ -930,13 +2567,69 @@
   },
   "components": {
     "schemas": {
+      "AISelection": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "chatgpt"
+            ],
+            "title": "Provider",
+            "default": "claude"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 150,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/\\[\\]-]*$",
+            "title": "Model",
+            "default": "sonnet"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "AISelection"
+      },
+      "AISettings": {
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/AISelection"
+          },
+          "selection_id": {
+            "type": "string",
+            "title": "Selection Id"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderSettings"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "busy": {
+            "type": "boolean",
+            "title": "Busy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "selection",
+          "selection_id",
+          "providers",
+          "busy"
+        ],
+        "title": "AISettings"
+      },
       "AppStatus": {
         "properties": {
           "provider": {
             "type": "string",
             "enum": [
               "subscription",
-              "none"
+              "none",
+              "claude",
+              "chatgpt"
             ],
             "title": "Provider"
           },
@@ -953,6 +2646,17 @@
               }
             ],
             "title": "Model"
+          },
+          "selection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Id"
           },
           "last_generation_at": {
             "anyOf": [
@@ -978,6 +2682,24 @@
           "checked_at"
         ],
         "title": "AppStatus"
+      },
+      "ApplyStoryRewriteRequest": {
+        "properties": {
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sources Fingerprint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deck",
+          "sources_fingerprint"
+        ],
+        "title": "ApplyStoryRewriteRequest"
       },
       "Bullet": {
         "properties": {
@@ -1249,6 +2971,43 @@
         "title": "CallUsageRecord",
         "description": "원시 호출 1건의 목적과 성패, 사용량 (단계 5A 묶음 C 태스크 C2, 가정 2와 3)."
       },
+      "CalloutSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "callout",
+            "title": "Template",
+            "default": "callout"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "tone": {
+            "type": "string",
+            "enum": [
+              "ink",
+              "ink_soft",
+              "accent1",
+              "accent2",
+              "danger",
+              "ok",
+              "surface1",
+              "surface2",
+              "surface3",
+              "surface_danger"
+            ],
+            "title": "Tone",
+            "default": "surface1"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "CalloutSlots",
+        "description": "강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).\n\ntone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이\n따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,\n채움 0건) 여기서 뺐다."
+      },
       "CapacityWarning": {
         "properties": {
           "chapter_id": {
@@ -1303,6 +3062,68 @@
         ],
         "title": "Card"
       },
+      "CardItem": {
+        "properties": {
+          "badge": {
+            "type": "string",
+            "title": "Badge",
+            "default": ""
+          },
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "bullets": {
+            "items": {
+              "$ref": "#/components/schemas/Bullet"
+            },
+            "type": "array",
+            "title": "Bullets",
+            "default": []
+          },
+          "tail": {
+            "type": "string",
+            "title": "Tail",
+            "default": ""
+          },
+          "emphasis": {
+            "type": "boolean",
+            "title": "Emphasis",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "CardItem",
+        "description": "카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다\n(eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른\n템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다."
+      },
+      "CardsSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "cards",
+            "title": "Template",
+            "default": "cards"
+          },
+          "cards": {
+            "items": {
+              "$ref": "#/components/schemas/CardItem"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Cards"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cards"
+        ],
+        "title": "CardsSlots",
+        "description": "카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:\ncompare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나\n병렬 비교하는 용도라 공통 결론이 필수가 아니다."
+      },
       "Chapter": {
         "properties": {
           "id": {
@@ -1326,7 +3147,12 @@
               "bullet_box",
               "table",
               "compare2",
-              "divider"
+              "divider",
+              "callout",
+              "cards",
+              "process",
+              "matrix",
+              "diagram"
             ],
             "title": "Template"
           },
@@ -1378,15 +3204,31 @@
                   },
                   {
                     "$ref": "#/components/schemas/DividerSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CalloutSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CardsSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProcessSlots"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MatrixSlots"
                   }
                 ],
                 "discriminator": {
                   "propertyName": "template",
                   "mapping": {
                     "bullet_box": "#/components/schemas/BulletBoxSlots",
+                    "callout": "#/components/schemas/CalloutSlots",
+                    "cards": "#/components/schemas/CardsSlots",
                     "compare2": "#/components/schemas/CompareSlots",
                     "cover": "#/components/schemas/CoverSlots",
                     "divider": "#/components/schemas/DividerSlots",
+                    "matrix": "#/components/schemas/MatrixSlots",
+                    "process": "#/components/schemas/ProcessSlots",
                     "summary": "#/components/schemas/SummarySlots",
                     "table": "#/components/schemas/TableSlots"
                   }
@@ -1440,6 +3282,244 @@
         ],
         "title": "ChapterResult"
       },
+      "ChartPlan": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "comparison-chart-plan-v1",
+            "title": "Rule Version",
+            "default": "comparison-chart-plan-v1"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bar",
+              "column"
+            ],
+            "title": "Kind"
+          },
+          "comparison_id": {
+            "type": "string",
+            "title": "Comparison Id"
+          },
+          "claim_id": {
+            "type": "string",
+            "title": "Claim Id"
+          },
+          "definition": {
+            "type": "string",
+            "title": "Definition"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "conditions": {
+            "type": "string",
+            "title": "Conditions"
+          },
+          "axis_minimum": {
+            "type": "string",
+            "title": "Axis Minimum"
+          },
+          "axis_maximum": {
+            "type": "string",
+            "title": "Axis Maximum"
+          },
+          "plot_x": {
+            "type": "number",
+            "title": "Plot X"
+          },
+          "plot_y": {
+            "type": "number",
+            "title": "Plot Y"
+          },
+          "plot_w": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Plot W"
+          },
+          "plot_h": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Plot H"
+          },
+          "font_pt": {
+            "type": "number",
+            "minimum": 12.0,
+            "title": "Font Pt"
+          },
+          "text_color": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Text Color"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ChartPoint"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2,
+            "title": "Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "comparison_id",
+          "claim_id",
+          "definition",
+          "unit",
+          "conditions",
+          "axis_minimum",
+          "axis_maximum",
+          "plot_x",
+          "plot_y",
+          "plot_w",
+          "plot_h",
+          "font_pt",
+          "text_color",
+          "points"
+        ],
+        "title": "ChartPlan"
+      },
+      "ChartPoint": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "title": "Evidence Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Color"
+          },
+          "x": {
+            "type": "number",
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "title": "Y"
+          },
+          "w": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "W"
+          },
+          "h": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "H"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "label",
+          "value",
+          "color",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "ChartPoint"
+      },
+      "ChartSpec": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "comparison-chart-v1",
+            "title": "Rule Version"
+          },
+          "comparison_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Comparison Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "bar",
+              "column"
+            ],
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_version",
+          "comparison_id",
+          "kind"
+        ],
+        "title": "ChartSpec"
+      },
+      "Claim": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Statement"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "inference",
+              "proposal",
+              "unknown"
+            ],
+            "title": "Kind"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "caveats": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "statement",
+          "kind",
+          "evidence_ids",
+          "caveats"
+        ],
+        "title": "Claim"
+      },
       "Colors": {
         "properties": {
           "text": {
@@ -1477,6 +3557,72 @@
             "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Background",
             "default": "FFFFFF"
+          },
+          "ink": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ink",
+            "default": "1B2A3A"
+          },
+          "ink_soft": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ink Soft",
+            "default": "24384A"
+          },
+          "accent1": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Accent1",
+            "default": "0E8C7F"
+          },
+          "accent2": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Accent2",
+            "default": "C8860B"
+          },
+          "danger": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Danger",
+            "default": "C0473B"
+          },
+          "ok": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Ok",
+            "default": "2E9E5B"
+          },
+          "surface1": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface1",
+            "default": "EAF2F1"
+          },
+          "surface2": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface2",
+            "default": "F4F6F7"
+          },
+          "surface3": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface3",
+            "default": "FBF3E6"
+          },
+          "surface_danger": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Surface Danger",
+            "default": "FBEEEC"
+          },
+          "rule": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Rule",
+            "default": "DCE3E5"
           }
         },
         "additionalProperties": false,
@@ -1511,6 +3657,100 @@
         ],
         "title": "CompareSlots"
       },
+      "ComparisonAssessment": {
+        "properties": {
+          "comparison_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Comparison Id"
+          },
+          "rule_version": {
+            "type": "string",
+            "enum": [
+              "q2b-v1",
+              "q2e-v1"
+            ],
+            "title": "Rule Version",
+            "default": "q2b-v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "compatible",
+              "incompatible",
+              "insufficient_metadata"
+            ],
+            "title": "Status"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonReason"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "comparison_id",
+          "status",
+          "reasons"
+        ],
+        "title": "ComparisonAssessment"
+      },
+      "ComparisonReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "missing_metadata",
+              "definition_mismatch",
+              "unit_mismatch",
+              "denominator_mismatch",
+              "entity_mismatch",
+              "period_mismatch",
+              "period_basis_mismatch",
+              "incomplete_period",
+              "overlapping_periods",
+              "unsupported_period",
+              "same_axis_value",
+              "unsupported_normalization"
+            ],
+            "title": "Code"
+          },
+          "field": {
+            "type": "string",
+            "title": "Field"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "field",
+          "message"
+        ],
+        "title": "ComparisonReason"
+      },
       "CondenseChapterRequest": {
         "properties": {
           "slots": {
@@ -1532,6 +3772,21 @@
               },
               {
                 "$ref": "#/components/schemas/DividerSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CalloutSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CardsSlots"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessSlots"
+              },
+              {
+                "$ref": "#/components/schemas/MatrixSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DiagramSlots"
               }
             ],
             "title": "Slots",
@@ -1539,9 +3794,14 @@
               "propertyName": "template",
               "mapping": {
                 "bullet_box": "#/components/schemas/BulletBoxSlots",
+                "callout": "#/components/schemas/CalloutSlots",
+                "cards": "#/components/schemas/CardsSlots",
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
+                "diagram": "#/components/schemas/DiagramSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "matrix": "#/components/schemas/MatrixSlots",
+                "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
               }
@@ -1630,6 +3890,16 @@
             "type": "array",
             "title": "Slides",
             "default": []
+          },
+          "document_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DocumentChangeReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -1677,6 +3947,831 @@
         ],
         "title": "DeckMeta"
       },
+      "Derivation": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "comparison_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Comparison Id"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "difference",
+              "percent_change"
+            ],
+            "title": "Operation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "comparison_id",
+          "operation"
+        ],
+        "title": "Derivation"
+      },
+      "DerivationReason": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "comparison_blocked",
+              "missing_value",
+              "invalid_number",
+              "numeric_limit",
+              "ambiguous_numeric_token",
+              "value_not_in_excerpt",
+              "zero_baseline",
+              "negative_baseline",
+              "unsupported_metric",
+              "reversed_period"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "DerivationReason"
+      },
+      "DerivedValue": {
+        "properties": {
+          "derivation_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Derivation Id"
+          },
+          "rule_version": {
+            "type": "string",
+            "enum": [
+              "q2c-v1",
+              "q2e-v1"
+            ],
+            "title": "Rule Version",
+            "default": "q2c-v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "computed",
+              "blocked"
+            ],
+            "title": "Status"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "rounded": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rounded"
+          },
+          "reasons": {
+            "items": {
+              "$ref": "#/components/schemas/DerivationReason"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "default": []
+          },
+          "unit_conversions": {
+            "items": {
+              "$ref": "#/components/schemas/UnitConversion"
+            },
+            "type": "array",
+            "title": "Unit Conversions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "derivation_id",
+          "status",
+          "formula"
+        ],
+        "title": "DerivedValue"
+      },
+      "DiagramAnchor": {
+        "properties": {
+          "side": {
+            "type": "string",
+            "enum": [
+              "left",
+              "right"
+            ],
+            "title": "Side"
+          },
+          "point": {
+            "$ref": "#/components/schemas/DiagramPoint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "side",
+          "point"
+        ],
+        "title": "DiagramAnchor"
+      },
+      "DiagramBounds": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Y"
+          },
+          "w": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "W"
+          },
+          "h": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "H"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "DiagramBounds"
+      },
+      "DiagramCanvas": {
+        "properties": {
+          "page_size": {
+            "type": "string",
+            "const": "preset",
+            "title": "Page Size"
+          },
+          "reading_profile": {
+            "type": "string",
+            "const": "report",
+            "title": "Reading Profile"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page_size",
+          "reading_profile"
+        ],
+        "title": "DiagramCanvas"
+      },
+      "DiagramEdge": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "from_node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "From Node Id"
+          },
+          "to_node_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "To Node Id"
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "flow",
+              "reference",
+              "proposal"
+            ],
+            "title": "Relation"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "from_node_id",
+          "to_node_id",
+          "relation",
+          "label",
+          "evidence_ids"
+        ],
+        "title": "DiagramEdge"
+      },
+      "DiagramEdgePlan": {
+        "properties": {
+          "edge": {
+            "$ref": "#/components/schemas/DiagramEdge"
+          },
+          "start": {
+            "$ref": "#/components/schemas/DiagramAnchor"
+          },
+          "end": {
+            "$ref": "#/components/schemas/DiagramAnchor"
+          },
+          "label": {
+            "$ref": "#/components/schemas/DiagramTextPlan"
+          },
+          "stroke": {
+            "type": "string",
+            "enum": [
+              "solid",
+              "dotted",
+              "dashed"
+            ],
+            "title": "Stroke"
+          },
+          "dash_pattern_pt": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "title": "Dash Pattern Pt"
+          },
+          "line_cap": {
+            "type": "string",
+            "const": "butt",
+            "title": "Line Cap"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Color"
+          },
+          "arrow_points": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramPoint"
+            },
+            "type": "array",
+            "title": "Arrow Points"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "edge",
+          "start",
+          "end",
+          "label",
+          "stroke",
+          "dash_pattern_pt",
+          "line_cap",
+          "color",
+          "arrow_points"
+        ],
+        "title": "DiagramEdgePlan"
+      },
+      "DiagramGenerationResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "format_error"
+            ],
+            "title": "Status"
+          },
+          "diagram": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagramInput"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text",
+            "default": ""
+          },
+          "unverified_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unverified Numbers",
+            "default": []
+          },
+          "format_retried": {
+            "type": "boolean",
+            "title": "Format Retried",
+            "default": false
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
+          },
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag",
+            "default": ""
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "title": "Sources Fingerprint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "usage"
+        ],
+        "title": "DiagramGenerationResult"
+      },
+      "DiagramInput": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "const": "q3a-v1",
+            "title": "Version"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "canvas": {
+            "$ref": "#/components/schemas/DiagramCanvas"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramNode"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 2,
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramEdge"
+            },
+            "type": "array",
+            "maxItems": 24,
+            "minItems": 1,
+            "title": "Edges"
+          },
+          "layout_variant": {
+            "type": "string",
+            "const": "flow_horizontal",
+            "title": "Layout Variant"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "id",
+          "canvas",
+          "nodes",
+          "edges",
+          "layout_variant"
+        ],
+        "title": "DiagramInput",
+        "description": "저장할 의미 입력. 근거 ID의 존재 검사는 Deck 전체 또는 공개 파서가 수행한다."
+      },
+      "DiagramNode": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "step",
+              "entity",
+              "decision",
+              "outcome"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Content"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fact",
+              "inference",
+              "proposal",
+              "unknown"
+            ],
+            "title": "Kind"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "caveats": {
+            "items": {
+              "type": "string",
+              "maxLength": 500,
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Caveats"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "kind",
+          "evidence_ids",
+          "caveats"
+        ],
+        "title": "DiagramNode"
+      },
+      "DiagramNodePlan": {
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/DiagramNode"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/DiagramBounds"
+          },
+          "texts": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramTextPlan"
+            },
+            "type": "array",
+            "title": "Texts"
+          },
+          "fill": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Fill"
+          },
+          "border": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Border"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "node",
+          "display_name",
+          "bounds",
+          "texts",
+          "fill",
+          "border"
+        ],
+        "title": "DiagramNodePlan"
+      },
+      "DiagramPagePlan": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "q3b-render-v1",
+            "title": "Rule Version",
+            "default": "q3b-render-v1"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/DiagramRenderPlan"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/components/schemas/Frame"
+            },
+            "type": "array",
+            "title": "Headers"
+          },
+          "background": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Background"
+          },
+          "review": {
+            "$ref": "#/components/schemas/DiagramReviewStatus"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_fingerprint",
+          "layout",
+          "headers",
+          "background"
+        ],
+        "title": "DiagramPagePlan",
+        "description": "내부 계산에서 만든 도식 페이지. 외부 저장본의 승인 기록이 아니다."
+      },
+      "DiagramPoint": {
+        "properties": {
+          "x": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "X"
+          },
+          "y": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Y"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "DiagramPoint"
+      },
+      "DiagramRenderPlan": {
+        "properties": {
+          "diagram_id": {
+            "type": "string",
+            "title": "Diagram Id"
+          },
+          "page_width_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Page Width Pt"
+          },
+          "page_height_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Page Height Pt"
+          },
+          "content_bounds": {
+            "$ref": "#/components/schemas/DiagramBounds"
+          },
+          "reading_profile": {
+            "type": "string",
+            "const": "report",
+            "title": "Reading Profile",
+            "default": "report"
+          },
+          "layout_variant": {
+            "type": "string",
+            "const": "flow_horizontal",
+            "title": "Layout Variant",
+            "default": "flow_horizontal"
+          },
+          "korean_font": {
+            "type": "string",
+            "title": "Korean Font"
+          },
+          "latin_font": {
+            "type": "string",
+            "title": "Latin Font"
+          },
+          "border_width_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Border Width Pt"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramNodePlan"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "minItems": 2,
+            "title": "Nodes"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/DiagramEdgePlan"
+            },
+            "type": "array",
+            "maxItems": 24,
+            "minItems": 1,
+            "title": "Edges"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "diagram_id",
+          "page_width_pt",
+          "page_height_pt",
+          "content_bounds",
+          "korean_font",
+          "latin_font",
+          "border_width_pt",
+          "nodes",
+          "edges"
+        ],
+        "title": "DiagramRenderPlan"
+      },
+      "DiagramReviewStatus": {
+        "properties": {
+          "semantic": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Semantic",
+            "default": "not_run"
+          },
+          "browser": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Browser",
+            "default": "not_run"
+          },
+          "powerpoint": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Powerpoint",
+            "default": "not_run"
+          },
+          "reader": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Reader",
+            "default": "not_run"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "DiagramReviewStatus"
+      },
+      "DiagramSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "diagram",
+            "title": "Template",
+            "default": "diagram"
+          },
+          "diagram": {
+            "$ref": "#/components/schemas/DiagramInput"
+          },
+          "footnote": {
+            "type": "string",
+            "title": "Footnote",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "diagram"
+        ],
+        "title": "DiagramSlots",
+        "description": "도식의 의미 입력만 저장한다. 배치/검수 결과는 계산 출력에만 존재한다."
+      },
+      "DiagramTextPlan": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines"
+          },
+          "bounds": {
+            "$ref": "#/components/schemas/DiagramBounds"
+          },
+          "font_pt": {
+            "type": "number",
+            "minimum": 12.0,
+            "title": "Font Pt"
+          },
+          "line_height_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Line Height Pt"
+          },
+          "bold": {
+            "type": "boolean",
+            "title": "Bold"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Color"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "lines",
+          "bounds",
+          "font_pt",
+          "line_height_pt",
+          "bold",
+          "color"
+        ],
+        "title": "DiagramTextPlan"
+      },
       "DividerSlots": {
         "properties": {
           "template": {
@@ -1701,18 +4796,1423 @@
         ],
         "title": "DividerSlots"
       },
+      "DocumentChangeApplyRequest": {
+        "properties": {
+          "confirmation_token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Confirmation Token"
+          },
+          "acknowledged_loss_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Acknowledged Loss Ids"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "expected_source_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Expected Source Fingerprint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmation_token",
+          "acknowledged_loss_ids",
+          "candidate",
+          "expected_source_fingerprint"
+        ],
+        "title": "DocumentChangeApplyRequest"
+      },
+      "DocumentChangeBasis": {
+        "properties": {
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag"
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "title": "Sources Fingerprint"
+          },
+          "evidence_fingerprints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Evidence Fingerprints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_etag",
+          "sources_fingerprint",
+          "evidence_fingerprints"
+        ],
+        "title": "DocumentChangeBasis"
+      },
+      "DocumentChangePreview": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "document-change-v1",
+            "title": "Rule Version",
+            "default": "document-change-v1"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "document_replacement",
+              "evidence_migration"
+            ],
+            "title": "Reason"
+          },
+          "base_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Base Fingerprint"
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Sources Fingerprint"
+          },
+          "candidate_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Candidate Fingerprint"
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "losses": {
+            "items": {
+              "$ref": "#/components/schemas/LossItem"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Losses"
+          },
+          "confirmation_token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Confirmation Token"
+          },
+          "final_export_allowed": {
+            "type": "boolean",
+            "const": false,
+            "title": "Final Export Allowed",
+            "default": false
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "변경 후보입니다. 근거 이동의 의미, 문서 내용과 실제 표시를 검수하지 않았습니다. 적용 후 현재 PPTX의 독립 검수가 필요합니다."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "base_fingerprint",
+          "sources_fingerprint",
+          "candidate_fingerprint",
+          "candidate",
+          "losses",
+          "confirmation_token"
+        ],
+        "title": "DocumentChangePreview"
+      },
+      "DocumentChangeRequest": {
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "expected_source_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Expected Source Fingerprint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "candidate",
+          "expected_source_fingerprint"
+        ],
+        "title": "DocumentChangeRequest"
+      },
+      "DocumentChangeReview": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "document-change-v1",
+            "title": "Rule Version",
+            "default": "document-change-v1"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "document_replacement",
+              "evidence_migration"
+            ],
+            "title": "Reason"
+          },
+          "base_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Base Fingerprint"
+          },
+          "changed_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Changed Paths"
+          },
+          "requires_independent_review": {
+            "type": "boolean",
+            "const": true,
+            "title": "Requires Independent Review",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reason",
+          "base_fingerprint",
+          "changed_paths"
+        ],
+        "title": "DocumentChangeReview"
+      },
+      "Evidence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Id"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/SourceLocator"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          },
+          "denominator": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator"
+          },
+          "metric_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_revision": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Revision"
+          },
+          "excerpt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Excerpt"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "source_id",
+          "locator",
+          "source_revision",
+          "excerpt"
+        ],
+        "title": "Evidence"
+      },
+      "EvidenceComparison": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "claim_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Claim Id"
+          },
+          "left_evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Left Evidence Id"
+          },
+          "right_evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Right Evidence Id"
+          },
+          "axis": {
+            "type": "string",
+            "enum": [
+              "entity",
+              "period"
+            ],
+            "title": "Axis"
+          },
+          "unit_normalization": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UnitNormalization"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "claim_id",
+          "left_evidence_id",
+          "right_evidence_id",
+          "axis"
+        ],
+        "title": "EvidenceComparison"
+      },
+      "EvidenceMigrationApplyRequest": {
+        "properties": {
+          "confirmation_token": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Confirmation Token"
+          },
+          "acknowledged_loss_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Acknowledged Loss Ids"
+          },
+          "evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Evidence Id"
+          },
+          "old_evidence_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Old Evidence Fingerprint"
+          },
+          "new_selection": {
+            "$ref": "#/components/schemas/EvidenceSelection"
+          },
+          "expected_source_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Expected Source Fingerprint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmation_token",
+          "acknowledged_loss_ids",
+          "evidence_id",
+          "old_evidence_fingerprint",
+          "new_selection",
+          "expected_source_fingerprint"
+        ],
+        "title": "EvidenceMigrationApplyRequest"
+      },
+      "EvidenceMigrationRequest": {
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Evidence Id"
+          },
+          "old_evidence_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Old Evidence Fingerprint"
+          },
+          "new_selection": {
+            "$ref": "#/components/schemas/EvidenceSelection"
+          },
+          "expected_source_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Expected Source Fingerprint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "old_evidence_fingerprint",
+          "new_selection",
+          "expected_source_fingerprint"
+        ],
+        "title": "EvidenceMigrationRequest"
+      },
+      "EvidenceSelection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Id"
+          },
+          "source_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Source Id"
+          },
+          "locator": {
+            "$ref": "#/components/schemas/SourceLocator"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          },
+          "denominator": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator"
+          },
+          "metric_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "source_id",
+          "locator"
+        ],
+        "title": "EvidenceSelection"
+      },
+      "ExportHistoryDetail": {
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          },
+          "current_input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Input Fingerprint"
+          },
+          "current_input_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Input Error"
+          },
+          "item": {
+            "$ref": "#/components/schemas/ExportHistoryItem"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QualityReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "current_input_fingerprint",
+          "current_input_error",
+          "item",
+          "quality",
+          "artifact_sha256"
+        ],
+        "title": "ExportHistoryDetail"
+      },
+      "ExportHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "file_modified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Modified At"
+          },
+          "record_status": {
+            "type": "string",
+            "enum": [
+              "readable",
+              "missing",
+              "invalid",
+              "unsupported",
+              "unreadable"
+            ],
+            "title": "Record Status"
+          },
+          "artifact_status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "mismatch",
+              "missing",
+              "unreadable",
+              "unverified"
+            ],
+            "title": "Artifact Status"
+          },
+          "input_status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "legacy",
+              "unavailable"
+            ],
+            "title": "Input Status"
+          },
+          "quality_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "needs_revision"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Status"
+          },
+          "slide_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Count"
+          },
+          "gate_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gate Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "file_modified_at",
+          "record_status",
+          "artifact_status",
+          "input_status",
+          "quality_status",
+          "slide_count",
+          "gate_version"
+        ],
+        "title": "ExportHistoryItem"
+      },
+      "ExportHistoryPage": {
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          },
+          "current_input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Input Fingerprint"
+          },
+          "current_input_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Input Error"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ExportHistoryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "current_input_fingerprint",
+          "current_input_error",
+          "items",
+          "total",
+          "offset",
+          "limit"
+        ],
+        "title": "ExportHistoryPage"
+      },
+      "ExportProvenance": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "export-provenance-v1",
+            "title": "Rule Version"
+          },
+          "producer_id": {
+            "type": "string",
+            "const": "slidecaptain",
+            "title": "Producer Id"
+          },
+          "producer_run_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Producer Run Id"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_version",
+          "producer_id",
+          "producer_run_id",
+          "input_fingerprint",
+          "artifact_sha256"
+        ],
+        "title": "ExportProvenance"
+      },
+      "ExportQualification": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "title": "Export Id"
+          },
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "slide_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Count"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "storage_status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "readable",
+              "invalid"
+            ],
+            "title": "Storage Status"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportProvenance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "render_status": {
+            "type": "string",
+            "enum": [
+              "not_run",
+              "rendered",
+              "failed",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Render Status"
+          },
+          "render": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NativeRenderRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "independent_review_status": {
+            "type": "string",
+            "enum": [
+              "not_run",
+              "passed",
+              "needs_revision",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Independent Review Status"
+          },
+          "independent_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IndependentReviewRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "final_export_allowed": {
+            "type": "boolean",
+            "title": "Final Export Allowed"
+          },
+          "can_render": {
+            "type": "boolean",
+            "title": "Can Render"
+          },
+          "can_import_review": {
+            "type": "boolean",
+            "title": "Can Import Review"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "checked_at",
+          "base_etag",
+          "input_fingerprint",
+          "artifact_sha256",
+          "slide_count",
+          "status",
+          "storage_status",
+          "provenance",
+          "render_status",
+          "render",
+          "independent_review_status",
+          "independent_review",
+          "final_export_allowed",
+          "can_render",
+          "can_import_review",
+          "blockers"
+        ],
+        "title": "ExportQualification"
+      },
       "ExportResult": {
         "properties": {
           "path": {
             "type": "string",
             "title": "Path"
+          },
+          "quality_path": {
+            "type": "string",
+            "title": "Quality Path"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/QualityReport"
           }
         },
         "type": "object",
         "required": [
-          "path"
+          "path",
+          "quality_path",
+          "quality"
         ],
         "title": "ExportResult"
+      },
+      "ExportReviewCategoryState": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "narrative",
+              "evidence",
+              "representation",
+              "visual",
+              "target_renderer"
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_run",
+              "passed",
+              "needs_revision",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "latest_record_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Record Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "status",
+          "latest_record_id"
+        ],
+        "title": "ExportReviewCategoryState"
+      },
+      "ExportReviewRecord": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "narrative",
+              "evidence",
+              "representation",
+              "visual",
+              "target_renderer"
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "needs_revision"
+            ],
+            "title": "Status"
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reviewer"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note"
+          },
+          "pages": {
+            "items": {
+              "type": "integer",
+              "minimum": 1.0
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Pages"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Id"
+          },
+          "sequence": {
+            "type": "integer",
+            "maximum": 99999999.0,
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "rule_version": {
+            "type": "string",
+            "const": "manual-review-v1",
+            "title": "Rule Version"
+          },
+          "export_id": {
+            "type": "string",
+            "title": "Export Id"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "title": "Reviewed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "status",
+          "reviewer",
+          "note",
+          "pages",
+          "id",
+          "sequence",
+          "rule_version",
+          "export_id",
+          "input_fingerprint",
+          "artifact_sha256",
+          "reviewed_at"
+        ],
+        "title": "ExportReviewRecord"
+      },
+      "ExportReviewRequest": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "narrative",
+              "evidence",
+              "representation",
+              "visual",
+              "target_renderer"
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "needs_revision"
+            ],
+            "title": "Status"
+          },
+          "reviewer": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reviewer"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note"
+          },
+          "pages": {
+            "items": {
+              "type": "integer",
+              "minimum": 1.0
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Pages"
+          },
+          "expected_input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Input Fingerprint"
+          },
+          "expected_artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Artifact Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "status",
+          "reviewer",
+          "note",
+          "pages",
+          "expected_input_fingerprint",
+          "expected_artifact_sha256"
+        ],
+        "title": "ExportReviewRequest"
+      },
+      "ExportReviews": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "title": "Export Id"
+          },
+          "checked_at": {
+            "type": "string",
+            "title": "Checked At"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          },
+          "input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "current_input_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Input Fingerprint"
+          },
+          "slide_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slide Count"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "storage_status": {
+            "type": "string",
+            "enum": [
+              "empty",
+              "readable",
+              "invalid",
+              "unreadable"
+            ],
+            "title": "Storage Status"
+          },
+          "can_record": {
+            "type": "boolean",
+            "title": "Can Record"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/ExportReviewCategoryState"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ExportReviewRecord"
+            },
+            "type": "array",
+            "title": "Records"
+          },
+          "final_export_allowed": {
+            "type": "boolean",
+            "const": false,
+            "title": "Final Export Allowed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "checked_at",
+          "base_etag",
+          "input_fingerprint",
+          "artifact_sha256",
+          "current_input_fingerprint",
+          "slide_count",
+          "status",
+          "storage_status",
+          "can_record",
+          "reason",
+          "categories",
+          "records",
+          "final_export_allowed"
+        ],
+        "title": "ExportReviews"
+      },
+      "FinalPublication": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "qualified-final-v1",
+            "title": "Rule Version",
+            "default": "qualified-final-v1"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Id"
+          },
+          "export_id": {
+            "type": "string",
+            "title": "Export Id"
+          },
+          "published_at": {
+            "type": "string",
+            "title": "Published At"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          },
+          "producer_run_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Producer Run Id"
+          },
+          "render_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Render Id"
+          },
+          "review_record_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Review Record Id"
+          },
+          "environment_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Environment Fingerprint"
+          },
+          "pptx_path": {
+            "type": "string",
+            "title": "Pptx Path"
+          },
+          "receipt_path": {
+            "type": "string",
+            "title": "Receipt Path"
+          },
+          "render": {
+            "$ref": "#/components/schemas/NativeRenderRecord"
+          },
+          "independent_review": {
+            "$ref": "#/components/schemas/IndependentReviewRecord"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "export_id",
+          "published_at",
+          "input_fingerprint",
+          "artifact_sha256",
+          "producer_run_id",
+          "render_id",
+          "review_record_id",
+          "environment_fingerprint",
+          "pptx_path",
+          "receipt_path",
+          "render",
+          "independent_review"
+        ],
+        "title": "FinalPublication"
       },
       "FontRoles": {
         "properties": {
@@ -1727,6 +6227,12 @@
             "exclusiveMinimum": 0.0,
             "title": "Section Title Pt",
             "default": 24.0
+          },
+          "eyebrow_pt": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Eyebrow Pt",
+            "default": 10.5
           },
           "title_pt": {
             "type": "number",
@@ -1817,7 +6323,8 @@
           "fill": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9A-Fa-f]{6}$"
               },
               {
                 "type": "null"
@@ -1828,7 +6335,8 @@
           "border": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "pattern": "^[0-9A-Fa-f]{6}$"
               },
               {
                 "type": "null"
@@ -1854,6 +6362,16 @@
               }
             ]
           },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "valign": {
             "type": "string",
             "enum": [
@@ -1862,6 +6380,30 @@
             ],
             "title": "Valign",
             "default": "top"
+          },
+          "radius_pt": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Pt"
+          },
+          "border_width_pt": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Border Width Pt"
           }
         },
         "type": "object",
@@ -1885,6 +6427,67 @@
         "type": "object",
         "title": "GenerateChapterRequest"
       },
+      "GenerateDiagramRequest": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "replace"
+            ],
+            "title": "Mode",
+            "default": "create"
+          },
+          "chapter_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Chapter Id"
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Topic"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "answer",
+              "context",
+              "evidence",
+              "risk",
+              "action"
+            ],
+            "title": "Role"
+          },
+          "claim_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Claim Ids"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "topic",
+          "role",
+          "claim_ids"
+        ],
+        "title": "GenerateDiagramRequest"
+      },
       "GenerateStructureRequest": {
         "properties": {
           "target_chapters": {
@@ -1903,6 +6506,16 @@
             "type": "string",
             "title": "Instructions",
             "default": ""
+          },
+          "brief": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2053,6 +6666,217 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "IndependentReceipt": {
+        "properties": {
+          "receipt_type": {
+            "type": "string",
+            "const": "independent-review",
+            "title": "Receipt Type"
+          },
+          "rule_version": {
+            "type": "string",
+            "const": "independent-review-v1",
+            "title": "Rule Version"
+          },
+          "reviewer_id": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Reviewer Id"
+          },
+          "run_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Run Id"
+          },
+          "producer_run_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Producer Run Id"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          },
+          "render_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Render Id"
+          },
+          "render_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Render Fingerprint"
+          },
+          "environment_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Environment Fingerprint"
+          },
+          "pages": {
+            "items": {
+              "type": "integer",
+              "maximum": 10000.0,
+              "minimum": 1.0
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Pages"
+          },
+          "verdicts": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewVerdict"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "minItems": 5,
+            "title": "Verdicts"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFinding"
+            },
+            "type": "array",
+            "maxItems": 1000,
+            "title": "Findings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt_type",
+          "rule_version",
+          "reviewer_id",
+          "run_id",
+          "producer_run_id",
+          "input_fingerprint",
+          "artifact_sha256",
+          "render_id",
+          "render_fingerprint",
+          "environment_fingerprint",
+          "pages",
+          "verdicts",
+          "findings"
+        ],
+        "title": "IndependentReceipt"
+      },
+      "IndependentReviewRecord": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "independent-review",
+            "title": "Kind",
+            "default": "independent-review"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Id"
+          },
+          "sequence": {
+            "type": "integer",
+            "maximum": 99999999.0,
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "recorded_at": {
+            "type": "string",
+            "title": "Recorded At"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/IndependentReceipt"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Signature"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sequence",
+          "recorded_at",
+          "receipt",
+          "signature"
+        ],
+        "title": "IndependentReviewRecord"
+      },
+      "IndependentReviewRequest": {
+        "properties": {
+          "expected_input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Input Fingerprint"
+          },
+          "expected_artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Artifact Sha256"
+          },
+          "receipt": {
+            "$ref": "#/components/schemas/IndependentReceipt"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Signature"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_input_fingerprint",
+          "expected_artifact_sha256",
+          "receipt",
+          "signature"
+        ],
+        "title": "IndependentReviewRequest"
+      },
+      "LoginAttempt": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "pending",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ],
+            "title": "State"
+          },
+          "auth_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auth Url"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "LoginAttempt"
+      },
       "LoginStatus": {
         "properties": {
           "logged_in": {
@@ -2114,6 +6938,577 @@
         "type": "object",
         "title": "LoginStatus"
       },
+      "LossItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "deleted",
+              "replaced",
+              "reordered"
+            ],
+            "title": "Kind"
+          },
+          "before": {
+            "title": "Before"
+          },
+          "after": {
+            "title": "After"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "kind",
+          "before",
+          "after"
+        ],
+        "title": "LossItem"
+      },
+      "MatrixRow": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "primary": {
+            "type": "string",
+            "title": "Primary",
+            "default": ""
+          },
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Items",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "category"
+        ],
+        "title": "MatrixRow",
+        "description": "행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목\n(primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의\nbadge/tail과 같은 규칙).\n\n표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에\n고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다."
+      },
+      "MatrixSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "matrix",
+            "title": "Template",
+            "default": "matrix"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/MatrixRow"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 3,
+            "title": "Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows"
+        ],
+        "title": "MatrixSlots",
+        "description": "분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과\n각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다."
+      },
+      "MetricBasis": {
+        "properties": {
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricPeriod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "denominator": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricDenominator"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MetricBasis"
+      },
+      "MetricDenominator": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "none",
+              "population",
+              "unknown"
+            ],
+            "title": "Kind"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "MetricDenominator"
+      },
+      "MetricPeriod": {
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date",
+            "title": "End"
+          },
+          "grain": {
+            "type": "string",
+            "enum": [
+              "month",
+              "quarter",
+              "year",
+              "point",
+              "custom"
+            ],
+            "title": "Grain"
+          },
+          "aggregation": {
+            "type": "string",
+            "enum": [
+              "sum",
+              "average",
+              "ratio",
+              "point",
+              "other"
+            ],
+            "title": "Aggregation"
+          },
+          "coverage": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unknown"
+            ],
+            "title": "Coverage"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "end",
+          "grain",
+          "aggregation",
+          "coverage"
+        ],
+        "title": "MetricPeriod"
+      },
+      "ModelOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "ModelOption"
+      },
+      "NativeRenderRecord": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "render",
+            "title": "Kind",
+            "default": "render"
+          },
+          "rule_version": {
+            "type": "string",
+            "const": "native-powerpoint-v1",
+            "title": "Rule Version",
+            "default": "native-powerpoint-v1"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "title": "Id"
+          },
+          "sequence": {
+            "type": "integer",
+            "maximum": 99999999.0,
+            "minimum": 1.0,
+            "title": "Sequence"
+          },
+          "recorded_at": {
+            "type": "string",
+            "title": "Recorded At"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "rendered",
+              "not_run",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "environment_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Fingerprint"
+          },
+          "render_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Render Fingerprint"
+          },
+          "environment": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Environment"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/RenderPage"
+            },
+            "type": "array",
+            "title": "Pages"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "sequence",
+          "recorded_at",
+          "input_fingerprint",
+          "artifact_sha256",
+          "status",
+          "reason",
+          "environment_fingerprint",
+          "render_fingerprint",
+          "environment",
+          "pages"
+        ],
+        "title": "NativeRenderRecord"
+      },
+      "NumericExpression": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "derivation_id": {
+            "type": "string",
+            "title": "Derivation Id"
+          },
+          "claim_id": {
+            "type": "string",
+            "title": "Claim Id"
+          },
+          "target_evidence_id": {
+            "type": "string",
+            "title": "Target Evidence Id"
+          },
+          "baseline_evidence_id": {
+            "type": "string",
+            "title": "Baseline Evidence Id"
+          },
+          "source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Source Ids"
+          },
+          "formula": {
+            "type": "string",
+            "title": "Formula"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "derivation_id",
+          "claim_id",
+          "target_evidence_id",
+          "baseline_evidence_id",
+          "source_ids",
+          "formula",
+          "text"
+        ],
+        "title": "NumericExpression"
+      },
+      "NumericReviewItem": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "actual": {
+            "type": "string",
+            "title": "Actual"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "unlinked_expression",
+              "ambiguous_expression"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "derivation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Derivation Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "path",
+          "actual",
+          "code",
+          "message"
+        ],
+        "title": "NumericReviewItem"
+      },
+      "NumericReviewReport": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "q2d-v1",
+            "title": "Rule Version",
+            "default": "q2d-v1"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "matched",
+              "needs_review",
+              "not_run"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_plan",
+                  "stale_plan",
+                  "evidence_mismatch",
+                  "no_numeric_fields",
+                  "no_computed_expressions"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "title": "Input Fingerprint"
+          },
+          "numeric_fields": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Numeric Fields"
+          },
+          "evaluated": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated"
+          },
+          "matched": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Matched"
+          },
+          "unresolved": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unresolved"
+          },
+          "expressions": {
+            "items": {
+              "$ref": "#/components/schemas/NumericExpression"
+            },
+            "type": "array",
+            "title": "Expressions"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NumericReviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "semantic_status": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Semantic Status",
+            "default": "not_run"
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "이 기능은 계산 문구의 연결과 일치만 확인합니다. 원문 해석, 자유로운 문장의 의미와 보고서 품질은 미검수입니다. 검사 시점의 자료를 사용하므로 다른 창이나 앱에서 원문을 바꾸면 다시 검사해 주세요."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "input_fingerprint",
+          "numeric_fields",
+          "evaluated",
+          "matched",
+          "unresolved",
+          "expressions",
+          "items"
+        ],
+        "title": "NumericReviewReport"
+      },
       "OkResponse": {
         "properties": {
           "ok": {
@@ -2147,6 +7542,7 @@
           },
           "color": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Color",
             "default": "202020"
           },
@@ -2172,6 +7568,23 @@
             "type": "array",
             "title": "Lines",
             "default": []
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/TextRun"
+            },
+            "type": "array",
+            "title": "Runs"
+          },
+          "line_runs": {
+            "items": {
+              "items": {
+                "$ref": "#/components/schemas/TextRun"
+              },
+              "type": "array"
+            },
+            "type": "array",
+            "title": "Line Runs"
           }
         },
         "type": "object",
@@ -2195,6 +7608,7 @@
             "default": {
               "cover_title_pt": 28.0,
               "section_title_pt": 24.0,
+              "eyebrow_pt": 10.5,
               "title_pt": 20.0,
               "subtitle_pt": 14.0,
               "body_pt": 12.0,
@@ -2212,7 +7626,18 @@
               "box_fill": "EEF3F9",
               "table_header_fill": "F2F2F2",
               "border": "D0D7E2",
-              "background": "FFFFFF"
+              "background": "FFFFFF",
+              "ink": "1B2A3A",
+              "ink_soft": "24384A",
+              "accent1": "0E8C7F",
+              "accent2": "C8860B",
+              "danger": "C0473B",
+              "ok": "2E9E5B",
+              "surface1": "EAF2F1",
+              "surface2": "F4F6F7",
+              "surface3": "FBF3E6",
+              "surface_danger": "FBEEEC",
+              "rule": "DCE3E5"
             }
           },
           "spacing": {
@@ -2224,6 +7649,8 @@
               "margin_bottom": 34.0,
               "title_height": 40.0,
               "title_gap": 16.0,
+              "eyebrow_gap": 4.0,
+              "subtitle_gap": 6.0,
               "footnote_height": 24.0,
               "footnote_gap": 8.0,
               "box_height": 56.0,
@@ -2236,6 +7663,10 @@
               "card_gap": 20.0,
               "card_heading_height": 24.0,
               "card_heading_gap": 8.0,
+              "card_badge_height": 16.0,
+              "card_badge_gap": 6.0,
+              "card_tail_height": 16.0,
+              "card_tail_gap": 8.0,
               "cover_indent": 30.0,
               "table_min_col_width": 60.0,
               "table_cell_pad_x": 6.0,
@@ -2244,7 +7675,22 @@
               "page_number_height": 16.0,
               "page_number_bottom": 28.0,
               "safety_ratio": 0.97,
-              "border_width_pt": 0.75
+              "border_width_pt": 0.75,
+              "callout_height": 84.0,
+              "callout_radius_pt": 12.0,
+              "process_row_gap": 12.0,
+              "process_badge_size": 28.0,
+              "process_badge_gap": 16.0,
+              "process_heading_height": 20.0,
+              "process_subtitle_gap": 4.0,
+              "process_label_width": 140.0,
+              "process_label_gap": 16.0,
+              "process_label_height": 14.0,
+              "matrix_row_gap": 12.0,
+              "matrix_category_width": 140.0,
+              "matrix_category_gap": 16.0,
+              "matrix_items_width": 220.0,
+              "matrix_items_gap": 16.0
             }
           },
           "bullet_marker": {
@@ -2275,6 +7721,59 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Preset"
+      },
+      "ProcessSlots": {
+        "properties": {
+          "template": {
+            "type": "string",
+            "const": "process",
+            "title": "Template",
+            "default": "process"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProcessStep"
+            },
+            "type": "array",
+            "maxItems": 6,
+            "minItems": 3,
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "steps"
+        ],
+        "title": "ProcessSlots",
+        "description": "번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 \"플로우차트\"의\n실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가\n내용이라 공통 결론이 필수가 아니다."
+      },
+      "ProcessStep": {
+        "properties": {
+          "heading": {
+            "type": "string",
+            "title": "Heading"
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle",
+            "default": ""
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "title": "Notes",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "heading"
+        ],
+        "title": "ProcessStep",
+        "description": "번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서\n나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.\nsubtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙)."
       },
       "ProjectInfo": {
         "properties": {
@@ -2307,6 +7806,288 @@
           "updated_at"
         ],
         "title": "ProjectInfo"
+      },
+      "ProviderSettings": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "chatgpt"
+            ],
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "login": {
+            "$ref": "#/components/schemas/LoginStatus"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelOption"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "models_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Models Error"
+          },
+          "login_attempt": {
+            "$ref": "#/components/schemas/LoginAttempt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "login",
+          "models",
+          "login_attempt"
+        ],
+        "title": "ProviderSettings"
+      },
+      "QualificationRequest": {
+        "properties": {
+          "expected_input_fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Input Fingerprint"
+          },
+          "expected_artifact_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Artifact Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_input_fingerprint",
+          "expected_artifact_sha256"
+        ],
+        "title": "QualificationRequest"
+      },
+      "QualityCheck": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "not_run"
+            ],
+            "title": "Status"
+          },
+          "evaluated": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Evaluated"
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Failed"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "chapter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Chapter Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "status",
+          "evaluated",
+          "failed",
+          "detail"
+        ],
+        "title": "QualityCheck"
+      },
+      "QualityReport": {
+        "properties": {
+          "gate_version": {
+            "type": "string",
+            "enum": [
+              "preflight-v1",
+              "preflight-v2"
+            ],
+            "title": "Gate Version",
+            "default": "preflight-v2"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "needs_revision"
+            ],
+            "title": "Status"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "title": "Input Fingerprint"
+          },
+          "artifact_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Sha256"
+          },
+          "slide_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Slide Count"
+          },
+          "draft_export_allowed": {
+            "type": "boolean",
+            "title": "Draft Export Allowed"
+          },
+          "final_export_allowed": {
+            "type": "boolean",
+            "const": false,
+            "title": "Final Export Allowed",
+            "default": false
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/QualityCheck"
+            },
+            "type": "array",
+            "title": "Checks"
+          },
+          "numeric_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NumericReviewReport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "사전 점검 결과입니다. 내용 정확성, 보고 흐름, 시각 품질과 PowerPoint 표시는 아직 검수하지 않았습니다."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "input_fingerprint",
+          "slide_count",
+          "draft_export_allowed",
+          "checks"
+        ],
+        "title": "QualityReport"
+      },
+      "ReconcileDiagramRequest": {
+        "properties": {
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "answer",
+              "context",
+              "evidence",
+              "risk",
+              "action",
+              "cover",
+              "divider"
+            ],
+            "title": "Role"
+          },
+          "claim_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Claim Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deck",
+          "chapter_id",
+          "role",
+          "claim_ids"
+        ],
+        "title": "ReconcileDiagramRequest"
+      },
+      "RenderPage": {
+        "properties": {
+          "page": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Filename"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256"
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Width"
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Height"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "page",
+          "filename",
+          "sha256",
+          "width",
+          "height"
+        ],
+        "title": "RenderPage"
       },
       "RenderPlan": {
         "properties": {
@@ -2350,6 +8131,7 @@
           },
           "text_color": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Text Color"
           },
           "box_padding_pt": {
@@ -2407,11 +8189,395 @@
         "title": "RenderStyle",
         "description": "라이터와 미리보기가 소비하는 시각 스타일. 프리셋에서 계산되어 렌더 계획에 내장된다.\n\n렌더 계획은 이 블록 덕에 자기완결적이다: 소비자는 프리셋을 다시 해석하지 않는다."
       },
+      "RepairFinding": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "target",
+          "message"
+        ],
+        "title": "RepairFinding"
+      },
+      "ReportBrief": {
+        "properties": {
+          "decision_question": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Decision Question"
+          },
+          "audience": {
+            "type": "string",
+            "title": "Audience",
+            "default": ""
+          },
+          "report_type": {
+            "type": "string",
+            "enum": [
+              "research",
+              "approval",
+              "strategy"
+            ],
+            "title": "Report Type",
+            "default": "research"
+          },
+          "reading_profile": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Reading Profile",
+            "default": "미지정"
+          },
+          "constraints": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Constraints",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "decision_question"
+        ],
+        "title": "ReportBrief"
+      },
+      "ReviewFinding": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Code"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "major",
+              "minor"
+            ],
+            "title": "Severity"
+          },
+          "pages": {
+            "items": {
+              "type": "integer",
+              "maximum": 10000.0,
+              "minimum": 1.0
+            },
+            "type": "array",
+            "maxItems": 10000,
+            "minItems": 1,
+            "title": "Pages"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note"
+          },
+          "resolved": {
+            "type": "boolean",
+            "title": "Resolved"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "severity",
+          "pages",
+          "note",
+          "resolved"
+        ],
+        "title": "ReviewFinding"
+      },
+      "ReviewVerdict": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "narrative",
+              "evidence",
+              "representation",
+              "visual",
+              "target_renderer"
+            ],
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "needs_revision"
+            ],
+            "title": "Status"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category",
+          "status",
+          "note"
+        ],
+        "title": "ReviewVerdict"
+      },
+      "RewriteReview": {
+        "properties": {
+          "source_plan_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Plan Fingerprint"
+          },
+          "preserved_chapter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Preserved Chapter Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_plan_fingerprint",
+          "preserved_chapter_ids"
+        ],
+        "title": "RewriteReview",
+        "description": "재작성 당시 보존한 본문 기록. 후속 편집의 검수 승인 원장이 아니다."
+      },
+      "RewriteStoryRequest": {
+        "properties": {
+          "brief": {
+            "$ref": "#/components/schemas/ReportBrief"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "brief"
+        ],
+        "title": "RewriteStoryRequest"
+      },
+      "SemanticRelatedText": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "path",
+          "text"
+        ],
+        "title": "SemanticRelatedText"
+      },
+      "SemanticSuspect": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "unregistered_comparison",
+              "unregistered_formula",
+              "calculated_direction_mismatch",
+              "summary_direction_conflict"
+            ],
+            "title": "Code"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "signal": {
+            "type": "string",
+            "title": "Signal"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "claim_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Claim Ids"
+          },
+          "comparison_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Comparison Ids"
+          },
+          "derivation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Derivation Ids"
+          },
+          "related_texts": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticRelatedText"
+            },
+            "type": "array",
+            "title": "Related Texts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "code",
+          "chapter_id",
+          "path",
+          "text",
+          "signal",
+          "message",
+          "claim_ids",
+          "comparison_ids",
+          "derivation_ids"
+        ],
+        "title": "SemanticSuspect"
+      },
+      "SemanticSuspectReport": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "semantic-suspect-v1",
+            "title": "Rule Version",
+            "default": "semantic-suspect-v1"
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "title": "Input Fingerprint"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_run",
+              "needs_review",
+              "no_signals_detected"
+            ],
+            "title": "Status"
+          },
+          "semantic_status": {
+            "type": "string",
+            "const": "not_run",
+            "title": "Semantic Status",
+            "default": "not_run"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "missing_plan",
+                  "stale_plan",
+                  "invalid_plan",
+                  "no_reviewable_fields",
+                  "review_limit"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "evaluated_fields": {
+            "type": "integer",
+            "title": "Evaluated Fields"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticSuspect"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "scope_notice": {
+            "type": "string",
+            "title": "Scope Notice",
+            "default": "정의한 문구 탐지에서 검토 후보를 찾습니다. 후보가 없어도 원문 의미와 요약 정합성 검수는 미수행입니다."
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_fingerprint",
+          "status",
+          "evaluated_fields",
+          "findings"
+        ],
+        "title": "SemanticSuspectReport"
+      },
       "Slide": {
         "properties": {
           "chapter_id": {
             "type": "string",
             "title": "Chapter Id"
+          },
+          "eyebrow": {
+            "type": "string",
+            "title": "Eyebrow",
+            "default": ""
+          },
+          "subtitle": {
+            "type": "string",
+            "title": "Subtitle",
+            "default": ""
           },
           "slots": {
             "oneOf": [
@@ -2432,6 +8598,21 @@
               },
               {
                 "$ref": "#/components/schemas/DividerSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CalloutSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CardsSlots"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessSlots"
+              },
+              {
+                "$ref": "#/components/schemas/MatrixSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DiagramSlots"
               }
             ],
             "title": "Slots",
@@ -2439,13 +8620,36 @@
               "propertyName": "template",
               "mapping": {
                 "bullet_box": "#/components/schemas/BulletBoxSlots",
+                "callout": "#/components/schemas/CalloutSlots",
+                "cards": "#/components/schemas/CardsSlots",
                 "compare2": "#/components/schemas/CompareSlots",
                 "cover": "#/components/schemas/CoverSlots",
+                "diagram": "#/components/schemas/DiagramSlots",
                 "divider": "#/components/schemas/DividerSlots",
+                "matrix": "#/components/schemas/MatrixSlots",
+                "process": "#/components/schemas/ProcessSlots",
                 "summary": "#/components/schemas/SummarySlots",
                 "table": "#/components/schemas/TableSlots"
               }
             }
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text_spans": {
+            "items": {
+              "$ref": "#/components/schemas/TextSpan"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Text Spans"
           }
         },
         "type": "object",
@@ -2479,6 +8683,16 @@
             "type": "array",
             "title": "Warnings",
             "default": []
+          },
+          "diagram": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiagramPagePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2506,6 +8720,28 @@
           "saved_at"
         ],
         "title": "SnapshotInfo"
+      },
+      "SourceLocator": {
+        "properties": {
+          "line_start": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Line Start"
+          },
+          "line_end": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Line End"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "line_start",
+          "line_end"
+        ],
+        "title": "SourceLocator",
+        "description": "sources/에 저장된 추출 텍스트의 1부터 시작하는 행 범위 (양끝 포함)."
       },
       "SourceText": {
         "properties": {
@@ -2557,6 +8793,18 @@
             "minimum": 0.0,
             "title": "Title Gap",
             "default": 16.0
+          },
+          "eyebrow_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Eyebrow Gap",
+            "default": 4.0
+          },
+          "subtitle_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Subtitle Gap",
+            "default": 6.0
           },
           "footnote_height": {
             "type": "number",
@@ -2630,6 +8878,30 @@
             "title": "Card Heading Gap",
             "default": 8.0
           },
+          "card_badge_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Card Badge Height",
+            "default": 16.0
+          },
+          "card_badge_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Card Badge Gap",
+            "default": 6.0
+          },
+          "card_tail_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Card Tail Height",
+            "default": 16.0
+          },
+          "card_tail_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Card Tail Gap",
+            "default": 8.0
+          },
           "cover_indent": {
             "type": "number",
             "minimum": 0.0,
@@ -2684,11 +8956,495 @@
             "exclusiveMinimum": 0.0,
             "title": "Border Width Pt",
             "default": 0.75
+          },
+          "callout_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Callout Height",
+            "default": 84.0
+          },
+          "callout_radius_pt": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Callout Radius Pt",
+            "default": 12.0
+          },
+          "process_row_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Row Gap",
+            "default": 12.0
+          },
+          "process_badge_size": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Badge Size",
+            "default": 28.0
+          },
+          "process_badge_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Badge Gap",
+            "default": 16.0
+          },
+          "process_heading_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Heading Height",
+            "default": 20.0
+          },
+          "process_subtitle_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Subtitle Gap",
+            "default": 4.0
+          },
+          "process_label_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Label Width",
+            "default": 140.0
+          },
+          "process_label_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Process Label Gap",
+            "default": 16.0
+          },
+          "process_label_height": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Process Label Height",
+            "default": 14.0
+          },
+          "matrix_row_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Row Gap",
+            "default": 12.0
+          },
+          "matrix_category_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Matrix Category Width",
+            "default": 140.0
+          },
+          "matrix_category_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Category Gap",
+            "default": 16.0
+          },
+          "matrix_items_width": {
+            "type": "number",
+            "exclusiveMinimum": 0.0,
+            "title": "Matrix Items Width",
+            "default": 220.0
+          },
+          "matrix_items_gap": {
+            "type": "number",
+            "minimum": 0.0,
+            "title": "Matrix Items Gap",
+            "default": 16.0
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "Spacing"
+      },
+      "StoryChapter": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Chapter Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "answer",
+              "context",
+              "evidence",
+              "risk",
+              "action",
+              "cover",
+              "divider"
+            ],
+            "title": "Role"
+          },
+          "claim_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "title": "Claim Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "role",
+          "claim_ids"
+        ],
+        "title": "StoryChapter"
+      },
+      "StoryPlan": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "enum": [
+              "q2a-v1",
+              "q2b-v1",
+              "q2c-v1",
+              "q2e-v1"
+            ],
+            "title": "Version",
+            "default": "q2a-v1"
+          },
+          "brief": {
+            "$ref": "#/components/schemas/ReportBrief"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/Evidence"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/Claim"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Claims"
+          },
+          "answer_claim_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Answer Claim Ids"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/StoryChapter"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Chapters"
+          },
+          "unanswered_questions": {
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "type": "array",
+            "title": "Unanswered Questions"
+          },
+          "comparisons": {
+            "items": {
+              "$ref": "#/components/schemas/EvidenceComparison"
+            },
+            "type": "array",
+            "title": "Comparisons",
+            "default": []
+          },
+          "comparison_results": {
+            "items": {
+              "$ref": "#/components/schemas/ComparisonAssessment"
+            },
+            "type": "array",
+            "title": "Comparison Results",
+            "default": []
+          },
+          "derivations": {
+            "items": {
+              "$ref": "#/components/schemas/Derivation"
+            },
+            "type": "array",
+            "title": "Derivations",
+            "default": []
+          },
+          "derived_values": {
+            "items": {
+              "$ref": "#/components/schemas/DerivedValue"
+            },
+            "type": "array",
+            "title": "Derived Values",
+            "default": []
+          },
+          "input_fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Input Fingerprint"
+          },
+          "rewrite_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RewriteReview"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "brief",
+          "evidence",
+          "claims",
+          "answer_claim_ids",
+          "chapters",
+          "unanswered_questions",
+          "input_fingerprint"
+        ],
+        "title": "StoryPlan"
+      },
+      "StoryRepairRequest": {
+        "properties": {
+          "brief": {
+            "$ref": "#/components/schemas/ReportBrief"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Instructions",
+            "default": ""
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RepairFinding"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Findings"
+          },
+          "max_calls": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 2.0,
+            "title": "Max Calls"
+          },
+          "max_rounds": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Max Rounds"
+          },
+          "max_seconds": {
+            "type": "integer",
+            "maximum": 300.0,
+            "minimum": 10.0,
+            "title": "Max Seconds"
+          },
+          "max_cost_usd": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 20,
+                "pattern": "^\\d+(\\.\\d{1,6})?$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Cost Usd"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "brief",
+          "findings",
+          "max_calls",
+          "max_rounds",
+          "max_seconds"
+        ],
+        "title": "StoryRepairRequest"
+      },
+      "StoryRepairResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "needs_revision",
+              "reviewed_candidate",
+              "stopped"
+            ],
+            "title": "Status"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Deck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/RepairFinding"
+            },
+            "type": "array",
+            "title": "Findings"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag"
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "title": "Sources Fingerprint"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "review_calls": {
+            "type": "integer",
+            "title": "Review Calls"
+          },
+          "rounds": {
+            "type": "integer",
+            "title": "Rounds"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cost Usd"
+          },
+          "unmeasured_calls": {
+            "type": "integer",
+            "title": "Unmeasured Calls"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
+          },
+          "review_notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Notes"
+          },
+          "submission_approved": {
+            "type": "boolean",
+            "const": false,
+            "title": "Submission Approved",
+            "default": false
+          },
+          "notice": {
+            "type": "string",
+            "title": "Notice",
+            "default": "별도 AI 재검수의 후보입니다. 본문·원문 의미·PowerPoint·독자 검수와 제출 승인으로 사용하지 마세요."
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "deck",
+          "findings",
+          "reason",
+          "base_etag",
+          "sources_fingerprint",
+          "calls",
+          "review_calls",
+          "rounds",
+          "cost_usd",
+          "unmeasured_calls",
+          "usage",
+          "review_notes"
+        ],
+        "title": "StoryRepairResult"
+      },
+      "StoryRewriteResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "format_error"
+            ],
+            "title": "Status"
+          },
+          "deck": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Deck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag",
+            "default": ""
+          },
+          "sources_fingerprint": {
+            "type": "string",
+            "title": "Sources Fingerprint",
+            "default": ""
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text",
+            "default": ""
+          },
+          "unverified_numbers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unverified Numbers",
+            "default": []
+          },
+          "format_retried": {
+            "type": "boolean",
+            "title": "Format Retried",
+            "default": false
+          },
+          "usage": {
+            "$ref": "#/components/schemas/GenerationUsage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "usage"
+        ],
+        "title": "StoryRewriteResult"
       },
       "Structure": {
         "properties": {
@@ -2699,6 +9455,16 @@
             "type": "array",
             "title": "Chapters",
             "default": []
+          },
+          "story_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StoryPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -2812,6 +9578,7 @@
           },
           "header_fill": {
             "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
             "title": "Header Fill"
           },
           "row_heights_pt": {
@@ -2844,6 +9611,24 @@
             },
             "type": "array",
             "title": "Cell Lines",
+            "default": []
+          },
+          "header_fills": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{6}$"
+            },
+            "type": "array",
+            "title": "Header Fills",
+            "default": []
+          },
+          "body_fills": {
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Fa-f]{6}$"
+            },
+            "type": "array",
+            "title": "Body Fills",
             "default": []
           }
         },
@@ -2896,6 +9681,197 @@
           "rows"
         ],
         "title": "TableSlots"
+      },
+      "TextRun": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "bold": {
+            "type": "boolean",
+            "title": "Bold"
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^[0-9A-Fa-f]{6}$",
+            "title": "Color"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text",
+          "bold",
+          "color"
+        ],
+        "title": "TextRun"
+      },
+      "TextSpan": {
+        "properties": {
+          "slot": {
+            "type": "string",
+            "enum": [
+              "eyebrow",
+              "subtitle",
+              "text",
+              "conclusion",
+              "bullets"
+            ],
+            "title": "Slot"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start"
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "End"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "bold",
+              "accent"
+            ],
+            "title": "Role"
+          },
+          "text_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Text Sha256"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "slot",
+          "start",
+          "end",
+          "role",
+          "text_sha256"
+        ],
+        "title": "TextSpan"
+      },
+      "UnitConversion": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "unit-scale-v1",
+            "title": "Rule Version",
+            "default": "unit-scale-v1"
+          },
+          "evidence_id": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Evidence Id"
+          },
+          "original_value": {
+            "type": "string",
+            "title": "Original Value"
+          },
+          "original_unit": {
+            "type": "string",
+            "enum": [
+              "원",
+              "천원",
+              "만원",
+              "백만원",
+              "억원",
+              "명",
+              "천명",
+              "건",
+              "천건"
+            ],
+            "title": "Original Unit"
+          },
+          "target_unit": {
+            "type": "string",
+            "enum": [
+              "원",
+              "천원",
+              "만원",
+              "백만원",
+              "억원",
+              "명",
+              "천명",
+              "건",
+              "천건"
+            ],
+            "title": "Target Unit"
+          },
+          "factor_numerator": {
+            "type": "string",
+            "title": "Factor Numerator"
+          },
+          "factor_denominator": {
+            "type": "string",
+            "title": "Factor Denominator"
+          },
+          "normalized_value": {
+            "type": "string",
+            "title": "Normalized Value"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "evidence_id",
+          "original_value",
+          "original_unit",
+          "target_unit",
+          "factor_numerator",
+          "factor_denominator",
+          "normalized_value"
+        ],
+        "title": "UnitConversion"
+      },
+      "UnitNormalization": {
+        "properties": {
+          "rule_version": {
+            "type": "string",
+            "const": "unit-scale-v1",
+            "title": "Rule Version"
+          },
+          "target_unit": {
+            "type": "string",
+            "enum": [
+              "원",
+              "천원",
+              "만원",
+              "백만원",
+              "억원",
+              "명",
+              "천명",
+              "건",
+              "천건"
+            ],
+            "title": "Target Unit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_version",
+          "target_unit"
+        ],
+        "title": "UnitNormalization"
       },
       "UploadResult": {
         "properties": {

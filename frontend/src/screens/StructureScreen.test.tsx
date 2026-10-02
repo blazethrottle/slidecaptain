@@ -51,6 +51,20 @@ it("구조안을 생성해 초안 표를 보여준다", async () => {
   expect(screen.getByText(/9999/)).toBeInTheDocument();  // 자료에 없는 수치 경고
 });
 
+it("템플릿 드롭다운은 편집 가능한 신규 4종을 제공한다", async () => {
+  // DB-6 속성 편집을 제공한 신규 템플릿도 선택할 수 있다.
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  const select = await screen.findByLabelText("1번 장 템플릿") as HTMLSelectElement;
+  const values = Array.from(select.options).map((o) => o.value);
+  expect(values).toEqual(expect.arrayContaining(["callout", "cards", "process", "matrix"]));
+  expect(values).toHaveLength(10);
+});
+
 it("승인하면 덱 반영 후 장별로 순차 생성해 저장한다", async () => {
   vi.mocked(api.generateStructure).mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
@@ -101,7 +115,7 @@ it("기존 슬라이드가 사라지는 승인은 확인을 거친다", async ()
   // c2 슬라이드의 소실로 확인 대화가 뜬다 (마지막 장을 삭제하면 승인 절 자체가 사라지므로 부적합)
   const deck = emptyDeck();
   deck.structure.chapters = [CH1, CH2];
-  deck.slides = [{ chapter_id: "c2", slots: {
+  deck.slides = [{ chapter_id: "c2", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [], conclusion: "결", footnote: "" } }];
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);

@@ -31,6 +31,7 @@ it("상태 조회 전에는 확인 중을 보인다", () => {
   vi.mocked(api.getStatus).mockReturnValue(neverResolves());
   render(<AiConsentDialog onConfirm={() => {}} onCancel={() => {}} />);
   expect(screen.getByText(/확인 중/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "전송에 동의하고 계속" })).toBeDisabled();
 });
 
 it("상태 조회 응답 뒤 제공자와 모델을 표시한다", async () => {
@@ -64,6 +65,15 @@ it("상태 조회가 실패하면 조사가 어색한 문장 대신 별도 안�
     "AI 제공자 정보를 확인하지 못했습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.",
   )).toBeInTheDocument();
   expect(screen.queryByText(/확인 실패에게/)).toBeNull();
+  expect(screen.getByRole("button", { name: "전송에 동의하고 계속" })).toBeDisabled();
+});
+
+it("호출이 확인한 ChatGPT 상태를 그대로 표시하고 다시 조회하지 않는다", async () => {
+  vi.mocked(api.getStatus).mockClear();
+  render(<AiConsentDialog statusSnapshot={{ ...STATUS, provider: "chatgpt", model: "gpt-test", selection_id: "one" }}
+    onConfirm={() => {}} onCancel={() => {}} />);
+  expect(screen.getByText("ChatGPT 구독 (gpt-test)")).toBeInTheDocument();
+  expect(api.getStatus).not.toHaveBeenCalled();
 });
 
 it("Escape를 누르면 onCancel이 불린다", async () => {
@@ -114,4 +124,24 @@ it("닫힐 때 이전 포커스 요소로 돌아간다", async () => {
   await screen.findByRole("dialog");
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(opener).toHaveFocus());
+});
+
+it("호출 버튼이 포커스를 잃었어도 동의창 아래의 작성창이 살아 있으면 활성 입력으로 돌아간다", async () => {
+  function Wrapper() {
+    const [open, setOpen] = useState(false);
+    return <>
+      <section role="dialog" aria-modal="true" aria-label="작성창">
+        <label>제목<input /></label>
+        <button disabled={open} onClick={event => {
+          // 실제 브라우저는 생성 버튼이 disabled로 바뀌면 body로 포커스를 옮길 수 있다.
+          event.currentTarget.blur(); setOpen(true);
+        }}>AI 생성</button>
+      </section>
+      {open && <AiConsentDialog statusSnapshot={STATUS} onConfirm={() => setOpen(false)} onCancel={() => setOpen(false)} />}
+    </>;
+  }
+  render(<Wrapper />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 생성" }));
+  await userEvent.click(screen.getByRole("button", { name: "취소" }));
+  expect(screen.getByLabelText("제목")).toHaveFocus();
 });

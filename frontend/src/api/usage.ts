@@ -49,18 +49,23 @@ export function formatUsage(usage: GenerationUsage): string {
 
   // model_usage가 없어 usage dict로 폴백한 호출이 하나라도 있으면 "대략"을 붙인다 (가정 1, 7)
   const approx = usage.records.some((r) => r.usage?.token_source === "usage");
-  if (usage.input_tokens == null || usage.output_tokens == null) {
+  const tokenValues = [usage.input_tokens, usage.output_tokens, usage.cache_read_tokens, usage.cache_creation_tokens];
+  if (tokenValues.every((value) => value == null)) {
     parts.push("토큰 미확인");
   } else {
     // F4 리뷰 반영: usage dict 폴백은 입력과 출력 토큰에 같은 불확실성을 준다(가정 1).
     // "대략"을 입력에만 붙이면 출력 토큰이 마치 정확한 값처럼 보인다.
     const approxPrefix = approx ? "대략 " : "";
-    parts.push(`${approxPrefix}입력 ${formatTokenCount(usage.input_tokens)} 토큰`);
-    parts.push(`${approxPrefix}출력 ${formatTokenCount(usage.output_tokens)} 토큰`);
-    if (usage.cache_read_tokens) {
+    parts.push(usage.input_tokens == null ? "입력 토큰 미확인" : `${approxPrefix}입력 ${formatTokenCount(usage.input_tokens)} 토큰`);
+    parts.push(usage.output_tokens == null ? "출력 토큰 미확인" : `${approxPrefix}출력 ${formatTokenCount(usage.output_tokens)} 토큰`);
+    if (usage.cache_read_tokens == null) {
+      parts.push("캐시 읽기 토큰 미확인");
+    } else if (usage.cache_read_tokens > 0) {
       parts.push(`캐시 읽기 ${formatTokenCount(usage.cache_read_tokens)} 토큰`);
     }
-    if (usage.cache_creation_tokens) {
+    if (usage.cache_creation_tokens == null) {
+      parts.push("캐시 생성 토큰 미확인");
+    } else if (usage.cache_creation_tokens > 0) {
       parts.push(`캐시 생성 ${formatTokenCount(usage.cache_creation_tokens)} 토큰`);
     }
   }

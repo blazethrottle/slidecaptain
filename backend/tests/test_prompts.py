@@ -1,6 +1,11 @@
-from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Structure
+from slidecaptain.models.deck import (
+    CalloutSlots, CardsSlots, Chapter, Deck, DeckMeta, MatrixSlots, ProcessSlots, Structure,
+)
 from slidecaptain.models.render import CapacityWarning
 from slidecaptain.pipeline.prompts import (
+    TEMPLATE_GUIDE,
+    _CONTRACT_LABELS,
+    _SLOTS_BY_TEMPLATE,
     build_chapter_prompt,
     build_condense_prompt,
     build_format_retry_prompt,
@@ -134,3 +139,405 @@ def test_contract_block_uses_korean_labels_for_cover_and_divider_keys():
         {"section_no_max_lines": 1, "section_title_max_lines": 1}, today="2026-09-02",
     )
     assert "- 섹션 제목: 최대 1줄" in prompt and "_max_lines" not in prompt
+
+
+# ---- 강조 밴드(callout) 등록 (2026-09-07 DB-1) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_callout():
+    lines = TEMPLATE_GUIDE.splitlines()
+    callout_lines = [ln for ln in lines if "callout" in ln]
+    assert len(callout_lines) == 1
+    # callout 자체 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)" in lines
+
+
+def test_callout_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["callout"] is CalloutSlots
+    assert "text_max_lines" in _CONTRACT_LABELS
+
+
+def test_callout_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "callout" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_callout_contract_block_uses_korean_label_and_char_hint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="강조", template="callout")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"text_max_lines": 3}, today="2026-09-07", char_hints={"밴드 안 한 줄": 40},
+    )
+    assert "_max_lines" not in prompt
+    assert "최대 3줄" in prompt
+    assert "밴드 안 한 줄 약 40자" in prompt
+
+
+def test_callout_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("callout")
+    assert "text" in schema["properties"]
+    assert "tone" in schema["properties"]
+
+
+# ---- 카드(cards) 등록 (2026-09-07 DB-2) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지,
+# 개수 제약(2~4)이 계약 블록에 드러나는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_cards():
+    lines = TEMPLATE_GUIDE.splitlines()
+    cards_lines = [ln for ln in lines if "cards" in ln]
+    assert len(cards_lines) == 1
+    # cards와 callout 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)" in lines
+    assert "- callout: 전폭 강조 밴드. 짧은 핵심 문장 하나만 크게 강조할 때 쓴다 (1~3줄)" in lines
+
+
+def test_cards_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["cards"] is CardsSlots
+    assert "card_badge_max_lines" in _CONTRACT_LABELS
+    assert "card_heading_max_lines" in _CONTRACT_LABELS  # compare2와 공유하는 기존 라벨
+    assert "card_bullets_max_lines" in _CONTRACT_LABELS
+    assert "card_tail_max_lines" in _CONTRACT_LABELS
+
+
+def test_cards_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "cards" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_cards_contract_block_states_the_card_count_constraint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="카드", template="cards")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 5,
+         "card_tail_max_lines": 1},
+        today="2026-09-07", char_hints={"카드 안 한 줄": 20},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 카드 개수: 2개 이상 4개 이하" in prompt
+    assert "- 카드 배지: 최대 1줄" in prompt
+    assert "- 카드 꼬리 라벨: 최대 1줄" in prompt
+    assert "카드 안 한 줄 약 20자" in prompt
+
+
+def test_other_templates_contract_block_has_no_card_count_line():
+    # 카드 개수 문구는 cards 전용이다: 다른 템플릿의 프롬프트를 오염시키면 안 된다
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="주제", template="bullet_box")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "카드 개수" not in prompt
+
+
+def test_cards_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("cards")
+    assert "cards" in schema["properties"]
+    cards_field = schema["properties"]["cards"]
+    assert cards_field.get("minItems") == 2
+    assert cards_field.get("maxItems") == 4
+
+
+# ---- 번호 단계(process) 등록 (2026-09-07 DB-3) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지,
+# 개수 제약(3~6)이 계약 블록에 드러나는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_process():
+    lines = TEMPLATE_GUIDE.splitlines()
+    process_lines = [ln for ln in lines if "process" in ln]
+    assert len(process_lines) == 1
+    # process와 cards 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- cards: 카드 2~4개로 항목을 나란히 비교하거나 소개할 때 쓴다 (배지와 꼬리 라벨은 선택)" in lines
+
+
+def test_process_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["process"] is ProcessSlots
+    assert "step_heading_max_lines" in _CONTRACT_LABELS
+    assert "step_subtitle_max_lines" in _CONTRACT_LABELS
+    assert "step_label_max_lines" in _CONTRACT_LABELS
+
+
+def test_process_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "process" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_process_contract_block_states_the_step_count_constraint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="절차", template="process")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"step_heading_max_lines": 1, "step_subtitle_max_lines": 3, "step_label_max_lines": 1},
+        today="2026-09-07", char_hints={"단계 제목": 20},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 단계 개수: 3개 이상 6개 이하" in prompt
+    assert "- 단계 제목: 최대 1줄" in prompt
+    assert "단계 제목 약 20자" in prompt
+
+
+def test_other_templates_contract_block_has_no_step_count_line():
+    # 단계 개수 문구는 process 전용이다: 다른 템플릿의 프롬프트를 오염시키면 안 된다
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="주제", template="bullet_box")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "단계 개수" not in prompt
+
+
+def test_process_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("process")
+    assert "steps" in schema["properties"]
+    steps_field = schema["properties"]["steps"]
+    assert steps_field.get("minItems") == 3
+    assert steps_field.get("maxItems") == 6
+
+
+# ---- 행렬(matrix) 등록 (2026-09-07 DB-4) ----
+# 10종 전면 재작성은 DB-5 소관이므로 여기서는 한 줄만 늘었는지, 등록이 빠짐없이 됐는지,
+# 개수 제약(3~6)이 계약 블록에 드러나는지만 본다.
+
+
+def test_template_guide_gains_exactly_one_line_for_matrix():
+    lines = TEMPLATE_GUIDE.splitlines()
+    matrix_lines = [ln for ln in lines if "matrix" in ln]
+    assert len(matrix_lines) == 1
+    # matrix와 process 문구는 DB-5 전면 재작성 이후에도 그대로다 (이미 "때 쓴다" 조건형이었다)
+    assert "- process: 순서 있는 절차나 단계를 번호로 나열할 때 쓴다 (단계 3~6개, 부제와 보조 라벨 2개는 선택)" in lines
+
+
+def test_matrix_registered_in_slot_map_and_contract_labels():
+    assert _SLOTS_BY_TEMPLATE["matrix"] is MatrixSlots
+    assert "row_category_max_lines" in _CONTRACT_LABELS
+    assert "row_primary_max_lines" in _CONTRACT_LABELS
+    assert "row_items_max_lines" in _CONTRACT_LABELS
+
+
+def test_matrix_structure_schema_enum_includes_new_template():
+    schema = structure_response_schema()
+    assert "matrix" in schema["properties"]["chapters"]["items"]["properties"]["template"]["enum"]
+
+
+def test_matrix_contract_block_states_the_row_count_constraint():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="비교", template="matrix")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"row_category_max_lines": 2, "row_primary_max_lines": 1, "row_items_max_lines": 4},
+        today="2026-09-07", char_hints={"분류 셀 한 줄": 8},
+    )
+    assert "_max_lines" not in prompt
+    assert "- 행 개수: 3개 이상 6개 이하" in prompt
+    assert "- 분류 셀: 최대 2줄" in prompt
+    assert "- 나열 항목: 최대 4줄 (한 줄짜리 항목 4개 기준)" in prompt
+    assert "분류 셀 한 줄 약 8자" in prompt
+
+
+def test_other_templates_contract_block_has_no_row_count_line():
+    # 행 개수 문구는 matrix 전용이다: 다른 템플릿의 프롬프트를 오염시키면 안 된다
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="주제", template="bullet_box")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "행 개수" not in prompt
+
+
+def test_matrix_chapter_schema_matches_slot_model():
+    schema = chapter_response_schema("matrix")
+    assert "rows" in schema["properties"]
+    rows_field = schema["properties"]["rows"]
+    assert rows_field.get("minItems") == 3
+    assert rows_field.get("maxItems") == 6
+
+
+# ---- 생성 계약 정비 (2026-09-07 DB-5) ----
+# TEMPLATE_GUIDE 10종 전면 재작성: bullet_box의 지위 부여 표현("가장 흔한")을 없애고 모든
+# 항목을 "이런 내용일 때 쓴다"라는 내용 조건으로 통일하며, 폴백(bullet_box)을 목록 마지막에
+# 명시한다. callout/cards/process/matrix는 이미 이 형식이었으므로 문구 자체는 그대로다
+# (앞선 4개 테스트가 그 불변을 확인한다).
+
+
+def test_template_guide_covers_every_declared_template():
+    """항목 수를 숫자로 고정하면 열한 번째 템플릿을 더할 때 누락을 잡지 못한다.
+
+    TemplateName 에는 추가하고 안내 문구에는 빠뜨려도 줄 수가 그대로라 검사가 통과한다.
+    DA-5 가 다섯 레지스트리를 단일 출처로 묶은 것과 같은 이유다 (2026-09-07 DB-5 리뷰).
+    """
+    from typing import get_args
+
+    from slidecaptain.models.deck import GeneratedTemplateName
+
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    named = {ln.removeprefix("- ").split(":")[0].strip() for ln in lines}
+
+    assert named == set(get_args(GeneratedTemplateName))
+
+
+def test_template_guide_every_entry_states_a_content_condition():
+    # 모든 항목이 "이런 내용일 때 쓴다"로 통일됐는지 확인한다: 지위나 빈도가 아니라 조건으로 고르게 한다
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    for ln in lines:
+        assert "때 쓴다" in ln, ln
+
+
+def test_template_guide_drops_status_language_from_bullet_box():
+    # "가장 흔한"이 bullet_box에 사실상 기본값 지위를 줘 쏠림의 직접 원인이 됐다 (계획서 DB-5 1항)
+    assert "가장 흔한" not in TEMPLATE_GUIDE
+    assert "기본값" not in TEMPLATE_GUIDE
+
+
+def test_template_guide_states_bullet_box_as_fallback_and_lists_it_last():
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- ")]
+    assert lines[-1].startswith("- bullet_box:")
+    assert "맞지 않" in lines[-1]  # 위 조건 중 어디에도 맞지 않을 때 쓰는 폴백임을 스스로 밝힌다
+
+
+def test_template_guide_bullet_box_still_lists_its_slots():
+    # 지위 표현만 빠지고 구성 요소(불릿/결론 박스/각주) 정보는 그대로 남아야 한다
+    lines = [ln for ln in TEMPLATE_GUIDE.splitlines() if ln.startswith("- bullet_box:")]
+    assert len(lines) == 1
+    assert "불릿" in lines[0] and "결론 박스" in lines[0] and "각주" in lines[0]
+
+
+# ---- 장별 프롬프트의 슬롯 안내 (DB-5 2항) ----
+# 계약 블록은 이미 그 장의 템플릿 하나로 좁혀져 있어(실측: 계약 블록 136자 / 전체 1,243자)
+# 새 템플릿 4종의 슬롯 의미를 추가해도 분량 부담이 없다. 기존 6종은 필드 이름만으로 뜻이
+# 분명해(bullets, conclusion, columns/rows 등) 안내를 넣지 않는다.
+
+
+def test_legacy_template_chapter_prompt_has_no_slot_notes_line():
+    deck = _deck_two_chapters()
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"bullets_max_lines": 11, "conclusion_max_lines": 2}, today="2026-09-07",
+    )
+    assert "슬롯 안내" not in prompt
+
+
+def test_callout_chapter_prompt_explains_tone_slot():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="강조", template="callout")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES, {"text_max_lines": 3}, today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "tone" in prompt
+
+
+def test_cards_chapter_prompt_explains_badge_tail_and_emphasis_slots():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="카드", template="cards")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"card_badge_max_lines": 1, "card_heading_max_lines": 1, "card_bullets_max_lines": 5,
+         "card_tail_max_lines": 1},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "badge" in prompt and "tail" in prompt and "emphasis" in prompt
+
+
+def test_process_chapter_prompt_explains_notes_slot():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="절차", template="process")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"step_heading_max_lines": 1, "step_subtitle_max_lines": 3, "step_label_max_lines": 1},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "notes" in prompt
+
+
+def test_matrix_chapter_prompt_explains_category_primary_items_slots():
+    deck = Deck(meta=META, structure=Structure(chapters=[Chapter(id="c1", topic="비교", template="matrix")]))
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"row_category_max_lines": 2, "row_primary_max_lines": 1, "row_items_max_lines": 4},
+        today="2026-09-07",
+    )
+    assert "슬롯 안내" in prompt
+    assert "category" in prompt and "primary" in prompt and "items" in prompt
+
+
+# ---- 형식 재시도 프롬프트의 실패 사유 (DB-5 3항) ----
+
+
+def test_format_retry_prompt_includes_reason_line_when_given():
+    retry = build_format_retry_prompt(
+        "기본", raw_text="깨진 응답", reason="cards: List should have at least 2 items"
+    )
+    assert "실패 사유" in retry
+    assert "cards: List should have at least 2 items" in retry
+
+
+def test_format_retry_prompt_omits_reason_line_when_absent():
+    retry = build_format_retry_prompt("기본", raw_text="깨진 응답")
+    assert "실패 사유" not in retry
+    assert "깨진 응답" in retry
+
+
+def test_format_retry_prompt_reason_empty_string_is_same_as_absent():
+    # 사유가 없을 때(기본값 미지정)와 빈 문자열일 때가 안전하게 같은 결과를 내야 한다
+    without_reason = build_format_retry_prompt("기본", raw_text="원문")
+    empty_reason = build_format_retry_prompt("기본", raw_text="원문", reason="")
+    assert without_reason == empty_reason
+
+
+# 개수별 계약 안내 (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 지적한 결함의 처방)
+
+
+def _deck_with_template(template: str) -> Deck:
+    return Deck(meta=META, structure=Structure(chapters=[
+        Chapter(id="c1", topic="진행 절차", template=template),
+    ]))
+
+
+
+def test_contract_block_tells_that_fewer_items_allow_more_text():
+    """계약 본문은 최대 개수 기준이므로, 적게 쓰면 여유가 있다는 사실을 함께 알린다.
+
+    이 줄이 없으면 AI 는 3단계짜리 장에서도 6단계 기준의 빡빡한 상한을 지키려 해서
+    산출물이 필요 이상으로 빈약해진다.
+    """
+    deck = _deck_with_template("process")
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES,
+        {"step_heading_max_lines": 1, "step_subtitle_max_lines": 1, "step_label_max_lines": 1},
+        today="2026-09-07",
+        count_table=[(3, {"step_subtitle_max_lines": 4}, {}), (4, {"step_subtitle_max_lines": 3}, {}),
+                     (5, {"step_subtitle_max_lines": 2}, {}), (6, {"step_subtitle_max_lines": 1}, {})],
+    )
+
+    assert "개수를 줄이면" in prompt
+    assert "3개면 단계 부제 최대 4줄" in prompt
+    assert "5개면 단계 부제 최대 2줄" in prompt
+    # 최대 개수 행은 계약 본문이 이미 말하므로 표에서 되풀이하지 않는다
+    assert "6개면" not in prompt
+
+
+def test_contract_block_renders_char_hints_in_the_count_table():
+    """cards 는 줄 수가 아니라 줄당 글자 수가 카드 수에 따라 달라진다."""
+    deck = _deck_with_template("cards")
+    prompt = build_chapter_prompt(
+        deck, deck.structure.chapters[0], SOURCES, {"card_heading_max_lines": 1},
+        today="2026-09-07", char_hints={"카드 안 한 줄": 14},
+        count_table=[(2, {}, {"카드 안 한 줄": 33}), (3, {}, {"카드 안 한 줄": 20}),
+                     (4, {}, {"카드 안 한 줄": 14})],
+    )
+
+    assert "2개면 카드 안 한 줄 약 33자" in prompt
+    assert "3개면 카드 안 한 줄 약 20자" in prompt
+
+
+def test_contract_block_without_count_table_is_unchanged():
+    """개수에 좌우되지 않는 기존 6종 프롬프트는 이 변경으로 달라지지 않는다."""
+    deck = _deck_with_template("bullet_box")
+    chapter = deck.structure.chapters[0]
+    contract = {"bullets_max_lines": 9, "conclusion_max_lines": 2, "footnote_max_lines": 1}
+
+    before = build_chapter_prompt(deck, chapter, SOURCES, contract, today="2026-09-07")
+    after = build_chapter_prompt(deck, chapter, SOURCES, contract, today="2026-09-07", count_table=[])
+
+    assert before == after
+    assert "개수를 줄이면" not in before

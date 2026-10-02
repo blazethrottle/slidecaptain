@@ -7,7 +7,7 @@ from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import BulletBoxSlots, Chapter, Deck, DeckMeta, Structure, TableSlots
 from slidecaptain.models.preset import Preset
 from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, ProviderResponse
-from slidecaptain.pipeline.service import GenerationService, UsageRecord
+from slidecaptain.pipeline.service import _NUMBER_EXEMPT_FIELDS, GenerationService, UsageRecord
 
 METRICS = FontMetrics.load_default()
 SOURCES = {"리서치.md": "시장 규모는 500억 원이다. 2026년 기준."}
@@ -623,3 +623,180 @@ def test_usage_record_json_has_no_prompt_or_slot_content():
     assert "시장 규모는 500억 원이다" not in dumped  # 자료 문장
     assert "원문 그대로" not in dumped  # raw_text
     assert "표지" not in dumped  # 구조안 텍스트 조각
+
+
+# ---- 생성 계약 정비 (2026-09-07 DB-5): 형식 재시도 프롬프트의 실패 사유 -----------------
+
+CARDS_PAYLOAD_TOO_FEW = {"template": "cards", "cards": [{"heading": "카드1", "bullets": []}]}
+CARDS_PAYLOAD_OK = {"template": "cards", "cards": [
+    {"heading": "카드1", "bullets": [{"text": "요점 하나", "level": 0}]},
+    {"heading": "카드2", "bullets": [{"text": "요점 둘", "level": 0}]},
+]}
+
+
+def _deck_cards() -> Deck:
+    return Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="카드 소개", template="cards", source_refs=["리서치.md"]),
+    ]))
+
+
+def test_format_retry_carries_failure_reason_for_card_count_violation():
+    # 카드 1개는 min_length=2 위반이라 형식 검증 실패로 재시도가 걸린다: 재시도 프롬프트에
+    # "왜" 실패했는지 사유가 실려야 AI가 경계값을 다시 못 어긴다 (계획서 DB-5 3항)
+    service, stub = _service([
+        ProviderResponse(structured=CARDS_PAYLOAD_TOO_FEW, raw_text="r1"),
+        ProviderResponse(structured=CARDS_PAYLOAD_OK, raw_text="r2"),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck_cards(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert result.format_retried is True
+    assert "실패 사유" in stub.calls[1][0]
+
+
+def test_generate_chapter_card_count_violation_ends_in_format_error_not_422():
+    # 재시도 뒤에도 개수 제약을 어기면 형식 게이트의 소프트 실패(status="format_error")로
+    # 끝난다: 예외를 던지지 않는다. 422는 사용자가 편집기에서 저장할 때만의 경로다 (계획서 DB-5)
+    service, _ = _service([
+        ProviderResponse(structured=CARDS_PAYLOAD_TOO_FEW, raw_text="r1"),
+        ProviderResponse(structured=CARDS_PAYLOAD_TOO_FEW, raw_text="r2"),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck_cards(), "c1", SOURCES, Preset()))
+    assert result.status == "format_error"
+    assert result.slots is None
+    assert result.raw_text == "r2"
+
+
+def test_format_retry_prompt_reason_present_even_without_count_violation():
+    # 개수 제약과 무관한 형식 실패(필수 필드 누락 등)에도 사유가 실린다: cards 전용이 아니다
+    service, stub = _service([
+        ProviderResponse(structured={"엉뚱": 1}, raw_text="bad"),
+        ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="good"),
+    ])
+    result = asyncio.run(service.generate_chapter(_deck(), "c1", SOURCES, Preset()))
+    assert result.status == "ok"
+    assert "실패 사유" in stub.calls[1][0]
+
+
+# ---- 생성 계약 정비 (2026-09-07 DB-5): _NUMBER_EXEMPT_FIELDS 점검 -----------------------
+# cover의 date와 divider의 section_no는 "자료에 있을 이유가 없는 메타성 필드"라 면제됐다.
+# 새 템플릿 4종(callout/cards/process/matrix)은 그런 필드가 없다: process의 단계 번호처럼
+# 자동 채번되는 값도 렌더 시점에 계산될 뿐 데이터 필드로 존재하지 않는다. 그래서 새 항목을
+# 추가하지 않았다. 아래는 그 판단이 실제로 맞는지, 즉 새 템플릿의 모든 텍스트 필드가 수치
+# 대조 대상에서 빠짐없이 검사되는지를 검증한다.
+
+
+def test_number_exempt_fields_unchanged_for_new_templates():
+    assert set(_NUMBER_EXEMPT_FIELDS) == {"cover", "divider"}
+
+
+def test_cards_tail_numbers_are_verified_not_exempt():
+    payload = {"template": "cards", "cards": [
+        {"heading": "A", "bullets": [], "tail": "37% 개선"},
+        {"heading": "B", "bullets": []},
+    ]}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(_deck_cards(), "c1", SOURCES, Preset()))
+    assert "37" in result.unverified_numbers
+
+
+def test_process_notes_numbers_are_verified_not_exempt():
+    deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="절차", template="process", source_refs=["리서치.md"]),
+    ]))
+    payload = {"template": "process", "steps": [
+        {"heading": "1단계", "notes": ["12일 소요"]},
+        {"heading": "2단계"},
+        {"heading": "3단계"},
+    ]}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(deck, "c1", SOURCES, Preset()))
+    assert "12" in result.unverified_numbers
+
+
+def test_matrix_items_numbers_are_verified_not_exempt():
+    deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="비교", template="matrix", source_refs=["리서치.md"]),
+    ]))
+    payload = {"template": "matrix", "rows": [
+        {"category": "A", "items": ["45건 접수"]},
+        {"category": "B"},
+        {"category": "C"},
+    ]}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(deck, "c1", SOURCES, Preset()))
+    assert "45" in result.unverified_numbers
+
+
+def test_callout_text_numbers_are_verified_not_exempt():
+    deck = Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="강조", template="callout", source_refs=["리서치.md"]),
+    ]))
+    payload = {"template": "callout", "text": "매출 68% 증가", "tone": "ok"}
+    service, _ = _service([ProviderResponse(structured=payload, raw_text="r")])
+    result = asyncio.run(service.generate_chapter(deck, "c1", SOURCES, Preset()))
+    assert "68" in result.unverified_numbers
+
+
+# 개수 의존 템플릿의 프롬프트 계약 (2026-09-07 DB-2, DB-3, DB-4 리뷰가 각각 지적한 결함의 처방)
+
+
+def _deck_with_template(template: str) -> Deck:
+    return Deck(meta=DeckMeta(title="검토"), structure=Structure(chapters=[
+        Chapter(id="c1", topic="진행 절차", template=template, source_refs=["리서치.md"]),
+    ]))
+
+
+def test_chapter_prompt_contract_is_based_on_the_largest_item_count():
+    """장별 프롬프트는 AI 가 항목을 몇 개 쓸지 정하기 전에 조립된다.
+
+    가장 적은 개수로 계약을 계산하면 AI 가 많은 개수를 고를 때 계약이 약속한 것보다 실제로
+    들어가는 분량이 훨씬 적어진다. matrix 는 3행 기준 대표 항목 7줄이지만 6행이면 3줄이다.
+    """
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("matrix")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "- 대표 항목: 최대 3줄" in prompt, "최대 개수(6행) 기준이어야 한다"
+    assert "- 대표 항목: 최대 7줄" not in prompt, "기본값(3행) 기준이면 계약이 거짓말이 된다"
+
+
+def test_chapter_prompt_tells_that_fewer_items_allow_more_text():
+    """보수적 계약만 주면 3행짜리 장도 6행 기준으로 빈약해지므로 여유를 함께 알린다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("matrix")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "개수를 줄이면" in prompt
+    assert "3개면 분류 셀 최대 5줄" in prompt
+
+
+def test_chapter_prompt_char_hints_are_also_worst_case_for_cards():
+    """cards 는 가로로 나뉘어 줄 수가 아니라 줄당 글자 수가 카드 수에 좌우된다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("cards")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "카드 안 한 줄 약 14자" in prompt, "최대 개수(4카드) 기준이어야 한다"
+    assert "카드 안 한 줄 약 33자" not in prompt.split("개수를 줄이면")[0], "본문 안내가 2카드 기준이면 안 된다"
+    assert "2개면" in prompt
+
+
+def test_chapter_prompt_for_count_independent_templates_is_unchanged():
+    """기존 6종은 개수에 좌우되지 않으므로 이 변경으로 프롬프트가 달라지지 않는다."""
+    from slidecaptain.models.preset import Preset
+
+    service, _ = _service([])
+    deck = _deck_with_template("bullet_box")
+
+    prompt = service._chapter_prompt(deck, deck.structure.chapters[0], SOURCES, Preset(), "")
+
+    assert "개수를 줄이면" not in prompt

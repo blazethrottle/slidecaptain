@@ -29,7 +29,7 @@ const deck: Deck = {
   meta: { title: "t", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [{ text: "옛 내용", level: 0 }], conclusion: "결", footnote: "" } }],
 };
 

@@ -1,0 +1,284 @@
+{
+  "payload": {
+    "evidence": [
+      {
+        "id": "e1",
+        "source_id": "synthetic.md",
+        "locator": {
+          "line_start": 2,
+          "line_end": 2
+        },
+        "value": "1,200원",
+        "metric_basis": {
+          "definition": "순매출",
+          "unit": "원",
+          "entity": "A팀",
+          "period": {
+            "start": "2026-01-01",
+            "end": "2026-01-31",
+            "grain": "month",
+            "aggregation": "sum",
+            "coverage": "complete"
+          },
+          "denominator": {
+            "kind": "none"
+          }
+        }
+      },
+      {
+        "id": "e2",
+        "source_id": "synthetic.md",
+        "locator": {
+          "line_start": 3,
+          "line_end": 3
+        },
+        "value": "1,000원",
+        "metric_basis": {
+          "definition": "순매출",
+          "unit": "원",
+          "entity": "B팀",
+          "period": {
+            "start": "2026-01-01",
+            "end": "2026-01-31",
+            "grain": "month",
+            "aggregation": "sum",
+            "coverage": "complete"
+          },
+          "denominator": {
+            "kind": "none"
+          }
+        }
+      }
+    ],
+    "claims": [
+      {
+        "id": "k1",
+        "statement": "같은 기간의 두 팀 순매출 차이를 확인한다",
+        "kind": "proposal",
+        "evidence_ids": [
+          "e1",
+          "e2"
+        ],
+        "caveats": [
+          "정의와 집계 범위의 원문 해석은 별도 검수"
+        ]
+      }
+    ],
+    "answer_claim_ids": [
+      "k1"
+    ],
+    "unanswered_questions": [],
+    "chapters": [
+      {
+        "topic": "두 팀 순매출 비교",
+        "conclusion": "비교 조건 확인",
+        "template": "bullet_box",
+        "role": "answer",
+        "claim_ids": [
+          "k1"
+        ]
+      }
+    ],
+    "comparisons": [
+      {
+        "id": "cmp1",
+        "claim_id": "k1",
+        "left_evidence_id": "e1",
+        "right_evidence_id": "e2",
+        "axis": "entity"
+      }
+    ],
+    "derivations": [
+      {
+        "id": "d1",
+        "comparison_id": "cmp1",
+        "operation": "difference"
+      },
+      {
+        "id": "d2",
+        "comparison_id": "cmp1",
+        "operation": "percent_change"
+      }
+    ]
+  },
+  "sources": {
+    "synthetic.md": "합성 자료\nA팀 2026년 1월 전체 기간 순매출: 1,200원\nB팀 2026년 1월 전체 기간 순매출: 1,000원"
+  },
+  "deck": {
+    "schema_version": 1,
+    "meta": {
+      "title": "합성 비교",
+      "report_type": "research",
+      "audience": "",
+      "presenter": "",
+      "preset_overrides": {}
+    },
+    "structure": {
+      "chapters": [
+        {
+          "id": "c1",
+          "topic": "두 팀 순매출 비교",
+          "conclusion": "비교 조건 확인",
+          "template": "bullet_box",
+          "source_refs": [
+            "synthetic.md"
+          ]
+        }
+      ],
+      "story_plan": {
+        "version": "q2c-v1",
+        "brief": {
+          "decision_question": "같은 기간에 두 팀의 순매출은 얼마나 차이 나는가?",
+          "audience": "",
+          "report_type": "research",
+          "reading_profile": "미지정",
+          "constraints": []
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source_id": "synthetic.md",
+            "locator": {
+              "line_start": 2,
+              "line_end": 2
+            },
+            "value": "1,200원",
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": {
+              "definition": "순매출",
+              "unit": "원",
+              "entity": "A팀",
+              "period": {
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "grain": "month",
+                "aggregation": "sum",
+                "coverage": "complete"
+              },
+              "denominator": {
+                "kind": "none",
+                "definition": null
+              }
+            },
+            "source_revision": "b89684b6e22dd6dd3746607a41e39028156c0e3758eae987b93a00790072633a",
+            "excerpt": "A팀 2026년 1월 전체 기간 순매출: 1,200원"
+          },
+          {
+            "id": "e2",
+            "source_id": "synthetic.md",
+            "locator": {
+              "line_start": 3,
+              "line_end": 3
+            },
+            "value": "1,000원",
+            "unit": null,
+            "period": null,
+            "entity": null,
+            "denominator": null,
+            "metric_basis": {
+              "definition": "순매출",
+              "unit": "원",
+              "entity": "B팀",
+              "period": {
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "grain": "month",
+                "aggregation": "sum",
+                "coverage": "complete"
+              },
+              "denominator": {
+                "kind": "none",
+                "definition": null
+              }
+            },
+            "source_revision": "b89684b6e22dd6dd3746607a41e39028156c0e3758eae987b93a00790072633a",
+            "excerpt": "B팀 2026년 1월 전체 기간 순매출: 1,000원"
+          }
+        ],
+        "claims": [
+          {
+            "id": "k1",
+            "statement": "같은 기간의 두 팀 순매출 차이를 확인한다",
+            "kind": "proposal",
+            "evidence_ids": [
+              "e1",
+              "e2"
+            ],
+            "caveats": [
+              "정의와 집계 범위의 원문 해석은 별도 검수"
+            ]
+          }
+        ],
+        "answer_claim_ids": [
+          "k1"
+        ],
+        "chapters": [
+          {
+            "chapter_id": "c1",
+            "role": "answer",
+            "claim_ids": [
+              "k1"
+            ]
+          }
+        ],
+        "unanswered_questions": [],
+        "comparisons": [
+          {
+            "id": "cmp1",
+            "claim_id": "k1",
+            "left_evidence_id": "e1",
+            "right_evidence_id": "e2",
+            "axis": "entity"
+          }
+        ],
+        "comparison_results": [
+          {
+            "comparison_id": "cmp1",
+            "rule_version": "q2b-v1",
+            "status": "compatible",
+            "reasons": []
+          }
+        ],
+        "derivations": [
+          {
+            "id": "d1",
+            "comparison_id": "cmp1",
+            "operation": "difference"
+          },
+          {
+            "id": "d2",
+            "comparison_id": "cmp1",
+            "operation": "percent_change"
+          }
+        ],
+        "derived_values": [
+          {
+            "derivation_id": "d1",
+            "rule_version": "q2c-v1",
+            "status": "computed",
+            "formula": "대상값 - 기준값",
+            "value": "200",
+            "unit": "원",
+            "rounded": false,
+            "reasons": []
+          },
+          {
+            "derivation_id": "d2",
+            "rule_version": "q2c-v1",
+            "status": "computed",
+            "formula": "(대상값 - 기준값) / 기준값 × 100",
+            "value": "20",
+            "unit": "%",
+            "rounded": false,
+            "reasons": []
+          }
+        ],
+        "input_fingerprint": "a4d09fa0b062e4d86c41496450934473c4f6de7603a4c8c70e1a1d0acb038f0e"
+      }
+    },
+    "slides": []
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "deck": {
+    "schema_version": 1,
+    "meta": {
+      "title": "합성 보고",
+      "report_type": "research",
+      "audience": "",
+      "presenter": "",
+      "preset_overrides": {}
+    },
+    "structure": {
+      "chapters": [
+        {
+          "id": "c1",
+          "topic": "조건부 판단",
+          "conclusion": "비용 확인 후 판단",
+          "template": "summary",
+          "source_refs": [
+            "합성 자료.md"
+          ]
+        },
+        {
+          "id": "c2",
+          "topic": "시범 운영 근거",
+          "conclusion": "응답 범위에 한정",
+          "template": "bullet_box",
+          "source_refs": [
+            "합성 자료.md"
+          ]
+        },
+        {
+          "id": "c3",
+          "topic": "추가 확인",
+          "conclusion": "비용 견적 필요",
+          "template": "bullet_box",
+          "source_refs": []
+        }
+      ],
+      "story_plan": {
+        "version": "q2a-v1",
+        "brief": {
+          "decision_question": "시범 운영을 확대할 것인가?",
+          "audience": "검토 담당자",
+          "report_type": "approval",
+          "reading_profile": "미지정",
+          "constraints": []
+        },
+        "evidence": [
+          {
+            "id": "e1",
+            "source_id": "합성 자료.md",
+            "locator": {
+              "line_start": 2,
+              "line_end": 2
+            },
+            "value": "80%",
+            "unit": "%",
+            "period": null,
+            "entity": "시범 운영",
+            "denominator": "응답자 20명",
+            "source_revision": "cf4c96b7284ab66f8124332a4a087dc19da4dd8cf360269bdea4f0d331c08737",
+            "excerpt": "시범 운영 만족도: 80%, 응답자 20명."
+          }
+        ],
+        "claims": [
+          {
+            "id": "k1",
+            "statement": "시범 운영 만족도는 80%다",
+            "kind": "fact",
+            "evidence_ids": [
+              "e1"
+            ],
+            "caveats": [
+              "응답자 20명 기준"
+            ]
+          },
+          {
+            "id": "k2",
+            "statement": "비용 확인 후 확대 여부를 판단한다",
+            "kind": "proposal",
+            "evidence_ids": [
+              "e1"
+            ],
+            "caveats": [
+              "전체 확대 비용은 미확인"
+            ]
+          },
+          {
+            "id": "k3",
+            "statement": "전체 확대 비용은 미확인이다",
+            "kind": "unknown",
+            "evidence_ids": [],
+            "caveats": [
+              "비용 견적 필요"
+            ]
+          }
+        ],
+        "answer_claim_ids": [
+          "k2"
+        ],
+        "chapters": [
+          {
+            "chapter_id": "c1",
+            "role": "answer",
+            "claim_ids": [
+              "k2"
+            ]
+          },
+          {
+            "chapter_id": "c2",
+            "role": "evidence",
+            "claim_ids": [
+              "k1"
+            ]
+          },
+          {
+            "chapter_id": "c3",
+            "role": "risk",
+            "claim_ids": [
+              "k3"
+            ]
+          }
+        ],
+        "unanswered_questions": [
+          "전체 확대 비용은 얼마인가?"
+        ],
+        "input_fingerprint": "3cef4f1e71a9bb2fb17796003c62da4570ac519e75f60ba87483586635d2b0fa"
+      }
+    },
+    "slides": []
+  },
+  "sources": {
+    "합성 자료.md": "합성 검토 자료\n시범 운영 만족도: 80%, 응답자 20명.\n전체 확대 비용은 미확인."
+  }
+}

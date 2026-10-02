@@ -6,12 +6,20 @@
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+from slidecaptain.models.diagram import DiagramInput, parse_diagram_spec
+from slidecaptain.models.story import ReportType, StoryPlan
+from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
+from slidecaptain.models.change_review import DocumentChangeReview
 
 SCHEMA_VERSION = 1
 
-TemplateName = Literal["cover", "summary", "bullet_box", "table", "compare2", "divider"]
-ReportType = Literal["research", "approval", "strategy"]
+GeneratedTemplateName = Literal[
+    "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
+    "matrix",
+]
+TemplateName = Literal[GeneratedTemplateName, "diagram"]
 
 
 class Bullet(BaseModel):
@@ -82,10 +90,107 @@ class DividerSlots(BaseModel):
     section_title: str
 
 
-Slots = Annotated[
-    Union[CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots],
+class CalloutSlots(BaseModel):
+    """강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).
+
+    tone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이
+    따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,
+    채움 0건) 여기서 뺐다.
+    """
+
+    template: Literal["callout"] = "callout"
+    text: str
+    tone: Literal[
+        "ink", "ink_soft", "accent1", "accent2", "danger", "ok",
+        "surface1", "surface2", "surface3", "surface_danger",
+    ] = "surface1"
+
+
+class CardItem(BaseModel):
+    """카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다
+    (eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른
+    템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다.
+    """
+
+    badge: str = ""
+    heading: str
+    bullets: list[Bullet] = []
+    tail: str = ""
+    emphasis: bool = False
+
+
+class CardsSlots(BaseModel):
+    """카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:
+    compare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나
+    병렬 비교하는 용도라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["cards"] = "cards"
+    cards: list[CardItem] = Field(min_length=2, max_length=4)
+
+
+class ProcessStep(BaseModel):
+    """번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서
+    나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
+    subtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙).
+    """
+
+    heading: str
+    subtitle: str = ""
+    notes: list[str] = Field(default=[], max_length=2)
+
+
+class ProcessSlots(BaseModel):
+    """번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
+    실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가
+    내용이라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["process"] = "process"
+    steps: list[ProcessStep] = Field(min_length=3, max_length=6)
+
+
+class MatrixRow(BaseModel):
+    """행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목
+    (primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의
+    badge/tail과 같은 규칙).
+
+    표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에
+    고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다.
+    """
+
+    category: str
+    primary: str = ""
+    items: list[str] = []
+
+
+class MatrixSlots(BaseModel):
+    """분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과
+    각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다.
+    """
+
+    template: Literal["matrix"] = "matrix"
+    rows: list[MatrixRow] = Field(min_length=3, max_length=6)
+
+
+class DiagramSlots(BaseModel):
+    """도식의 의미 입력만 저장한다. 배치/검수 결과는 계산 출력에만 존재한다."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
+
+    template: Literal["diagram"] = "diagram"
+    diagram: DiagramInput
+    footnote: str = ""
+
+
+GeneratedSlots = Annotated[
+    Union[
+        CoverSlots, SummarySlots, BulletBoxSlots, TableSlots, CompareSlots, DividerSlots,
+        CalloutSlots, CardsSlots, ProcessSlots, MatrixSlots,
+    ],
     Field(discriminator="template"),
 ]
+Slots = Annotated[Union[GeneratedSlots, DiagramSlots], Field(discriminator="template")]
 
 
 class Chapter(BaseModel):
@@ -96,13 +201,43 @@ class Chapter(BaseModel):
     source_refs: list[str] = []
 
 
+class GeneratedChapter(Chapter):
+    template: GeneratedTemplateName
+
+
 class Structure(BaseModel):
     chapters: list[Chapter] = []
+    story_plan: StoryPlan | None = None
 
 
 class Slide(BaseModel):
     chapter_id: str
+    # 제목 위 분류 라벨과 제목 아래 한 문장 (2026-09-07 DA-4). 값이 없으면 자리를 차지하지 않는다.
+    # 각주는 슬롯 레벨에 이미 있어 여기 두지 않는다: 두 곳에 같은 개념이 생기고 통합은
+    # 다르게 해석되는 변경이라 스키마 버전 상향이 필요해진다 (적대 리뷰 확인)
+    eyebrow: str = ""
+    subtitle: str = ""
     slots: Slots
+    chart: ChartSpec | None = None
+    text_spans: list[TextSpan] = Field(default_factory=list,max_length=100)
+
+    @model_serializer(mode='wrap')
+    def expression_serialization(self,handler):
+        result=handler(self)
+        if self.chart is None:
+            result.pop('chart',None)
+        if not self.text_spans:
+            result.pop('text_spans',None)
+        return result
+
+    @model_validator(mode='after')
+    def expression_contract(self):
+        if self.chart is not None and not isinstance(self.slots,TableSlots):
+            raise ValueError('비교 차트는 원래 표 데이터를 보존하는 table 슬라이드에서만 사용할 수 있습니다.')
+        if self.text_spans and isinstance(self.slots,DiagramSlots):
+            raise ValueError('도식 문장의 부분 강조는 아직 지원하지 않습니다.')
+        validate_spans(self)
+        return self
 
 
 class DeckMeta(BaseModel):
@@ -118,6 +253,14 @@ class Deck(BaseModel):
     meta: DeckMeta
     structure: Structure = Structure()
     slides: list[Slide] = []
+    document_review: 'DocumentChangeReview | None' = None
+
+    @model_serializer(mode='wrap')
+    def document_review_serialization(self,handler):
+        payload=handler(self)
+        if self.document_review is None:
+            payload.pop('document_review',None)
+        return payload
 
     @model_validator(mode="after")
     def _schema_version_supported(self) -> "Deck":
@@ -156,4 +299,21 @@ class Deck(BaseModel):
                     f"장 {chapter.id}의 template({chapter.template})이 "
                     f"슬롯 template({slide.slots.template})과 다릅니다"
                 )
+            if isinstance(slide.slots, DiagramSlots):
+                if slide.slots.diagram.id != chapter.id:
+                    raise ValueError("도식 ID는 연결된 장 ID와 같아야 합니다")
+                evidence = self.structure.story_plan.evidence if self.structure.story_plan else []
+                parse_diagram_spec(slide.slots.diagram, evidence=evidence)
+            if slide.chart is not None:
+                plan=self.structure.story_plan
+                comparison=next((c for c in plan.comparisons if c.id==slide.chart.comparison_id),None) if plan else None
+                story_chapter=next((c for c in plan.chapters if c.chapter_id==slide.chapter_id),None) if plan else None
+                if comparison is None or story_chapter is None or comparison.claim_id not in story_chapter.claim_ids:
+                    raise ValueError('이 장의 기존 주장에 연결된 등록 비교를 선택해 주세요.')
+        for chapter in self.structure.chapters:
+            if chapter.template == "diagram":
+                if chapter.id not in seen_slide_chapters:
+                    raise ValueError(f"도식 장 {chapter.id}에는 도식 내용이 필요합니다")
+                if not chapter.topic.strip():
+                    raise ValueError("도식 장의 제목은 비어 있을 수 없습니다")
         return self

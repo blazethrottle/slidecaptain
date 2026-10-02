@@ -107,3 +107,83 @@ def test_many_column_table_writes_without_crashing(tmp_path, n_cols):
     table = next(s for s in presentation.slides[0].shapes if s.has_table).table
     assert len(table.columns) == n_cols
     assert all(col.width > 0 for col in table.columns)
+
+
+def _fill_of(cell) -> str | None:
+    node = cell._tc.find(qn("a:tcPr"))
+    if node is None:
+        return None
+    srgb = node.find(".//" + qn("a:srgbClr"))
+    return srgb.get("val") if srgb is not None else None
+
+
+def _table_of(saved):
+    for shape in saved.slides[0].shapes:
+        if shape.has_table:
+            return shape.table
+    raise AssertionError("표 도형이 없다")
+
+
+def _write_plan(tmp_path, plan):
+    out = tmp_path / "cellfill.pptx"
+    write_pptx(plan, out)
+    return Presentation(str(out))
+
+
+def _plan_with(tmp_path, **table_overrides):
+    metrics = FontMetrics.from_bundled()
+    plan = build_render_plan(_table_deck(), PRESET, metrics)
+    for slide in plan.slides:
+        for frame in slide.frames:
+            if frame.table is not None:
+                for key, value in table_overrides.items():
+                    setattr(frame.table, key, value)
+    return _write_plan(tmp_path, plan)
+
+
+def test_header_cell_fills_override_the_single_header_colour(tmp_path):
+    """벤치마크의 표는 머리행도 칸마다 색이 다르다. 첫 칸은 연회색, 나머지는 분류색이다."""
+
+    saved = _plan_with(tmp_path, header_fills=["F4F6F7", "1B2A3A", "0E8C7F"])
+    table = _table_of(saved)
+
+    assert [_fill_of(table.cell(0, c)) for c in range(3)] == ["F4F6F7", "1B2A3A", "0E8C7F"]
+
+
+def test_body_fills_colour_each_column(tmp_path):
+    """본문은 행 교차가 아니라 열 단위 색상 코딩이다."""
+
+    saved = _plan_with(tmp_path, body_fills=["FFFFFF", "EAF2F1", "FBF3E6"])
+    table = _table_of(saved)
+
+    for row in (1, 2):
+        assert [_fill_of(table.cell(row, c)) for c in range(3)] == ["FFFFFF", "EAF2F1", "FBF3E6"]
+
+
+def test_empty_lists_keep_the_existing_single_colour_header(tmp_path):
+    """기존 동작 불변: 목록이 비면 머리행 단일 색을 그대로 쓰고 본문은 칠하지 않는다."""
+
+    saved = _plan_with(tmp_path)
+    table = _table_of(saved)
+    header = {_fill_of(table.cell(0, c)) for c in range(3)}
+
+    assert len(header) == 1
+    assert _fill_of(table.cell(1, 0)) is None
+
+
+@pytest.mark.parametrize("field", ["header_fills", "body_fills"])
+def test_cell_fill_list_length_must_match_column_count(field):
+    from pydantic import ValidationError
+
+    from slidecaptain.models.render import TablePlan
+
+    with pytest.raises(ValidationError):
+        TablePlan(
+            col_widths_pt=[100.0, 100.0],
+            header=["A", "B"],
+            rows=[["1", "2"]],
+            font_pt=12.0,
+            header_fill="EEF3F9",
+            row_heights_pt=[24.0, 24.0],
+            **{field: ["FFFFFF"]},
+        )

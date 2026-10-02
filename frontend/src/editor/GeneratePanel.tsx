@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  AiConsentDeclined, api, messageOf, type ChapterResult, type Deck, type ProjectInfo,
+  AiConsentDeclined, api, isStaleStoryPlan, messageOf, type ChapterResult, type Deck, type ProjectInfo,
 } from "../api/client";
 import { formatUsage } from "../api/usage";
+import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
@@ -17,6 +18,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ChapterResult | null>(null);
   const [error, setError] = useState("");
+  const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
   const chapterIdRef = useRef(chapterId);
@@ -26,14 +28,20 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
   useEffect(() => {
     setResult(null);
     setError("");
+    setStoryStale(false);
     setCancelNotice("");
     setBusy(false);
   }, [chapterId]);
+
+  if (deck.structure.chapters.some(ch => ch.id === chapterId && ch.template === "diagram")) {
+    return null;
+  }
 
   const run = async (call: () => Promise<ChapterResult>) => {
     const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     setBusy(true);
     setError("");
+    setStoryStale(false);
     setCancelNotice("");
     setResult(null);
     try {
@@ -43,6 +51,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
     } catch (e) {
       if (chapterIdRef.current !== requestedChapterId) return;
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+      else if (isStaleStoryPlan(e)) setStoryStale(true);
       else setError(messageOf(e));
     } finally {
       if (chapterIdRef.current === requestedChapterId) setBusy(false);
@@ -62,7 +71,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
       ...deck,
       slides: deck.slides.some((s) => s.chapter_id === chapterId)
         ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots } : s))
-        : [...deck.slides, { chapter_id: chapterId, slots }],
+        : [...deck.slides, { chapter_id: chapterId, slots, eyebrow: "", subtitle: "" }],  // 공통 슬롯은 생성이 채우지 않는다. 값은 사용자가 속성 패널에서 넣는다 (DA-4)
     };
     onReplace(next);  // 반영 저장은 스냅샷을 남긴다 (결정 1)
     setResult(null);
@@ -83,6 +92,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace }: {
       </div>
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
       {error && <p role="alert">{error}</p>}
+      {storyStale && <div role="alert"><StoryPlanRecoveryGuidance
+        hasDiagrams={deck.structure.chapters.some(chapter => chapter.template === "diagram")} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {result && result.status === "format_error" && (
         <div role="alert">

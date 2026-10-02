@@ -5,6 +5,8 @@ export type Deck = components["schemas"]["Deck"];
 export type DeckMeta = components["schemas"]["DeckMeta"];
 export type Chapter = components["schemas"]["Chapter"];
 export type Structure = components["schemas"]["Structure"];
+export type StoryPlan = components["schemas"]["StoryPlan"];
+export type ReportBrief = components["schemas"]["ReportBrief"];
 export type Slide = components["schemas"]["Slide"];
 export type Slots = Slide["slots"];
 export type Bullet = components["schemas"]["Bullet"];  // level이 필수 필드다 (기본값이 있어도 생성 타입에서는 필수)
@@ -18,17 +20,53 @@ export type Para = components["schemas"]["Para"];
 export type TablePlan = components["schemas"]["TablePlan"];
 export type CapacityWarning = components["schemas"]["CapacityWarning"];
 export type StructureResult = components["schemas"]["StructureResult"];
+export type StoryRewriteResult = components["schemas"]["StoryRewriteResult"];
+export type StoryRepairResult = components["schemas"]["StoryRepairResult"];
+export type StoryRepairRequest = components["schemas"]["StoryRepairRequest"];
+export type DocumentChangeBasis = components["schemas"]["DocumentChangeBasis"];
+export type DocumentChangePreview = components["schemas"]["DocumentChangePreview"];
+export type DocumentChangeRequest = components["schemas"]["DocumentChangeRequest"];
+export type DocumentChangeApplyRequest = components["schemas"]["DocumentChangeApplyRequest"];
+export type EvidenceSelection = components["schemas"]["EvidenceSelection"];
+export type EvidenceMigrationRequest = components["schemas"]["EvidenceMigrationRequest"];
+export type EvidenceMigrationApplyRequest = components["schemas"]["EvidenceMigrationApplyRequest"];
 export type ChapterResult = components["schemas"]["ChapterResult"];
+export type NumericReviewReport = components["schemas"]["NumericReviewReport"];
+export type SemanticSuspectReport = components["schemas"]["SemanticSuspectReport"];
+export type QualityReport = components["schemas"]["QualityReport"];
+export type ExportResult = components["schemas"]["ExportResult"];
+export type ExportHistoryItem = components["schemas"]["ExportHistoryItem"];
+export type ExportHistoryPage = components["schemas"]["ExportHistoryPage"];
+export type ExportHistoryDetail = components["schemas"]["ExportHistoryDetail"];
+export type ExportReviewRequest = components["schemas"]["ExportReviewRequest"];
+export type ExportReviewRecord = components["schemas"]["ExportReviewRecord"];
+export type ExportReviewCategoryState = components["schemas"]["ExportReviewCategoryState"];
+export type ExportReviews = components["schemas"]["ExportReviews"];
+export type ExportQualification = components["schemas"]["ExportQualification"];
+export type QualificationRequest = components["schemas"]["QualificationRequest"];
+export type IndependentReviewRequest = components["schemas"]["IndependentReviewRequest"];
+export type FinalPublication = components["schemas"]["FinalPublication"];
 export type GenerationUsage = components["schemas"]["GenerationUsage"];
 export type TemplateName = Chapter["template"];
 export type UploadResult = components["schemas"]["UploadResult"];
 export type AppStatus = components["schemas"]["AppStatus"];
 export type LoginStatus = components["schemas"]["LoginStatus"];
+export type AISettings = components["schemas"]["AISettings"];
+export type AISelection = Required<components["schemas"]["AISelection"]>;
+export type ReconcileDiagramRequest = components["schemas"]["ReconcileDiagramRequest"];
+export type DiagramGenerationResult = components["schemas"]["DiagramGenerationResult"];
+export type GenerateDiagramRequest = Omit<components["schemas"]["GenerateDiagramRequest"],"mode"> & Partial<Pick<components["schemas"]["GenerateDiagramRequest"],"mode">>;
+export type ProviderId = AISelection["provider"];
+export type LoginAttempt = components["schemas"]["LoginAttempt"];
 
 export class ApiError extends Error {
-  constructor(public status: number, detail: string) {
+  constructor(public status: number, detail: string, public code?: string) {
     super(detail);
   }
+}
+
+export function isStaleStoryPlan(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 409 && error.code === "stale_story_plan";
 }
 
 // AI 전송 고지 관문(계획서 B3)에서 사용자가 취소했을 때 던진다. status 0은 서버 응답이 아니라
@@ -46,13 +84,25 @@ export function messageOf(e: unknown): string {
 async function throwIfFailed(r: Response): Promise<void> {
   if (r.ok) return;
   let detail = "요청이 실패했습니다. 잠시 후 다시 시도해 주세요.";
+  let code: string | undefined;
   try {
     const body = await r.json();
+    if (typeof body.code === "string") code = body.code;
     if (typeof body.detail === "string") detail = body.detail;
+    else if (Array.isArray(body.detail)) {
+      // FastAPI 입력 오류에는 원래 입력도 담긴다. 메시지만 취하고 입력/ctx를 출력하지 않는다.
+      const messages = body.detail.flatMap((item: unknown) => {
+        if (item && typeof item === "object" && "msg" in item && typeof item.msg === "string") {
+          return [item.msg.replace(/^Value error, /, "")];
+        }
+        return [];
+      });
+      if (messages.length) detail = [...new Set(messages)].join("\n");
+    }
   } catch {
     // JSON 본문이 아니면 기본 문구 유지
   }
-  throw new ApiError(r.status, detail);
+  throw new ApiError(r.status, detail, code);
 }
 
 // 저장본 식별값(ETag): 프로젝트 이름을 키로 마지막으로 본 값을 기억해, 다음 PUT/POST에 If-Match로 실어 보낸다
@@ -64,18 +114,19 @@ export function resetEtags(): void {
 }
 
 async function request<T>(
-  path: string, init?: RequestInit, opts?: { etagKey?: string; headers?: Record<string, string> },
+  path: string, init?: RequestInit,
+  opts?: { etagKey?: string; updateEtag?: boolean; expectedEtag?: string; headers?: Record<string, string> },
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "X-Requested-With": "SlideCaptain",  // 서버가 요구하는 앱 식별 헤더 (다른 사이트의 단순 요청 차단)
     ...opts?.headers,
   };
-  const known = opts?.etagKey ? etags.get(opts.etagKey) : undefined;
+  const known = opts?.expectedEtag ?? (opts?.etagKey ? etags.get(opts.etagKey) : undefined);
   if (known) headers["If-Match"] = known;
   const r = await fetch(path, { ...init, headers });
   await throwIfFailed(r);
-  if (opts?.etagKey) {
+  if (opts?.etagKey && opts.updateEtag !== false) {
     const etag = r.headers.get("ETag");
     if (etag) etags.set(opts.etagKey, etag);
   }
@@ -83,6 +134,18 @@ async function request<T>(
 }
 
 const enc = encodeURIComponent;
+
+async function aiHeaders(): Promise<Record<string, string>> {
+  const status = await api.getStatus();
+  if (status.provider === "none" || status.login.logged_in !== true) {
+    throw new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요.");
+  }
+  if ((status.provider === "claude" || status.provider === "chatgpt") && !status.selection_id) {
+    throw new ApiError(503, "AI 설정을 확인하지 못했습니다. 앱을 다시 실행해 주세요.");
+  }
+  if (!(await ensureConsent(status.selection_id ?? "legacy", status))) throw new AiConsentDeclined();
+  return { "X-AI-Consent": "SlideCaptain", ...(status.selection_id ? { "X-AI-Selection": status.selection_id } : {}) };
+}
 
 export const api = {
   listProjects: () => request<ProjectInfo[]>("/api/projects"),
@@ -93,8 +156,62 @@ export const api = {
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/deck?snapshot=${snapshot}`, {
       method: "PUT", body: JSON.stringify(deck),
     }, { etagKey: name }),
-  measure: (deck: Deck) =>
-    request<RenderPlan>("/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
+  measure: (deck: Deck, projectName?: string) =>
+    request<RenderPlan>(projectName ? `/api/projects/${enc(projectName)}/render-plan` : "/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
+  // 확인은 저장본을 바꾸지 않는다. 취소한 요청의 늦은 응답이 이후 저장의 ETag를 되돌리면 안 된다.
+  reconcileDiagramStory: (name: string, req: ReconcileDiagramRequest) =>
+    request<Deck>(`/api/projects/${enc(name)}/story-plan/diagram`, {
+      method: "POST", body: JSON.stringify(req),
+    }, { etagKey: name, updateEtag: false }),
+  generateDiagram: async (name: string, req: GenerateDiagramRequest) => {
+    // 동의 중 저장본이 바뀌어도 요청의 기준본은 그대로 유지한다. 후보 응답은 저장 ETag를 바꾸지 않는다.
+    const expectedEtag = etags.get(name);
+    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
+    const headers = await aiHeaders();
+    return request<DiagramGenerationResult>(`/api/projects/${enc(name)}/generate/diagram`, {
+      method: "POST", body: JSON.stringify(req),
+    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
+  },
+  rewriteStory: async (name: string, req: { brief: ReportBrief; instructions: string }) => {
+    // 동의를 기다리기 전의 기준본을 고정한다. 미리보기 응답은 저장 ETag를 진전시키지 않는다.
+    const expectedEtag = etags.get(name);
+    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
+    const headers = await aiHeaders();
+    return request<StoryRewriteResult>(`/api/projects/${enc(name)}/story-plan/rewrite`, {
+      method: "POST", body: JSON.stringify(req),
+    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
+  },
+  repairStory: async (name: string, req: StoryRepairRequest, signal: AbortSignal) => {
+    const expectedEtag = etags.get(name);
+    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
+    const headers = await aiHeaders();
+    signal.throwIfAborted();
+    return request<StoryRepairResult>(`/api/projects/${enc(name)}/story-plan/repair`, {
+      method: "POST", body: JSON.stringify(req), signal,
+    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
+  },
+  getDocumentChangeBasis: (name: string) =>
+    request<DocumentChangeBasis>(`/api/projects/${enc(name)}/document-changes/basis`, {cache:"no-store"}, {etagKey:name,updateEtag:false}),
+  previewDocumentChange: (name: string, req: DocumentChangeRequest, etag: string) =>
+    request<DocumentChangePreview>(`/api/projects/${enc(name)}/document-changes/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
+  applyDocumentChange: (name: string, req: DocumentChangeApplyRequest, etag: string) =>
+    request<Deck>(`/api/projects/${enc(name)}/document-changes/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+  previewEvidenceMigration: (name: string, req: EvidenceMigrationRequest, etag: string) =>
+    request<DocumentChangePreview>(`/api/projects/${enc(name)}/evidence-migrations/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
+  applyEvidenceMigration: (name: string, req: EvidenceMigrationApplyRequest, etag: string) =>
+    request<Deck>(`/api/projects/${enc(name)}/evidence-migrations/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+  applyStoryRewrite: (name: string, result: Pick<StoryRewriteResult, "deck" | "sources_fingerprint" | "base_etag">) =>
+    request<Deck>(`/api/projects/${enc(name)}/story-plan/rewrite/apply`, {
+      method: "POST", body: JSON.stringify({ deck: result.deck, sources_fingerprint: result.sources_fingerprint }),
+    }, { etagKey: name, expectedEtag: result.base_etag }),
+  reviewNumbers: (name: string, deck: Deck) =>
+    request<NumericReviewReport>(`/api/projects/${enc(name)}/review/numbers`, {
+      method: "POST", body: JSON.stringify(deck),
+    }),
+  reviewSemantics: (name: string, deck: Deck) =>
+    request<SemanticSuspectReport>(`/api/projects/${enc(name)}/review/semantics`, {
+      method: "POST", body: JSON.stringify(deck),
+    }),
   getPreset: () => request<Preset>("/api/preset"),
   putPreset: (preset: Preset) =>
     request<{ ok: boolean }>("/api/preset", { method: "PUT", body: JSON.stringify(preset) }),
@@ -116,31 +233,65 @@ export const api = {
     return r.json() as Promise<UploadResult>;
   },
   getStatus: () => request<AppStatus>("/api/status"),
+  getAISettings: () => request<AISettings>("/api/ai/settings"),
+  selectAI: (selection: AISelection) => request<AISelection>("/api/ai/selection", {
+    method: "PUT", body: JSON.stringify(selection),
+  }),
+  startAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`, { method: "POST" }),
+  getAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`),
+  cancelAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`, { method: "DELETE" }),
   listSnapshots: (name: string) => request<SnapshotInfo[]>(`/api/projects/${enc(name)}/snapshots`),
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),
   restoreSnapshot: (name: string, id: string) =>
     request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
   exportDeck: (name: string) =>
-    request<{ path: string }>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
-  // AI 전송 3종은 관문(aiGate)을 거친다: 동의가 없으면 요청을 내보내지 않고 AiConsentDeclined를
+    request<ExportResult>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
+  listExports: (name: string, offset = 0, limit = 20) =>
+    request<ExportHistoryPage>(`/api/projects/${enc(name)}/exports?offset=${offset}&limit=${limit}`, { cache: "no-store" }),
+  getExport: (name: string, id: string) =>
+    request<ExportHistoryDetail>(`/api/projects/${enc(name)}/exports/${enc(id)}`, { cache: "no-store" }),
+  getExportReviews: (name: string, id: string) =>
+    request<ExportReviews>(`/api/projects/${enc(name)}/exports/${enc(id)}/reviews`, { cache: "no-store" }),
+  getExportQualification: (name: string, id: string) =>
+    request<ExportQualification>(`/api/projects/${enc(name)}/exports/${enc(id)}/qualification`, { cache: "no-store" }),
+  renderExport: (name: string, id: string, input: QualificationRequest, baseEtag: string) =>
+    request<ExportQualification>(`/api/projects/${enc(name)}/exports/${enc(id)}/render`, {
+      method: "POST", body: JSON.stringify(input),
+    }, { expectedEtag: baseEtag }),
+  importIndependentReview: (name: string, id: string, input: IndependentReviewRequest, baseEtag: string) =>
+    request<ExportQualification>(`/api/projects/${enc(name)}/exports/${enc(id)}/independent-reviews`, {
+      method: "POST", body: JSON.stringify(input),
+    }, { expectedEtag: baseEtag }),
+  publishFinal: (name: string, id: string, input: QualificationRequest, baseEtag: string) =>
+    request<FinalPublication>(`/api/projects/${enc(name)}/exports/${enc(id)}/publish-final`, {
+      method: "POST", body: JSON.stringify(input),
+    }, { expectedEtag: baseEtag }),
+  recordExportReview: async (name: string, id: string, input: ExportReviewRequest, baseEtag: string) => {
+    // 검수자가 실제로 열어 본 기준을 보낸다. 편집기의 ETag 캐시를 참조하거나 진전시키지 않는다.
+    if (!baseEtag.trim()) throw new ApiError(428, "검수 기준을 다시 확인해 주세요.");
+    return request<ExportReviews>(`/api/projects/${enc(name)}/exports/${enc(id)}/reviews`, {
+      method: "POST", body: JSON.stringify(input),
+    }, { expectedEtag: baseEtag });
+  },
+  // AI 전송은 관문(aiGate)을 거친다: 동의가 없으면 요청을 내보내지 않고 AiConsentDeclined를
   // 던지고, 있으면 X-AI-Consent 헤더를 붙여 서버의 428 검사를 통과한다 (계획서 B3, 가정 5)
-  generateStructure: async (name: string, req: { target_chapters?: number | null; instructions?: string }) => {
-    if (!(await ensureConsent())) throw new AiConsentDeclined();
+  generateStructure: async (name: string, req: { target_chapters?: number | null; instructions?: string; brief?: ReportBrief | null }) => {
+    const headers = await aiHeaders();
     return request<StructureResult>(`/api/projects/${enc(name)}/generate/structure`, {
       method: "POST", body: JSON.stringify(req),
-    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+    }, { headers });
   },
   generateChapter: async (name: string, chapterId: string, instructions = "") => {
-    if (!(await ensureConsent())) throw new AiConsentDeclined();
+    const headers = await aiHeaders();
     return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}`, {
       method: "POST", body: JSON.stringify({ instructions }),
-    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+    }, { headers });
   },
   condenseChapter: async (name: string, chapterId: string, slots: Slots, instructions = "") => {
-    if (!(await ensureConsent())) throw new AiConsentDeclined();
+    const headers = await aiHeaders();
     return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}/condense`, {
       method: "POST", body: JSON.stringify({ slots, instructions }),
-    }, { headers: { "X-AI-Consent": "SlideCaptain" } });
+    }, { headers });
   },
 };

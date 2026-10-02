@@ -111,6 +111,7 @@ describe("formatUsage", () => {
     const usage: GenerationUsage = {
       ...emptyUsage(), calls: 2, failed_calls: 1,
       input_tokens: 10, output_tokens: 5, duration_ms: 100, cost_usd: 0.1,
+      cache_read_tokens: 0, cache_creation_tokens: 0,
       records: [
         { purpose: "generate", ok: true, usage: callUsage() },
         { purpose: "format_retry", ok: false, usage: callUsage() },

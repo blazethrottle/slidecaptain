@@ -10,14 +10,30 @@ function updateSlide(deck: Deck, chapterId: string, f: (s: Slots) => Slots): Dec
 
 export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
   const { chapterId, slot } = ref;
+  if (deck.structure.chapters.some(c => c.id === chapterId && c.template === "diagram")) return deck;
   if (slot === "title") {
     return {
       ...deck,
       structure: {
+        ...deck.structure,
         chapters: deck.structure.chapters.map((c) =>
           c.id === chapterId ? { ...c, topic: text } : c),
       },
     };
+  }
+  // 아이브로우와 부제는 슬롯이 아니라 슬라이드 레벨이다. 미리보기는 프레임 이름으로 편집을
+  // 열어 주므로 여기서 처리하지 않으면 고친 값이 조용히 사라진다 (2026-09-07 최종 리뷰 critical).
+  // 표지의 subtitle 은 자기 슬롯이라 슬라이드 레벨로 가로채면 안 된다
+  if (slot === "eyebrow" || slot === "subtitle") {
+    const target = deck.slides.find((s) => s.chapter_id === chapterId);
+    const isSlideLevel = slot === "eyebrow" || (target && target.slots.template !== "cover");
+    if (target && isSlideLevel) {
+      return {
+        ...deck,
+        slides: deck.slides.map((s) =>
+          s.chapter_id === chapterId ? { ...s, [slot]: text } : s),
+      };
+    }
   }
   if (slot === "presenter") {
     // 표지의 보고자는 슬롯이 아니라 메타에 있다 (장 제목이 구조안에 있는 것과 같다). 2026-09-01
@@ -72,6 +88,62 @@ export function applyTextEdit(deck: Deck, ref: TextRef, text: string): Deck {
         if (slot === "left_card") return { ...slots, left: editCard(slots.left) };
         if (slot === "right_card") return { ...slots, right: editCard(slots.right) };
         return slots;
+      }
+      case "callout":
+        // 밴드 문장 편집 경로. 속성 패널 전용 UI는 없다(DB-6 소관): 미리보기 인라인 편집만 쓴다
+        if (slot === "text") return { ...slots, text };
+        return slots;
+      case "cards": {
+        // 프레임 하나(card0, card1, ...)에 배지(있으면)/소제목/불릿/꼬리 라벨(있으면)이 이
+        // 순서로 늘어선다. 어느 index가 무엇인지는 그 카드에 배지가 있는지로 갈린다: 배지가
+        // 있으면 index 0이 배지, 없으면 index 0이 곧 소제목이다(카드 추가/삭제는 DB-6 소관).
+        const at = ref.index ?? 0;
+        return { ...slots, cards: slots.cards.map((card, i) => {
+          if (slot !== `card${i}`) return card;
+          const headingAt = card.badge ? 1 : 0;
+          const tailAt = headingAt + 1 + card.bullets.length;
+          if (card.badge && at === 0) return { ...card, badge: text };
+          if (at === headingAt) return { ...card, heading: text };
+          if (card.tail && at === tailAt) return { ...card, tail: text };
+          if (at > headingAt && at < tailAt) {
+            return { ...card, bullets: card.bullets.map((b, j) =>
+              j === at - headingAt - 1 ? { ...b, text } : b) };
+          }
+          return card;
+        }) };
+      }
+      case "process": {
+        // step{i} 프레임은 제목(index 0)과 있으면 부제(index 1)가 이 순서로 쌓인다.
+        // step{i}_labels 프레임은 보조 라벨이 등록된 순서대로 쌓인다. step{i}_badge는
+        // 렌더 순서에서 자동으로 나오는 번호라 편집 대상이 아니다(2026-09-07 DB-3):
+        // 어느 case에도 안 걸려 조용히 무시된다(다른 곳에도 있는 안전한 무변화 규칙).
+        const m = /^step(\d+)(_labels)?$/.exec(slot);
+        if (!m) return slots;
+        const stepIndex = Number(m[1]);
+        const isLabels = m[2] !== undefined;
+        return { ...slots, steps: slots.steps.map((step, i) => {
+          if (i !== stepIndex) return step;
+          if (isLabels) {
+            return { ...step, notes: step.notes.map((n, j) => (j === (ref.index ?? 0) ? text : n)) };
+          }
+          if ((ref.index ?? 0) === 0) return { ...step, heading: text };
+          return { ...step, subtitle: text };
+        }) };
+      }
+      case "matrix": {
+        // row{i}_category/row{i}_primary/row{i}_items는 서로 다른 칸이라 process의 badge/
+        // text/labels처럼 각각 별도 프레임이다(2026-09-07 DB-4). items는 목록이라 index로
+        // 항목을 고른다(라벨 프레임과 같은 방식).
+        const m = /^row(\d+)_(category|primary|items)$/.exec(slot);
+        if (!m) return slots;
+        const rowIndex = Number(m[1]);
+        const part = m[2];
+        return { ...slots, rows: slots.rows.map((row, i) => {
+          if (i !== rowIndex) return row;
+          if (part === "category") return { ...row, category: text };
+          if (part === "primary") return { ...row, primary: text };
+          return { ...row, items: row.items.map((it, j) => (j === (ref.index ?? 0) ? text : it)) };
+        }) };
       }
     }
     return slots;
@@ -142,7 +214,7 @@ export function reorderChapters(deck: Deck, from: number, to: number): Deck {
   const chapters = [...deck.structure.chapters];
   const [moved] = chapters.splice(from, 1);
   chapters.splice(to, 0, moved);
-  return { ...deck, structure: { chapters } };
+  return { ...deck, structure: { ...deck.structure, chapters } };
 }
 
 export function setPresetOverride(
@@ -153,4 +225,27 @@ export function setPresetOverride(
   groupValues[key] = value;
   overrides[group] = groupValues;
   return { ...deck, meta: { ...deck.meta, preset_overrides: overrides } };
+}
+
+/** 신규 템플릿 속성 변경도 일반 편집 이력과 저장 경로를 사용한다. */
+export function editTemplateSlots(deck: Deck, chapterId: string, edit: (slots: Slots) => Slots): Deck {
+  return updateSlide(deck, chapterId, slots => slots.template === 'diagram' ? slots : edit(slots));
+}
+
+export function setSlideField(deck: Deck, chapterId: string, field: 'eyebrow' | 'subtitle', text: string): Deck {
+  return {...deck, slides: deck.slides.map(s => s.chapter_id === chapterId && s.slots.template !== 'diagram' ? {...s, [field]: text} : s)};
+}
+
+export function changeTemplateItems(deck: Deck, chapterId: string, action: 'add' | 'remove', index?: number): Deck {
+  return editTemplateSlots(deck, chapterId, s => {
+    const change = <T,>(items: T[], min: number, max: number, item: T): T[] => {
+      if (action === 'add') return items.length < max ? [...items, item] : items;
+      return items.length > min && index !== undefined && Number.isInteger(index) && index >= 0 && index < items.length
+        ? items.filter((_, i) => i !== index) : items;
+    };
+    if (s.template === 'cards') return {...s, cards: change(s.cards, 2, 4, {heading: '', badge: '', tail: '', emphasis: false, bullets: []})};
+    if (s.template === 'process') return {...s, steps: change(s.steps, 3, 6, {heading: '', subtitle: '', notes: []})};
+    if (s.template === 'matrix') return {...s, rows: change(s.rows, 3, 6, {category: '', primary: '', items: []})};
+    return s;
+  });
 }

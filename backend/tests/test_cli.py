@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from slidecaptain.__main__ import main
-from slidecaptain.models.deck import Deck, DeckMeta
+from slidecaptain.models.deck import Bullet, BulletBoxSlots, Chapter, Deck, DeckMeta, Slide, Structure
 
 
 def _write_deck(tmp_path):
@@ -14,9 +14,20 @@ def _write_deck(tmp_path):
 
 def test_export_success(tmp_path, capsys):
     deck_path = _write_deck(tmp_path)
+    deck = Deck(
+        meta=DeckMeta(title="덱"),
+        structure=Structure(chapters=[Chapter(id="c1", topic="개요", template="bullet_box")]),
+        slides=[Slide(chapter_id="c1", slots=BulletBoxSlots(
+            bullets=[Bullet(text="합성 테스트 자료")], conclusion="검수 전 초안",
+        ))],
+    )
+    deck_path.write_text(deck.model_dump_json(), encoding="utf-8")
     rc = main(["export", str(deck_path), "--out", str(tmp_path / "exports")])
     assert rc == 0
-    assert "내보내기 완료" in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert "검수 전 초안 내보내기 완료" in output
+    assert ".quality.json" in output
+    assert "제출 승인과 다릅니다" in output
 
 
 def test_export_missing_file(tmp_path, capsys):
@@ -70,19 +81,16 @@ def test_serve_parser_accepts_model():
 
 
 def test_serve_app_wires_model_to_provider(tmp_path, monkeypatch):
-    import slidecaptain.pipeline.subscription as sub
+    import slidecaptain.pipeline.connections as connections
     from slidecaptain.__main__ import _build_serve_app
+    from fastapi.testclient import TestClient
+    from slidecaptain.pipeline.auth_status import LoginStatus
 
-    captured = {}
-
-    class Spy(sub.SubscriptionProvider):
-        def __init__(self, model=None):
-            captured["model"] = model
-            super().__init__(model)
-
-    monkeypatch.setattr(sub, "SubscriptionProvider", Spy)
-    _build_serve_app(tmp_path / "data", "opus")
-    assert captured["model"] == "opus"
+    monkeypatch.setattr(connections.ClaudeConnection, "status", lambda self: LoginStatus(logged_in=True))
+    with TestClient(_build_serve_app(tmp_path / "data", "opus")) as client:
+        status = client.get("/api/status").json()
+    assert status["provider"] == "claude"
+    assert status["model"] == "opus"
 
 
 def test_serve_binds_localhost_only(monkeypatch, tmp_path):

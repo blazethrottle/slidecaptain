@@ -1,6 +1,6 @@
 // 화면 이탈 경로의 플러시 검사 (2026-09-03 저장 안전성 묶음 태스크 C)
 // 배경: 내보내기만 플러시 결과를 검사했고, 목록 복귀(FC-08), 탭 전환(FC-14), 스냅샷 복구(FC-11)는 실패를 무시했다.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
@@ -17,7 +17,7 @@ vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
-    listSnapshots: vi.fn() } };
+    listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn() } };
 });
 
 // App.tsx 와 같은 구조: 목록으로 돌아가면 ProjectView 가 언마운트된다
@@ -64,7 +64,7 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
   expect(screen.queryByText("목록 화면")).toBeNull();  // 착지 전에는 나가지 않는다
   // 이탈 처리 중에는 다른 이탈 경로도 잠근다: 두 leaveEditor 가 겹치면 먼저 끝난 쪽이 화면을 내린 뒤
   // 나중 쪽의 setTab 이 사라진 컴포넌트에 떨어진다 (브랜치 리뷰 발견 7, 2026-09-03)
-  for (const name of ["자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구", "목록으로"]) {
+  for (const name of ["자료", "구조안", "편집", "초안 PPTX 내보내기", "스냅샷 복구", "목록으로"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   d.resolve({ ok: true });
@@ -82,6 +82,58 @@ it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄�
   expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
   expect(document.querySelector(".structure-screen")).toBeNull();
   expect(document.querySelector(".editor-screen")).not.toBeNull();  // 편집기가 남아 있으므로 언마운트 플러시도 없다
+});
+
+it("검수 이력: 저장 실패 시 이동과 이력 요청을 중단한다", async () => {
+  vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
+  await openEditorAndEdit("둘");
+  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(api.listExports).not.toHaveBeenCalled();
+});
+
+it("검수 이력: 저장하지 않은 자료 본문을 보존하고 저장 후 이동한다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue(["source.md"]);
+  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  vi.mocked(api.writeSource).mockResolvedValue({ ok: true });
+  vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
+    checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
+  const box = await screen.findByLabelText("자료 내용");
+  await userEvent.type(box, " 수정 중");
+  expect(dispatchBeforeUnload()).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  expect(screen.getByLabelText("자료 내용")).toHaveValue("원문 수정 중");
+  expect(api.listExports).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
+  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
+  expect(api.writeSource).toHaveBeenCalledWith(project.name, "source.md", "원문 수정 중");
+  expect(dispatchBeforeUnload()).toBe(false);
+  expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
+});
+
+it("보고 정보 저장 중 본문이 바뀌어도 이동 직전에 다시 확인해 보존한다", async () => {
+  const pending = deferred<{ ok: boolean }>();
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue(["source.md"]);
+  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  vi.mocked(api.putDeck).mockReturnValue(pending.promise);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
+  const box = await screen.findByLabelText("자료 내용");
+  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
+  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  expect(box).toBeDisabled();
+  // A programmatic update must also be caught by the post-save guard.
+  fireEvent.change(box, { target: { value: "저장 중 수정" } });
+  await act(async () => pending.resolve({ ok: true }));
+  expect(screen.getByLabelText("자료 내용")).toHaveValue("저장 중 수정");
+  expect(api.listExports).not.toHaveBeenCalled();
 });
 
 it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (FC-11)", async () => {

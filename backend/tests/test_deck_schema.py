@@ -5,9 +5,15 @@ from slidecaptain.models.deck import (
     SCHEMA_VERSION,
     Bullet,
     BulletBoxSlots,
+    CardItem,
+    CardsSlots,
     Chapter,
     Deck,
     DeckMeta,
+    MatrixRow,
+    MatrixSlots,
+    ProcessSlots,
+    ProcessStep,
     Slide,
     Structure,
     TableSlots,
@@ -159,6 +165,94 @@ def test_table_cell_newline_rejected():
             }}],
         })
     assert "줄바꿈" in str(exc_info.value)
+
+
+# ---- 카드(cards) 슬롯 검증 (2026-09-07 DB-2) ----
+
+
+def test_card_item_badge_and_tail_default_to_empty_and_not_emphasized():
+    card = CardItem(heading="제목")
+    assert card.badge == ""
+    assert card.tail == ""
+    assert card.bullets == []
+    assert card.emphasis is False
+
+
+def test_cards_slots_accepts_two_to_four_cards():
+    for n in (2, 3, 4):
+        slots = CardsSlots(cards=[CardItem(heading=f"카드{i}") for i in range(n)])
+        assert len(slots.cards) == n
+
+
+def test_cards_slots_rejects_fewer_than_two_cards():
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[CardItem(heading="하나뿐")])
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[])
+
+
+def test_cards_slots_rejects_more_than_four_cards():
+    with pytest.raises(ValidationError):
+        CardsSlots(cards=[CardItem(heading=f"카드{i}") for i in range(5)])
+
+
+# ---- 번호 단계(process) 슬롯 검증 (2026-09-07 DB-3) ----
+
+
+def test_process_step_subtitle_and_notes_default_to_empty():
+    step = ProcessStep(heading="첫 단계")
+    assert step.subtitle == ""
+    assert step.notes == []
+
+
+def test_process_slots_accepts_three_to_six_steps():
+    for n in (3, 4, 5, 6):
+        slots = ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(n)])
+        assert len(slots.steps) == n
+
+
+def test_process_slots_rejects_fewer_than_three_steps():
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(2)])
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[])
+
+
+def test_process_slots_rejects_more_than_six_steps():
+    with pytest.raises(ValidationError):
+        ProcessSlots(steps=[ProcessStep(heading=f"단계{i}") for i in range(7)])
+
+
+def test_process_step_rejects_more_than_two_notes():
+    with pytest.raises(ValidationError):
+        ProcessStep(heading="단계", notes=["가", "나", "다"])
+
+
+# ---- 행렬(matrix) 슬롯 검증 (2026-09-07 DB-4) ----
+
+
+def test_matrix_row_primary_and_items_default_to_empty():
+    row = MatrixRow(category="분류")
+    assert row.primary == ""
+    assert row.items == []
+
+
+def test_matrix_slots_accepts_three_to_six_rows():
+    for n in (3, 4, 5, 6):
+        slots = MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(n)])
+        assert len(slots.rows) == n
+
+
+def test_matrix_slots_rejects_fewer_than_three_rows():
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(2)])
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[])
+
+
+def test_matrix_slots_rejects_more_than_six_rows():
+    with pytest.raises(ValidationError):
+        MatrixSlots(rows=[MatrixRow(category=f"분류{i}") for i in range(7)])
 
 
 def test_legacy_cover_audience_key_is_ignored_on_load():

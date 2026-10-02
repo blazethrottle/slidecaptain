@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck, type Preset, type RenderPlan, type UploadResult } from "../api/client";
+import { api, ApiError, type Deck, type Preset, type QualityReport, type RenderPlan, type UploadResult } from "../api/client";
+import qualityFixture from "../../../backend/tests/fixtures/q1b1-quality.json";
 import { deferred } from "../test/fixtures";
 import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
@@ -10,7 +11,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
-    getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn() } };
+    getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn() } };
 });
 
 // 업로드 잠금과 beforeunload 테스트가 공용으로 쓰는 XLSX 픽스처와 헬퍼 (계획서 B4)
@@ -24,12 +25,74 @@ function dispatchBeforeUnload(): boolean {
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
 
+it("내용이 없는 프로젝트에서도 도식을 작성하고 작성 중 이탈/새로고침을 보호한다", async () => {
+  const empty = { ...deckWithSlide, structure: { chapters: [] }, slides: [] };
+  vi.mocked(api.getDeck).mockResolvedValue(empty);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
+  render(<ProjectView project={project} onBack={vi.fn()} />);
+  const editTab = await screen.findByRole("button", { name: "편집" });
+  expect(editTab).toBeEnabled();
+  await userEvent.click(editTab);
+  await userEvent.click(screen.getByRole("button", { name: "도식 추가" }));
+  expect(dispatchBeforeUnload()).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "자료" }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
+  expect(dispatchBeforeUnload()).toBe(false);
+  await userEvent.click(screen.getByRole("button", { name: "자료" }));
+  expect(screen.getByRole("button", { name: "자료" })).toHaveAttribute("aria-pressed", "true");
+  expect(api.putDeck).not.toHaveBeenCalled();
+});
+
+const emptyHistory = { checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null,
+  current_input_error: null, items: [], total: 0, offset: 0, limit: 20 };
+
+it("복구 대상 프로젝트에서도 덱 없이 검수 이력을 조회한다", async () => {
+  vi.mocked(api.listExports).mockResolvedValue(emptyHistory);
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  render(<ProjectView project={{ ...project, status: "needs_recovery" }} onBack={() => {}} />);
+  expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
+  expect(api.getDeck).not.toHaveBeenCalled();
+});
+
+it("스냅샷 복구 화면에서는 이력 선택을 잠그고 닫은 뒤 다시 열 수 있다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  vi.mocked(api.listExports).mockResolvedValue(emptyHistory);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "스냅샷 복구" }));
+  expect(screen.getByRole("button", { name: "검수 이력" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "검수 이력" })).toHaveAttribute("aria-pressed", "false");
+  const recovery = document.querySelector(".recovery-screen") as HTMLElement;
+  await userEvent.click(within(recovery).getByRole("button", { name: "목록으로" }));
+  await userEvent.click(await screen.findByRole("button", { name: "검수 이력" }));
+  expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
+});
+
+it("이력 화면에서 새로 내보내면 목록을 다시 조회한다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listExports).mockResolvedValue(emptyHistory);
+  vi.mocked(api.createSnapshot).mockResolvedValue({ ok: true });
+  vi.mocked(api.exportDeck).mockResolvedValue({ path: "/exports/report_v002.pptx",
+    quality_path: "/exports/report_v002.quality.json", quality: qualityFixture.matched as QualityReport });
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "검수 이력" }));
+  await screen.findByText("내보내기 이력이 없습니다.");
+  await userEvent.click(screen.getByRole("button", { name: "초안 PPTX 내보내기" }));
+  await waitFor(() => expect(api.listExports).toHaveBeenCalledTimes(2));
+});
+
 const deckWithSlide: Deck = {
   schema_version: 1,
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [], conclusion: "결", footnote: "" } }],
 };
 
@@ -40,7 +103,7 @@ const deckWithEditableSlide: Deck = {
   meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
   structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
-  slides: [{ chapter_id: "c1", slots: {
+  slides: [{ chapter_id: "c1", eyebrow: "", subtitle: "", slots: {
     template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 
@@ -76,16 +139,49 @@ it("내보내기는 스냅샷을 먼저 남기고 경로를 보여준다", async
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.createSnapshot).mockResolvedValue({ ok: true });
-  vi.mocked(api.exportDeck).mockResolvedValue({ path: "C:\\exports\\제목_v001.pptx" });
+  vi.mocked(api.exportDeck).mockResolvedValue({ path: "C:\\exports\\제목_v001.pptx",
+    quality_path: "C:\\exports\\제목_v001.quality.json", quality: qualityFixture.matched as QualityReport });
   render(<ProjectView project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByText("PPTX 내보내기"));
-  expect(await screen.findByText(/제목_v001\.pptx/)).toBeInTheDocument();
+  await userEvent.click(await screen.findByText("초안 PPTX 내보내기"));
+  const result = await screen.findByText(/제목_v001\.pptx/);
+  expect(result).toHaveAttribute("role", "status");
+  expect(result).toHaveTextContent("초안 내보내기 완료");
+  expect(result).toHaveTextContent("C:\\exports\\제목_v001.quality.json");
+  expect(result).toHaveTextContent("검수 통과를 뜻하지 않습니다");
+  expect(screen.getByText(/현재 산출물은 검수 전 초안입니다/)).toBeInTheDocument();
   expect(api.createSnapshot).toHaveBeenCalledWith("p1");  // 내보내기 직전 스냅샷 (결정 1)
   expect(api.exportDeck).toHaveBeenCalledWith("p1");
   // 스냅샷이 내보내기보다 먼저 호출됨을 호출 순서로 단언 (2026-08-29 태스크 16 리뷰 보강)
   const snapOrder = vi.mocked(api.createSnapshot).mock.invocationCallOrder[0];
   const exportOrder = vi.mocked(api.exportDeck).mock.invocationCallOrder[0];
   expect(snapOrder).toBeLessThan(exportOrder);
+});
+
+it("빈 덱은 초안 내보내기 버튼을 잠그고 요청을 보내지 않는다", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue({
+    ...deckWithSlide, structure: { chapters: [] }, slides: [],
+  });
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const button = await screen.findByRole("button", { name: "초안 PPTX 내보내기" });
+  expect(button).toBeDisabled();
+  await userEvent.click(button);
+  expect(api.createSnapshot).not.toHaveBeenCalled();
+  expect(api.exportDeck).not.toHaveBeenCalled();
+  expect(screen.getByText(/현재 산출물은 검수 전 초안입니다/)).toBeInTheDocument();
+});
+
+it("서버의 내보내기 거절은 오류로 표시하고 성공 경로를 표시하지 않는다", async () => {
+  // 화면을 읽은 뒤 서버 상태가 바뀌어도 422를 성공으로 표시하면 안 된다.
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.createSnapshot).mockResolvedValue({ ok: true });
+  vi.mocked(api.exportDeck).mockRejectedValue(new ApiError(422, "내보낼 슬라이드가 없습니다."));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "초안 PPTX 내보내기" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("내보낼 슬라이드가 없습니다");
+  expect(screen.queryByText(/초안 내보내기 완료/)).toBeNull();
+  expect(screen.getByText(/현재 산출물은 검수 전 초안입니다/)).toBeInTheDocument();
 });
 
 it("복구가 필요한 프로젝트는 복구 화면으로 진입한다", async () => {
@@ -114,7 +210,7 @@ it("마지막 편집 저장에 실패하면 내보내기를 중단한다", async
   await userEvent.type(box, "고침{Enter}");
   // 기본 timings(1.2초 디바운스)에서는 자동 저장이 아직 발화하지 않고, 아래 내보내기 클릭이
   // flushSave로 미저장분을 감지해 putDeck을 호출한다
-  await userEvent.click(screen.getByText("PPTX 내보내기"));
+  await userEvent.click(screen.getByText("초안 PPTX 내보내기"));
   // EditorScreen도 같은 실패로 자체 오류 배너(role=alert)를 띄우므로, findByRole("alert") 단일 조회
   // 대신 중단 안내 문구와 role=alert 컨테이너를 함께 확인해 정밀화한다 (조정 사유: 배너 2개 동시 존재)
   const banner = await screen.findByText(
@@ -181,7 +277,7 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
   expect(editorBtn).toHaveAttribute("title", "AI 생성이 끝나면 이동할 수 있습니다");
   const sourcesBtn = screen.getByRole("button", { name: "자료" });
   expect(sourcesBtn).toBeDisabled();
-  expect(screen.getByRole("button", { name: "PPTX 내보내기" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "초안 PPTX 내보내기" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
   // 구조안 탭 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
   expect(screen.getByRole("button", { name: "구조안" })).not.toBeDisabled();
@@ -299,12 +395,12 @@ it("자료 업로드가 진행 중이면 탭 버튼과 목록으로와 내보내
   const xlsx = new File(["PK"], "매출.xlsx", { type: XLSX_MIME });
   await userEvent.upload(await screen.findByLabelText("자료 파일 선택"), xlsx);
   await waitFor(() => expect(api.uploadSource).toHaveBeenCalled());
-  for (const name of ["목록으로", "자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구"]) {
+  for (const name of ["목록으로", "자료", "구조안", "편집", "초안 PPTX 내보내기", "스냅샷 복구"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   d.resolve({ filename: "매출.xlsx", chars: 10, sheets: 1, cells: 1, truncated: false, notes: [] });
   await waitFor(() => expect(screen.getByRole("button", { name: "목록으로" })).not.toBeDisabled());
-  for (const name of ["자료", "구조안", "편집", "PPTX 내보내기", "스냅샷 복구"]) {
+  for (const name of ["자료", "구조안", "편집", "초안 PPTX 내보내기", "스냅샷 복구"]) {
     expect(screen.getByRole("button", { name })).not.toBeDisabled();
   }
 });

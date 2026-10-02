@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SlideCaptain PowerPoint 품질 피드백</title>
+<style>
+body{max-width:1080px;margin:32px auto;padding:0 20px;font:16px/1.6 system-ui,sans-serif;color:#17233a;background:#f5f7fb}section{background:white;padding:24px;margin:24px 0;border:1px solid #ccd4e0;border-radius:8px}label{display:block;margin:12px 0}input,textarea,select{font:inherit;box-sizing:border-box;padding:8px;max-width:100%}input,textarea{width:100%}textarea{min-height:80px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid #dde;text-align:left}button{font:inherit;padding:10px 16px;cursor:pointer}small{color:#46566e}details{margin:16px 0}code{word-break:break-all}.toolbar{position:sticky;top:0;background:#f5f7fb;padding:12px 0;z-index:1}.criteria{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}.criteria label{margin:0}#message{font-weight:600}
+</style>
+<h1>PowerPoint 품질 피드백</h1>
+<p>합성 샘플의 모든 페이지를 PowerPoint에서 확인하세요. 이 양식은 입력 내용을 서버로 보내지 않습니다. <b>피드백 JSON 저장</b>으로 내려받은 파일을 다음 세션에서 전달해 주세요.</p>
+<p>샘플은 현재 exporter의 표시·편집 기능 확인용입니다. AI가 만든 전체 보고서의 흐름이나 품질 향상을 입증하는 비교 자료는 아닙니다. 판정은 비워 둔 상태이며 이 피드백이 제출 승인을 자동 변경하지 않습니다.</p>
+<div class="toolbar"><button id="save">피드백 JSON 저장</button> <label style="display:inline">저장한 피드백 불러오기 <input id="restore" type="file" accept=".json" style="width:240px"></label><div id="message" role="status"></div></div>
+<section><h2>검수 환경</h2><p id="version"></p>
+<label>검수자 또는 별칭<input id="reviewer" placeholder="회사 내부 인명 없이 본인 별칭"></label>
+<label>검수일<input id="date" type="date"></label>
+<label>PowerPoint 버전·빌드<input id="powerpoint" placeholder="파일 → 계정 → PowerPoint 정보"></label>
+<label>Windows 버전과 화면 배율<input id="environment" placeholder="예: Windows 11, 배율 100%, 노트북 화면"></label>
+<label>표시된 글꼴과 글꼴 대체 여부<input id="fonts" placeholder="Noto Sans KR 설치 확인, 대체·경고 여부"></label>
+<label>전체 피드백<textarea id="overall" placeholder="전체 흐름, 글자 크기·정렬, 강조·색, 표·차트·도식, 페이지 균형·가독성, 가장 먼저 고칠 점"></textarea></label>
+</section>
+<main id="artifacts"></main>
+<section><h2>직접 만든 보고서의 피드백</h2><p>회사 원문이나 민감한 수치 대신 페이지 번호와 표시·편집 문제를 적어 주세요. 실제 업무 자료는 회사 PC에 보관합니다.</p>
+<label>검수한 PPTX 파일명 또는 별칭<input id="own-file"></label>
+<label>페이지별 피드백<textarea id="own-note" placeholder="예: 4쪽 제목 잘림, 6쪽 비교 기준 불명확, 9쪽 도식은 수정하기 쉬웠음"></textarea></label></section>
+<script>
+const manifest=__REVIEW_MANIFEST__;
+const criteria={flow:'보고 흐름',evidence:'근거·수치',expression:'표현 적절성',visual:'균형·가독성',powerpoint:'PowerPoint 표시·편집'};
+const options=[['','미평가'],['pass','통과'],['needs_revision','수정 필요'],['fail','사용 어려움'],['not_applicable','해당 없음']];
+function element(tag,text){const e=document.createElement(tag);if(text!==undefined)e.textContent=text;return e;}
+function select(){const e=element('select');for(const [v,t]of options){const o=element('option',t);o.value=v;e.append(o);}return e;}
+document.querySelector('#version').textContent='테스트 버전: '+(manifest.git_commit||'미확인')+(manifest.worktree_dirty?' (준비 당시 미커밋 변경 있음)':'');
+document.querySelector('#date').value=new Date().toLocaleDateString('sv-SE');
+for(const artifact of manifest.artifacts){
+ const s=element('section');s.dataset.artifact=artifact.id;s.append(element('h2',artifact.title));
+ const a=element('a','PPTX 파일 열기');a.href=artifact.file;s.append(a,element('p',artifact.focus),element('small','기준 SHA-256: '+artifact.sha256));
+ const grid=element('div');grid.className='criteria';for(const [k,t]of Object.entries(criteria)){const l=element('label',t);const choice=select();choice.dataset.criterion=k;l.append(choice);grid.append(l);}s.append(grid);
+ const time=element('label','실제 수정 시간(분, 측정하지 않았으면 빈칸)');const minutes=element('input');minutes.type='number';minutes.min='0';minutes.step='any';minutes.dataset.minutes='';time.append(minutes);s.append(time);
+ const table=element('table');const header=element('tr');for(const t of ['쪽','확인 주제','페이지 판정'])header.append(element('th',t));table.append(header);
+ for(const p of artifact.pages){const row=element('tr');row.dataset.page=p.page;row.append(element('td',p.page),element('td',p.topic));const td=element('td');td.append(select());row.append(td);table.append(row);}s.append(table);
+ const note=element('label','문제 위치·기대 결과·실제 결과·원하는 수정');const textarea=element('textarea');textarea.dataset.note='';textarea.placeholder='표시: 잘림·겹침·글꼴·색·줄맞춤 / 편집: 글자·표·차트 데이터·도식 수정 후 별도 파일로 저장하고 재열기';note.append(textarea);s.append(note);document.querySelector('#artifacts').append(s);
+}
+const fields=['reviewer','date','powerpoint','environment','fonts','overall','own-file','own-note'];
+function collect(){return {version:'windows-review-feedback-v1',run_created_at:manifest.created_at,git_commit:manifest.git_commit,worktree_dirty:manifest.worktree_dirty,saved_at:new Date().toISOString(),environment:Object.fromEntries(fields.map(k=>[k,document.getElementById(k).value||null])),evaluations:[...document.querySelectorAll('[data-artifact]')].map(s=>{const a=manifest.artifacts.find(a=>a.id===s.dataset.artifact);const raw=s.querySelector('[data-minutes]').value;return {artifact_id:a.id,artifact_sha256:a.sha256,criteria:Object.fromEntries([...s.querySelectorAll('[data-criterion]')].map(e=>[e.dataset.criterion,e.value||null])),pages:[...s.querySelectorAll('[data-page]')].map(e=>({page:Number(e.dataset.page),verdict:e.querySelector('select').value||null})),note:s.querySelector('[data-note]').value||null,revision_minutes:raw===''?null:Number(raw)};})};}
+function restore(data){
+ if(data.version!=='windows-review-feedback-v1'||data.run_created_at!==manifest.created_at)throw Error('이 검수 회차에서 저장한 JSON만 불러올 수 있습니다. 이전 회차 폴더의 양식을 열어 주세요.');
+ for(const k of fields)document.getElementById(k).value=data.environment?.[k]||'';
+ for(const row of data.evaluations||[]){const s=[...document.querySelectorAll('[data-artifact]')].find(s=>s.dataset.artifact===row.artifact_id);if(!s)continue;
+ for(const e of s.querySelectorAll('[data-criterion]'))e.value=row.criteria?.[e.dataset.criterion]||'';
+ for(const e of s.querySelectorAll('[data-page]'))e.querySelector('select').value=row.pages?.find(p=>p.page===Number(e.dataset.page))?.verdict||'';
+ s.querySelector('[data-note]').value=row.note||'';s.querySelector('[data-minutes]').value=row.revision_minutes??'';
+ }
+}
+const key='slidecaptain-review-'+manifest.created_at;
+try{const saved=localStorage.getItem(key);if(saved)restore(JSON.parse(saved));}catch{}
+document.addEventListener('input',()=>{try{localStorage.setItem(key,JSON.stringify(collect()));}catch{document.querySelector('#message').textContent='브라우저 임시 저장을 사용할 수 없습니다. JSON 저장을 자주 눌러 주세요.';}});
+document.querySelector('#restore').onchange=async(e)=>{try{restore(JSON.parse(await e.target.files[0].text()));try{localStorage.setItem(key,JSON.stringify(collect()));}catch{}document.querySelector('#message').textContent='피드백을 불러왔습니다.';}catch(err){document.querySelector('#message').textContent=err.message;}};
+document.querySelector('#save').onclick=()=>{
+ if([...document.querySelectorAll('[data-minutes]')].some(e=>e.value!==''&&(!Number.isFinite(Number(e.value))||Number(e.value)<0))){document.querySelector('#message').textContent='수정 시간은 0 이상의 숫자 또는 빈칸으로 남겨 주세요.';return;}
+ const data=collect(),url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));const a=element('a');a.href=url;a.download='slidecaptain-feedback-'+manifest.created_at.replace(/[:.]/g,'-')+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);document.querySelector('#message').textContent='다운로드한 JSON 파일을 보관해 주세요. 미평가와 미측정 값은 비워 두었습니다.';
+};
+</script></html>

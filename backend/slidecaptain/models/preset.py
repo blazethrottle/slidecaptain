@@ -27,6 +27,8 @@ class FontRoles(BaseModel):
 
     cover_title_pt: float = Field(default=28.0, gt=0)
     section_title_pt: float = Field(default=24.0, gt=0)
+    # 제목 위 분류 라벨 (2026-09-07 DA-3 신설). 기존 크기는 하나도 바꾸지 않는다
+    eyebrow_pt: float = Field(default=10.5, gt=0)
     title_pt: float = Field(default=20.0, gt=0)
     subtitle_pt: float = Field(default=14.0, gt=0)
     body_pt: float = Field(default=12.0, gt=0)
@@ -41,7 +43,7 @@ class FontRoles(BaseModel):
         for name in ("body_pt", "box_pt", "table_pt"):
             if getattr(self, name) < BODY_MIN_PT:
                 raise ValueError(f"{name}은 본문 하한 {BODY_MIN_PT}pt 아래로 내릴 수 없습니다")
-        for name in ("footnote_pt", "page_number_pt"):
+        for name in ("footnote_pt", "page_number_pt", "eyebrow_pt"):
             if getattr(self, name) < FOOTNOTE_MIN_PT:
                 raise ValueError(f"{name}은 각주 하한 {FOOTNOTE_MIN_PT}pt 아래로 내릴 수 없습니다")
         return self
@@ -58,6 +60,21 @@ class Colors(BaseModel):
     table_header_fill: HexColor = "F2F2F2"
     border: HexColor = "D0D7E2"
     background: HexColor = "FFFFFF"
+
+    # 아래는 역할로 이름 붙인 팔레트다 (2026-09-07 DA-3). 값은 벤치마크 실측이며 괄호는 사용 횟수.
+    # 색이 장식이 아니라 슬라이드 안에서 순서와 분류와 상태를 뜻하게 하려면 역할 이름이 필요하다.
+    # 위 여섯 개는 기존 6종 템플릿이 쓰므로 기본값을 바꾸지 않는다.
+    ink: HexColor = "1B2A3A"  # 채움 7
+    ink_soft: HexColor = "24384A"  # 채움 4
+    accent1: HexColor = "0E8C7F"  # 채움 5, 테두리 25
+    accent2: HexColor = "C8860B"  # 채움 2, 테두리 4
+    danger: HexColor = "C0473B"  # 채움 1, 테두리 2
+    ok: HexColor = "2E9E5B"  # 채움 1, 테두리 1
+    surface1: HexColor = "EAF2F1"  # 채움 18 (최다)
+    surface2: HexColor = "F4F6F7"  # 채움 15
+    surface3: HexColor = "FBF3E6"  # 채움 2
+    surface_danger: HexColor = "FBEEEC"  # 채움 1
+    rule: HexColor = "DCE3E5"  # 테두리 42 (최다)
 
 
 class BulletMarker(BaseModel):
@@ -78,6 +95,9 @@ class Spacing(BaseModel):
     margin_bottom: float = Field(default=34.0, ge=0)
     title_height: float = Field(default=40.0, gt=0)
     title_gap: float = Field(default=16.0, ge=0)
+    # 공통 슬롯의 간격 (2026-09-07 DA-4). 높이는 글자 크기와 행간에서 파생한다
+    eyebrow_gap: float = Field(default=4.0, ge=0)
+    subtitle_gap: float = Field(default=6.0, ge=0)
     footnote_height: float = Field(default=24.0, gt=0)
     footnote_gap: float = Field(default=8.0, ge=0)
     box_height: float = Field(default=56.0, gt=0)
@@ -90,6 +110,12 @@ class Spacing(BaseModel):
     card_gap: float = Field(default=20.0, ge=0)
     card_heading_height: float = Field(default=24.0, gt=0)
     card_heading_gap: float = Field(default=8.0, ge=0)
+    # cards 템플릿 전용 배지와 꼬리 라벨 (2026-09-07 DB-2). 둘 다 선택 필드라 값이 있을 때만
+    # 카드 안에서 이만큼의 높이와 간격을 차지한다(카드 heading_height/heading_gap과 같은 방식).
+    card_badge_height: float = Field(default=16.0, gt=0)
+    card_badge_gap: float = Field(default=6.0, ge=0)
+    card_tail_height: float = Field(default=16.0, gt=0)
+    card_tail_gap: float = Field(default=8.0, ge=0)
     cover_indent: float = Field(default=30.0, ge=0)
     table_min_col_width: float = Field(default=60.0, gt=0)
     table_cell_pad_x: float = Field(default=6.0, ge=0)
@@ -99,6 +125,34 @@ class Spacing(BaseModel):
     page_number_bottom: float = Field(default=28.0, ge=0)
     safety_ratio: float = Field(default=0.97, gt=0, le=1)
     border_width_pt: float = Field(default=0.75, gt=0)
+    # 강조 밴드(callout) 전용 고정 높이와 모서리 반경 (2026-09-07 DB-1). box_height(결론 상자)를
+    # 재사용하지 않는다: 그 필드를 키우면 기존 6종의 결론 상자 높이도 따라 바뀐다.
+    # 84pt는 3줄 텍스트에 필요한 최소 높이(box_pt(12) x line_spacing(1.4) x 3줄 + box_padding(10) x 2 = 70.4pt)에
+    # 여유를 더한 값이다 ("문장 1~3줄"의 하드 상한을 3줄로 잡았다).
+    callout_height: float = Field(default=84.0, gt=0)
+    callout_radius_pt: float = Field(default=12.0, ge=0)
+    # 번호 단계(process) 전용 (2026-09-07 DB-3). card_heading_height 등 cards의 필드를 재사용하지
+    # 않는다: DA-4가 box_height를 callout에 재사용하지 않은 것과 같은 이유로, 재사용하면 한
+    # 템플릿의 조정이 다른 템플릿의 렌더까지 바꾼다. 행은 세로로 쌓이므로(cards는 가로) 배지와
+    # 라벨 칸의 가로 크기는 고정이고, 부제 영역만 행 높이(단계 수)에 따라 늘고 준다.
+    process_row_gap: float = Field(default=12.0, ge=0)
+    process_badge_size: float = Field(default=28.0, gt=0)  # 정사각형: 반경을 절반으로 주면 정원이 된다
+    process_badge_gap: float = Field(default=16.0, ge=0)
+    process_heading_height: float = Field(default=20.0, gt=0)
+    process_subtitle_gap: float = Field(default=4.0, ge=0)
+    process_label_width: float = Field(default=140.0, gt=0)
+    process_label_gap: float = Field(default=16.0, ge=0)
+    process_label_height: float = Field(default=14.0, gt=0)
+    # 행렬(matrix) 전용 (2026-09-07 DB-4). process처럼 세로로 행을 쌓되(단계 수와 같은 원리로
+    # 행 수가 늘면 행 높이가 준다) 가로 3칸(분류/대표/나열)의 폭 배분이 다르다: 분류 셀은 행
+    # 높이 전체를 채우는 색 블록이라 안쪽 여백은 기존 box_padding을 재사용한다(callout/cards와
+    # 같은 "채움 블록 안쪽 여백" 개념). process의 필드를 공유하지 않는 이유는 process_row_gap의
+    # 주석과 같다: 재사용하면 한 템플릿의 조정이 다른 템플릿의 렌더까지 바꾼다.
+    matrix_row_gap: float = Field(default=12.0, ge=0)
+    matrix_category_width: float = Field(default=140.0, gt=0)
+    matrix_category_gap: float = Field(default=16.0, ge=0)
+    matrix_items_width: float = Field(default=220.0, gt=0)
+    matrix_items_gap: float = Field(default=16.0, ge=0)
 
 
 class Preset(BaseModel):

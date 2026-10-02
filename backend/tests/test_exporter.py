@@ -99,8 +99,8 @@ def test_preset_overrides_from_meta_applied(tmp_path):
 
 
 def test_concurrent_export_under_store_lock_creates_all_versions(tmp_path):
-    # 잠금 없이 부르면 스캔과 이동 사이의 경합으로 넷 다 v001을 돌려받는다(재현 실측).
-    # store.locked(name) 안에서 부르면 저장소 잠금이 내보내기 호출을 직렬화한다 (A2가 실제 라우트에서 이렇게 부른다).
+    # 웹은 입력 읽기를 store.locked(name)으로 직렬화한다. exporter는 웹/CLI 공통
+    # 파일 게시 잠금을 추가로 잡는다. 이 중첩 순서에서 교착 없이 완료되는지 확인한다.
     store = FileProjectStore(tmp_path / "projects")
     store.create_project("p1", title="동시 내보내기")
     deck = _write_deck(tmp_path / "deck.json", title="동시 내보내기")

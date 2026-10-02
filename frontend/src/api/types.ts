@@ -86,7 +86,8 @@ export interface paths {
         /** Get Render Plan */
         get: operations["get_render_plan_api_projects__name__render_plan_get"];
         put?: never;
-        post?: never;
+        /** Measure Project Deck */
+        post: operations["measure_project_deck_api_projects__name__render_plan_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -113,6 +114,162 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/story-plan/diagram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reconcile Diagram
+         * @description 도식 장과 기존 보고 계획을 확인만 한다. 저장과 AI 호출은 하지 않는다.
+         */
+        post: operations["reconcile_diagram_api_projects__name__story_plan_diagram_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/document-changes/basis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Document Change Basis */
+        get: operations["get_document_change_basis_api_projects__name__document_changes_basis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/document-changes/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Document */
+        post: operations["preview_document_api_projects__name__document_changes_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/document-changes/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Document */
+        post: operations["apply_document_api_projects__name__document_changes_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/evidence-migrations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Migration */
+        post: operations["preview_migration_api_projects__name__evidence_migrations_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/evidence-migrations/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Migration */
+        post: operations["apply_migration_api_projects__name__evidence_migrations_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/story-plan/rewrite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Story Rewrite */
+        post: operations["preview_story_rewrite_api_projects__name__story_plan_rewrite_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/story-plan/rewrite/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply Story Rewrite */
+        post: operations["apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/story-plan/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Story Repair */
+        post: operations["preview_story_repair_api_projects__name__story_plan_repair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/export": {
         parameters: {
             query?: never;
@@ -124,6 +281,126 @@ export interface paths {
         put?: never;
         /** Export Project */
         post: operations["export_project_api_projects__name__export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Export History */
+        get: operations["list_export_history_api_projects__name__exports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Export History */
+        get: operations["get_export_history_api_projects__name__exports__export_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}/reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Export Reviews */
+        get: operations["get_export_reviews_api_projects__name__exports__export_id__reviews_get"];
+        put?: never;
+        /** Create Export Review */
+        post: operations["create_export_review_api_projects__name__exports__export_id__reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}/qualification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Qualification */
+        get: operations["get_qualification_api_projects__name__exports__export_id__qualification_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Native Render */
+        post: operations["create_native_render_api_projects__name__exports__export_id__render_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}/independent-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Independent Review */
+        post: operations["create_independent_review_api_projects__name__exports__export_id__independent_reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/exports/{export_id}/publish-final": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Final Publication */
+        post: operations["create_final_publication_api_projects__name__exports__export_id__publish_final_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -208,6 +485,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Health */
+        get: operations["get_health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -219,6 +513,110 @@ export interface paths {
         get: operations["get_status_api_status_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Settings */
+        get: operations["get_ai_settings_api_ai_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Select Ai */
+        put: operations["select_ai_api_ai_selection_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/providers/{provider_id}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Login */
+        get: operations["get_ai_login_api_ai_providers__provider_id__login_get"];
+        put?: never;
+        /** Start Ai Login */
+        post: operations["start_ai_login_api_ai_providers__provider_id__login_post"];
+        /** Cancel Ai Login */
+        delete: operations["cancel_ai_login_api_ai_providers__provider_id__login_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/review/numbers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Numbers */
+        post: operations["review_numbers_api_projects__name__review_numbers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/review/semantics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review Semantics */
+        post: operations["review_semantics_api_projects__name__review_semantics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/generate/diagram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Diagram */
+        post: operations["generate_diagram_api_projects__name__generate_diagram_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -280,16 +678,42 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AISelection */
+        AISelection: {
+            /**
+             * Provider
+             * @default claude
+             * @enum {string}
+             */
+            provider: "claude" | "chatgpt";
+            /**
+             * Model
+             * @default sonnet
+             */
+            model: string;
+        };
+        /** AISettings */
+        AISettings: {
+            selection: components["schemas"]["AISelection"];
+            /** Selection Id */
+            selection_id: string;
+            /** Providers */
+            providers: components["schemas"]["ProviderSettings"][];
+            /** Busy */
+            busy: boolean;
+        };
         /** AppStatus */
         AppStatus: {
             /**
              * Provider
              * @enum {string}
              */
-            provider: "subscription" | "none";
+            provider: "subscription" | "none" | "claude" | "chatgpt";
             login: components["schemas"]["LoginStatus"];
             /** Model */
             model?: string | null;
+            /** Selection Id */
+            selection_id?: string | null;
             /** Last Generation At */
             last_generation_at?: string | null;
             /**
@@ -297,6 +721,12 @@ export interface components {
              * @description 로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)
              */
             checked_at: string;
+        };
+        /** ApplyStoryRewriteRequest */
+        ApplyStoryRewriteRequest: {
+            deck: components["schemas"]["Deck"];
+            /** Sources Fingerprint */
+            sources_fingerprint: string;
         };
         /** Bullet */
         Bullet: {
@@ -396,6 +826,29 @@ export interface components {
             ok: boolean;
             usage: components["schemas"]["CallUsage"] | null;
         };
+        /**
+         * CalloutSlots
+         * @description 강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).
+         *
+         *     tone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이
+         *     따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,
+         *     채움 0건) 여기서 뺐다.
+         */
+        CalloutSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "callout";
+            /** Text */
+            text: string;
+            /**
+             * Tone
+             * @default surface1
+             * @enum {string}
+             */
+            tone: "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger";
+        };
         /** CapacityWarning */
         CapacityWarning: {
             /** Chapter Id */
@@ -419,6 +872,51 @@ export interface components {
              */
             bullets: components["schemas"]["Bullet"][];
         };
+        /**
+         * CardItem
+         * @description 카드 하나 (2026-09-07 DB-2). badge와 tail은 선택이라 없으면 그 자리를 차지하지 않는다
+         *     (eyebrow/subtitle과 같은 규칙). 본문을 list[Bullet]로 두는 이유는 templateSwitch가 다른
+         *     템플릿의 불릿을 이 자리로 옮길 수 있게 하기 위해서다.
+         */
+        CardItem: {
+            /**
+             * Badge
+             * @default
+             */
+            badge: string;
+            /** Heading */
+            heading: string;
+            /**
+             * Bullets
+             * @default []
+             */
+            bullets: components["schemas"]["Bullet"][];
+            /**
+             * Tail
+             * @default
+             */
+            tail: string;
+            /**
+             * Emphasis
+             * @default false
+             */
+            emphasis: boolean;
+        };
+        /**
+         * CardsSlots
+         * @description 카드 2~4개를 가로로 나열한다 (2026-09-07 DB-2). compare2와 달리 결론 상자가 없다:
+         *     compare2는 두 옵션을 비교해 하나의 결론으로 수렴하지만, cards는 항목을 나란히 소개하거나
+         *     병렬 비교하는 용도라 공통 결론이 필수가 아니다.
+         */
+        CardsSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "cards";
+            /** Cards */
+            cards: components["schemas"]["CardItem"][];
+        };
         /** Chapter */
         Chapter: {
             /** Id */
@@ -434,7 +932,7 @@ export interface components {
              * Template
              * @enum {string}
              */
-            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider";
+            template: "cover" | "summary" | "bullet_box" | "table" | "compare2" | "divider" | "callout" | "cards" | "process" | "matrix" | "diagram";
             /**
              * Source Refs
              * @default []
@@ -449,7 +947,7 @@ export interface components {
              */
             status: "ok" | "format_error";
             /** Slots */
-            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"]) | null;
+            slots?: (components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"]) | null;
             /**
              * Raw Text
              * @default
@@ -476,6 +974,98 @@ export interface components {
              */
             condensed: boolean;
             usage: components["schemas"]["GenerationUsage"];
+        };
+        /** ChartPlan */
+        ChartPlan: {
+            /**
+             * Rule Version
+             * @default comparison-chart-plan-v1
+             * @constant
+             */
+            rule_version: "comparison-chart-plan-v1";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bar" | "column";
+            /** Comparison Id */
+            comparison_id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Definition */
+            definition: string;
+            /** Unit */
+            unit: string;
+            /** Conditions */
+            conditions: string;
+            /** Axis Minimum */
+            axis_minimum: string;
+            /** Axis Maximum */
+            axis_maximum: string;
+            /** Plot X */
+            plot_x: number;
+            /** Plot Y */
+            plot_y: number;
+            /** Plot W */
+            plot_w: number;
+            /** Plot H */
+            plot_h: number;
+            /** Font Pt */
+            font_pt: number;
+            /** Text Color */
+            text_color: string;
+            /** Points */
+            points: components["schemas"]["ChartPoint"][];
+        };
+        /** ChartPoint */
+        ChartPoint: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Color */
+            color: string;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+        };
+        /** ChartSpec */
+        ChartSpec: {
+            /**
+             * Rule Version
+             * @constant
+             */
+            rule_version: "comparison-chart-v1";
+            /** Comparison Id */
+            comparison_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "bar" | "column";
+        };
+        /** Claim */
+        Claim: {
+            /** Id */
+            id: string;
+            /** Statement */
+            statement: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "fact" | "inference" | "proposal" | "unknown";
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Caveats */
+            caveats: string[];
         };
         /**
          * Colors
@@ -512,6 +1102,61 @@ export interface components {
              * @default FFFFFF
              */
             background: string;
+            /**
+             * Ink
+             * @default 1B2A3A
+             */
+            ink: string;
+            /**
+             * Ink Soft
+             * @default 24384A
+             */
+            ink_soft: string;
+            /**
+             * Accent1
+             * @default 0E8C7F
+             */
+            accent1: string;
+            /**
+             * Accent2
+             * @default C8860B
+             */
+            accent2: string;
+            /**
+             * Danger
+             * @default C0473B
+             */
+            danger: string;
+            /**
+             * Ok
+             * @default 2E9E5B
+             */
+            ok: string;
+            /**
+             * Surface1
+             * @default EAF2F1
+             */
+            surface1: string;
+            /**
+             * Surface2
+             * @default F4F6F7
+             */
+            surface2: string;
+            /**
+             * Surface3
+             * @default FBF3E6
+             */
+            surface3: string;
+            /**
+             * Surface Danger
+             * @default FBEEEC
+             */
+            surface_danger: string;
+            /**
+             * Rule
+             * @default DCE3E5
+             */
+            rule: string;
         };
         /** CompareSlots */
         CompareSlots: {
@@ -525,10 +1170,42 @@ export interface components {
             /** Conclusion */
             conclusion: string;
         };
+        /** ComparisonAssessment */
+        ComparisonAssessment: {
+            /** Comparison Id */
+            comparison_id: string;
+            /**
+             * Rule Version
+             * @default q2b-v1
+             * @enum {string}
+             */
+            rule_version: "q2b-v1" | "q2e-v1";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "compatible" | "incompatible" | "insufficient_metadata";
+            /** Reasons */
+            reasons: components["schemas"]["ComparisonReason"][];
+        };
+        /** ComparisonReason */
+        ComparisonReason: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "missing_metadata" | "definition_mismatch" | "unit_mismatch" | "denominator_mismatch" | "entity_mismatch" | "period_mismatch" | "period_basis_mismatch" | "incomplete_period" | "overlapping_periods" | "unsupported_period" | "same_axis_value" | "unsupported_normalization";
+            /** Field */
+            field: string;
+            /** Message */
+            message: string;
+            /** Evidence Id */
+            evidence_id?: string | null;
+        };
         /** CondenseChapterRequest */
         CondenseChapterRequest: {
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"] | components["schemas"]["DiagramSlots"];
             /**
              * Instructions
              * @default
@@ -588,6 +1265,7 @@ export interface components {
              * @default []
              */
             slides: components["schemas"]["Slide"][];
+            document_review?: components["schemas"]["DocumentChangeReview"] | null;
         };
         /** DeckMeta */
         DeckMeta: {
@@ -617,6 +1295,346 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** Derivation */
+        Derivation: {
+            /** Id */
+            id: string;
+            /** Comparison Id */
+            comparison_id: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "difference" | "percent_change";
+        };
+        /** DerivationReason */
+        DerivationReason: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "comparison_blocked" | "missing_value" | "invalid_number" | "numeric_limit" | "ambiguous_numeric_token" | "value_not_in_excerpt" | "zero_baseline" | "negative_baseline" | "unsupported_metric" | "reversed_period";
+            /** Message */
+            message: string;
+            /** Evidence Id */
+            evidence_id?: string | null;
+        };
+        /** DerivedValue */
+        DerivedValue: {
+            /** Derivation Id */
+            derivation_id: string;
+            /**
+             * Rule Version
+             * @default q2c-v1
+             * @enum {string}
+             */
+            rule_version: "q2c-v1" | "q2e-v1";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "computed" | "blocked";
+            /** Formula */
+            formula: string;
+            /** Value */
+            value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Rounded */
+            rounded?: boolean | null;
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: components["schemas"]["DerivationReason"][];
+            /** Unit Conversions */
+            unit_conversions?: components["schemas"]["UnitConversion"][];
+        };
+        /** DiagramAnchor */
+        DiagramAnchor: {
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "left" | "right";
+            point: components["schemas"]["DiagramPoint"];
+        };
+        /** DiagramBounds */
+        DiagramBounds: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+        };
+        /** DiagramCanvas */
+        DiagramCanvas: {
+            /**
+             * Page Size
+             * @constant
+             */
+            page_size: "preset";
+            /**
+             * Reading Profile
+             * @constant
+             */
+            reading_profile: "report";
+        };
+        /** DiagramEdge */
+        DiagramEdge: {
+            /** Id */
+            id: string;
+            /** From Node Id */
+            from_node_id: string;
+            /** To Node Id */
+            to_node_id: string;
+            /**
+             * Relation
+             * @enum {string}
+             */
+            relation: "flow" | "reference" | "proposal";
+            /** Label */
+            label: string;
+            /** Evidence Ids */
+            evidence_ids: string[];
+        };
+        /** DiagramEdgePlan */
+        DiagramEdgePlan: {
+            edge: components["schemas"]["DiagramEdge"];
+            start: components["schemas"]["DiagramAnchor"];
+            end: components["schemas"]["DiagramAnchor"];
+            label: components["schemas"]["DiagramTextPlan"];
+            /**
+             * Stroke
+             * @enum {string}
+             */
+            stroke: "solid" | "dotted" | "dashed";
+            /** Dash Pattern Pt */
+            dash_pattern_pt: number[];
+            /**
+             * Line Cap
+             * @constant
+             */
+            line_cap: "butt";
+            /** Color */
+            color: string;
+            /** Arrow Points */
+            arrow_points: components["schemas"]["DiagramPoint"][];
+        };
+        /** DiagramGenerationResult */
+        DiagramGenerationResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "format_error";
+            diagram?: components["schemas"]["DiagramInput"] | null;
+            /**
+             * Raw Text
+             * @default
+             */
+            raw_text: string;
+            /**
+             * Unverified Numbers
+             * @default []
+             */
+            unverified_numbers: string[];
+            /**
+             * Format Retried
+             * @default false
+             */
+            format_retried: boolean;
+            usage: components["schemas"]["GenerationUsage"];
+            /**
+             * Base Etag
+             * @default
+             */
+            base_etag: string;
+            /**
+             * Sources Fingerprint
+             * @default
+             */
+            sources_fingerprint: string;
+        };
+        /**
+         * DiagramInput
+         * @description 저장할 의미 입력. 근거 ID의 존재 검사는 Deck 전체 또는 공개 파서가 수행한다.
+         */
+        DiagramInput: {
+            /**
+             * Version
+             * @constant
+             */
+            version: "q3a-v1";
+            /** Id */
+            id: string;
+            canvas: components["schemas"]["DiagramCanvas"];
+            /** Nodes */
+            nodes: components["schemas"]["DiagramNode"][];
+            /** Edges */
+            edges: components["schemas"]["DiagramEdge"][];
+            /**
+             * Layout Variant
+             * @constant
+             */
+            layout_variant: "flow_horizontal";
+        };
+        /** DiagramNode */
+        DiagramNode: {
+            /** Id */
+            id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "step" | "entity" | "decision" | "outcome";
+            /** Content */
+            content: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "fact" | "inference" | "proposal" | "unknown";
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Caveats */
+            caveats: string[];
+        };
+        /** DiagramNodePlan */
+        DiagramNodePlan: {
+            node: components["schemas"]["DiagramNode"];
+            /** Display Name */
+            display_name: string;
+            bounds: components["schemas"]["DiagramBounds"];
+            /** Texts */
+            texts: components["schemas"]["DiagramTextPlan"][];
+            /** Fill */
+            fill: string;
+            /** Border */
+            border: string;
+        };
+        /**
+         * DiagramPagePlan
+         * @description 내부 계산에서 만든 도식 페이지. 외부 저장본의 승인 기록이 아니다.
+         */
+        DiagramPagePlan: {
+            /**
+             * Rule Version
+             * @default q3b-render-v1
+             * @constant
+             */
+            rule_version: "q3b-render-v1";
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            layout: components["schemas"]["DiagramRenderPlan"];
+            /** Headers */
+            headers: components["schemas"]["Frame"][];
+            /** Background */
+            background: string;
+            review?: components["schemas"]["DiagramReviewStatus"];
+        };
+        /** DiagramPoint */
+        DiagramPoint: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** DiagramRenderPlan */
+        DiagramRenderPlan: {
+            /** Diagram Id */
+            diagram_id: string;
+            /** Page Width Pt */
+            page_width_pt: number;
+            /** Page Height Pt */
+            page_height_pt: number;
+            content_bounds: components["schemas"]["DiagramBounds"];
+            /**
+             * Reading Profile
+             * @default report
+             * @constant
+             */
+            reading_profile: "report";
+            /**
+             * Layout Variant
+             * @default flow_horizontal
+             * @constant
+             */
+            layout_variant: "flow_horizontal";
+            /** Korean Font */
+            korean_font: string;
+            /** Latin Font */
+            latin_font: string;
+            /** Border Width Pt */
+            border_width_pt: number;
+            /** Nodes */
+            nodes: components["schemas"]["DiagramNodePlan"][];
+            /** Edges */
+            edges: components["schemas"]["DiagramEdgePlan"][];
+        };
+        /** DiagramReviewStatus */
+        DiagramReviewStatus: {
+            /**
+             * Semantic
+             * @default not_run
+             * @constant
+             */
+            semantic: "not_run";
+            /**
+             * Browser
+             * @default not_run
+             * @constant
+             */
+            browser: "not_run";
+            /**
+             * Powerpoint
+             * @default not_run
+             * @constant
+             */
+            powerpoint: "not_run";
+            /**
+             * Reader
+             * @default not_run
+             * @constant
+             */
+            reader: "not_run";
+        };
+        /**
+         * DiagramSlots
+         * @description 도식의 의미 입력만 저장한다. 배치/검수 결과는 계산 출력에만 존재한다.
+         */
+        DiagramSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "diagram";
+            diagram: components["schemas"]["DiagramInput"];
+            /**
+             * Footnote
+             * @default
+             */
+            footnote: string;
+        };
+        /** DiagramTextPlan */
+        DiagramTextPlan: {
+            /** Text */
+            text: string;
+            /** Lines */
+            lines: string[];
+            bounds: components["schemas"]["DiagramBounds"];
+            /** Font Pt */
+            font_pt: number;
+            /** Line Height Pt */
+            line_height_pt: number;
+            /** Bold */
+            bold: boolean;
+            /** Color */
+            color: string;
+        };
         /** DividerSlots */
         DividerSlots: {
             /**
@@ -632,10 +1650,453 @@ export interface components {
             /** Section Title */
             section_title: string;
         };
+        /** DocumentChangeApplyRequest */
+        DocumentChangeApplyRequest: {
+            /** Confirmation Token */
+            confirmation_token: string;
+            /** Acknowledged Loss Ids */
+            acknowledged_loss_ids: string[];
+            candidate: components["schemas"]["Deck"];
+            /** Expected Source Fingerprint */
+            expected_source_fingerprint: string;
+        };
+        /** DocumentChangeBasis */
+        DocumentChangeBasis: {
+            /** Base Etag */
+            base_etag: string;
+            /** Sources Fingerprint */
+            sources_fingerprint: string;
+            /** Evidence Fingerprints */
+            evidence_fingerprints: {
+                [key: string]: string;
+            };
+        };
+        /** DocumentChangePreview */
+        DocumentChangePreview: {
+            /**
+             * Rule Version
+             * @default document-change-v1
+             * @constant
+             */
+            rule_version: "document-change-v1";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "document_replacement" | "evidence_migration";
+            /** Base Fingerprint */
+            base_fingerprint: string;
+            /** Sources Fingerprint */
+            sources_fingerprint: string;
+            /** Candidate Fingerprint */
+            candidate_fingerprint: string;
+            candidate: components["schemas"]["Deck"];
+            /** Losses */
+            losses: components["schemas"]["LossItem"][];
+            /** Confirmation Token */
+            confirmation_token: string;
+            /**
+             * Final Export Allowed
+             * @default false
+             * @constant
+             */
+            final_export_allowed: false;
+            /**
+             * Notice
+             * @default 변경 후보입니다. 근거 이동의 의미, 문서 내용과 실제 표시를 검수하지 않았습니다. 적용 후 현재 PPTX의 독립 검수가 필요합니다.
+             */
+            notice: string;
+        };
+        /** DocumentChangeRequest */
+        DocumentChangeRequest: {
+            candidate: components["schemas"]["Deck"];
+            /** Expected Source Fingerprint */
+            expected_source_fingerprint: string;
+        };
+        /** DocumentChangeReview */
+        DocumentChangeReview: {
+            /**
+             * Rule Version
+             * @default document-change-v1
+             * @constant
+             */
+            rule_version: "document-change-v1";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "document_replacement" | "evidence_migration";
+            /** Base Fingerprint */
+            base_fingerprint: string;
+            /** Changed Paths */
+            changed_paths: string[];
+            /**
+             * Requires Independent Review
+             * @default true
+             * @constant
+             */
+            requires_independent_review: true;
+        };
+        /** Evidence */
+        Evidence: {
+            /** Id */
+            id: string;
+            /** Source Id */
+            source_id: string;
+            locator: components["schemas"]["SourceLocator"];
+            /** Value */
+            value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Period */
+            period?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /** Denominator */
+            denominator?: string | null;
+            metric_basis?: components["schemas"]["MetricBasis"] | null;
+            /** Source Revision */
+            source_revision: string;
+            /** Excerpt */
+            excerpt: string;
+        };
+        /** EvidenceComparison */
+        EvidenceComparison: {
+            /** Id */
+            id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Left Evidence Id */
+            left_evidence_id: string;
+            /** Right Evidence Id */
+            right_evidence_id: string;
+            /**
+             * Axis
+             * @enum {string}
+             */
+            axis: "entity" | "period";
+            unit_normalization?: components["schemas"]["UnitNormalization"] | null;
+        };
+        /** EvidenceMigrationApplyRequest */
+        EvidenceMigrationApplyRequest: {
+            /** Confirmation Token */
+            confirmation_token: string;
+            /** Acknowledged Loss Ids */
+            acknowledged_loss_ids: string[];
+            /** Evidence Id */
+            evidence_id: string;
+            /** Old Evidence Fingerprint */
+            old_evidence_fingerprint: string;
+            new_selection: components["schemas"]["EvidenceSelection"];
+            /** Expected Source Fingerprint */
+            expected_source_fingerprint: string;
+        };
+        /** EvidenceMigrationRequest */
+        EvidenceMigrationRequest: {
+            /** Evidence Id */
+            evidence_id: string;
+            /** Old Evidence Fingerprint */
+            old_evidence_fingerprint: string;
+            new_selection: components["schemas"]["EvidenceSelection"];
+            /** Expected Source Fingerprint */
+            expected_source_fingerprint: string;
+        };
+        /** EvidenceSelection */
+        EvidenceSelection: {
+            /** Id */
+            id: string;
+            /** Source Id */
+            source_id: string;
+            locator: components["schemas"]["SourceLocator"];
+            /** Value */
+            value?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Period */
+            period?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /** Denominator */
+            denominator?: string | null;
+            metric_basis?: components["schemas"]["MetricBasis"] | null;
+        };
+        /** ExportHistoryDetail */
+        ExportHistoryDetail: {
+            /** Checked At */
+            checked_at: string;
+            /** Current Input Fingerprint */
+            current_input_fingerprint: string | null;
+            /** Current Input Error */
+            current_input_error: string | null;
+            item: components["schemas"]["ExportHistoryItem"];
+            quality: components["schemas"]["QualityReport"] | null;
+            /** Artifact Sha256 */
+            artifact_sha256: string | null;
+        };
+        /** ExportHistoryItem */
+        ExportHistoryItem: {
+            /** Id */
+            id: string;
+            /** File Modified At */
+            file_modified_at: string | null;
+            /**
+             * Record Status
+             * @enum {string}
+             */
+            record_status: "readable" | "missing" | "invalid" | "unsupported" | "unreadable";
+            /**
+             * Artifact Status
+             * @enum {string}
+             */
+            artifact_status: "matched" | "mismatch" | "missing" | "unreadable" | "unverified";
+            /**
+             * Input Status
+             * @enum {string}
+             */
+            input_status: "current" | "stale" | "legacy" | "unavailable";
+            /** Quality Status */
+            quality_status: ("draft" | "needs_revision") | null;
+            /** Slide Count */
+            slide_count: number | null;
+            /** Gate Version */
+            gate_version: string | null;
+        };
+        /** ExportHistoryPage */
+        ExportHistoryPage: {
+            /** Checked At */
+            checked_at: string;
+            /** Current Input Fingerprint */
+            current_input_fingerprint: string | null;
+            /** Current Input Error */
+            current_input_error: string | null;
+            /** Items */
+            items: components["schemas"]["ExportHistoryItem"][];
+            /** Total */
+            total: number;
+            /** Offset */
+            offset: number;
+            /** Limit */
+            limit: number;
+        };
+        /** ExportProvenance */
+        ExportProvenance: {
+            /**
+             * Rule Version
+             * @constant
+             */
+            rule_version: "export-provenance-v1";
+            /**
+             * Producer Id
+             * @constant
+             */
+            producer_id: "slidecaptain";
+            /** Producer Run Id */
+            producer_run_id: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+        };
+        /** ExportQualification */
+        ExportQualification: {
+            /** Export Id */
+            export_id: string;
+            /** Checked At */
+            checked_at: string;
+            /** Base Etag */
+            base_etag: string | null;
+            /** Input Fingerprint */
+            input_fingerprint: string | null;
+            /** Artifact Sha256 */
+            artifact_sha256: string | null;
+            /** Slide Count */
+            slide_count: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "current" | "stale" | "unavailable";
+            /**
+             * Storage Status
+             * @enum {string}
+             */
+            storage_status: "empty" | "readable" | "invalid";
+            provenance: components["schemas"]["ExportProvenance"] | null;
+            /**
+             * Render Status
+             * @enum {string}
+             */
+            render_status: "not_run" | "rendered" | "failed" | "stale" | "unavailable";
+            render: components["schemas"]["NativeRenderRecord"] | null;
+            /**
+             * Independent Review Status
+             * @enum {string}
+             */
+            independent_review_status: "not_run" | "passed" | "needs_revision" | "stale" | "unavailable";
+            independent_review: components["schemas"]["IndependentReviewRecord"] | null;
+            /** Final Export Allowed */
+            final_export_allowed: boolean;
+            /** Can Render */
+            can_render: boolean;
+            /** Can Import Review */
+            can_import_review: boolean;
+            /** Blockers */
+            blockers: string[];
+        };
         /** ExportResult */
         ExportResult: {
             /** Path */
             path: string;
+            /** Quality Path */
+            quality_path: string;
+            quality: components["schemas"]["QualityReport"];
+        };
+        /** ExportReviewCategoryState */
+        ExportReviewCategoryState: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "narrative" | "evidence" | "representation" | "visual" | "target_renderer";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_run" | "passed" | "needs_revision" | "stale" | "unavailable";
+            /** Latest Record Id */
+            latest_record_id: string | null;
+        };
+        /** ExportReviewRecord */
+        ExportReviewRecord: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "narrative" | "evidence" | "representation" | "visual" | "target_renderer";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "needs_revision";
+            /** Reviewer */
+            reviewer: string;
+            /** Note */
+            note: string;
+            /** Pages */
+            pages: number[];
+            /** Id */
+            id: string;
+            /** Sequence */
+            sequence: number;
+            /**
+             * Rule Version
+             * @constant
+             */
+            rule_version: "manual-review-v1";
+            /** Export Id */
+            export_id: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /** Reviewed At */
+            reviewed_at: string;
+        };
+        /** ExportReviewRequest */
+        ExportReviewRequest: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "narrative" | "evidence" | "representation" | "visual" | "target_renderer";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "needs_revision";
+            /** Reviewer */
+            reviewer: string;
+            /** Note */
+            note: string;
+            /** Pages */
+            pages: number[];
+            /** Expected Input Fingerprint */
+            expected_input_fingerprint: string;
+            /** Expected Artifact Sha256 */
+            expected_artifact_sha256: string;
+        };
+        /** ExportReviews */
+        ExportReviews: {
+            /** Export Id */
+            export_id: string;
+            /** Checked At */
+            checked_at: string;
+            /** Base Etag */
+            base_etag: string | null;
+            /** Input Fingerprint */
+            input_fingerprint: string | null;
+            /** Artifact Sha256 */
+            artifact_sha256: string | null;
+            /** Current Input Fingerprint */
+            current_input_fingerprint: string | null;
+            /** Slide Count */
+            slide_count: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "current" | "stale" | "unavailable";
+            /**
+             * Storage Status
+             * @enum {string}
+             */
+            storage_status: "empty" | "readable" | "invalid" | "unreadable";
+            /** Can Record */
+            can_record: boolean;
+            /** Reason */
+            reason: string | null;
+            /** Categories */
+            categories: components["schemas"]["ExportReviewCategoryState"][];
+            /** Records */
+            records: components["schemas"]["ExportReviewRecord"][];
+            /**
+             * Final Export Allowed
+             * @constant
+             */
+            final_export_allowed: false;
+        };
+        /** FinalPublication */
+        FinalPublication: {
+            /**
+             * Rule Version
+             * @default qualified-final-v1
+             * @constant
+             */
+            rule_version: "qualified-final-v1";
+            /** Id */
+            id: string;
+            /** Export Id */
+            export_id: string;
+            /** Published At */
+            published_at: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /** Producer Run Id */
+            producer_run_id: string;
+            /** Render Id */
+            render_id: string;
+            /** Review Record Id */
+            review_record_id: string;
+            /** Environment Fingerprint */
+            environment_fingerprint: string;
+            /** Pptx Path */
+            pptx_path: string;
+            /** Receipt Path */
+            receipt_path: string;
+            render: components["schemas"]["NativeRenderRecord"];
+            independent_review: components["schemas"]["IndependentReviewRecord"];
         };
         /** FontRoles */
         FontRoles: {
@@ -649,6 +2110,11 @@ export interface components {
              * @default 24
              */
             section_title_pt: number;
+            /**
+             * Eyebrow Pt
+             * @default 10.5
+             */
+            eyebrow_pt: number;
             /**
              * Title Pt
              * @default 20
@@ -720,15 +2186,45 @@ export interface components {
              */
             paras: components["schemas"]["Para"][];
             table?: components["schemas"]["TablePlan"] | null;
+            chart?: components["schemas"]["ChartPlan"] | null;
             /**
              * Valign
              * @default top
              * @enum {string}
              */
             valign: "top" | "middle";
+            /** Radius Pt */
+            radius_pt?: number | null;
+            /** Border Width Pt */
+            border_width_pt?: number | null;
         };
         /** GenerateChapterRequest */
         GenerateChapterRequest: {
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** GenerateDiagramRequest */
+        GenerateDiagramRequest: {
+            /**
+             * Mode
+             * @default create
+             * @enum {string}
+             */
+            mode: "create" | "replace";
+            /** Chapter Id */
+            chapter_id: string;
+            /** Topic */
+            topic: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "answer" | "context" | "evidence" | "risk" | "action";
+            /** Claim Ids */
+            claim_ids: string[];
             /**
              * Instructions
              * @default
@@ -744,6 +2240,7 @@ export interface components {
              * @default
              */
             instructions: string;
+            brief?: components["schemas"]["ReportBrief"] | null;
         };
         /**
          * GenerationUsage
@@ -787,6 +2284,84 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** IndependentReceipt */
+        IndependentReceipt: {
+            /**
+             * Receipt Type
+             * @constant
+             */
+            receipt_type: "independent-review";
+            /**
+             * Rule Version
+             * @constant
+             */
+            rule_version: "independent-review-v1";
+            /** Reviewer Id */
+            reviewer_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Producer Run Id */
+            producer_run_id: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /** Render Id */
+            render_id: string;
+            /** Render Fingerprint */
+            render_fingerprint: string;
+            /** Environment Fingerprint */
+            environment_fingerprint: string;
+            /** Pages */
+            pages: number[];
+            /** Verdicts */
+            verdicts: components["schemas"]["ReviewVerdict"][];
+            /** Findings */
+            findings: components["schemas"]["ReviewFinding"][];
+        };
+        /** IndependentReviewRecord */
+        IndependentReviewRecord: {
+            /**
+             * Kind
+             * @default independent-review
+             * @constant
+             */
+            kind: "independent-review";
+            /** Id */
+            id: string;
+            /** Sequence */
+            sequence: number;
+            /** Recorded At */
+            recorded_at: string;
+            receipt: components["schemas"]["IndependentReceipt"];
+            /** Signature */
+            signature: string;
+        };
+        /** IndependentReviewRequest */
+        IndependentReviewRequest: {
+            /** Expected Input Fingerprint */
+            expected_input_fingerprint: string;
+            /** Expected Artifact Sha256 */
+            expected_artifact_sha256: string;
+            receipt: components["schemas"]["IndependentReceipt"];
+            /** Signature */
+            signature: string;
+        };
+        /** LoginAttempt */
+        LoginAttempt: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "idle" | "pending" | "succeeded" | "failed" | "cancelled";
+            /** Auth Url */
+            auth_url?: string | null;
+            /**
+             * Message
+             * @default
+             */
+            message: string;
+        };
         /** LoginStatus */
         LoginStatus: {
             /** Logged In */
@@ -799,6 +2374,235 @@ export interface components {
             cli_version?: string | null;
             /** Error */
             error?: string | null;
+        };
+        /** LossItem */
+        LossItem: {
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "added" | "deleted" | "replaced" | "reordered";
+            /** Before */
+            before: unknown;
+            /** After */
+            after: unknown;
+        };
+        /**
+         * MatrixRow
+         * @description 행렬 행 하나 (2026-09-07 DB-4). 왼쪽 분류 셀(category)은 항상 있고, 가운데 대표 항목
+         *     (primary)과 오른쪽 나열(items)은 선택이라 없으면 그 자리를 차지하지 않는다(cards의
+         *     badge/tail과 같은 규칙).
+         *
+         *     표(TableSlots)와 다른 점: 표는 열 이름이 있는 균일한 격자이고, matrix는 분류축이 왼쪽에
+         *     고정된 행 나열이라 열 이름이 없고 행마다 가운데/오른쪽 내용의 유무가 달라질 수 있다.
+         */
+        MatrixRow: {
+            /** Category */
+            category: string;
+            /**
+             * Primary
+             * @default
+             */
+            primary: string;
+            /**
+             * Items
+             * @default []
+             */
+            items: string[];
+        };
+        /**
+         * MatrixSlots
+         * @description 분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). process와 같은 이유로 결론과
+         *     각주에 대응하는 자리가 없다: 행 나열 자체가 내용이라 공통 결론이 필수가 아니다.
+         */
+        MatrixSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "matrix";
+            /** Rows */
+            rows: components["schemas"]["MatrixRow"][];
+        };
+        /** MetricBasis */
+        MetricBasis: {
+            /** Definition */
+            definition?: string | null;
+            /** Unit */
+            unit?: string | null;
+            /** Entity */
+            entity?: string | null;
+            period?: components["schemas"]["MetricPeriod"] | null;
+            denominator?: components["schemas"]["MetricDenominator"] | null;
+        };
+        /** MetricDenominator */
+        MetricDenominator: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "none" | "population" | "unknown";
+            /** Definition */
+            definition?: string | null;
+        };
+        /** MetricPeriod */
+        MetricPeriod: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /**
+             * Grain
+             * @enum {string}
+             */
+            grain: "month" | "quarter" | "year" | "point" | "custom";
+            /**
+             * Aggregation
+             * @enum {string}
+             */
+            aggregation: "sum" | "average" | "ratio" | "point" | "other";
+            /**
+             * Coverage
+             * @enum {string}
+             */
+            coverage: "complete" | "partial" | "unknown";
+        };
+        /** ModelOption */
+        ModelOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
+        /** NativeRenderRecord */
+        NativeRenderRecord: {
+            /**
+             * Kind
+             * @default render
+             * @constant
+             */
+            kind: "render";
+            /**
+             * Rule Version
+             * @default native-powerpoint-v1
+             * @constant
+             */
+            rule_version: "native-powerpoint-v1";
+            /** Id */
+            id: string;
+            /** Sequence */
+            sequence: number;
+            /** Recorded At */
+            recorded_at: string;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "rendered" | "not_run" | "failed";
+            /** Reason */
+            reason: string | null;
+            /** Environment Fingerprint */
+            environment_fingerprint: string | null;
+            /** Render Fingerprint */
+            render_fingerprint: string | null;
+            /** Environment */
+            environment: {
+                [key: string]: string;
+            };
+            /** Pages */
+            pages: components["schemas"]["RenderPage"][];
+        };
+        /** NumericExpression */
+        NumericExpression: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Derivation Id */
+            derivation_id: string;
+            /** Claim Id */
+            claim_id: string;
+            /** Target Evidence Id */
+            target_evidence_id: string;
+            /** Baseline Evidence Id */
+            baseline_evidence_id: string;
+            /** Source Ids */
+            source_ids: string[];
+            /** Formula */
+            formula: string;
+            /** Text */
+            text: string;
+        };
+        /** NumericReviewItem */
+        NumericReviewItem: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Path */
+            path: string;
+            /** Actual */
+            actual: string;
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "matched" | "unlinked_expression" | "ambiguous_expression";
+            /** Message */
+            message: string;
+            /** Derivation Id */
+            derivation_id?: string | null;
+        };
+        /** NumericReviewReport */
+        NumericReviewReport: {
+            /**
+             * Rule Version
+             * @default q2d-v1
+             * @constant
+             */
+            rule_version: "q2d-v1";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "matched" | "needs_review" | "not_run";
+            /** Reason */
+            reason?: ("missing_plan" | "stale_plan" | "evidence_mismatch" | "no_numeric_fields" | "no_computed_expressions") | null;
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Numeric Fields */
+            numeric_fields: number;
+            /** Evaluated */
+            evaluated: number;
+            /** Matched */
+            matched: number;
+            /** Unresolved */
+            unresolved: number;
+            /** Expressions */
+            expressions: components["schemas"]["NumericExpression"][];
+            /** Items */
+            items: components["schemas"]["NumericReviewItem"][];
+            /**
+             * Semantic Status
+             * @default not_run
+             * @constant
+             */
+            semantic_status: "not_run";
+            /**
+             * Notice
+             * @default 이 기능은 계산 문구의 연결과 일치만 확인합니다. 원문 해석, 자유로운 문장의 의미와 보고서 품질은 미검수입니다. 검사 시점의 자료를 사용하므로 다른 창이나 앱에서 원문을 바꾸면 다시 검사해 주세요.
+             */
+            notice: string;
         };
         /** OkResponse */
         OkResponse: {
@@ -845,6 +2649,10 @@ export interface components {
              * @default []
              */
             lines: string[];
+            /** Runs */
+            runs?: components["schemas"]["TextRun"][];
+            /** Line Runs */
+            line_runs?: components["schemas"]["TextRun"][][];
         };
         /** Preset */
         Preset: {
@@ -859,6 +2667,7 @@ export interface components {
              * @default {
              *       "cover_title_pt": 28,
              *       "section_title_pt": 24,
+             *       "eyebrow_pt": 10.5,
              *       "title_pt": 20,
              *       "subtitle_pt": 14,
              *       "body_pt": 12,
@@ -876,7 +2685,18 @@ export interface components {
              *       "box_fill": "EEF3F9",
              *       "table_header_fill": "F2F2F2",
              *       "border": "D0D7E2",
-             *       "background": "FFFFFF"
+             *       "background": "FFFFFF",
+             *       "ink": "1B2A3A",
+             *       "ink_soft": "24384A",
+             *       "accent1": "0E8C7F",
+             *       "accent2": "C8860B",
+             *       "danger": "C0473B",
+             *       "ok": "2E9E5B",
+             *       "surface1": "EAF2F1",
+             *       "surface2": "F4F6F7",
+             *       "surface3": "FBF3E6",
+             *       "surface_danger": "FBEEEC",
+             *       "rule": "DCE3E5"
              *     }
              */
             colors: components["schemas"]["Colors"];
@@ -888,6 +2708,8 @@ export interface components {
              *       "margin_bottom": 34,
              *       "title_height": 40,
              *       "title_gap": 16,
+             *       "eyebrow_gap": 4,
+             *       "subtitle_gap": 6,
              *       "footnote_height": 24,
              *       "footnote_gap": 8,
              *       "box_height": 56,
@@ -900,6 +2722,10 @@ export interface components {
              *       "card_gap": 20,
              *       "card_heading_height": 24,
              *       "card_heading_gap": 8,
+             *       "card_badge_height": 16,
+             *       "card_badge_gap": 6,
+             *       "card_tail_height": 16,
+             *       "card_tail_gap": 8,
              *       "cover_indent": 30,
              *       "table_min_col_width": 60,
              *       "table_cell_pad_x": 6,
@@ -908,7 +2734,22 @@ export interface components {
              *       "page_number_height": 16,
              *       "page_number_bottom": 28,
              *       "safety_ratio": 0.97,
-             *       "border_width_pt": 0.75
+             *       "border_width_pt": 0.75,
+             *       "callout_height": 84,
+             *       "callout_radius_pt": 12,
+             *       "process_row_gap": 12,
+             *       "process_badge_size": 28,
+             *       "process_badge_gap": 16,
+             *       "process_heading_height": 20,
+             *       "process_subtitle_gap": 4,
+             *       "process_label_width": 140,
+             *       "process_label_gap": 16,
+             *       "process_label_height": 14,
+             *       "matrix_row_gap": 12,
+             *       "matrix_category_width": 140,
+             *       "matrix_category_gap": 16,
+             *       "matrix_items_width": 220,
+             *       "matrix_items_gap": 16
              *     }
              */
             spacing: components["schemas"]["Spacing"];
@@ -935,6 +2776,41 @@ export interface components {
              */
             language: string;
         };
+        /**
+         * ProcessSlots
+         * @description 번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
+         *     실제 형태다. cards와 같은 이유로 결론과 각주에 대응하는 자리가 없다: 단계 나열 자체가
+         *     내용이라 공통 결론이 필수가 아니다.
+         */
+        ProcessSlots: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            template: "process";
+            /** Steps */
+            steps: components["schemas"]["ProcessStep"][];
+        };
+        /**
+         * ProcessStep
+         * @description 번호 단계 하나 (2026-09-07 DB-3). 번호는 데이터에 두지 않고 렌더 순서(자동 채번)에서
+         *     나온다: 장 제목이 슬롯이 아니라 구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
+         *     subtitle과 notes는 선택이라 없으면 그 자리를 차지하지 않는다(cards의 badge/tail과 같은 규칙).
+         */
+        ProcessStep: {
+            /** Heading */
+            heading: string;
+            /**
+             * Subtitle
+             * @default
+             */
+            subtitle: string;
+            /**
+             * Notes
+             * @default []
+             */
+            notes: string[];
+        };
         /** ProjectInfo */
         ProjectInfo: {
             /** Name */
@@ -949,6 +2825,109 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "needs_recovery";
+        };
+        /** ProviderSettings */
+        ProviderSettings: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "claude" | "chatgpt";
+            /** Label */
+            label: string;
+            login: components["schemas"]["LoginStatus"];
+            /** Models */
+            models: components["schemas"]["ModelOption"][];
+            /** Models Error */
+            models_error?: string | null;
+            login_attempt: components["schemas"]["LoginAttempt"];
+        };
+        /** QualificationRequest */
+        QualificationRequest: {
+            /** Expected Input Fingerprint */
+            expected_input_fingerprint: string;
+            /** Expected Artifact Sha256 */
+            expected_artifact_sha256: string;
+        };
+        /** QualityCheck */
+        QualityCheck: {
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "not_run";
+            /** Evaluated */
+            evaluated: number;
+            /** Failed */
+            failed: number;
+            /** Detail */
+            detail: string;
+            /** Chapter Ids */
+            chapter_ids?: string[];
+        };
+        /** QualityReport */
+        QualityReport: {
+            /**
+             * Gate Version
+             * @default preflight-v2
+             * @enum {string}
+             */
+            gate_version: "preflight-v1" | "preflight-v2";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "needs_revision";
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /** Artifact Sha256 */
+            artifact_sha256?: string | null;
+            /** Slide Count */
+            slide_count: number;
+            /** Draft Export Allowed */
+            draft_export_allowed: boolean;
+            /**
+             * Final Export Allowed
+             * @default false
+             * @constant
+             */
+            final_export_allowed: false;
+            /** Checks */
+            checks: components["schemas"]["QualityCheck"][];
+            numeric_review?: components["schemas"]["NumericReviewReport"] | null;
+            /**
+             * Notice
+             * @default 사전 점검 결과입니다. 내용 정확성, 보고 흐름, 시각 품질과 PowerPoint 표시는 아직 검수하지 않았습니다.
+             */
+            notice: string;
+        };
+        /** ReconcileDiagramRequest */
+        ReconcileDiagramRequest: {
+            deck: components["schemas"]["Deck"];
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "answer" | "context" | "evidence" | "risk" | "action" | "cover" | "divider";
+            /** Claim Ids */
+            claim_ids: string[];
+        };
+        /** RenderPage */
+        RenderPage: {
+            /** Page */
+            page: number;
+            /** Filename */
+            filename: string;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /** RenderPlan */
         RenderPlan: {
@@ -992,12 +2971,178 @@ export interface components {
             /** Bullet Font */
             bullet_font: string;
         };
+        /** RepairFinding */
+        RepairFinding: {
+            /** Code */
+            code: string;
+            /** Target */
+            target: string;
+            /** Message */
+            message: string;
+        };
+        /** ReportBrief */
+        ReportBrief: {
+            /** Decision Question */
+            decision_question: string;
+            /**
+             * Audience
+             * @default
+             */
+            audience: string;
+            /**
+             * Report Type
+             * @default research
+             * @enum {string}
+             */
+            report_type: "research" | "approval" | "strategy";
+            /**
+             * Reading Profile
+             * @default 미지정
+             */
+            reading_profile: string;
+            /**
+             * Constraints
+             * @default []
+             */
+            constraints: string[];
+        };
+        /** ReviewFinding */
+        ReviewFinding: {
+            /** Code */
+            code: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "critical" | "major" | "minor";
+            /** Pages */
+            pages: number[];
+            /** Note */
+            note: string;
+            /** Resolved */
+            resolved: boolean;
+        };
+        /** ReviewVerdict */
+        ReviewVerdict: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "narrative" | "evidence" | "representation" | "visual" | "target_renderer";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "needs_revision";
+            /** Note */
+            note: string;
+        };
+        /**
+         * RewriteReview
+         * @description 재작성 당시 보존한 본문 기록. 후속 편집의 검수 승인 원장이 아니다.
+         */
+        RewriteReview: {
+            /** Source Plan Fingerprint */
+            source_plan_fingerprint: string;
+            /** Preserved Chapter Ids */
+            preserved_chapter_ids: string[];
+        };
+        /** RewriteStoryRequest */
+        RewriteStoryRequest: {
+            brief: components["schemas"]["ReportBrief"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** SemanticRelatedText */
+        SemanticRelatedText: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Path */
+            path: string;
+            /** Text */
+            text: string;
+        };
+        /** SemanticSuspect */
+        SemanticSuspect: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "unregistered_comparison" | "unregistered_formula" | "calculated_direction_mismatch" | "summary_direction_conflict";
+            /** Chapter Id */
+            chapter_id: string;
+            /** Path */
+            path: string;
+            /** Text */
+            text: string;
+            /** Signal */
+            signal: string;
+            /** Message */
+            message: string;
+            /** Claim Ids */
+            claim_ids: string[];
+            /** Comparison Ids */
+            comparison_ids: string[];
+            /** Derivation Ids */
+            derivation_ids: string[];
+            /** Related Texts */
+            related_texts?: components["schemas"]["SemanticRelatedText"][];
+        };
+        /** SemanticSuspectReport */
+        SemanticSuspectReport: {
+            /**
+             * Rule Version
+             * @default semantic-suspect-v1
+             * @constant
+             */
+            rule_version: "semantic-suspect-v1";
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "not_run" | "needs_review" | "no_signals_detected";
+            /**
+             * Semantic Status
+             * @default not_run
+             * @constant
+             */
+            semantic_status: "not_run";
+            /** Reason */
+            reason?: ("missing_plan" | "stale_plan" | "invalid_plan" | "no_reviewable_fields" | "review_limit") | null;
+            /** Evaluated Fields */
+            evaluated_fields: number;
+            /** Findings */
+            findings: components["schemas"]["SemanticSuspect"][];
+            /**
+             * Scope Notice
+             * @default 정의한 문구 탐지에서 검토 후보를 찾습니다. 후보가 없어도 원문 의미와 요약 정합성 검수는 미수행입니다.
+             */
+            scope_notice: string;
+        };
         /** Slide */
         Slide: {
             /** Chapter Id */
             chapter_id: string;
+            /**
+             * Eyebrow
+             * @default
+             */
+            eyebrow: string;
+            /**
+             * Subtitle
+             * @default
+             */
+            subtitle: string;
             /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"];
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"] | components["schemas"]["DiagramSlots"];
+            chart?: components["schemas"]["ChartSpec"] | null;
+            /** Text Spans */
+            text_spans?: components["schemas"]["TextSpan"][];
         };
         /** SlidePlan */
         SlidePlan: {
@@ -1012,6 +3157,7 @@ export interface components {
              * @default []
              */
             warnings: components["schemas"]["CapacityWarning"][];
+            diagram?: components["schemas"]["DiagramPagePlan"] | null;
         };
         /** SnapshotInfo */
         SnapshotInfo: {
@@ -1019,6 +3165,16 @@ export interface components {
             id: string;
             /** Saved At */
             saved_at: string;
+        };
+        /**
+         * SourceLocator
+         * @description sources/에 저장된 추출 텍스트의 1부터 시작하는 행 범위 (양끝 포함).
+         */
+        SourceLocator: {
+            /** Line Start */
+            line_start: number;
+            /** Line End */
+            line_end: number;
         };
         /** SourceText */
         SourceText: {
@@ -1057,6 +3213,16 @@ export interface components {
              * @default 16
              */
             title_gap: number;
+            /**
+             * Eyebrow Gap
+             * @default 4
+             */
+            eyebrow_gap: number;
+            /**
+             * Subtitle Gap
+             * @default 6
+             */
+            subtitle_gap: number;
             /**
              * Footnote Height
              * @default 24
@@ -1118,6 +3284,26 @@ export interface components {
              */
             card_heading_gap: number;
             /**
+             * Card Badge Height
+             * @default 16
+             */
+            card_badge_height: number;
+            /**
+             * Card Badge Gap
+             * @default 6
+             */
+            card_badge_gap: number;
+            /**
+             * Card Tail Height
+             * @default 16
+             */
+            card_tail_height: number;
+            /**
+             * Card Tail Gap
+             * @default 8
+             */
+            card_tail_gap: number;
+            /**
              * Cover Indent
              * @default 30
              */
@@ -1162,6 +3348,231 @@ export interface components {
              * @default 0.75
              */
             border_width_pt: number;
+            /**
+             * Callout Height
+             * @default 84
+             */
+            callout_height: number;
+            /**
+             * Callout Radius Pt
+             * @default 12
+             */
+            callout_radius_pt: number;
+            /**
+             * Process Row Gap
+             * @default 12
+             */
+            process_row_gap: number;
+            /**
+             * Process Badge Size
+             * @default 28
+             */
+            process_badge_size: number;
+            /**
+             * Process Badge Gap
+             * @default 16
+             */
+            process_badge_gap: number;
+            /**
+             * Process Heading Height
+             * @default 20
+             */
+            process_heading_height: number;
+            /**
+             * Process Subtitle Gap
+             * @default 4
+             */
+            process_subtitle_gap: number;
+            /**
+             * Process Label Width
+             * @default 140
+             */
+            process_label_width: number;
+            /**
+             * Process Label Gap
+             * @default 16
+             */
+            process_label_gap: number;
+            /**
+             * Process Label Height
+             * @default 14
+             */
+            process_label_height: number;
+            /**
+             * Matrix Row Gap
+             * @default 12
+             */
+            matrix_row_gap: number;
+            /**
+             * Matrix Category Width
+             * @default 140
+             */
+            matrix_category_width: number;
+            /**
+             * Matrix Category Gap
+             * @default 16
+             */
+            matrix_category_gap: number;
+            /**
+             * Matrix Items Width
+             * @default 220
+             */
+            matrix_items_width: number;
+            /**
+             * Matrix Items Gap
+             * @default 16
+             */
+            matrix_items_gap: number;
+        };
+        /** StoryChapter */
+        StoryChapter: {
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "answer" | "context" | "evidence" | "risk" | "action" | "cover" | "divider";
+            /** Claim Ids */
+            claim_ids: string[];
+        };
+        /** StoryPlan */
+        StoryPlan: {
+            /**
+             * Version
+             * @default q2a-v1
+             * @enum {string}
+             */
+            version: "q2a-v1" | "q2b-v1" | "q2c-v1" | "q2e-v1";
+            brief: components["schemas"]["ReportBrief"];
+            /** Evidence */
+            evidence: components["schemas"]["Evidence"][];
+            /** Claims */
+            claims: components["schemas"]["Claim"][];
+            /** Answer Claim Ids */
+            answer_claim_ids: string[];
+            /** Chapters */
+            chapters: components["schemas"]["StoryChapter"][];
+            /** Unanswered Questions */
+            unanswered_questions: string[];
+            /**
+             * Comparisons
+             * @default []
+             */
+            comparisons: components["schemas"]["EvidenceComparison"][];
+            /**
+             * Comparison Results
+             * @default []
+             */
+            comparison_results: components["schemas"]["ComparisonAssessment"][];
+            /**
+             * Derivations
+             * @default []
+             */
+            derivations: components["schemas"]["Derivation"][];
+            /**
+             * Derived Values
+             * @default []
+             */
+            derived_values: components["schemas"]["DerivedValue"][];
+            /** Input Fingerprint */
+            input_fingerprint: string;
+            rewrite_review?: components["schemas"]["RewriteReview"] | null;
+        };
+        /** StoryRepairRequest */
+        StoryRepairRequest: {
+            brief: components["schemas"]["ReportBrief"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            /** Findings */
+            findings: components["schemas"]["RepairFinding"][];
+            /** Max Calls */
+            max_calls: number;
+            /** Max Rounds */
+            max_rounds: number;
+            /** Max Seconds */
+            max_seconds: number;
+            /** Max Cost Usd */
+            max_cost_usd?: string | null;
+        };
+        /** StoryRepairResult */
+        StoryRepairResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "needs_revision" | "reviewed_candidate" | "stopped";
+            deck: components["schemas"]["Deck"] | null;
+            /** Findings */
+            findings: components["schemas"]["RepairFinding"][];
+            /** Reason */
+            reason: string | null;
+            /** Base Etag */
+            base_etag: string;
+            /** Sources Fingerprint */
+            sources_fingerprint: string;
+            /** Calls */
+            calls: number;
+            /** Review Calls */
+            review_calls: number;
+            /** Rounds */
+            rounds: number;
+            /** Cost Usd */
+            cost_usd: string | null;
+            /** Unmeasured Calls */
+            unmeasured_calls: number;
+            usage: components["schemas"]["GenerationUsage"];
+            /** Review Notes */
+            review_notes: string[];
+            /**
+             * Submission Approved
+             * @default false
+             * @constant
+             */
+            submission_approved: false;
+            /**
+             * Notice
+             * @default 별도 AI 재검수의 후보입니다. 본문·원문 의미·PowerPoint·독자 검수와 제출 승인으로 사용하지 마세요.
+             */
+            notice: string;
+        };
+        /** StoryRewriteResult */
+        StoryRewriteResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "format_error";
+            deck?: components["schemas"]["Deck"] | null;
+            /**
+             * Base Etag
+             * @default
+             */
+            base_etag: string;
+            /**
+             * Sources Fingerprint
+             * @default
+             */
+            sources_fingerprint: string;
+            /**
+             * Raw Text
+             * @default
+             */
+            raw_text: string;
+            /**
+             * Unverified Numbers
+             * @default []
+             */
+            unverified_numbers: string[];
+            /**
+             * Format Retried
+             * @default false
+             */
+            format_retried: boolean;
+            usage: components["schemas"]["GenerationUsage"];
         };
         /** Structure */
         Structure: {
@@ -1170,6 +3581,7 @@ export interface components {
              * @default []
              */
             chapters: components["schemas"]["Chapter"][];
+            story_plan?: components["schemas"]["StoryPlan"] | null;
         };
         /** StructureResult */
         StructureResult: {
@@ -1235,6 +3647,16 @@ export interface components {
              * @default []
              */
             cell_lines: string[][][];
+            /**
+             * Header Fills
+             * @default []
+             */
+            header_fills: string[];
+            /**
+             * Body Fills
+             * @default []
+             */
+            body_fills: string[];
         };
         /** TableSlots */
         TableSlots: {
@@ -1252,6 +3674,78 @@ export interface components {
              * @default
              */
             footnote: string;
+        };
+        /** TextRun */
+        TextRun: {
+            /** Text */
+            text: string;
+            /** Bold */
+            bold: boolean;
+            /** Color */
+            color: string;
+        };
+        /** TextSpan */
+        TextSpan: {
+            /**
+             * Slot
+             * @enum {string}
+             */
+            slot: "eyebrow" | "subtitle" | "text" | "conclusion" | "bullets";
+            /** Index */
+            index?: number | null;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "bold" | "accent";
+            /** Text Sha256 */
+            text_sha256: string;
+        };
+        /** UnitConversion */
+        UnitConversion: {
+            /**
+             * Rule Version
+             * @default unit-scale-v1
+             * @constant
+             */
+            rule_version: "unit-scale-v1";
+            /** Evidence Id */
+            evidence_id: string;
+            /** Original Value */
+            original_value: string;
+            /**
+             * Original Unit
+             * @enum {string}
+             */
+            original_unit: "원" | "천원" | "만원" | "백만원" | "억원" | "명" | "천명" | "건" | "천건";
+            /**
+             * Target Unit
+             * @enum {string}
+             */
+            target_unit: "원" | "천원" | "만원" | "백만원" | "억원" | "명" | "천명" | "건" | "천건";
+            /** Factor Numerator */
+            factor_numerator: string;
+            /** Factor Denominator */
+            factor_denominator: string;
+            /** Normalized Value */
+            normalized_value: string;
+        };
+        /** UnitNormalization */
+        UnitNormalization: {
+            /**
+             * Rule Version
+             * @constant
+             */
+            rule_version: "unit-scale-v1";
+            /**
+             * Target Unit
+             * @enum {string}
+             */
+            target_unit: "원" | "천원" | "만원" | "백만원" | "억원" | "명" | "천명" | "건" | "천건";
         };
         /** UploadResult */
         UploadResult: {
@@ -1559,6 +4053,41 @@ export interface operations {
             };
         };
     };
+    measure_project_deck_api_projects__name__render_plan_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Deck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenderPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     measure_deck_api_render_plan_post: {
         parameters: {
             query?: never;
@@ -1592,9 +4121,344 @@ export interface operations {
             };
         };
     };
-    export_project_api_projects__name__export_post: {
+    reconcile_diagram_api_projects__name__story_plan_diagram_post: {
         parameters: {
             query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReconcileDiagramRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_document_change_basis_api_projects__name__document_changes_basis_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChangeBasis"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_document_api_projects__name__document_changes_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChangePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_document_api_projects__name__document_changes_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentChangeApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_migration_api_projects__name__evidence_migrations_preview_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceMigrationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChangePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_migration_api_projects__name__evidence_migrations_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EvidenceMigrationApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_story_rewrite_api_projects__name__story_plan_rewrite_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+                "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RewriteStoryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryRewriteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyStoryRewriteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_story_repair_api_projects__name__story_plan_repair_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+                "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoryRepairRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryRepairResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_project_api_projects__name__export_post: {
+        parameters: {
+            query?: {
+                final?: boolean;
+            };
             header?: never;
             path: {
                 name: string;
@@ -1610,6 +4474,288 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_export_history_api_projects__name__exports_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportHistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_export_history_api_projects__name__exports__export_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportHistoryDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_export_reviews_api_projects__name__exports__export_id__reviews_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportReviews"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_export_review_api_projects__name__exports__export_id__reviews_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportReviews"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_qualification_api_projects__name__exports__export_id__qualification_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportQualification"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_native_render_api_projects__name__exports__export_id__render_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QualificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportQualification"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_independent_review_api_projects__name__exports__export_id__independent_reviews_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndependentReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportQualification"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_final_publication_api_projects__name__exports__export_id__publish_final_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QualificationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinalPublication"];
                 };
             };
             /** @description Validation Error */
@@ -1790,6 +4936,26 @@ export interface operations {
             };
         };
     };
+    get_health_api_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_status_api_status_get: {
         parameters: {
             query?: never;
@@ -1810,11 +4976,267 @@ export interface operations {
             };
         };
     };
+    get_ai_settings_api_ai_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AISettings"];
+                };
+            };
+        };
+    };
+    select_ai_api_ai_selection_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AISelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AISelection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ai_login_api_ai_providers__provider_id__login_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: "claude" | "chatgpt";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginAttempt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_ai_login_api_ai_providers__provider_id__login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: "claude" | "chatgpt";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginAttempt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_ai_login_api_ai_providers__provider_id__login_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: "claude" | "chatgpt";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginAttempt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_numbers_api_projects__name__review_numbers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Deck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NumericReviewReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_semantics_api_projects__name__review_semantics_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Deck"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SemanticSuspectReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_diagram_api_projects__name__generate_diagram_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+                "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateDiagramRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagramGenerationResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_structure_api_projects__name__generate_structure_post: {
         parameters: {
             query?: never;
             header?: {
                 "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
             };
             path: {
                 name: string;
@@ -1852,6 +5274,7 @@ export interface operations {
             query?: never;
             header?: {
                 "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
             };
             path: {
                 name: string;
@@ -1890,6 +5313,7 @@ export interface operations {
             query?: never;
             header?: {
                 "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
             };
             path: {
                 name: string;

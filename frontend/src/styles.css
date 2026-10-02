@@ -11,7 +11,18 @@ button { cursor: pointer; }
 .inline-editor { position: absolute; left: 10%; top: 40%; width: 80%; min-height: 60px; font: inherit; }
 .preview-canvas.stale { opacity: 0.55; }  /* 낡은 계획: 새 계획이 올 때까지 편집이 열리지 않는다 */
 
-.editor-screen { display: grid; grid-template-columns: 220px 1fr 280px; gap: 12px; }
+/* 캔버스의 논리 폭이 가운데 열의 최소 폭이 되어 속성 패널을 화면 밖으로 밀지 않게 한다. */
+.editor-screen { display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; gap: 12px; }
+.editor-center { min-width: 0; }
+/* 좁은 화면에서는 고정 폭 양쪽 패널이 미리보기 폭을 0으로 만들지 않도록 세 영역을 쌓는다. */
+@media (max-width: 1000px) {
+  .editor-screen { grid-template-columns: minmax(0, 1fr); }
+  .editor-left, .editor-right { min-width: 0; overflow-wrap: anywhere; }
+  .editor-left .chapter-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0 0 8px; }
+  .editor-left .chapter-list li { flex: 0 1 220px; min-width: 0; max-width: 100%; }
+  .editor-left .chapter-list button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  .editor-right { padding-top: 12px; border-top: 1px solid #d5dde5; }
+}
 .warn-badge { color: #B00020; }
 
 /* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다
@@ -38,12 +49,129 @@ button { cursor: pointer; }
 /* 프로젝트 목록 상단의 AI 연결 상태 한 줄 (파일럿 관찰 5. 2026-09-01) */
 .project-list .ai-status { color: #4A5560; font-size: 0.95em; }
 
+.ai-settings { margin: 12px 0 20px; max-width: 760px; }
+.ai-settings-body { margin-top: 10px; padding: 20px; border: 1px solid #CCD6DF; border-radius: 10px; background: #F8FAFC; }
+.ai-settings-body h2 { margin-top: 0; }
+.ai-settings-body fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.ai-settings-body legend { font-weight: 600; }
+.ai-settings-body select { min-height: 36px; background: white; }
+.ai-settings-body button, .ai-settings > button { min-height: 34px; padding: 6px 12px; }
+.ai-settings-body p { line-height: 1.6; }
+.ai-settings-body a { color: #174B76; overflow-wrap: anywhere; }
+.ai-login-link { display: inline-block; padding: 8px 12px; background: #DFECF7; border-radius: 5px; }
+@media (max-width: 600px) { .ai-settings-body { padding: 14px; } }
+
 /* AI 전송 고지 대화 상자: 화면 전체를 덮는 오버레이로 뒤 화면의 클릭을 막는다 (계획서 B3, 가정 5) */
 .ai-consent-overlay {
   position: fixed; inset: 0; background: rgba(32, 32, 32, 0.5);
-  display: flex; align-items: center; justify-content: center; z-index: 100;
+  display: flex; align-items: center; justify-content: center; z-index: 120;
 }
 .ai-consent-dialog {
   background: #FFFFFF; border-radius: 8px; padding: 20px; max-width: 560px; width: 90%;
+  box-sizing: border-box; max-height: calc(100dvh - 32px); overflow-y: auto;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 }
+.numeric-review { margin-block: 1rem; padding-block: .75rem; border-block: 1px solid #d4dbe4; }
+.numeric-review p { font-size: .875rem; line-height: 1.55; }
+.numeric-review details { margin-block: .75rem; }
+.numeric-review summary { cursor: pointer; }
+.numeric-review ul { padding-left: 1.25rem; }
+.numeric-review li { margin-block: .75rem; }
+.numeric-review-text { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f6fa; padding: .5rem; border-radius: .25rem; }
+.numeric-review-notice { color: #475569; }
+.export-quality { margin-block: 1rem; padding-block: .75rem; border-block: 1px solid #ccd5d0; overflow-wrap: anywhere; }
+.export-quality p { font-size: .875rem; line-height: 1.55; }
+.export-quality summary { cursor: pointer; }
+.export-quality-table { overflow-x: auto; margin-top: .75rem; }
+.export-quality-table table { width: 100%; max-width: 640px; border-collapse: collapse; font-size: .875rem; }
+.export-quality-table th, .export-quality-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #e0e5e2; }
+.export-quality-table thead { background: #edf3ef; }
+.export-quality-table th { font-weight: 600; }
+.export-quality ul { padding-left: 1.25rem; }
+.export-history { margin: 1.5rem 0; max-width: 72rem; }
+.export-history-heading, .export-history-pagination { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.export-history-heading h2 { margin: 0; flex: 1; }
+.export-history-list { list-style: none; padding: 0; }
+.export-history-list > li { padding: 1rem 0; border-bottom: 1px solid #d0d7e2; }
+.export-history-list button, .export-history-detail h3 { overflow-wrap: anywhere; max-width: 100%; text-align: left; }
+.export-history-states { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.export-history-states span { background: #eef3f9; color: #202020; border-radius: .25rem; padding: .25rem .5rem; }
+.export-history-meta { color: #526071; font-size: .9rem; }
+.export-history-detail { margin-top: 1.5rem; padding: 1rem; border: 1px solid #d0d7e2; border-radius: .4rem; overflow-wrap: anywhere; }
+.review-records { margin-top: 1.5rem; border-top: 1px solid #d0d7e2; padding-top: 1rem; min-width: 0; }
+.review-records h4, .review-records h5 { margin: .5rem 0; font-size: 1rem; }
+.review-records p { line-height: 1.55; }
+.review-records fieldset { min-width: 0; margin: 1rem 0; border: 1px solid #d0d7e2; border-radius: .3rem; }
+.review-records legend { font-weight: 600; }
+.review-currentness { padding: .75rem; background: #eef3f9; border-radius: .3rem; }
+.review-category-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.review-category-list > li { padding: .75rem; border: 1px solid #d0d7e2; border-radius: .3rem; }
+.review-record-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-history { margin: 1rem 0; }
+.review-history summary { cursor: pointer; }
+.review-history li { padding: .5rem 0; border-bottom: 1px solid #d0d7e2; }
+.review-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; max-width: 640px; }
+.review-pages > div { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
+.review-pages label { display: inline-flex; align-items: center; gap: .25rem; min-height: 2rem; }
+@media (max-width: 600px) {
+  .review-category-list, .review-form-grid { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+  .review-records fieldset { margin-inline: 0; padding: .75rem; }
+}
+
+.diagram-authoring-overlay {
+  position: fixed; inset: 0; z-index: 110; background: #20202099;
+  display: flex; align-items: center; justify-content: center;
+}
+.diagram-authoring-dialog {
+  display: flex; flex-direction: column; width: min(1200px, 96vw); max-height: 94dvh;
+  background: #fff; border-radius: 10px; box-shadow: 0 8px 32px #0004;
+}
+.diagram-authoring-dialog header { padding: 16px 24px 8px; border-bottom: 1px solid #d5dde5; }
+.diagram-authoring-dialog h2 { margin: 0; }
+.diagram-authoring-dialog p { line-height: 1.5; }
+.diagram-authoring-columns {
+  display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  gap: 24px; padding: 16px 24px; overflow: auto; min-height: 0;
+}
+.diagram-authoring-fields, .diagram-authoring-check { min-width: 0; }
+.diagram-authoring-check { position: sticky; top: 0; align-self: start; }
+.diagram-authoring-check.is-recovering { position: static; }
+.diagram-review-preview { position: relative; }
+.diagram-review-preview .preview-holder { position: absolute; inset: 0; }
+.diagram-authoring-check [role="alert"] { white-space: pre-line; overflow-wrap: anywhere; }
+.diagram-authoring-dialog footer { padding: 12px 24px; margin: 0; border-top: 1px solid #d5dde5; }
+.diagram-authoring-dialog button { padding: 7px 12px; }
+.diagram-item { border: 1px solid #ccd5df; border-radius: 6px; min-width: 0; margin: 12px 0; padding: 12px; }
+.diagram-item legend { font-weight: 600; }
+.diagram-item .field textarea { min-height: 64px; }
+.diagram-select-row { display: flex; gap: 12px; }
+.diagram-select-row label { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.diagram-select-row select { width: 100%; min-width: 0; font: inherit; }
+.diagram-story-claim { display: block; margin: 8px 0; overflow-wrap: anywhere; }
+.diagram-story-claim .hint { display: block; margin-left: 22px; }
+.diagram-evidence { margin: 12px 0; font-size: .875rem; }
+.diagram-evidence summary { cursor: pointer; }
+.diagram-evidence label { display: block; padding: 8px; border-bottom: 1px solid #e2e7ee; overflow-wrap: anywhere; }
+.diagram-excerpt { display: block; white-space: pre-wrap; margin: 6px 0 0 22px; color: #435369; }
+.diagram-ai-draft { margin: 20px 0; padding: 16px; border: 1px solid #bbccdf; border-radius: 8px; background: #f4f8fc; overflow-wrap: anywhere; }
+.diagram-ai-draft h3 { margin-top: 0; }
+.diagram-ai-draft [role="alert"] { white-space: pre-line; }
+.diagram-ai-draft pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.diagram-ai-candidate { margin: 16px 0; padding: 12px; background: #fff; border: 1px solid #d5dde5; border-radius: 6px; }
+.diagram-ai-candidate h4, .diagram-ai-candidate h5 { margin: 8px 0; font-size: 1rem; }
+.diagram-ai-candidate ol { padding-left: 20px; }
+.diagram-ai-candidate ol > li { padding-bottom: 12px; border-bottom: 1px solid #e2e7ee; }
+.diagram-candidate-evidence { padding-left: 16px; font-size: .875rem; }
+.diagram-candidate-evidence blockquote { margin: 6px 0; white-space: pre-wrap; color: #435369; }
+@media (max-width: 850px) {
+  .diagram-authoring-columns { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .diagram-authoring-check { position: static; }
+  .diagram-authoring-dialog header, .diagram-authoring-dialog footer { padding: 12px; }
+}
+.structure-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.structure-table-scroll { max-width: 100%; overflow-x: auto; }
+.story-rewrite { margin-top: 24px; padding: 20px; border: 1px solid #d2dce2; border-radius: 8px; }
+.story-rewrite h2 { word-break: keep-all; }
+.story-rewrite > label { display: block; margin: 12px 0; }
+.story-rewrite > label input, .story-rewrite > label textarea { display: block; width: 100%; box-sizing: border-box; }
+.story-rewrite section[aria-label="재작성 후보"] > label { display: block; margin: 16px 0; }
