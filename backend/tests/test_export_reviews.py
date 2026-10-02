@@ -184,7 +184,7 @@ def test_unverifiable_export_is_readable_but_cannot_record(client, store, kind):
 
 
 @pytest.mark.parametrize("damage", ["json", "unknown_version", "identity", "duplicate_key", "symlink", "directory"])
-def test_damaged_latest_record_never_revives_older_pass(client, store, tmp_path, damage):
+def test_damaged_latest_record_never_revives_older_pass(client, store, tmp_path, damage, symlink_or_skip):
     exported = publish(client, store)
     basis = client.get(url(exported)).json()
     assert record(client, exported, basis).status_code == 200
@@ -205,7 +205,7 @@ def test_damaged_latest_record_never_revives_older_pass(client, store, tmp_path,
         else:
             outside = tmp_path / "private.json"
             outside.write_text("PRIVATE RECORD", encoding="utf-8")
-            target.symlink_to(outside)
+            symlink_or_skip(target, outside)
     response = client.get(url(exported))
     assert response.status_code == 200 and "PRIVATE RECORD" not in response.text
     data = response.json()
@@ -252,7 +252,7 @@ def test_concurrent_stores_append_distinct_sequences_without_overwrite(client, s
 
 
 @pytest.mark.parametrize("component", ["lock", "exports", "artifact", "quality"])
-def test_review_writes_never_follow_symlinks(client, store, tmp_path, component):
+def test_review_writes_never_follow_symlinks(client, store, tmp_path, component, symlink_or_skip):
     exported = publish(client, store)
     basis = client.get(url(exported)).json()
     directory = Path(exported["path"]).parent
@@ -262,12 +262,12 @@ def test_review_writes_never_follow_symlinks(client, store, tmp_path, component)
     protected.write_text("PRIVATE BYTES", encoding="utf-8")
     if component == "exports":
         directory.rename(directory.with_name("original-exports"))
-        directory.symlink_to(outside, target_is_directory=True)
+        symlink_or_skip(directory, outside, target_is_directory=True)
     else:
         target = {"lock": directory / ".slidecaptain-export.lock", "artifact": Path(exported["path"]),
                   "quality": Path(exported["quality_path"])}[component]
         target.unlink()
-        target.symlink_to(protected)
+        symlink_or_skip(target, protected)
     response = record(client, exported, basis)
     assert response.status_code in (409, 422)
     assert protected.read_text(encoding="utf-8") == "PRIVATE BYTES"

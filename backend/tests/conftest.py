@@ -17,6 +17,19 @@ from slidecaptain.storage.file_store import FileProjectStore
 
 
 @pytest.fixture
+def symlink_or_skip():
+    """Skip only Windows accounts without symbolic-link creation permission."""
+    def create(path, target, *, target_is_directory=False):
+        try:
+            path.symlink_to(target, target_is_directory=target_is_directory)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows account lacks symbolic-link creation permission (WinError 1314)")
+            raise
+    return create
+
+
+@pytest.fixture
 def store(tmp_path):
     return FileProjectStore(tmp_path / "projects")
 

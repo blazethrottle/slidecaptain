@@ -22,6 +22,11 @@ from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
 
 
+# Windows spawn imports the full application before signaling test events.
+# Allow for that startup without changing the production lock timeout.
+_PROCESS_TIMEOUT = 60 if os.name == "nt" else 15
+
+
 def _deck(text="Synthetic original"):
     return Deck(
         meta=DeckMeta(title="동시 내보내기"),
@@ -56,7 +61,7 @@ def _export_worker(root, out_dir, cli_path, kind, result, *, chosen=None, releas
         if chosen is not None:
             chosen.set()
         if release is not None and after_record is None:
-            assert release.wait(15), "publication release timed out"
+            assert release.wait(_PROCESS_TIMEOUT), "publication release timed out"
         return path
 
     def write(*args):
@@ -70,7 +75,7 @@ def _export_worker(root, out_dir, cli_path, kind, result, *, chosen=None, releas
         real_link(source, destination, **kwargs)
         if str(destination).endswith(".quality.json") and after_record is not None:
             after_record.set()
-            assert release.wait(15), "record release timed out"
+            assert release.wait(_PROCESS_TIMEOUT), "record release timed out"
 
     exporter._next_version_path = choose
     exporter.write_pptx = write
@@ -93,7 +98,7 @@ def _export_worker(root, out_dir, cli_path, kind, result, *, chosen=None, releas
 
 
 def _finish(process):
-    process.join(15)
+    process.join(_PROCESS_TIMEOUT)
     if process.is_alive():
         process.kill()
         process.join(5)
@@ -140,13 +145,13 @@ def test_web_and_cli_processes_serialize_version_selection(tmp_path, first_kind)
     try:
         first.start()
         processes.append(first)
-        assert chosen.wait(15)
+        assert chosen.wait(_PROCESS_TIMEOUT)
         second.start()
         processes.append(second)
-        assert second_rendered.wait(15)
+        assert second_rendered.wait(_PROCESS_TIMEOUT)
         assert not second_chosen.wait(0.3), "another process selected a version while publication was locked"
         release.set()
-        rows = [result.get(timeout=15) for _ in range(2)]
+        rows = [result.get(timeout=_PROCESS_TIMEOUT) for _ in range(2)]
         for process in processes:
             _finish(process)
     finally:
@@ -183,7 +188,7 @@ def test_failed_second_publication_in_web_process_preserves_version_for_cli(tmp_
                           kwargs={"fail_pptx": True})
     process.start()
     try:
-        row = result.get(timeout=15)
+        row = result.get(timeout=_PROCESS_TIMEOUT)
         _finish(process)
         assert row["status"] == 422, row
         assert isinstance(row["body"]["detail"], str)
@@ -213,7 +218,7 @@ def test_killed_export_process_releases_lock_without_reusing_orphan(tmp_path, ki
     process = ctx.Process(target=_export_worker, args=(root, out_dir, cli_path, "web", result), kwargs=kwargs)
     process.start()
     try:
-        assert reached.wait(15)
+        assert reached.wait(_PROCESS_TIMEOUT)
         process.kill()
         process.join(5)
         assert not process.is_alive()

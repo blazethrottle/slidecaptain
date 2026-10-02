@@ -198,13 +198,13 @@ def test_bad_record_ids_are_rejected(client, store, name):
 
 
 @pytest.mark.parametrize("component", ["pptx", "quality.json"])
-def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, component):
+def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, component, symlink_or_skip):
     exported = publish(client, store)
     path = Path(exported["path"] if component == "pptx" else exported["quality_path"])
     outside = tmp_path / "private.txt"
     outside.write_text("PRIVATE CONTENT", encoding="utf-8")
     path.unlink()
-    path.symlink_to(outside)
+    symlink_or_skip(path, outside)
     response = detail(client, exported)
     assert response.status_code == 200
     item = response.json()["item"]
@@ -213,11 +213,11 @@ def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, comp
     assert outside.read_text(encoding="utf-8") == "PRIVATE CONTENT"
 
 
-def test_exports_symlink_is_not_followed(client, store, tmp_path):
+def test_exports_symlink_is_not_followed(client, store, tmp_path, symlink_or_skip):
     setup_project(store)
     directory = store.exports_dir("synthetic")
     directory.rmdir()
-    directory.symlink_to(tmp_path, target_is_directory=True)
+    symlink_or_skip(directory, tmp_path, target_is_directory=True)
     assert client.get(BASE).status_code == 422
 
 

@@ -152,5 +152,7 @@ def test_command_script_passes_bash_syntax_check():
     bash = shutil.which("bash")
     if bash is None:
         pytest.skip("이 환경에 bash 실행 파일이 없다")
-    result = subprocess.run([bash, "-n", str(COMMAND_SCRIPT)], capture_output=True, text=True)
-    assert result.returncode == 0, f"bash -n 문법 검사 실패:\n{result.stderr}"
+    result = subprocess.run(
+        [bash, "-n"], input=COMMAND_SCRIPT.read_bytes(), capture_output=True,
+    )
+    assert result.returncode == 0, f"bash -n 문법 검사 실패:\n{result.stderr.decode('utf-8', errors='replace')}"
