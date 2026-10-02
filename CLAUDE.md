@@ -4,6 +4,10 @@
 
 ## 진본 문서 (작업 시작 전 필독)
 
+- 2026-10-02 개정판 전체 설계: `docs/design/2026-10-02-revision-product-ux.md`, `docs/architecture/2026-10-02-desktop-revision.md`, 화면 시안 `docs/design/2026-10-02-revision-wireframe.html`. 2026-10-02 사용자가 수정 시안을 검토하고 계속 진행을 지시했다. 현재 착수 단위는 `docs/plans/2026-10-02-revision-d1-technical-spike.md`의 D1 기술 검증/독립 앱 기반이다. Linux 구현/패키지 검증과 남은 양 OS 관문은 `docs/handoffs/2026-10-02-desktop-d1.md`가 최신 진본이다. IR Pitch Deck/10종의 서로 다른 대표 페이지, 유형 드롭다운, 원하는 결과 네 가지/기타 입력, 추천 상세 보기 제거와 캔버스 직접 수정(R16)을 시안에 반영했다. 직접 수정은 메모리 동작이며 제품의 저장/PPTX/AI 재생성 보존 계약은 D3의 후속이다. 이전 시안 산출물은 설계 자료이고 새 구현의 완료 범위는 D1 계획/결과로 관리한다. 기술 검증 D1의 계정 격리/정확 모델 조회/HWP/양 OS 패키징을 건너뛰지 않는다.
+
+- 2026-10-02 첫 Windows 사용 피드백 개정: `docs/plans/2026-10-02-windows-feedback-revision.md`. 15개 요구 중 보고 유형/주안점 입력/생성 실패 안내부터 구현한다. Windows/macOS 독립 앱은 동시 지원, Google은 Claude/ChatGPT 공식 로그인 경로를 뜻한다. 모델 추천은 사용자 지정 Claude 테스트 저장소 근거로 진행하며 ChatGPT 추천은 후속이다. 첨부 업무 원문은 공개 저장소에 복사하지 않는다.
+
 - 2026-10-02 Windows PowerPoint 검수 재개: `docs/qa/2026-10-02-windows-powerpoint-guide.md`. 현재 개발 브랜치 `codex/phase-5b`에서 `Windows검수준비.bat`로 합성 5개/15페이지와 JSON 피드백 양식을 준비한다. 기존 회사 프로젝트·인증정보·미커밋 변경을 보존하고 별도 포트 8870/검수 폴더를 사용한다. 이번 준비는 AI 호출 0회이며 사람 피드백을 서명 검수나 제출 승인으로 자동 승격하지 않는다.
 
 - 진행 상태, 아키텍처 결정, 이월 사항의 진본: `docs/plans/2026-08-27-mvp-roadmap.md` (단계 구성, 이월표, 방치 확정 문단까지 이 문서가 관리한다)

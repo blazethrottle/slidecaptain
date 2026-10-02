@@ -63,10 +63,14 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: 백엔드 설치
-        run: python -m pip install -c backend/requirements-release.txt -e "./backend[dev]"
+        run: python -m pip install -c backend/requirements-release.txt -e "./backend[dev,desktop]"
 
       - name: 프런트 설치
         working-directory: frontend
+        run: npm ci
+
+      - name: 독립 앱 설치
+        working-directory: desktop
         run: npm ci
 
       - name: 백엔드 테스트
@@ -84,6 +88,13 @@ jobs:
       - name: 생성 파일 무변경 확인
         run: git diff --exit-code -- backend/openapi.json frontend/src/api/types.ts
 
+      - name: 독립 앱 API 경로 일치 및 런타임 테스트
+        run: python scripts/check_desktop_routes.py
+
+      - name: 독립 앱 런타임 테스트
+        working-directory: desktop
+        run: npm test
+
       - name: 프런트 테스트
         working-directory: frontend
         run: npm test
@@ -91,6 +102,31 @@ jobs:
       - name: 화면 빌드
         working-directory: frontend
         run: npm run build
+
+      - name: 독립 서비스 패키징 및 실제 가져오기·저장·내보내기·재시작
+        shell: python
+        run: |
+          import os, subprocess, sys
+          from pathlib import Path
+          output = Path(os.environ['RUNNER_TEMP']) / 'slidecaptain-desktop-service'
+          subprocess.run([sys.executable, 'scripts/build_desktop_service.py', '--out-dir', str(output)], check=True)
+          service = output / 'slidecaptain-service' / ('slidecaptain-service.exe' if os.name == 'nt' else 'slidecaptain-service')
+          subprocess.run(['node', 'desktop/scripts/smoke-service.cjs', str(service)], check=True)
+
+      - name: 독립 앱 미서명 검증 패키지 구성
+        working-directory: desktop
+        env:
+          SLIDECAPTAIN_BACKEND_RESOURCE: ${{ runner.temp }}/slidecaptain-desktop-service/slidecaptain-service
+          SLIDECAPTAIN_DESKTOP_OUTPUT: ${{ runner.temp }}/slidecaptain-desktop-app
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run dist -- --dir
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-spike-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/slidecaptain-desktop-app/**
+            ${{ runner.temp }}/slidecaptain-desktop-service/desktop-build.json
 
       - name: 로컬 릴리스 패키지 빌드
         run: |

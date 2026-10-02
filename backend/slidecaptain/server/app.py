@@ -253,7 +253,15 @@ def create_app(
     static_dir: Path | None = None,
     login_checker: Callable[[], LoginStatus] | None = None,
     ai_connections: AIConnections | None = None,
+    desktop_session_token: str | None = None,
+    desktop_instance_id: str | None = None,
 ) -> FastAPI:
+    if desktop_session_token is not None or desktop_instance_id is not None:
+        if (not isinstance(desktop_session_token, str) or len(desktop_session_token) != 64
+                or any(c not in "0123456789abcdef" for c in desktop_session_token)
+                or not isinstance(desktop_instance_id, str) or len(desktop_instance_id) != 32
+                or any(c not in "0123456789abcdef" for c in desktop_instance_id)):
+            raise ValueError("Invalid desktop session configuration")
     @asynccontextmanager
     async def lifespan(app):
         yield
@@ -341,6 +349,11 @@ def create_app(
         나중에 add_middleware로 등록한 것이 먼저 실행되므로, 이 미들웨어는 TrustedHostMiddleware보다
         바깥에서 돈다: 나쁜 Host와 헤더 없음이 겹치면 이 403이 먼저 나간다.
         """
+        if desktop_session_token is not None:
+            supplied = request.headers.get("x-slidecaptain-session", "")
+            # Reject non-ASCII input before compare_digest (which accepts ASCII strings).
+            if not supplied.isascii() or not hmac.compare_digest(supplied, desktop_session_token):
+                return JSONResponse(status_code=403, content={"detail": "앱 실행 세션을 확인하지 못했습니다."})
         if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path.startswith("/api/"):
             if request.headers.get("x-requested-with") != _APP_HEADER_VALUE:
                 return JSONResponse(status_code=403, content={"detail": _PROTECTION_MESSAGE})
@@ -350,7 +363,7 @@ def create_app(
         response = await call_next(request)
         parts = request.url.path.split("/")
         is_history = len(parts) >= 5 and parts[1:3] == ["api", "projects"] and parts[4] == "exports"
-        if request.url.path == "/api/status" or request.url.path.startswith("/api/ai/") or is_history:
+        if desktop_session_token is not None or request.url.path == "/api/status" or request.url.path.startswith("/api/ai/") or is_history:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -970,11 +983,14 @@ def create_app(
     @app.get("/api/health")
     def get_health():
         # Launchers check app identity and UI readiness without invoking AI login.
-        return {
+        health = {
             "product": "slidecaptain",
             "version": __version__,
             "ui_ready": static_dir is not None and (static_dir / "index.html").is_file(),
         }
+        if desktop_instance_id is not None:
+            health["desktop_instance_id"] = desktop_instance_id
+        return health
 
     @app.get("/api/status", response_model=AppStatus)
     def get_status():

@@ -1,0 +1,239 @@
+[
+  {
+    "path": "/api/preset",
+    "methods": [
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/projects",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/deck",
+    "methods": [
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/snapshots",
+    "methods": [
+      "POST",
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/render-plan",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/render-plan",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/story-plan/diagram",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/document-changes/basis",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/document-changes/preview",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/document-changes/apply",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/evidence-migrations/preview",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/evidence-migrations/apply",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/story-plan/rewrite",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/story-plan/rewrite/apply",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/story-plan/repair",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/export",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}/reviews",
+    "methods": [
+      "GET",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}/qualification",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}/render",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}/independent-reviews",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/exports/{export_id}/publish-final",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/snapshots/{snapshot_id}/restore",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/sources",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/sources/{filename}",
+    "methods": [
+      "GET",
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/sources/{filename}/upload",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/health",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/status",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/ai/settings",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/ai/selection",
+    "methods": [
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/ai/providers/{provider_id}/login",
+    "methods": [
+      "POST",
+      "GET",
+      "DELETE"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/review/numbers",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/review/semantics",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/generate/diagram",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/generate/structure",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/generate/chapter/{chapter_id}",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
+    "methods": [
+      "POST"
+    ]
+  }
+]
