@@ -4,6 +4,7 @@
 
 ## 진본 문서 (작업 시작 전 필독)
 
+- 2026-10-08 macOS 재개: Mac Mini에서도 `feat/windows-feedback-revision`을 이어간다. D1의 macOS 빌드, 실행, 자식 정리 확인 결과는 `docs/handoffs/2026-10-02-desktop-d1.md`의 macOS 절에 있다. 패키지 앱을 시험할 때는 `SLIDECAPTAIN_DATA_DIR`를 별도 폴더로 지정해 사용자의 `~/slidecaptain-projects`를 건드리지 않는다.
 - 2026-10-02 Windows 개발 환경 재개: `docs/handoffs/2026-10-02-windows-dev-environment.md`. 회사 PC에서 `feat/windows-feedback-revision`을 이어갈 때 먼저 읽는다. Windows 로컬 백엔드 테스트는 `PYTHONUTF8=1`, 프런트 전체 테스트는 `npx vitest run --maxWorkers=4`로 실행해야 CI와 같은 기준선이 나온다. 아래 개정판 인계가 기능 상태의 진본이다.
 
 - 2026-10-02 개정판 전체 설계: `docs/design/2026-10-02-revision-product-ux.md`, `docs/architecture/2026-10-02-desktop-revision.md`, 화면 시안 `docs/design/2026-10-02-revision-wireframe.html`. 2026-10-02 사용자가 수정 시안을 검토하고 계속 진행을 지시했다. 현재 착수 단위는 `docs/plans/2026-10-02-revision-d1-technical-spike.md`의 D1 기술 검증/독립 앱 기반이다. Linux 구현/패키지 검증과 남은 양 OS 관문은 `docs/handoffs/2026-10-02-desktop-d1.md`가 최신 진본이다. IR Pitch Deck/10종의 서로 다른 대표 페이지, 유형 드롭다운, 원하는 결과 네 가지/기타 입력, 추천 상세 보기 제거와 캔버스 직접 수정(R16)을 시안에 반영했다. 직접 수정은 메모리 동작이며 제품의 저장/PPTX/AI 재생성 보존 계약은 D3의 후속이다. 이전 시안 산출물은 설계 자료이고 새 구현의 완료 범위는 D1 계획/결과로 관리한다. 기술 검증 D1의 계정 격리/정확 모델 조회/HWP/양 OS 패키징을 건너뛰지 않는다.
