@@ -876,12 +876,21 @@ export interface components {
             kind: string;
             /** Target */
             target: string | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "queued" | "running" | "cancel_requested";
+            /** Created At */
+            created_at: string;
             /** Cancel Requested */
             cancel_requested: boolean;
         };
         /** ActiveJobStatus */
         ActiveJobStatus: {
             active: components["schemas"]["ActiveJob"] | null;
+            /** Ledger Available */
+            ledger_available: boolean;
         };
         /** AppStatus */
         AppStatus: {

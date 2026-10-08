@@ -604,7 +604,21 @@ def create_app(
         취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다. 그래야 요청이 끝났을 때 임대가
         풀려 있다(지금 라우트와 같은 성질). 결과를 응답으로 돌려주는 라우트는 _deliver로 처분을 남긴다.
         """
-        row, handle, _ = await asyncio.to_thread(lambda: runner.start(build_spec()))
+        # 등록은 작업 스레드에서 돈다. 등록 중 요청이 취소돼도 등록을 끝까지 기다린 뒤 만들어진 작업에 취소를
+        # 보낸다. 그러지 않으면 응답받을 주체 없는 생성이 돌고 임대가 요청 뒤까지 남는다 (α 묶음 리뷰 A2)
+        registering = asyncio.ensure_future(asyncio.to_thread(lambda: runner.start(build_spec())))
+        try:
+            row, handle, _ = await asyncio.shield(registering)
+        except asyncio.CancelledError:
+            with anyio.CancelScope(shield=True):
+                try:
+                    _, started, _ = await registering
+                except Exception:
+                    started = None
+                if started is not None:
+                    await asyncio.to_thread(runner.cancel, started.job_id)
+                    await started.wait()
+            raise
         if handle is None:
             raise http_error_from(row)
         try:
@@ -1608,17 +1622,19 @@ def create_app(
         return await _deliver(handle, outcome.result)
 
     def _structure_spec(name: str, req: GenerateStructureRequest, selection_id: str | None,
-                        request_id: str) -> JobSpec:
+                        request_id: str, strict: bool = False) -> JobSpec:
         """구조안의 등록 검사와 작업 정의. 검사 순서는 종전 라우트와 같다 (계획서 5.4)."""
         deck, etag = store.load_deck_with_etag(name)
         if any(ch.template == "diagram" for ch in deck.structure.chapters):
             raise DiagramGenerationUnsupported()
         _require_current_selection(selection_id)
+        if strict:  # 작업 API는 자료 422를 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
+            _load_sources(name)
         revision = _sources_revision(name)
         provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
-            # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다
+            # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다(래퍼)
             sources = _load_sources(name)
             return await svc.generate_structure(
                 deck.meta, sources, req.target_chapters, req.instructions,
@@ -1659,7 +1675,7 @@ def create_app(
         _require_ai_consent(x_ai_consent)
         if req.kind == "structure":
             params = GenerateStructureRequest.model_validate(req.params.model_dump())
-            build = lambda: _structure_spec(name, params, x_ai_selection, req.request_id)
+            build = lambda: _structure_spec(name, params, x_ai_selection, req.request_id, strict=True)
             dumped = params.model_dump(mode="json")
         elif req.kind == "chapter":
             params = GenerateChapterRequest(instructions=req.params.instructions)
@@ -1690,6 +1706,7 @@ def create_app(
 
     @app.get("/api/projects/{name}/jobs", response_model=list[JobView])
     def list_jobs(name: str):
+        runner.require_ledger()  # 원장 없음은 빈 목록이 아니라 503이다 (α 묶음 리뷰 A14)
         return _job_views(_project_jobs(name))
 
     def _project_job(name: str, job_id: str) -> JobRow:
@@ -1719,7 +1736,7 @@ def create_app(
     @app.get("/api/jobs/active", response_model=ActiveJobStatus)
     def get_active_job():
         summary = runner.active_summary()
-        return ActiveJobStatus(active=ActiveJob(**summary) if summary else None)
+        return ActiveJobStatus(active=ActiveJob(**summary) if summary else None, ledger_available=ledger is not None)
 
     def _chapter_spec(name: str, chapter_id: str, req: GenerateChapterRequest, selection_id: str | None,
                       request_id: str, strict: bool = False) -> JobSpec:

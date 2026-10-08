@@ -474,7 +474,9 @@ def test_value_after_cancel_is_kept_as_a_held_candidate(store):
 def test_deck_saved_during_generation_makes_a_stale_candidate(store):
     _project(store)
     provider = GateProvider()
-    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+    # 상태 API가 실제 Claude CLI의 auth status를 띄우지 않게 로그인 확인을 대역으로 준다 (α 묶음 리뷰 A4)
+    app = create_app(store, provider=provider, login_checker=lambda: LoginStatus(logged_in=False))
+    with TestClient(app, headers=HEADERS) as client:
         job = _register(client).json()
         assert provider.entered.wait(5)
         deck = client.get("/api/projects/p1/deck")
@@ -652,3 +654,105 @@ def test_app_shutdown_closes_the_ledger_file(store):
         ledger = _runner(client).ledger
     with pytest.raises(sqlite3.ProgrammingError):
         ledger._conn.execute("SELECT 1")
+
+
+
+# α 묶음 리뷰 반영 (A2, A6, A7, A13, A14, D2b-2 RED 1)
+
+def test_result_written_by_one_app_is_read_by_the_next_app_on_the_same_folder(store):
+    # D2b-2 RED 1: 지금 코드는 결과를 응답으로만 돌려줘 서비스가 바뀌면 사라진다
+    _project(store)
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as first:
+        job = _register(first).json()
+        _wait(first, job["id"])
+    with TestClient(create_app(store, provider=GateProvider(), data_dir_lock="held"), headers=HEADERS) as second:
+        view = second.get(f"/api/projects/p1/jobs/{job['id']}").json()
+    assert view["state"] == "succeeded" and view["result"]["structure"]["chapters"][0]["topic"] == "표지"
+    assert view["owner"] == "other_instance"
+
+
+def test_wrapper_cancelled_during_registration_cancels_the_job(store, monkeypatch):
+    import httpx
+    _project(store)
+    provider = GateProvider()
+    app = create_app(store, provider=provider)
+    runner = app.state.job_runner
+    entered, resume = threading.Event(), threading.Event()
+    real_start = runner.start
+
+    def slow_start(spec):
+        entered.set()
+        assert resume.wait(5)
+        return real_start(spec)
+
+    monkeypatch.setattr(runner, "start", slow_start)
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
+            task = asyncio.create_task(client.post("/api/projects/p1/generate/structure", json={}, headers=HEADERS))
+            assert await asyncio.to_thread(entered.wait, 5)
+            task.cancel()
+            for _ in range(5):
+                await asyncio.sleep(0)
+            resume.set()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    asyncio.run(scenario())
+    [row] = runner.ledger.list_jobs("p1")
+    assert row.state == "cancelled" and provider.calls == 0
+
+
+def test_structure_job_api_rejects_missing_sources_without_a_row(store):
+    store.create_project("p1", "보고")
+    with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
+        response = _register(client)
+        assert response.status_code == 422 and _runner(client).ledger.list_jobs("p1") == []
+
+
+def test_active_summary_has_stage_and_creation_time(store):
+    _project(store)
+    provider = GateProvider()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        active = client.get("/api/jobs/active").json()
+        assert active["ledger_available"] is True
+        assert active["active"]["stage"] == "running" and active["active"]["created_at"]
+        busy = client.post("/api/projects/p1/jobs", json={"request_id": "req-00000077", "kind": "structure",
+                                                          "params": {"target_chapters": 2}})
+        assert busy.json()["active"]["stage"] == "running"
+        provider.release.set()
+        _wait(client, job["id"])
+
+
+def test_unavailable_ledger_is_visible_before_generation(store):
+    _project(store)
+    (store.root / LEDGER_NAME).write_bytes(b"broken" * 50)
+    with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
+        assert client.get("/api/jobs/active").json() == {"active": None, "ledger_available": False}
+        listed = client.get("/api/projects/p1/jobs")
+    assert listed.status_code == 503 and listed.json()["code"] == "job_ledger_unavailable"
+
+
+def test_provider_is_not_called_when_the_send_time_cannot_be_written(store, monkeypatch):
+    from slidecaptain.storage.job_ledger import LedgerError
+    _project(store)
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        ledger = _runner(client).ledger
+        real_update = ledger.update_job
+
+        def failing_update(job_id, *, expected, **changes):
+            if "remote_sent_at" in changes:
+                raise LedgerError("디스크")
+            return real_update(job_id, expected=expected, **changes)
+
+        monkeypatch.setattr(ledger, "update_job", failing_update)
+        response = client.post("/api/projects/p1/generate/structure", json={})
+        [row] = ledger.list_jobs("p1")
+    assert response.status_code == 503 and response.json()["code"] == "ledger_write_failed"
+    assert provider.calls == 0 and row.state == "failed" and row.error_class == "ledger"

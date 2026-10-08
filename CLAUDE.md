@@ -5,7 +5,7 @@
 ## 진본 문서 (작업 시작 전 필독)
 
 - 2026-10-08 개정판 D2: `docs/plans/2026-10-08-revision-d2-common-foundation.md`. D2a 6태스크는 구현 완료이고 D2 관문은 미통과다(D2b 작업 원장이 남음). 「결과」 절과 로드맵의 D2a 이월표를 먼저 읽는다.
-- 2026-10-08 D2b 작업 원장: `docs/plans/2026-10-08-revision-d2b-job-ledger.md`. 사용자 지시("작업 계속 이어서 진행")로 계획서 초안을 썼다. 2026-10-08 사용자가 네 결정 모두 추천안을 택했고, 3관점 적대 리뷰(89건)를 반영해 확정했다. 구현 착수와 구현 리뷰 규모는 사용자 결정이다. 재개 시 계획서 2절(설계 결정)과 5절(공통 계약)을 먼저 읽는다.
+- 2026-10-08 D2b 작업 원장: `docs/plans/2026-10-08-revision-d2b-job-ledger.md`. 사용자 지시("작업 계속 이어서 진행")로 계획서 초안을 썼다. 2026-10-08 확정 뒤 D2b-α(원장, 실행기와 작업 API, 후보형 래퍼 이전)를 구현했다. 재개 시 계획서 「결과 (D2b-α)」 절과 β 착수 조건(5.3의 A3 정정, D2b-4의 A8)을 먼저 읽는다. β 착수는 사용자와 상의한 뒤다(단계 경계).
 - 2026-10-08 macOS 재개: Mac Mini에서도 `feat/windows-feedback-revision`을 이어간다. D1의 macOS 빌드, 실행, 자식 정리 확인 결과는 `docs/handoffs/2026-10-02-desktop-d1.md`의 macOS 절에 있다. 패키지 앱을 시험할 때는 `SLIDECAPTAIN_DATA_DIR`를 별도 폴더로 지정해 사용자의 `~/slidecaptain-projects`를 건드리지 않는다.
 - 2026-10-02 Windows 개발 환경 재개: `docs/handoffs/2026-10-02-windows-dev-environment.md`. 회사 PC에서 `feat/windows-feedback-revision`을 이어갈 때 먼저 읽는다. Windows 로컬 백엔드 테스트는 `PYTHONUTF8=1`, 프런트 전체 테스트는 `npx vitest run --maxWorkers=4`로 실행해야 CI와 같은 기준선이 나온다. 아래 개정판 인계가 기능 상태의 진본이다.
 

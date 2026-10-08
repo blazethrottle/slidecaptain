@@ -36,7 +36,8 @@ from slidecaptain.storage.job_ledger import (
 
 _LOG = logging.getLogger("slidecaptain.server.jobs")
 
-GENERATION_ACTIVE_MESSAGE = "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도하거나 그 작업을 취소해 주세요."
+# 화면에 작업 취소 수단이 생기는 D2b-5a 전까지는 취소 안내를 넣지 않는다 (α 묶음 리뷰 A12)
+GENERATION_ACTIVE_MESSAGE = "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요."
 SERVICE_STOPPING_MESSAGE = "앱이 종료되는 중이라 AI 생성을 시작하지 않았습니다."
 JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다."
 JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요."
@@ -141,6 +142,8 @@ class JobHandle:
         self.cancel_requested = False
         self.cancel_sent = False
         self.sent = False  # 제공자를 실제로 불렀는가. 원격 호출 시각은 이때 남긴다 (D2b-3 리뷰 R6)
+        self.stage = "queued"  # 메모리의 단계. 진행 중 작업 요약에 쓴다 (α 묶음 리뷰 A7)
+        self.created_at = _now()
         self.provider_task: asyncio.Task | None = None
         self.outcome: Outcome | None = None
         self._done = threading.Event()
@@ -268,7 +271,8 @@ class JobRunner:
         """메모리의 정보로 만든다. 원장을 읽지 않으므로 원장 문제로 실패하지 않는다."""
         spec = handle.spec
         return {"id": handle.job_id, "project": spec.project, "kind": spec.kind, "target": spec.target,
-                "cancel_requested": handle.cancel_requested}
+                "stage": "cancel_requested" if handle.cancel_requested else handle.stage,
+                "created_at": handle.created_at, "cancel_requested": handle.cancel_requested}
 
     def cancel_requested(self, job_id: str) -> bool:
         with self._lock:
@@ -334,6 +338,7 @@ class JobRunner:
                 outcome = Outcome(self._end(job_id, "queued", None, cancelled=True))
                 return
             ledger.transition(job_id, expected="queued", new="running", attempts=1)
+            handle.stage = "running"
             handle.provider_task = asyncio.get_running_loop().create_task(spec.run(service, JobContext(handle)))
             await asyncio.wait({handle.provider_task})
             outcome = await self._settle(handle)
@@ -360,16 +365,20 @@ class JobRunner:
             handle._finish(outcome)
 
     def _mark_sent(self, handle: JobHandle) -> None:
-        """제공자 호출 직전에 작업 루프에서 불린다. 첫 호출 때만 원격 호출 시각을 남긴다."""
+        """제공자 호출 직전에 작업 루프에서 불린다. 첫 호출 때만 원격 호출 시각을 남긴다.
+
+        시각을 남기지 못하면 호출하지 않는다. 남기지 못한 채 호출하고 프로세스가 죽으면 재시작 조정이 실제
+        호출을 "중단"으로 잘못 분류한다 (α 묶음 리뷰 A13).
+        """
         if handle.sent:
             return
-        handle.sent = True
         try:
             row = self.ledger.get_job(handle.job_id)
             if row is not None and row.remote_sent_at is None:
                 self.ledger.update_job(handle.job_id, expected=row.state, remote_sent_at=_now())
-        except (TransitionRejected, LedgerError):
-            _LOG.warning("원격 호출 시각을 남기지 못했습니다: %s", handle.job_id)
+        except TransitionRejected as exc:
+            raise LedgerError("원격 호출 시각을 남기지 못했습니다.") from exc
+        handle.sent = True
 
     @staticmethod
     def _memory_result(handle: JobHandle) -> Any:
@@ -425,6 +434,8 @@ class JobRunner:
         if task.cancelled():  # 실행기가 보내지 않은 취소. 호출을 보냈으면 완료 여부를 모른다
             new = "remote_completion_unknown" if handle.sent else "interrupted"
             return Outcome(ledger.transition(job_id, expected="running", new=new))
+        if isinstance(task.exception(), LedgerError):  # 원격 호출 시각을 남기지 못해 호출하지 않았다
+            return self._ledger_failed(handle)
         if task.exception() is not None:
             return Outcome(self._end(job_id, "running", task.exception()))
         result = task.result()

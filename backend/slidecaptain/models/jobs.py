@@ -123,6 +123,8 @@ class ActiveJob(BaseModel):
     project: str
     kind: str
     target: str | None  # 장 ID나 도식 장. 구조안처럼 대상이 없으면 None
+    stage: Literal["queued", "running", "cancel_requested"]  # queued는 임대 대기
+    created_at: str
     cancel_requested: bool
 
 
@@ -134,6 +136,8 @@ class GenerationActiveBody(BaseModel):
 
 class ActiveJobStatus(BaseModel):
     active: ActiveJob | None
+    # 원장을 열 수 없으면 거짓이다. 화면은 생성 버튼을 누르기 전에 안내를 보일 수 있다 (α 묶음 리뷰 A14)
+    ledger_available: bool
 
 
 class CandidateAction(BaseModel):

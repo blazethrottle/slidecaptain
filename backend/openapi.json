@@ -3299,6 +3299,19 @@
             ],
             "title": "Target"
           },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested"
+            ],
+            "title": "Stage"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
           "cancel_requested": {
             "type": "boolean",
             "title": "Cancel Requested"
@@ -3310,6 +3323,8 @@
           "project",
           "kind",
           "target",
+          "stage",
+          "created_at",
           "cancel_requested"
         ],
         "title": "ActiveJob",
@@ -3326,11 +3341,16 @@
                 "type": "null"
               }
             ]
+          },
+          "ledger_available": {
+            "type": "boolean",
+            "title": "Ledger Available"
           }
         },
         "type": "object",
         "required": [
-          "active"
+          "active",
+          "ledger_available"
         ],
         "title": "ActiveJobStatus"
       },

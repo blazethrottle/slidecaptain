@@ -11,6 +11,7 @@ from copy import deepcopy
 import pytest
 from fastapi.testclient import TestClient
 
+from slidecaptain.pipeline.auth_status import LoginStatus
 from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.server.app import create_app
 from test_diagram_generation import REQUEST as DIAGRAM_REQUEST
@@ -106,7 +107,9 @@ def _two_chapters(store):
 def test_chapter_candidate_is_judged_by_its_own_inputs(store, edit, candidate, reasons):
     deck = _two_chapters(store)
     provider = GateProvider(SLOTS)
-    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+    # 상태 API가 실제 Claude CLI의 auth status를 띄우지 않게 로그인 확인을 대역으로 준다 (α 묶음 리뷰 A4)
+    app = create_app(store, provider=provider, login_checker=lambda: LoginStatus(logged_in=False))
+    with TestClient(app, headers=HEADERS) as client:
         job = client.post("/api/projects/p1/jobs", json={"request_id": "chapter-0001", "kind": "chapter",
                                                          "params": {"chapter_id": "c1"}}).json()
         assert provider.entered.wait(5)
