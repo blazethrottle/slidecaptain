@@ -213,7 +213,9 @@ def test_request_cancelled_during_generation_releases_lease(store, manager, monk
     monkeypatch.setattr(asyncio, "to_thread", scheduled_to_thread)
 
     async def scenario():
-        entered = asyncio.Event()
+        # D2b-2: 제공자는 작업 루프 스레드에서 돈다. 시험 루프의 asyncio.Event는 다른 스레드에서
+        # set()하면 시험 루프를 깨우지 못하므로 threading.Event로 신호한다 (바뀐 실행 구조에 맞춘 수정)
+        entered = threading.Event()
 
         class SlowProvider:
             async def complete(self, prompt, schema):
@@ -226,7 +228,7 @@ def test_request_cancelled_during_generation_releases_lease(store, manager, monk
             task = asyncio.create_task(client.post("/api/projects/p/generate/structure", json={}, headers={
                 "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "X-AI-Selection": manager.selection_id,
             }))
-            await asyncio.wait_for(entered.wait(), 2)
+            assert await asyncio.to_thread(entered.wait, 2)
             with pytest.raises(ConnectionConflict):
                 manager.select(AISelection(provider="chatgpt", model="gpt-test"))
             task.cancel()

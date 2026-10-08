@@ -7,29 +7,29 @@
 
 작업 루프를 앱마다 만들지 않고 프로세스에 하나 두는 이유: 시험 스위트는 앱을 수백 번 만드는데,
 앱마다 스레드와 이벤트 루프를 열면 파일 핸들이 쌓인다. 독립 앱과 웹 모드는 프로세스에 앱이 하나다.
+루프는 멈추지 않는다. 앱의 종료 처리는 실행기의 `shutdown`이다.
 """
 
 import asyncio
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from fastapi import HTTPException
 from pydantic import BaseModel
 
 from slidecaptain.storage.job_ledger import (
     BATCH_KIND,
+    TRANSITIONS,
     FixedInputs,
     JobLedger,
-    LedgerError,
     JobRow,
+    LedgerError,
     LedgerUnavailable,
-    TRANSITIONS,
-    RequestIdConflict,
     TransitionRejected,
     reconcile_job,
 )
@@ -39,23 +39,36 @@ _LOG = logging.getLogger("slidecaptain.server.jobs")
 GENERATION_ACTIVE_MESSAGE = "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도하거나 그 작업을 취소해 주세요."
 SERVICE_STOPPING_MESSAGE = "앱이 종료되는 중이라 AI 생성을 시작하지 않았습니다."
 JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다."
+JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요."
+LEDGER_WRITE_MESSAGE = "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요."
+FORMAT_ERROR_MESSAGE = "AI 응답을 형식에 맞게 읽지 못했습니다. 입력은 그대로 두었습니다. 다시 생성해 주세요."
+UNKNOWN = "unknown"  # 생성 뒤 판정에서 덱이나 자료를 읽지 못함. 낡음으로 굳히지 않는다 (D2b-2 리뷰 R3)
 # 종료 처리가 실행 중 작업의 종료를 기다리는 시간. 서비스의 강제 종료 시간 10초(desktop_service의
 # parent_lifeline)에서 uvicorn의 종료 대기 5초(timeout_graceful_shutdown)를 뺀 값이다 (계획서 5.5)
 SHUTDOWN_WAIT_SECONDS = 5.0
+# 취소 라우트가 작업 루프의 처리를 기다리는 시간. 루프의 콜백은 상태 쓰기와 task.cancel()뿐이라 짧다.
+# 넘기면 기다리지 않고 지금 상태를 돌려준다(로그를 남긴다)
+CANCEL_ACK_SECONDS = 5.0
 
 _loop: asyncio.AbstractEventLoop | None = None
+_loop_thread: threading.Thread | None = None
 _loop_lock = threading.Lock()
 
 
 def job_loop() -> asyncio.AbstractEventLoop:
     """프로세스에 하나뿐인 작업 루프. 처음 부를 때 데몬 스레드로 시작한다."""
-    global _loop
+    global _loop, _loop_thread
     with _loop_lock:
         if _loop is None or _loop.is_closed():
             loop = asyncio.new_event_loop()
-            threading.Thread(target=loop.run_forever, name="slidecaptain-jobs", daemon=True).start()
-            _loop = loop
+            thread = threading.Thread(target=loop.run_forever, name="slidecaptain-jobs", daemon=True)
+            thread.start()
+            _loop, _loop_thread = loop, thread
         return _loop
+
+
+def _on_job_loop() -> bool:
+    return _loop_thread is not None and threading.current_thread() is _loop_thread
 
 
 class JobFailed(Exception):
@@ -80,6 +93,17 @@ Classifier = Callable[[BaseException], tuple[str, int, str, str | None]]
 
 
 @dataclass
+class JobContext:
+    """실행 중인 작업이 자기 취소 요청을 읽는 통로 (구성 수리의 cancelled 콜백, D2b-3)."""
+
+    handle: "JobHandle"
+
+    @property
+    def cancel_requested(self) -> bool:
+        return self.handle.cancel_requested
+
+
+@dataclass
 class JobSpec:
     """작업 하나의 실행 방법. 라우트가 등록 검사를 마친 뒤 만든다 (계획서 5.4)."""
 
@@ -89,15 +113,16 @@ class JobSpec:
     params: dict
     selection_id: str | None
     inputs: FixedInputs
-    run: Callable[[Any], Awaitable[Any]]  # 생성 서비스를 받아 결과 모델을 돌려준다
+    run: Callable[[Any, JobContext], Awaitable[Any]]  # 생성 서비스와 문맥을 받아 결과 모델을 돌려준다
     recheck: Callable[[], None] | None = None  # 임대 직후 고정 입력 재비교. 다르면 예외
     judge: Callable[[Any], list[str]] | None = None  # 결과 저장 뒤 판정. 비어 있으면 같다
+    target: str | None = None  # 대상(장 ID, 도식 장). 진행 중 작업 요약에 쓴다
     chapter_ids: list[str] | None = None
 
 
 @dataclass
 class Outcome:
-    row: JobRow
+    row: JobRow | None
     result: Any = None  # 메모리의 결과 모델. 없으면 None
     stale_reasons: list[str] = field(default_factory=list)
 
@@ -125,7 +150,10 @@ class JobHandle:
             self._done.set()
             listeners, self._listeners = self._listeners, []
         for notify in listeners:
-            notify(outcome)
+            try:
+                notify(outcome)
+            except Exception:  # 한 대기자의 실패가 다른 대기자의 알림을 막지 않는다 (D2b-2 리뷰 R5)
+                _LOG.exception("작업 대기자에게 결과를 알리지 못했습니다: %s", self.job_id)
 
     async def wait(self) -> Outcome:
         """어느 이벤트 루프에서든 끝나기를 기다린다. 이 대기가 취소돼도 작업은 취소되지 않는다."""
@@ -133,17 +161,23 @@ class JobHandle:
         future: asyncio.Future = loop.create_future()
 
         def notify(outcome: Outcome) -> None:
-            loop.call_soon_threadsafe(lambda: future.done() or future.set_result(outcome))
+            try:
+                loop.call_soon_threadsafe(lambda: future.done() or future.set_result(outcome))
+            except RuntimeError:  # 대기자의 루프가 이미 닫혔다
+                pass
 
         with self._lock:
-            if self.outcome is None:
+            outcome = self.outcome
+            if outcome is None:
                 self._listeners.append(notify)
-                outcome = None
-            else:
-                outcome = self.outcome
         if outcome is not None:
             return outcome
-        return await future
+        try:
+            return await future
+        finally:
+            with self._lock:
+                if notify in self._listeners:
+                    self._listeners.remove(notify)
 
     def wait_sync(self, timeout: float | None = None) -> Outcome | None:
         self._done.wait(timeout)
@@ -156,6 +190,11 @@ def _now() -> str:
 
 def _encode(result: Any) -> Any:
     return result.model_dump(mode="json") if isinstance(result, BaseModel) else result
+
+
+def real_reasons(reasons: list[str]) -> list[str]:
+    """판정 이유 가운데 실제로 달라진 것만. 판정 불가(unknown)는 조회 때 다시 본다 (계획서 5.8)."""
+    return [r for r in reasons if r != UNKNOWN]
 
 
 class JobRunner:
@@ -190,7 +229,7 @@ class JobRunner:
                 raise ServiceStopping(SERVICE_STOPPING_MESSAGE)
             existing = ledger.find_job(spec.project, spec.request_id)
             if existing is None and self._active is not None:
-                raise GenerationActive(self.active_summary_locked())
+                raise GenerationActive(self._summary(self._active))
             row, created = ledger.create_job(
                 project=spec.project, kind=spec.kind, request_id=spec.request_id, params=spec.params,
                 instance_id=self.instance_id, inputs=spec.inputs, chapter_ids=spec.chapter_ids)
@@ -203,50 +242,57 @@ class JobRunner:
         asyncio.run_coroutine_threadsafe(self._execute(handle), job_loop())
         return row, handle, True
 
+    def is_busy(self) -> bool:
+        """실행 중 작업이 있는가. 원장을 읽지 않는다 (D2b-2 리뷰 R17)."""
+        with self._lock:
+            return self._active is not None
+
     def active_summary(self) -> dict | None:
         with self._lock:
-            return self.active_summary_locked()
+            return None if self._active is None else self._summary(self._active)
 
-    def active_summary_locked(self) -> dict | None:
-        if self._active is None or self.ledger is None:
-            return None
-        row = self.ledger.get_job(self._active.job_id)
-        if row is None:
-            return None
-        return {"id": row.id, "project": row.project, "kind": row.kind, "state": row.state,
-                "created_at": row.created_at, "started_at": row.started_at}
+    def _summary(self, handle: JobHandle) -> dict:
+        """메모리의 정보로 만든다. 원장을 읽지 않으므로 원장 문제로 실패하지 않는다."""
+        spec = handle.spec
+        return {"id": handle.job_id, "project": spec.project, "kind": spec.kind, "target": spec.target,
+                "cancel_requested": handle.cancel_requested}
 
-    def is_running(self, job_id: str) -> bool:
+    def cancel_requested(self, job_id: str) -> bool:
         with self._lock:
-            return self._active is not None and self._active.job_id == job_id
+            handle = self._handles.get(job_id)
+        return handle is not None and handle.cancel_requested and not handle.done
 
     # 취소
 
-    def cancel(self, job_id: str) -> JobRow | None:
+    def cancel(self, job_id: str, *, wait_seconds: float = CANCEL_ACK_SECONDS) -> JobRow | None:
         """취소를 요청한다. 제공자 태스크에는 한 번만 보낸다. 이 실행기의 작업이 아니면 상태만 돌려준다."""
         with self._lock:
             handle = self._handles.get(job_id)
         if handle is not None and not handle.done:
-            done = threading.Event()
+            if _on_job_loop():
+                self._request_cancel(handle)  # 작업 루프 안에서 기다리면 루프가 멈춘다 (D2b-2 리뷰 R7)
+            else:
+                acknowledged = threading.Event()
 
-            def request() -> None:
-                try:
-                    self._request_cancel(handle)
-                finally:
-                    done.set()
+                def request() -> None:
+                    try:
+                        self._request_cancel(handle)
+                    finally:
+                        acknowledged.set()
 
-            job_loop().call_soon_threadsafe(request)
-            done.wait(5)
+                job_loop().call_soon_threadsafe(request)
+                if not acknowledged.wait(wait_seconds):
+                    _LOG.warning("작업 루프가 취소 요청을 %.1f초 안에 처리하지 못했습니다: %s", wait_seconds, job_id)
         return self.ledger.get_job(job_id) if self.ledger is not None else None
 
     def _request_cancel(self, handle: JobHandle) -> None:
         """작업 루프에서 실행된다."""
         handle.cancel_requested = True
         if handle.provider_task is None or handle.cancel_sent or handle.provider_task.done():
-            return  # 임대 획득 중이면 획득이 끝난 뒤 실행 코루틴이 cancelled로 끝낸다
+            return  # 임대 획득이나 재비교 중이면 실행 코루틴이 queued에서 cancelled로 끝낸다
         try:
             self.ledger.transition(handle.job_id, expected="running", new="cancel_requested")
-        except TransitionRejected:
+        except (TransitionRejected, LedgerError):
             return
         handle.cancel_sent = True
         handle.provider_task.cancel()
@@ -263,27 +309,29 @@ class JobRunner:
             except Exception as exc:
                 outcome = Outcome(self._end(job_id, "queued", exc, cancelled=handle.cancel_requested))
                 return
-            if handle.cancel_requested:
-                outcome = Outcome(self._end(job_id, "queued", None, cancelled=True))
-                return
-            if spec.recheck is not None:
+            if spec.recheck is not None and not handle.cancel_requested:
                 try:
                     await asyncio.to_thread(spec.recheck)
                 except Exception as exc:
-                    outcome = Outcome(self._end(job_id, "queued", exc))
+                    outcome = Outcome(self._end(job_id, "queued", exc, cancelled=handle.cancel_requested))
                     return
-            ledger.transition(job_id, expected="queued", new="running", remote_sent_at=_now(), attempts=1)
-            handle.provider_task = asyncio.get_running_loop().create_task(spec.run(service))
+            # 획득이나 재비교 중 들어온 취소는 원격 호출 전이다 (D2b-2 리뷰 R4)
             if handle.cancel_requested:
-                self._request_cancel(handle)
+                outcome = Outcome(self._end(job_id, "queued", None, cancelled=True))
+                return
+            ledger.transition(job_id, expected="queued", new="running", remote_sent_at=_now(), attempts=1)
+            handle.provider_task = asyncio.get_running_loop().create_task(spec.run(service, JobContext(handle)))
             await asyncio.wait({handle.provider_task})
             outcome = await self._settle(handle)
         except TransitionRejected:
-            # 종료 처리가 먼저 종결 상태를 썼다. 그 상태를 그대로 둔다
-            outcome = Outcome(ledger.get_job(job_id))
+            # 종료 처리가 먼저 종결 상태를 썼다. 그 상태를 두되 메모리 결과는 대기자에게 넘긴다 (리뷰 R18)
+            outcome = Outcome(self._read(job_id), self._memory_result(handle))
+        except LedgerError:
+            _LOG.exception("AI 생성 작업의 원장 쓰기가 실패했습니다: %s", job_id)
+            outcome = self._ledger_failed(handle)
         except Exception:
             _LOG.exception("AI 생성 작업 실행 중 예기치 않은 오류: %s", job_id)
-            outcome = Outcome(self._fail_unexpected(job_id))
+            outcome = Outcome(self._fail(job_id, "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None))
         finally:
             if release is not None:
                 try:
@@ -293,12 +341,40 @@ class JobRunner:
             with self._lock:
                 if self._active is handle:
                     self._active = None
-            if outcome is None or outcome.row is None:
-                try:
-                    outcome = Outcome(ledger.get_job(job_id), outcome.result if outcome else None)
-                except LedgerError:
-                    outcome = Outcome(None, outcome.result if outcome else None)
+            if outcome is None:
+                outcome = Outcome(self._read(job_id), self._memory_result(handle))
             handle._finish(outcome)
+
+    @staticmethod
+    def _memory_result(handle: JobHandle) -> Any:
+        task = handle.provider_task
+        if task is None or not task.done() or task.cancelled() or task.exception() is not None:
+            return None
+        return task.result()
+
+    def _read(self, job_id: str) -> JobRow | None:
+        try:
+            return self.ledger.get_job(job_id)
+        except LedgerError:
+            return None
+
+    def _ledger_failed(self, handle: JobHandle) -> Outcome:
+        """원장 쓰기가 실패했다. failed(ledger)를 시도하고 메모리 결과는 대기자에게 넘긴다 (계획서 5.1, 리뷰 R2)."""
+        row = self._fail(handle.job_id, "ledger", 503, LEDGER_WRITE_MESSAGE, "ledger_write_failed")
+        result = self._memory_result(handle)
+        if result is not None and getattr(result, "status", None) == "ok":
+            self._on_success(handle.spec, result)
+        return Outcome(row, result)
+
+    def _fail(self, job_id: str, error_class: str, status: int, detail: str, code: str | None) -> JobRow | None:
+        row = self._read(job_id)
+        if row is None or "failed" not in TRANSITIONS.get(row.state, ()):
+            return row
+        try:
+            return self.ledger.transition(job_id, expected=row.state, new="failed", error_class=error_class,
+                                          error_status=status, error_detail=detail, error_code=code)
+        except (TransitionRejected, LedgerError):
+            return self._read(job_id)
 
     async def _settle(self, handle: JobHandle) -> Outcome:
         ledger, spec, task, job_id = self.ledger, handle.spec, handle.provider_task, handle.job_id
@@ -314,40 +390,28 @@ class JobRunner:
             # 취소 요청 뒤 값이 왔다(수리의 stopped, 늦은 응답). 남기되 적용하지 않는다
             return Outcome(ledger.transition(job_id, expected="cancel_requested", new="cancelled",
                                              result=_encode(task.result()), candidate_status="held",
-                                             error_class="cancelled"))
+                                             error_class="cancelled"), task.result())
         if task.cancelled():  # 실행기가 보내지 않은 취소. 원격 호출을 보냈으므로 완료 여부를 모른다
             return Outcome(ledger.transition(job_id, expected="running", new="remote_completion_unknown"))
         if task.exception() is not None:
             return Outcome(self._end(job_id, "running", task.exception()))
         result = task.result()
         reasons = await asyncio.to_thread(spec.judge, result) if spec.judge is not None else []
-        try:
-            ledger.transition(job_id, expected="running", new="validating", result=_encode(result),
-                              candidate_status="stale" if reasons else "held")
-        except LedgerError:
-            # 결과를 원장에 쓰지 못했다. 래퍼는 메모리의 결과를 돌려준다 (계획서 5.1)
-            _LOG.exception("생성 결과를 작업 원장에 쓰지 못했습니다: %s", job_id)
-            if not reasons:
-                self._on_success(spec, result)
-            return Outcome(ledger.get_job(job_id), result, reasons)
-        if getattr(result, "status", None) == "format_error":
+        changed = real_reasons(reasons)
+        format_error = getattr(result, "status", None) == "format_error"
+        # 형식 오류 결과는 원문을 남기되 후보로 보이지 않는다 (리뷰 R11). 낡음은 실제로 달라졌을 때만 (리뷰 R3)
+        candidate = "none" if format_error else ("stale" if changed else "held")
+        ledger.transition(job_id, expected="running", new="validating", result=_encode(result),
+                          candidate_status=candidate)
+        if format_error:
             row = ledger.transition(job_id, expected="validating", new="failed", error_class="ai_output",
+                                    error_detail=FORMAT_ERROR_MESSAGE,
                                     error_code=getattr(result, "format_issue", None) or "format_error")
         else:
             row = ledger.transition(job_id, expected="validating", new="succeeded")
-            if not reasons:
+            if not changed:
                 self._on_success(spec, result)
         return Outcome(row, result, reasons)
-
-    def _fail_unexpected(self, job_id: str) -> JobRow | None:
-        try:
-            row = self.ledger.get_job(job_id)
-            if row is not None and "failed" in TRANSITIONS.get(row.state, ()):
-                row = self.ledger.transition(job_id, expected=row.state, new="failed", error_class="input",
-                                             error_status=500, error_detail="AI 생성 작업을 처리하지 못했습니다.")
-            return row
-        except (TransitionRejected, LedgerError):
-            return None
 
     def _end(self, job_id: str, expected: str, exc: BaseException | None, cancelled: bool = False) -> JobRow:
         if cancelled:
@@ -356,17 +420,25 @@ class JobRunner:
         return self.ledger.transition(job_id, expected=expected, new="failed", error_class=error_class,
                                       error_status=status, error_detail=detail, error_code=code)
 
+    def mark_delivered(self, job_id: str) -> None:
+        """래퍼가 결과를 응답으로 돌려줬다. 화면은 이 결과를 "이전에 만든 결과"로 다시 보이지 않는다."""
+        try:
+            self.ledger.settle_candidate(job_id, expected="held", new="delivered")
+        except (TransitionRejected, LedgerError):
+            pass  # 낡은 후보나 원장 문제는 응답을 막지 않는다
+
     # 재시작 조정과 종료 (계획서 5.5, 5.6)
 
     def reconcile_on_start(self, lock_state: str) -> int:
         """잠금을 쥔 서비스만 다른 인스턴스의 미종결 작업을 조정한다. 조정한 행 수를 돌려준다."""
         if self.ledger is None or lock_state != "held":
             return 0
-        count = 0
-        for row in self.ledger.unfinished_from_other_instances(self.instance_id):
-            if self._settle_left_over(row):
-                count += 1
-        return count
+        try:
+            rows = self.ledger.unfinished_from_other_instances(self.instance_id)
+        except LedgerError:
+            _LOG.exception("재시작 조정에서 작업 원장을 읽지 못했습니다")
+            return 0
+        return sum(1 for row in rows if self._settle_left_over(row))
 
     def _settle_left_over(self, row: JobRow) -> bool:
         if row.kind == BATCH_KIND:
@@ -377,10 +449,11 @@ class JobRunner:
                 self.ledger.transition(row.id, expected=row.state, new=action)
             elif action == "rejudge_candidate":
                 # 결과가 원장에 있다. 다시 부르지 않고 종결한다. 낡음 판정은 조회 때 한다 (계획서 5.8)
-                status = (row.result or {}).get("status")
-                if status == "format_error":
+                result = row.result or {}
+                if result.get("status") == "format_error":
                     self.ledger.transition(row.id, expected="validating", new="failed", error_class="ai_output",
-                                           error_code=(row.result or {}).get("format_issue") or "format_error")
+                                           error_detail=FORMAT_ERROR_MESSAGE,
+                                           error_code=result.get("format_issue") or "format_error")
                 else:
                     self.ledger.transition(row.id, expected="validating", new="succeeded")
             else:
@@ -390,13 +463,17 @@ class JobRunner:
         return True
 
     def shutdown(self, wait_seconds: float = SHUTDOWN_WAIT_SECONDS) -> None:
-        """① 새 등록 거절 ② 실행 중 작업에 취소 한 번 ③ 기다림 ④ 남은 행 정리 (계획서 5.5)."""
+        """① 새 등록 거절 ② 실행 중 작업에 취소 한 번 ③ 남은 예산만큼 기다림 ④ 남은 행 정리 (계획서 5.5).
+
+        예산은 시작 시각부터 센다. 취소 요청의 처리 대기도 예산에 포함한다 (D2b-2 리뷰 R14).
+        """
+        deadline = time.monotonic() + wait_seconds
         with self._lock:
             self._stopping = True
             handle = self._active
         if handle is not None and not handle.done:
-            self.cancel(handle.job_id)
-            handle.wait_sync(wait_seconds)
+            self.cancel(handle.job_id, wait_seconds=max(0.0, deadline - time.monotonic()))
+            handle.wait_sync(max(0.0, deadline - time.monotonic()))
         if self.ledger is None:
             return
         try:
@@ -412,8 +489,12 @@ def new_request_id() -> str:
     return uuid.uuid4().hex
 
 
-def http_error_from(row: JobRow) -> HTTPException | JobFailed:
+def http_error_from(row: JobRow | None) -> JobFailed:
     """종결된 작업 행의 오류를 래퍼 응답으로 바꾼다."""
+    if row is None:
+        return JobFailed(503, LEDGER_WRITE_MESSAGE, "ledger_write_failed")
     if row.state == "cancelled":
         return JobFailed(409, JOB_CANCELLED_MESSAGE, "job_cancelled")
+    if row.state in ("interrupted", "remote_completion_unknown"):
+        return JobFailed(503, JOB_INTERRUPTED_MESSAGE, "job_interrupted")
     return JobFailed(row.error_status or 500, row.error_detail or "AI 생성 작업을 처리하지 못했습니다.", row.error_code)

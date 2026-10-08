@@ -75,13 +75,15 @@ from slidecaptain.models.story import ChapterRole, ReportBrief
 from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
-from slidecaptain.models.jobs import ActiveJob, ActiveJobStatus, CandidateAction, JobError, JobRequest, JobView
+from slidecaptain.models.jobs import (
+    ActiveJob, ActiveJobStatus, CandidateAction, GenerationActiveBody, JobError, JobRequest, JobView,
+)
 from slidecaptain.server.jobs import (
     GENERATION_ACTIVE_MESSAGE, SERVICE_STOPPING_MESSAGE, GenerationActive, JobFailed, JobRunner, JobSpec,
     ServiceStopping, http_error_from, new_request_id,
 )
 from slidecaptain.storage.job_ledger import (
-    FixedInputs, JobLedger, JobRow, LedgerError, LedgerUnavailable, RequestIdConflict, TransitionRejected,
+    FixedInputs, JobLedger, JobRow, LedgerError, LedgerUnavailable, RequestIdConflict, TransitionRejected, params_hash,
 )
 from slidecaptain.storage.file_store import (
     DeckConflict,
@@ -488,13 +490,14 @@ def create_app(
                                                    ("sources_changed", current_revision != revision)) if changed]
         return judge
 
-    async def _run_wrapped(spec: JobSpec):
-        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 결과 모델을 돌려준다 (계획서 2.2, 5.4).
+    async def _run_wrapped(build_spec: Callable[[], JobSpec]):
+        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 결과를 돌려준다 (계획서 2.2, 5.4).
 
-        요청이 취소되면 작업에 취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다.
-        그래야 요청이 끝났을 때 임대가 풀려 있다(지금 라우트와 같은 성질).
+        등록(덱과 자료 읽기, 원장 쓰기)은 작업 스레드에서 한다(D2b-2 리뷰 R9). 요청이 취소되면 작업에
+        취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다. 그래야 요청이 끝났을 때 임대가
+        풀려 있다(지금 라우트와 같은 성질). 결과를 돌려준 작업은 delivered로 처분한다(리뷰 R8).
         """
-        row, handle, _ = runner.start(spec)
+        row, handle, _ = await asyncio.to_thread(lambda: runner.start(build_spec()))
         if handle is None:
             raise http_error_from(row)
         try:
@@ -504,45 +507,57 @@ def create_app(
                 await asyncio.to_thread(runner.cancel, handle.job_id)
                 await handle.wait()
             raise
-        if outcome.result is None or outcome.row.state == "cancelled":
+        if outcome.result is None or (outcome.row is not None and outcome.row.state == "cancelled"):
             raise http_error_from(outcome.row)
+        await asyncio.to_thread(runner.mark_delivered, handle.job_id)
         return outcome
 
+    def _job_views(rows: list[JobRow]) -> list[JobView]:
+        """작업 행을 응답으로 바꾼다. 프로젝트마다 덱 ETag와 자료 fingerprint를 한 번만 읽는다 (리뷰 R9)."""
+        basis: dict[str, tuple[str | None, str | None]] = {}
+        views = []
+        for row in rows:
+            if row.project not in basis:
+                basis[row.project] = (_deck_etag_or_none(row.project), _sources_revision(row.project))
+            current_etag, revision = basis[row.project]
+            terminal = row.state in ("succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown")
+            reasons: list[str] = []
+            if terminal and row.result is not None and row.candidate_status in ("held", "delivered", "stale"):
+                if current_etag is None or revision is None:
+                    reasons = ["unknown"]
+                else:
+                    reasons = [r for r, changed in (("deck_changed", current_etag != row.base_etag),
+                                                    ("sources_changed", revision != row.sources_fingerprint))
+                               if changed]
+            error = None
+            if row.error_class or row.error_status or row.error_code:
+                error = JobError(error_class=row.error_class, status=row.error_status, detail=row.error_detail,
+                                 code=row.error_code)
+            views.append(JobView(
+                id=row.id, project=row.project, kind=row.kind, state=row.state,
+                candidate_status=row.candidate_status, outcome=row.outcome,
+                owner="this_instance" if row.instance_id == runner.instance_id else "other_instance",
+                created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
+                provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
+                stale_reasons=reasons, cancel_requested=runner.cancel_requested(row.id), error=error,
+                result=row.result if isinstance(row.result, dict) else None))
+        return views
+
     def _job_view(row: JobRow) -> JobView:
-        terminal = row.state in ("succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown")
-        current_etag = _deck_etag_or_none(row.project)
-        reasons: list[str] = []
-        if terminal and row.result is not None and row.candidate_status in ("held", "stale"):
-            revision = _sources_revision(row.project)
-            if current_etag is None or revision is None:
-                reasons = ["unknown"]
-            else:
-                reasons = [r for r, changed in (("deck_changed", current_etag != row.base_etag),
-                                                ("sources_changed", revision != row.sources_fingerprint)) if changed]
-        error = None
-        if row.error_class or row.error_status or row.error_code:
-            error = JobError(error_class=row.error_class, status=row.error_status, detail=row.error_detail,
-                             code=row.error_code)
-        return JobView(id=row.id, project=row.project, kind=row.kind, state=row.state,
-                       candidate_status=row.candidate_status, outcome=row.outcome,
-                       owner="this_instance" if row.instance_id == runner.instance_id else "other_instance",
-                       created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
-                       provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
-                       stale_reasons=reasons, error=error,
-                       result=row.result if isinstance(row.result, dict) else None)
+        return _job_views([row])[0]
 
     def _project_jobs(name: str) -> list[JobRow]:
-        """미종결 작업, 처분되지 않은 후보, 종류마다 가장 최근 작업 (계획서 5.9)."""
+        """미종결 작업을 앞에, 그다음 화면에 전달되지 않은 후보와 종류마다 가장 최근 작업 (계획서 5.9)."""
         if ledger is None:
             return []
-        rows, latest = [], set()
+        unfinished, rest, latest = [], [], set()
         for row in ledger.list_jobs(name):
-            keep = (row.state in ("queued", "running", "validating", "cancel_requested")
-                    or row.candidate_status in ("held", "stale") or row.kind not in latest)
+            if row.state in ("queued", "running", "validating", "cancel_requested"):
+                unfinished.append(row)
+            elif row.candidate_status in ("held", "stale") or row.kind not in latest:
+                rest.append(row)
             latest.add(row.kind)
-            if keep:
-                rows.append(row)
-        return rows
+        return unfinished + rest
 
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -570,7 +585,10 @@ def create_app(
         response = await call_next(request)
         parts = request.url.path.split("/")
         is_history = len(parts) >= 5 and parts[1:3] == ["api", "projects"] and parts[4] == "exports"
-        if desktop_session_token is not None or request.url.path == "/api/status" or request.url.path.startswith("/api/ai/") or is_history:
+        is_jobs = request.url.path.startswith("/api/jobs") or (len(parts) >= 5 and parts[1:3] == ["api", "projects"]
+                                                                and parts[4] == "jobs")
+        if (desktop_session_token is not None or request.url.path == "/api/status" or request.url.path.startswith("/api/ai/")
+                or is_history or is_jobs):
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -1091,7 +1109,10 @@ def create_app(
                     reviews_error = str(exc)
         progress = project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
                                     reviews=reviews, reviews_error=reviews_error, export_error=export_error)
-        progress.jobs = [_job_view(row) for row in _project_jobs(name)] if ledger is not None else None
+        try:
+            progress.jobs = _job_views(_project_jobs(name)) if ledger is not None else None
+        except LedgerError:  # 원장 문제는 진행 표시 전체를 막지 않는다 (D2b-2 리뷰 R17)
+            progress.jobs = None
         return progress
 
     @app.post("/api/projects/{name}/exports/{export_id}/reviews", response_model=ExportReviews)
@@ -1363,7 +1384,7 @@ def create_app(
     @app.get("/api/ai/settings", response_model=AISettings)
     def get_ai_settings():
         current = connections().settings()
-        if runner.active_summary() is not None:  # 임대를 잡기 전 queued도 생성 중이다 (계획서 5.6)
+        if runner.is_busy():  # 임대를 잡기 전 queued도 생성 중이다 (계획서 5.6). 원장을 읽지 않는다
             current.busy = True
         return current
 
@@ -1460,7 +1481,7 @@ def create_app(
         revision = _sources_revision(name)
         provider_id, model = _fixed_selection()
 
-        async def run(svc):
+        async def run(svc, _ctx):
             # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다
             sources = _load_sources(name)
             return await svc.generate_structure(
@@ -1473,25 +1494,38 @@ def create_app(
                        inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
                        run=run, recheck=_base_recheck(name, etag, revision), judge=_base_judge(name, etag, revision))
 
-    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
+    def _merge_existing(name: str, kind: str, request_id: str, params: dict) -> JobRow | None:
+        """같은 요청 ID 병합을 등록 검사보다 먼저 판정한다 (계획서 5.9, D2b-2 리뷰 R10)."""
+        existing = runner.require_ledger().find_job(name, request_id)
+        if existing is not None and existing.params_hash != params_hash(kind, params):
+            raise RequestIdConflict("같은 요청 식별자로 다른 생성 요청이 왔습니다.")
+        return existing
+
+    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult,
+              responses={409: {"model": GenerationActiveBody}})
     async def generate_structure(
         name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None),
         x_ai_selection: str | None = Header(default=None),
     ):
         # 래퍼 (계획서 2.2): 생성 뒤 덱이나 자료가 바뀌어도 종전처럼 결과를 돌려준다. 원장에는 낡음으로 남는다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(_structure_spec(name, req, x_ai_selection, new_request_id()))
+        outcome = await _run_wrapped(lambda: _structure_spec(name, req, x_ai_selection, new_request_id()))
         return outcome.result
 
     # 작업 API (계획서 5.9)
 
-    @app.post("/api/projects/{name}/jobs", response_model=JobView, status_code=202)
+    @app.post("/api/projects/{name}/jobs", response_model=JobView, status_code=202,
+              responses={409: {"model": GenerationActiveBody}})
     def create_job(
         name: str, req: JobRequest, response: Response,
         x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
     ):
         _require_ai_consent(x_ai_consent)
         params = GenerateStructureRequest.model_validate(req.params.model_dump())
+        existing = _merge_existing(name, req.kind, req.request_id, params.model_dump(mode="json"))
+        if existing is not None:
+            response.status_code = 200
+            return _job_view(existing)
         row, _, created = runner.start(_structure_spec(name, params, x_ai_selection, req.request_id))
         if not created:
             response.status_code = 200
@@ -1499,11 +1533,11 @@ def create_app(
 
     @app.get("/api/projects/{name}/jobs", response_model=list[JobView])
     def list_jobs(name: str):
-        return [_job_view(row) for row in _project_jobs(name)]
+        return _job_views(_project_jobs(name))
 
     def _project_job(name: str, job_id: str) -> JobRow:
         row = runner.require_ledger().get_job(job_id)
-        if row is None or row.project != name:
+        if row is None or row.project != unicodedata.normalize("NFC", name):
             raise HTTPException(404, "작업을 찾지 못했습니다.")
         return row
 

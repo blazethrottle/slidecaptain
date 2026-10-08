@@ -2613,6 +2613,16 @@
               }
             }
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2693,6 +2703,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "description": "Validation Error",
@@ -3171,26 +3191,7 @@
             "type": "string",
             "title": "Kind"
           },
-          "state": {
-            "type": "string",
-            "enum": [
-              "queued",
-              "running",
-              "validating",
-              "succeeded",
-              "failed",
-              "cancel_requested",
-              "cancelled",
-              "interrupted",
-              "remote_completion_unknown"
-            ],
-            "title": "State"
-          },
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "started_at": {
+          "target": {
             "anyOf": [
               {
                 "type": "string"
@@ -3199,7 +3200,11 @@
                 "type": "null"
               }
             ],
-            "title": "Started At"
+            "title": "Target"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested"
           }
         },
         "type": "object",
@@ -3207,9 +3212,8 @@
           "id",
           "project",
           "kind",
-          "state",
-          "created_at",
-          "started_at"
+          "target",
+          "cancel_requested"
         ],
         "title": "ActiveJob",
         "description": "서비스 전체에서 실행 중인 작업 하나의 요약. 409 generation_active 응답에도 같은 모양이 실린다."
@@ -7235,6 +7239,29 @@
         "type": "object",
         "title": "GenerateStructureRequest"
       },
+      "GenerationActiveBody": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "code": {
+            "type": "string",
+            "const": "generation_active",
+            "title": "Code"
+          },
+          "active": {
+            "$ref": "#/components/schemas/ActiveJob"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail",
+          "code",
+          "active"
+        ],
+        "title": "GenerationActiveBody"
+      },
       "GenerationUsage": {
         "properties": {
           "calls": {
@@ -7653,6 +7680,7 @@
             "enum": [
               "none",
               "held",
+              "delivered",
               "applied",
               "stale",
               "dismissed"
@@ -7755,6 +7783,10 @@
             "type": "array",
             "title": "Stale Reasons"
           },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested"
+          },
           "error": {
             "anyOf": [
               {
@@ -7795,6 +7827,7 @@
           "base_etag",
           "current_etag",
           "stale_reasons",
+          "cancel_requested",
           "error",
           "result"
         ],

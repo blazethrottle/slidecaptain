@@ -45,10 +45,12 @@ TRANSITIONS: dict[str, frozenset[str]] = {
 }
 STATES = tuple(TRANSITIONS)
 UNFINISHED = ("queued", "running", "validating", "cancel_requested")
-# 후보 처분의 전이표 (계획서 5.8). 버린 후보와 반영한 후보는 되살리지 않는다
+# 후보 처분의 전이표 (계획서 5.8). 버린 후보와 반영한 후보는 되살리지 않는다. delivered는 래퍼가 응답으로
+# 이미 화면에 돌려준 결과다. 화면은 delivered를 "이전에 만든 결과"로 다시 보이지 않는다 (D2b-2 리뷰 R8)
 CANDIDATE_TRANSITIONS: dict[str, frozenset[str]] = {
     "none": frozenset({"held", "stale"}),
-    "held": frozenset({"applied", "dismissed", "stale"}),
+    "held": frozenset({"delivered", "applied", "dismissed", "stale"}),
+    "delivered": frozenset({"applied", "dismissed"}),
     "stale": frozenset({"dismissed"}),
     "applied": frozenset(),
     "dismissed": frozenset(),

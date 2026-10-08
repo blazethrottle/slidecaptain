@@ -874,15 +874,10 @@ export interface components {
             project: string;
             /** Kind */
             kind: string;
-            /**
-             * State
-             * @enum {string}
-             */
-            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
-            /** Created At */
-            created_at: string;
-            /** Started At */
-            started_at: string | null;
+            /** Target */
+            target: string | null;
+            /** Cancel Requested */
+            cancel_requested: boolean;
         };
         /** ActiveJobStatus */
         ActiveJobStatus: {
@@ -2468,6 +2463,17 @@ export interface components {
             instructions: string;
             brief?: components["schemas"]["ReportBrief"] | null;
         };
+        /** GenerationActiveBody */
+        GenerationActiveBody: {
+            /** Detail */
+            detail: string;
+            /**
+             * Code
+             * @constant
+             */
+            code: "generation_active";
+            active: components["schemas"]["ActiveJob"];
+        };
         /**
          * GenerationUsage
          * @description 생성 작업 1건(서비스 공개 메서드 1회 호출) 안의 모든 호출을 합산한 값 (가정 3).
@@ -2601,7 +2607,7 @@ export interface components {
              * Candidate Status
              * @enum {string}
              */
-            candidate_status: "none" | "held" | "applied" | "stale" | "dismissed";
+            candidate_status: "none" | "held" | "delivered" | "applied" | "stale" | "dismissed";
             /** Outcome */
             outcome: string | null;
             /**
@@ -2625,6 +2631,8 @@ export interface components {
             current_etag: string | null;
             /** Stale Reasons */
             stale_reasons: string[];
+            /** Cancel Requested */
+            cancel_requested: boolean;
             error: components["schemas"]["JobError"] | null;
             /** Result */
             result: {
@@ -5812,6 +5820,15 @@ export interface operations {
                     "application/json": components["schemas"]["StructureResult"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -5879,6 +5896,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
                 };
             };
             /** @description Validation Error */

@@ -387,3 +387,258 @@ def test_claude_cli_process_is_cleaned_up_after_cancel(store, manager, monkeypat
     assert not _alive(pid)
     # 종료 처리가 먼저 행을 정리하면 완료 여부 불명이고, 아니면 취소로 끝난다
     assert state == ("remote_completion_unknown" if case == "cancel_then_shutdown" else "cancelled")
+
+
+
+# D2b-2 리뷰 반영: 시험이 고정하지 못하던 계약 (리뷰 R2~R7, R10, R12)
+
+def test_shutdown_sends_one_cancel_and_waits_for_a_quick_provider(store):
+    _project(store)
+    provider = GateProvider()  # 취소를 받으면 바로 끝난다
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        _runner(client).shutdown(wait_seconds=5)
+        view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
+    assert provider.cancels == 1 and view["state"] == "cancelled"
+
+
+def _slow_login(manager):
+    entered, resume = threading.Event(), threading.Event()
+    real_status = manager.connections["claude"].status
+
+    def slow_status():
+        entered.set()
+        assert resume.wait(5)
+        return real_status()
+
+    manager.connections["claude"].status = slow_status
+    return entered, resume, real_status
+
+
+def test_cancel_during_lease_acquisition_ends_without_a_call(store, manager):
+    _project(store)
+    entered, resume, real_status = _slow_login(manager)
+    with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
+        job = _register(client, headers={"X-AI-Selection": manager.selection_id}).json()
+        assert entered.wait(5)
+        accepted = client.post(f"/api/projects/p1/jobs/{job['id']}/cancel").json()
+        assert accepted["state"] == "queued" and accepted["cancel_requested"] is True
+        resume.set()
+        view = _wait(client, job["id"])
+    assert view["state"] == "cancelled" and view["started_at"] is None
+    assert manager.connections["claude"].calls == []
+
+
+def test_cancel_during_recheck_ends_without_running(store, monkeypatch):
+    _project(store)
+    provider = GateProvider()
+    app = create_app(store, provider=provider)
+    entered, resume = threading.Event(), threading.Event()
+    with TestClient(app, headers=HEADERS) as client:
+        runner = _runner(client)
+        real_start = runner.start
+
+        def start_with_slow_recheck(spec):
+            original = spec.recheck
+
+            def slow():
+                entered.set()
+                assert resume.wait(5)
+                original()
+
+            spec.recheck = slow
+            return real_start(spec)
+
+        monkeypatch.setattr(runner, "start", start_with_slow_recheck)
+        job = _register(client).json()
+        assert entered.wait(5)
+        client.post(f"/api/projects/p1/jobs/{job['id']}/cancel")
+        resume.set()
+        view = _wait(client, job["id"])
+    assert view["state"] == "cancelled" and view["started_at"] is None and provider.calls == 0
+
+
+def test_value_after_cancel_is_kept_as_a_held_candidate(store):
+    _project(store)
+    provider = GateProvider(on_cancel="value")
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        client.post(f"/api/projects/p1/jobs/{job['id']}/cancel")
+        provider.release.set()
+        view = _wait(client, job["id"])
+    assert view["state"] == "cancelled" and view["candidate_status"] == "held"
+
+
+def test_deck_saved_during_generation_makes_a_stale_candidate(store):
+    _project(store)
+    provider = GateProvider()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        deck = client.get("/api/projects/p1/deck")
+        body = deck.json()
+        body["meta"]["title"] = "생성 중에 바꿈"
+        client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]})
+        provider.release.set()
+        view = _wait(client, job["id"])
+        status = client.get("/api/status").json()
+    assert view["state"] == "succeeded" and view["candidate_status"] == "stale"
+    assert view["stale_reasons"] == ["deck_changed"]
+    assert status["last_generation_at"] is None  # 낡은 결과는 성공 시각을 갱신하지 않는다
+
+
+def test_unreadable_basis_after_generation_keeps_the_candidate_held(store, monkeypatch):
+    _project(store)
+    provider = GateProvider()
+    app = create_app(store, provider=provider)
+    with TestClient(app, headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        real = store.deck_etag
+        monkeypatch.setattr(store, "deck_etag", lambda name: (_ for _ in ()).throw(OSError("동기화 중")))
+        provider.release.set()
+        handle = _runner(client)._handles[job["id"]]
+        handle.wait_sync(10)
+        monkeypatch.setattr(store, "deck_etag", real)
+        view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
+    assert view["candidate_status"] == "held" and view["stale_reasons"] == []
+
+
+def test_settings_busy_while_the_job_waits_for_the_lease(store, manager):
+    # 임대를 잡기 전(queued)에도 설정의 busy가 참이다. 연결 관리자 잠금을 쥐기 전에 멈춰 설정 조회가 막히지 않게 한다
+    _project(store)
+    entered, resume = threading.Event(), threading.Event()
+    with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
+        runner = _runner(client)
+        real_acquire = runner._acquire
+
+        def slow_acquire(selection_id):
+            entered.set()
+            assert resume.wait(5)
+            return real_acquire(selection_id)
+
+        runner._acquire = slow_acquire
+        job = _register(client, headers={"X-AI-Selection": manager.selection_id}).json()
+        assert entered.wait(5)
+        assert client.get("/api/ai/settings").json()["busy"] is True
+        assert client.get("/api/jobs/active").json()["active"]["id"] == job["id"]
+        client.post(f"/api/projects/p1/jobs/{job['id']}/cancel")
+        resume.set()
+        _wait(client, job["id"])
+        assert client.get("/api/ai/settings").json()["busy"] is False
+
+
+def test_retry_with_the_same_request_id_merges_before_registration_checks(store, manager):
+    _project(store)
+    with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
+        first = _register(client, headers={"X-AI-Selection": manager.selection_id}).json()
+        _wait(client, first["id"])
+        manager.select(AISelection(provider="chatgpt", model="gpt-test"))  # 선택 식별자가 바뀐다
+        again = _register(client, headers={"X-AI-Selection": "stale-selection"})
+    assert again.status_code == 200 and again.json()["id"] == first["id"]
+
+
+def test_wrapper_marks_its_result_delivered_and_lists_stay_short(store):
+    _project(store)
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        for _ in range(4):
+            assert client.post("/api/projects/p1/generate/structure", json={}).status_code == 200
+        jobs = client.get("/api/projects/p1/jobs").json()
+    assert len(jobs) == 1 and jobs[0]["candidate_status"] == "delivered"
+
+
+@pytest.mark.parametrize("failing", ["validating", "succeeded", "everything"])
+def test_ledger_write_failures_keep_the_result_for_the_wrapper(store, monkeypatch, failing):
+    from slidecaptain.storage.job_ledger import LedgerError
+    _project(store)
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        ledger = _runner(client).ledger
+        real_transition, real_get = ledger.transition, ledger.get_job
+
+        def transition(job_id, *, expected, new, **changes):
+            if new == failing or (failing == "everything" and new in ("validating", "failed")):
+                raise LedgerError("디스크")
+            return real_transition(job_id, expected=expected, new=new, **changes)
+
+        monkeypatch.setattr(ledger, "transition", transition)
+        if failing == "everything":
+            def get_job(job_id):
+                if ledger.transition is transition and getattr(get_job, "armed", False):
+                    raise LedgerError("디스크")
+                return real_get(job_id)
+            monkeypatch.setattr(ledger, "get_job", get_job)
+            real_wait = provider.complete
+
+            async def arm_then_complete(prompt, schema):
+                get_job.armed = True
+                return await real_wait(prompt, schema)
+
+            monkeypatch.setattr(provider, "complete", arm_then_complete)
+        response = client.post("/api/projects/p1/generate/structure", json={})
+        monkeypatch.setattr(ledger, "transition", real_transition)
+        monkeypatch.setattr(ledger, "get_job", real_get)
+        [row] = ledger.list_jobs("p1")
+    assert response.status_code == 200 and response.json()["status"] == "ok"
+    if failing != "everything":
+        assert row.state == "failed" and row.error_class == "ledger" and row.error_code == "ledger_write_failed"
+
+
+def test_waiter_on_a_closed_loop_does_not_block_other_waiters():
+    from slidecaptain.server.jobs import JobHandle, Outcome
+
+    handle = JobHandle("j", None)
+    closed = asyncio.new_event_loop()
+    task = closed.create_task(handle.wait())
+    closed.run_until_complete(asyncio.sleep(0))
+    closed.close()
+
+    async def second():
+        return await handle.wait()
+
+    loop = asyncio.new_event_loop()
+    pending = loop.create_task(second())
+    loop.run_until_complete(asyncio.sleep(0))
+    handle._finish(Outcome(None, "결과"))
+    assert loop.run_until_complete(pending).result == "결과"
+    loop.close()
+
+
+def test_cancel_called_on_the_job_loop_does_not_stall(store):
+    from slidecaptain.server.jobs import job_loop
+    _project(store)
+    provider = GateProvider()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        assert provider.entered.wait(5)
+        runner = _runner(client)
+        started = time.monotonic()
+        asyncio.run_coroutine_threadsafe(asyncio.to_thread(lambda: None), job_loop()).result(5)
+        future = asyncio.run_coroutine_threadsafe(_call_cancel_on_loop(runner, job["id"]), job_loop())
+        future.result(5)
+        assert time.monotonic() - started < 2
+        view = _wait(client, job["id"])
+    assert view["state"] == "cancelled"
+
+
+async def _call_cancel_on_loop(runner, job_id):
+    runner.cancel(job_id)
+
+
+def test_single_job_routes_accept_nfd_project_names(store):
+    import unicodedata
+    store.create_project("보고", "보고")
+    store.write_source("보고", "자료.md", "자료")
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = client.post("/api/projects/보고/jobs", json={"request_id": "req-00000003", "kind": "structure",
+                                                         "params": {}}).json()
+        _runner(client)._handles[job["id"]].wait_sync(10)
+        nfd = unicodedata.normalize("NFD", "보고")
+        assert client.get(f"/api/projects/{nfd}/jobs/{job['id']}").status_code == 200

@@ -134,6 +134,9 @@ async function main() {
     // D2b-2: the job ledger opens in the packaged service and records a generation that cannot log in.
     const status = (await request("/api/status")).value;
     if (status.login.logged_in === true) throw Error("Claude login visible; refusing to register a generation");
+    // The missing-CLI override must be what blocked the login, not some other state (D2b-2 review R13).
+    if (!String(status.login.error ?? "").includes("SLIDECAPTAIN_CLAUDE_CLI"))
+      throw Error("The Claude CLI override did not reach the service: " + JSON.stringify(status.login));
     const registered = await request(
       "/api/projects/desktop-smoke/jobs",
       "POST",

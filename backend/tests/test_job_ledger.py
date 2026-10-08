@@ -409,6 +409,12 @@ def test_values_are_checked(tmp_path, field, value):
     ledger.close()
 
 
+# 계획서 5.8의 처분 전이를 따로 적은 기대값
+PLAN_CANDIDATE_EDGES = {("none", "held"), ("none", "stale"), ("held", "delivered"), ("held", "applied"),
+                        ("held", "dismissed"), ("held", "stale"), ("delivered", "applied"), ("delivered", "dismissed"),
+                        ("stale", "dismissed")}
+
+
 @pytest.mark.parametrize("before", list(CANDIDATE_TRANSITIONS))
 @pytest.mark.parametrize("after", list(CANDIDATE_TRANSITIONS))
 def test_candidate_transition_table(tmp_path, before, after):
@@ -418,7 +424,7 @@ def test_candidate_transition_table(tmp_path, before, after):
     ledger.transition(job.id, expected="running", new="validating", result={"status": "ok"},
                       candidate_status=before)
     ledger.transition(job.id, expected="validating", new="succeeded")
-    if after in CANDIDATE_TRANSITIONS[before]:
+    if (before, after) in PLAN_CANDIDATE_EDGES:
         assert ledger.settle_candidate(job.id, expected=before, new=after).candidate_status == after
     else:
         with pytest.raises(TransitionRejected):
