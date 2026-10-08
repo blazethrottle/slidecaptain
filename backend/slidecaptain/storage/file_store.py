@@ -76,6 +76,10 @@ class DraftTooLarge(StorageError):
     """보존본이 상한(DRAFT_MAX_BYTES)을 넘는다 (D2a-2. A가 413으로 매핑한다)."""
 
 
+class DeckUnreadable(StorageError):
+    """deck.json을 덱으로 읽지 못했다(복구 필요). 이름 검증 같은 다른 저장소 오류와 구별한다 (D2a 최종 리뷰 F1)."""
+
+
 class ProjectFormatTooNew(StorageError):
     """이 앱이 읽을 수 있는 것보다 새 형식의 프로젝트 (D2a-1). 모르는 필드를 버린 채 열거나
     내보내지 않도록 모든 접근을 거절한다. 파일은 바꾸지 않는다."""
@@ -387,25 +391,30 @@ class FileProjectStore:
         old = project_format.deck_format_of_bytes(old_bytes) if old_bytes is not None else None
         new = project_format.deck_format(deck)
         manifest = project_format.reconcile(project_format.read_manifest(project_dir), old)
-        # 이전 전 복사본은 0.2.0이 실제로 열 수 있는 덱일 때만 기록한다 (리뷰 R9: 깨진 덱 제외)
-        if old == 1 and new == 2 and project_format.legacy_readable(old_bytes):
+        if old == 1 and new == 2:
+            # 형식 1에서 2로 바꾸는 저장은 화면의 스냅샷 요청과 관계없이 복구 지점을 남긴다 (최종 리뷰 F16).
+            # 그 복구 지점을 "새 형식으로 바꾸기 전"(0.2.0으로 되돌릴 지점)으로 기록하는 것은 0.2.0이
+            # 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외)
             snapshot_id = self._snapshot_current(project_dir)
-            record = project_format.MigrationRecord(
-                at=project_format.now_iso(), kind="upgrade", from_format=1, to_format=2,
-                snapshot_id=snapshot_id, status="pending",
-            )
-            manifest.migrations.append(record)
-            project_format.write_manifest(project_dir, manifest, self._atomic_write)
-            etag = self._write_deck(project_dir, deck)
-            record.status = "done"
-        else:
-            snapshot_id = self._snapshot_current(project_dir) if snapshot else None
-            etag = self._write_deck(project_dir, deck)
-            if old == 2 and new == 1:
-                manifest.migrations.append(project_format.MigrationRecord(
-                    at=project_format.now_iso(), kind="downgrade", from_format=2, to_format=1,
-                    snapshot_id=snapshot_id,
+            if project_format.legacy_readable(old_bytes):
+                etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
+                    at=project_format.now_iso(), kind="upgrade", from_format=1, to_format=2,
+                    snapshot_id=snapshot_id, status="pending",
                 ))
+            else:
+                etag = self._write_deck(project_dir, deck)
+        elif old == 2 and new == 1:
+            # 형식이 내려가는 저장도 덱 교체 전에 pending을 남긴다. 그래야 마지막 기록이 실패해도 다음
+            # 쓰기가 이 앱의 저장으로 마무리하고, 0.2.0의 외부 되돌림으로 잘못 기록하지 않는다 (최종 리뷰 F3)
+            snapshot_id = self._snapshot_current(project_dir) if snapshot else None
+            etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
+                at=project_format.now_iso(), kind="downgrade", from_format=2, to_format=1,
+                snapshot_id=snapshot_id, status="pending",
+            ))
+        else:
+            if snapshot:
+                self._snapshot_current(project_dir)
+            etag = self._write_deck(project_dir, deck)
         manifest.format_version = new
         try:
             project_format.write_manifest(project_dir, manifest, self._atomic_write)
@@ -413,6 +422,14 @@ class FileProjectStore:
             # 덱은 이미 저장됐다. 기록 실패를 저장 실패로 돌려주면 화면이 새 ETag를 모른 채 다시
             # 저장해 자기 저장과 충돌한다(리뷰 R5). 다음 쓰기의 reconcile이 기록을 바로잡는다
             _LOG.warning("형식 기록(manifest.json) 쓰기 실패: %s", project_dir, exc_info=True)
+        return etag
+
+    def _write_with_pending(self, project_dir: Path, deck: Deck, manifest, record) -> str:
+        """pending 이전 기록을 먼저 쓰고 덱을 교체한다. 완료 기록은 호출자의 마지막 manifest 쓰기가 남긴다."""
+        manifest.migrations.append(record)
+        project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        etag = self._write_deck(project_dir, deck)
+        record.status = "done"
         return etag
 
     # -- 프로젝트 ----------------------------------------------------------
@@ -497,7 +514,7 @@ class FileProjectStore:
         try:
             return Deck.model_validate_json((d / "deck.json").read_text(encoding="utf-8"))
         except (ValueError, ValidationError) as e:
-            raise StorageError(
+            raise DeckUnreadable(
                 f"프로젝트 {name}의 deck.json을 읽지 못했습니다. "
                 f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
             ) from e
@@ -515,7 +532,7 @@ class FileProjectStore:
         try:
             deck = Deck.model_validate_json(data)
         except (ValueError, ValidationError) as e:
-            raise StorageError(
+            raise DeckUnreadable(
                 f"프로젝트 {name}의 deck.json을 읽지 못했습니다. "
                 f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
             ) from e

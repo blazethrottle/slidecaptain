@@ -4,7 +4,7 @@
 
 ## 진본 문서 (작업 시작 전 필독)
 
-- 2026-10-08 개정판 D2 계획: `docs/plans/2026-10-08-revision-d2-common-foundation.md`. D2a 태스크 6개(형식 → 보존 → 잠금 → 토큰 → 상태 표시 → 진행 모델)와 D2b 계약이 있다. 구현은 사용자 결정 뒤 착수한다.
+- 2026-10-08 개정판 D2: `docs/plans/2026-10-08-revision-d2-common-foundation.md`. D2a 6태스크는 구현 완료이고 D2 관문은 미통과다(D2b 작업 원장이 남음). 「결과」 절과 로드맵의 D2a 이월표를 먼저 읽는다. D2b 착수는 사용자 결정이다.
 - 2026-10-08 macOS 재개: Mac Mini에서도 `feat/windows-feedback-revision`을 이어간다. D1의 macOS 빌드, 실행, 자식 정리 확인 결과는 `docs/handoffs/2026-10-02-desktop-d1.md`의 macOS 절에 있다. 패키지 앱을 시험할 때는 `SLIDECAPTAIN_DATA_DIR`를 별도 폴더로 지정해 사용자의 `~/slidecaptain-projects`를 건드리지 않는다.
 - 2026-10-02 Windows 개발 환경 재개: `docs/handoffs/2026-10-02-windows-dev-environment.md`. 회사 PC에서 `feat/windows-feedback-revision`을 이어갈 때 먼저 읽는다. Windows 로컬 백엔드 테스트는 `PYTHONUTF8=1`, 프런트 전체 테스트는 `npx vitest run --maxWorkers=4`로 실행해야 CI와 같은 기준선이 나온다. 아래 개정판 인계가 기능 상태의 진본이다.
 

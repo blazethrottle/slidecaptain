@@ -38,6 +38,8 @@ export function useDeckEditor(
   // 보존 실패의 원인 문구. 복사할 내용은 화면이 현재 덱에서 만든다: 실패 뒤의 편집도 담기 위해서다 (리뷰 R2)
   const [preserveFailure, setPreserveFailure] = useState<{ message: string } | null>(null);
   const reloadInFlight = useRef<Promise<void> | null>(null);
+  // 보존은 했지만 서버 내용을 읽지 못해 아직 되돌리지 못한 상태 (D2a 최종 리뷰 F2)
+  const [reloadIncomplete, setReloadIncomplete] = useState(false);
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
@@ -211,8 +213,10 @@ export function useDeckEditor(
           setSaveError(preserved
             ? `변경은 보존했지만 서버 내용을 읽지 못했습니다. 다시 시도해 주세요. (${messageOf(e)})`
             : messageOf(e));
+          setReloadIncomplete(preserved !== null);
           return;
         }
+        setReloadIncomplete(false);
         dispatch({ type: "reset", deck: serverDeck });
         savedDeck.current = serverDeck;
         deckRef.current = serverDeck;
@@ -242,7 +246,7 @@ export function useDeckEditor(
   const retrySave = flushSave;  // 저장 실패 뒤 재시도 버튼의 별칭
 
   return {
-    deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure,
+    deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure, reloadIncomplete,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,

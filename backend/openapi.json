@@ -1356,7 +1356,7 @@
     "/api/projects/{name}/progress": {
       "get": {
         "summary": "Get Progress",
-        "description": "단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.",
+        "description": "단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.\n\n한 번의 프로젝트 잠금 안에서 덱과 자료를 한 번 읽고, 현재 입력 fingerprint는 내보내기 기록이\n있을 때만 한 번 계산한다. 단계 계산, 파일 현재성, 검수 기준이 같은 저장본을 근거로 한다 (최종 리뷰 F4)",
         "operationId": "get_progress_api_projects__name__progress_get",
         "parameters": [
           {

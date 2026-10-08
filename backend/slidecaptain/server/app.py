@@ -76,6 +76,7 @@ from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
 from slidecaptain.storage.file_store import (
     DeckConflict,
+    DeckUnreadable,
     DraftInfo,
     DraftNotFound,
     DraftTooLarge,
@@ -832,39 +833,57 @@ def create_app(
 
     @app.get("/api/projects/{name}/progress", response_model=ProjectProgress)
     def get_progress(name: str):
-        """단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다."""
-        try:
-            deck = store.load_deck(name)
-        except ProjectManifestUnreadable:
-            return ProjectProgress(project_status="unreadable_manifest")
-        except ProjectFormatTooNew:
-            return ProjectProgress(project_status="newer_format")
-        except ProjectNotFound:
-            if any(p.name == unicodedata.normalize("NFC", name) and p.status == "needs_recovery"
-                   for p in store.list_projects()):
-                return ProjectProgress(project_status="needs_recovery")
-            raise
-        except StorageError:
-            return ProjectProgress(project_status="needs_recovery")
-        sources: dict[str, str] | None
-        sources_error = None
-        try:
-            sources = {f: store.read_source(name, f) for f in store.list_sources(name)}
-        except (StorageError, OSError) as exc:
-            sources, sources_error = None, str(exc)
-        item = reviews = None
-        reviews_error = export_error = None
-        try:
-            page = _export_history(name, limit=1)  # 최신 기록 1건만 읽는다(전체 이력의 파일 해시를 다시 계산하지 않는다)
-            item = page.items[0] if page.items else None
-        except (HTTPException, StorageError, OSError) as exc:
-            export_error = str(exc)
-        if item is not None:
+        """단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.
+
+        한 번의 프로젝트 잠금 안에서 덱과 자료를 한 번 읽고, 현재 입력 fingerprint는 내보내기 기록이
+        있을 때만 한 번 계산한다. 단계 계산, 파일 현재성, 검수 기준이 같은 저장본을 근거로 한다 (최종 리뷰 F4)
+        """
+        with store.locked(name):
             try:
-                with store.locked(name):
-                    reviews = read_export_reviews(store.export_history_dir(name), item.id, _review_inputs(name))
-            except (HTTPException, StorageError, OSError, ValueError) as exc:
-                reviews_error = str(exc)
+                deck, etag = store.load_deck_with_etag(name)
+            except ProjectManifestUnreadable:
+                return ProjectProgress(project_status="unreadable_manifest")
+            except ProjectFormatTooNew:
+                return ProjectProgress(project_status="newer_format")
+            except DeckUnreadable:  # 덱 검증 실패만 복구 필요다. 이름 오류 등은 그대로 올린다 (최종 리뷰 F1)
+                return ProjectProgress(project_status="needs_recovery")
+            except ProjectNotFound:
+                # deck.json 없이 스냅샷만 남은 프로젝트. 다른 프로젝트의 덱은 읽지 않는다 (최종 리뷰 F6)
+                if store.list_snapshots(name):
+                    return ProjectProgress(project_status="needs_recovery")
+                raise
+            sources: dict[str, str] | None
+            sources_error = None
+            try:
+                sources = {f: store.read_source(name, f) for f in store.list_sources(name)}
+            except (StorageError, OSError) as exc:
+                sources, sources_error = None, str(exc)
+            item = reviews = None
+            reviews_error = export_error = None
+            fingerprint = current_error = None
+            try:
+                directory = store.export_history_dir(name)
+                if directory.is_dir() and any(directory.iterdir()):
+                    try:
+                        if sources is None:
+                            raise ValueError(sources_error)
+                        preset = apply_overrides(store.load_global_preset(), deck.meta.preset_overrides)
+                        plan = build_render_plan(deck, preset, metrics, sources=sources)
+                        fingerprint = assess_quality(deck, preset, plan, sources=sources).input_fingerprint
+                    except (StorageError, OSError, ValueError):
+                        current_error = "현재 저장된 덱, 프리셋 또는 자료를 읽지 못해 현재 입력과 대조하지 못했습니다."
+                # 최신 기록 1건만 읽는다(전체 이력의 파일 해시를 다시 계산하지 않는다)
+                page = read_export_history(directory, current_fingerprint=fingerprint,
+                                           current_error=current_error, limit=1)
+                item = page.items[0] if page.items else None
+            except (HistoryNotFound, HistoryReadError, StorageError, OSError) as exc:
+                export_error = str(exc)
+            if item is not None:
+                try:
+                    reviews = read_export_reviews(directory, item.id,
+                                                  ReviewInputs(f'"{etag}"', fingerprint, current_error))
+                except (HistoryNotFound, HistoryReadError, StorageError, OSError, ValueError) as exc:
+                    reviews_error = str(exc)
         return project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
                                 reviews=reviews, reviews_error=reviews_error, export_error=export_error)
 

@@ -91,3 +91,14 @@ it("보존이 성공한 뒤 서버 덱 읽기가 실패해도 보존 사실과 �
   expect(result.current.saveError).toContain("변경은 보존했지만 서버 내용을 읽지 못했습니다");
   expect(result.current.conflict).toBe(true);
 });
+
+it("보존 뒤 읽기 실패는 되돌리지 못한 상태로 표시하고, 다음 되돌리기 성공이 지운다 (최종 리뷰 F2)", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  const { result } = await conflicted();
+  vi.mocked(api.getDeck).mockRejectedValueOnce(new Error("서버 응답 없음"));
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.reloadIncomplete).toBe(true);
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.reloadIncomplete).toBe(false);
+  expect(result.current.deck).toBe(serverDeck);
+});

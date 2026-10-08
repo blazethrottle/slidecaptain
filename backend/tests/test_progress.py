@@ -156,3 +156,80 @@ def test_unreadable_export_history_is_not_reported_as_no_export():
     assert {p.name: p.reasons for p in review.parts} == {
         "auto_checks": ["export_history_unreadable"], "human_review": ["export_history_unreadable"],
         "file": ["export_history_unreadable"]}
+
+
+# -- D2a 묶음 최종 리뷰 반영 (F1, F4, F5, F6) ---------------------------------------------
+
+
+def _exported_project(client, store, count=3):
+    from slidecaptain.models.deck import BulletBoxSlots, Chapter, Slide
+
+    store.create_project("px", "합성")
+    deck = store.load_deck("px")
+    deck.structure.chapters = [Chapter(id="c1", topic="합성", template="bullet_box")]
+    deck.slides = [Slide(chapter_id="c1", slots=BulletBoxSlots(bullets=[], conclusion="합성 초안"))]
+    store.save_deck("px", deck)
+    store.write_source("px", "자료.md", "합성 자료")
+    for _ in range(count):
+        assert client.post("/api/projects/px/export").status_code == 200
+
+
+def test_invalid_project_name_is_an_error_not_a_recovery_state(client):
+    assert client.get("/api/projects/.hidden/progress").status_code == 422
+    assert client.get("/api/projects/.hidden/deck").status_code == 422
+
+
+def test_unreadable_manifest_and_snapshot_only_projects(client, store):
+    client.post("/api/projects", json={"name": "p1"})
+    (store.root / "p1" / "manifest.json").write_text("{깨진", encoding="utf-8")
+    assert client.get("/api/projects/p1/progress").json()["project_status"] == "unreadable_manifest"
+    client.post("/api/projects", json={"name": "p2"})
+    deck = client.get("/api/projects/p2/deck").json()
+    deck["meta"]["title"] = "두 번째"
+    assert client.put("/api/projects/p2/deck?snapshot=true", json=deck).status_code == 200
+    (store.root / "p2" / "deck.json").unlink()
+    assert client.get("/api/projects/p2/progress").json()["project_status"] == "needs_recovery"
+    (store.root / "p3" / "snapshots").mkdir(parents=True)
+    assert client.get("/api/projects/p3/progress").status_code == 404
+
+
+def test_progress_inspects_only_the_latest_of_many_exports_and_measures_once(client, store, monkeypatch):
+    import slidecaptain.export.history as history
+    import slidecaptain.server.app as app_module
+
+    _exported_project(client, store, count=3)
+    inspected, measured = [], []
+    real_inspect, real_plan = history._inspect, app_module.build_render_plan
+    monkeypatch.setattr(history, "_inspect", lambda *a, **k: inspected.append(a[1]) or real_inspect(*a, **k))
+    monkeypatch.setattr(app_module, "build_render_plan", lambda *a, **k: measured.append(1) or real_plan(*a, **k))
+    body = client.get("/api/projects/px/progress").json()
+    # 최신 기록만 본다(이력 조회와 검수 기록 조회가 같은 최신 기록을 본다). 이전 기록 2건은 보지 않는다
+    assert set(inspected) == {"합성_v003"}
+    assert len(measured) == 1
+    review = next(s for s in body["stages"] if s["stage"] == "review")
+    assert {p["name"]: p["state"] for p in review["parts"]}["file"] == "ready"
+
+
+def test_source_change_marks_the_latest_export_input_stale(client, store):
+    _exported_project(client, store, count=1)
+    store.write_source("px", "자료.md", "바뀐 자료")
+    body = client.get("/api/projects/px/progress").json()
+    review = next(s for s in body["stages"] if s["stage"] == "review")
+    assert {p["name"]: p["reasons"] for p in review["parts"]}["file"] == ["input_stale"]
+
+
+@pytest.mark.parametrize("statuses, state, reasons", [
+    (["not_run"] * 5, "not_started", []),
+    (["passed"] * 5, "ready", ["manual_pass_not_final"]),
+    (["passed", "needs_revision", "stale", "passed", "passed"], "needs_review", ["review_needs_revision", "review_stale"]),
+])
+def test_human_review_part_states(statuses, state, reasons):
+    from types import SimpleNamespace
+
+    deck, sources = _fixture("q3b-project.json")
+    reviews = SimpleNamespace(categories=[SimpleNamespace(status=s) for s in statuses])
+    review = _stage(project_progress(deck, sources=sources, reviews=reviews), "review")
+    human = next(p for p in review.parts if p.name == "human_review")
+    assert (human.state, human.reasons) == (state, reasons)
+    errored = _stage(project_progress(deck, sources=sources, reviews_error="읽기 실패"), "review")
+    assert next(p for p in errored.parts if p.name == "human_review").reasons == ["review_records_unreadable"]

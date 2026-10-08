@@ -452,3 +452,38 @@ def test_cli_export_and_quality_refuse_a_newer_format_project(store):
         assert result.returncode == 1, (command, result.stdout, result.stderr)
         assert "더 새 버전" in result.stderr
     assert not any((store.root / "p1" / "exports").iterdir())
+
+
+# -- D2a 묶음 최종 리뷰 반영 (F3, F16) ----------------------------------------------------
+
+
+def test_own_downgrade_with_failed_final_record_is_not_reported_as_external(store, monkeypatch):
+    """이 앱의 형식 2→1 저장에서 마지막 기록이 실패해도, 다음 쓰기가 0.2.0의 되돌림으로 잘못 기록하지 않는다 (F3)."""
+    store.create_project("p1")
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    original = project_format.write_manifest
+
+    def flaky(project_dir, manifest, atomic_write):
+        # 덱 교체 뒤의 마지막 기록(pending이 없는 기록)에서 끊긴다. 쓰기 횟수와 무관하게 같은 지점이다
+        if not any(m.status == "pending" for m in manifest.migrations):
+            raise OSError("디스크 오류 흉내")
+        return original(project_dir, manifest, atomic_write)
+
+    monkeypatch.setattr(project_format, "write_manifest", flaky)
+    store.save_deck("p1", _deck("research"), snapshot=False)
+    monkeypatch.setattr(project_format, "write_manifest", original)
+    store.save_deck("p1", _deck("research", title="다음"), snapshot=False)
+    kinds = [(m.kind, m.status) for m in _manifest(store).migrations]
+    assert kinds == [("upgrade", "done"), ("downgrade", "done")]
+
+
+def test_upgrade_over_a_broken_legacy_deck_still_leaves_a_snapshot(store):
+    """깨진 형식 1 덱 위의 형식 2 저장도 복구 지점을 남긴다. 다만 이전 전 복사본으로 표시하지 않는다 (F16)."""
+    store.create_project("p1")
+    path = store.root / "p1" / "deck.json"
+    broken = '{"schema_version": 1, "meta": {"title": "x", "report_type": "research"}, "slides": 5}'
+    path.write_text(broken, encoding="utf-8")
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    snapshots = list((store.root / "p1" / "snapshots").glob("deck-*.json"))
+    assert [s.read_text(encoding="utf-8") for s in snapshots] == [broken]
+    assert [s.kind for s in store.list_snapshots("p1")] == ["snapshot"]

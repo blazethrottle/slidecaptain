@@ -181,9 +181,12 @@ export function EditorScreen({
         )}
         {editor.preservedDraft && (
           <p role="status" tabIndex={-1} ref={outcomeRef}>
-            다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
-            ({formatSavedAt(editor.preservedDraft.saved_at)}). 스냅샷 복구 화면의
-            "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
+            {editor.reloadIncomplete
+              ? <>변경을 보존했습니다({formatSavedAt(editor.preservedDraft.saved_at)}). 서버 내용은 아직 읽지 못해
+                  화면은 바뀌지 않았습니다. "서버 내용으로 되돌리기"를 다시 눌러 주세요.</>
+              : <>다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
+                  ({formatSavedAt(editor.preservedDraft.saved_at)}).</>}
+            {" "}스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
             <button onClick={editor.dismissPreservedDraft}>닫기</button>
           </p>
         )}

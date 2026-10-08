@@ -384,3 +384,18 @@ it("결과 안내가 없는 되돌리기 뒤에는 저장 상태로 초점을 �
   await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".editor-save-status")));
   expect(api.saveDraft).not.toHaveBeenCalled();
 });
+
+
+it("보존 뒤 서버 덱 읽기가 실패하면 되돌렸다고 말하지 않는다 (최종 리뷰 F2)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  expect(await screen.findByText(/서버 내용은 아직 읽지 못해/)).toBeInTheDocument();
+  expect(screen.queryByText(/서버 내용으로 되돌렸습니다/)).toBeNull();
+});
