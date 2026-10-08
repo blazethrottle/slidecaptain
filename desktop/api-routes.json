@@ -120,6 +120,12 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/progress",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
     "path": "/api/projects/{name}/exports/{export_id}/qualification",
     "methods": [
       "GET"

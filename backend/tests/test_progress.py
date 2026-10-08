@@ -1,0 +1,158 @@
+"""단계 준비 모델 (개정판 D2a-6).
+
+현재 저장 계약으로 판정할 수 있는 것만 판정하고, 판정할 수 없는 것은 사유 코드로 남긴다.
+기본값을 사용자가 확정한 값으로 표시하지 않는다. 화면 연결은 D3다.
+"""
+
+import json
+from pathlib import Path
+
+import pytest
+
+from slidecaptain.models.deck import Deck
+from slidecaptain.pipeline.progress import project_progress
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _fixture(name):
+    data = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    return Deck.model_validate(data["deck"]), data["sources"]
+
+
+def _stage(progress, name):
+    return next(s for s in progress.stages if s.stage == name)
+
+
+def test_purpose_is_never_ready_from_defaults():
+    deck, sources = _fixture("q3b-project.json")
+    purpose = _stage(project_progress(deck, sources=sources), "purpose")
+    assert purpose.state == "needs_review"
+    assert "report_type_unconfirmed" in purpose.reasons
+    deck.meta.title = ""
+    assert _stage(project_progress(deck, sources=sources), "purpose").state == "not_started"
+
+
+def test_sources_states_and_unavailable_review_reason():
+    deck, sources = _fixture("q3b-project.json")
+    ready = _stage(project_progress(deck, sources=sources), "sources")
+    assert ready.state == "ready"
+    assert "extraction_review_unavailable" in ready.reasons  # 부분 추출 경고는 저장되지 않는다(D5)
+    assert _stage(project_progress(deck, sources={}), "sources").state == "not_started"
+    big = {"a.md": "가" * 100_001}
+    over = _stage(project_progress(deck, sources=big), "sources")
+    assert (over.state, over.reasons[0]) == ("needs_review", "sources_over_limit")
+    unreadable = _stage(project_progress(deck, sources=None, sources_error="읽기 실패"), "sources")
+    assert (unreadable.state, unreadable.reasons[0]) == ("needs_review", "sources_unreadable")
+
+
+def test_structure_current_stale_missing_and_empty():
+    deck, sources = _fixture("q3b-project.json")
+    assert _stage(project_progress(deck, sources=sources), "structure").state == "ready"
+    changed = {**sources, "새 자료.md": "추가"}
+    stale = _stage(project_progress(deck, sources=changed), "structure")
+    assert (stale.state, stale.reasons) == ("needs_review", ["stale_story_plan"])
+    deck.structure.story_plan = None
+    missing = _stage(project_progress(deck, sources=sources), "structure")
+    assert (missing.state, missing.reasons) == ("needs_review", ["plan_missing"])
+    deck.structure.chapters = []
+    assert _stage(project_progress(deck, sources=sources), "structure").state == "not_started"
+
+
+def test_title_and_chapter_topic_edits_make_structure_need_review():
+    """구성 낡음 판정은 제목, 피보고자, 보고 유형, 장 제목과 결론도 본다(생성 관문과 같은 계약)."""
+    deck, sources = _fixture("q3b-project.json")
+    deck.meta.title = deck.meta.title + " 수정"
+    assert _stage(project_progress(deck, sources=sources), "structure").reasons == ["stale_story_plan"]
+    deck, sources = _fixture("q3b-project.json")
+    deck.structure.chapters[0].topic = deck.structure.chapters[0].topic + " 수정"
+    assert _stage(project_progress(deck, sources=sources), "structure").reasons == ["stale_story_plan"]
+
+
+def test_report_type_change_affects_structure_but_not_sources():
+    deck, sources = _fixture("q3b-project.json")
+    deck.meta.report_type = "weekly"
+    progress = project_progress(deck, sources=sources)
+    assert _stage(progress, "structure").reasons == ["stale_story_plan"]
+    assert _stage(progress, "sources").state == "ready"
+
+
+def test_editing_counts_written_chapters():
+    deck, sources = _fixture("q2a-story-deck.json")
+    editing = _stage(project_progress(deck, sources=sources), "editing")
+    assert (editing.state, editing.written_chapters, editing.total_chapters) == ("not_started", 0, 3)
+    deck, sources = _fixture("q3b-project.json")
+    full = _stage(project_progress(deck, sources=sources), "editing")
+    assert (full.state, full.written_chapters, full.total_chapters) == ("ready", 2, 2)
+    deck.slides = deck.slides[:1]
+    partial = _stage(project_progress(deck, sources=sources), "editing")
+    assert (partial.state, partial.reasons) == ("needs_review", ["chapters_unwritten"])
+
+
+def test_review_reports_three_parts_separately():
+    from slidecaptain.models.export_history import ExportHistoryItem
+
+    deck, sources = _fixture("q3b-project.json")
+    review = _stage(project_progress(deck, sources=sources), "review")
+    assert review.state == "not_started"
+    assert {p.name: p.state for p in review.parts} == {
+        "auto_checks": "not_started", "human_review": "not_started", "file": "not_started"}
+    item = ExportHistoryItem(id="x", file_modified_at=None, record_status="readable", artifact_status="matched",
+                             input_status="stale", quality_status="needs_revision", slide_count=2, gate_version=None)
+    review = _stage(project_progress(deck, sources=sources, latest_export=item), "review")
+    parts = {p.name: (p.state, p.reasons) for p in review.parts}
+    assert parts["file"] == ("needs_review", ["input_stale"])
+    assert parts["auto_checks"] == ("needs_review", ["quality_needs_revision"])
+    assert review.state == "needs_review"
+
+
+def test_jobs_slot_is_reserved_for_the_job_ledger():
+    deck, sources = _fixture("q3b-project.json")
+    assert project_progress(deck, sources=sources).jobs is None
+
+
+# -- API --------------------------------------------------------------------------------
+
+
+def test_progress_route_is_200_for_ok_recovery_and_newer_projects(client, store):
+    client.post("/api/projects", json={"name": "p1"})
+    body = client.get("/api/projects/p1/progress").json()
+    assert body["project_status"] == "ok"
+    assert [s["stage"] for s in body["stages"]] == ["purpose", "sources", "structure", "editing", "review"]
+    (store.root / "p1" / "deck.json").write_text("{깨진", encoding="utf-8")
+    broken = client.get("/api/projects/p1/progress")
+    assert broken.status_code == 200
+    assert broken.json() == {"project_status": "needs_recovery", "stages": None, "jobs": None}
+    client.post("/api/projects", json={"name": "p2"})
+    manifest = store.root / "p2" / "manifest.json"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["format_version"] = 99
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    newer = client.get("/api/projects/p2/progress").json()
+    assert newer == {"project_status": "newer_format", "stages": None, "jobs": None}
+    assert client.get("/api/projects/없음/progress").status_code == 404
+
+
+def test_progress_reads_only_the_latest_export_record(client, monkeypatch):
+    import slidecaptain.server.app as app_module
+
+    seen = []
+    original = app_module.read_export_history
+
+    def spy(directory, **kwargs):
+        seen.append(kwargs.get("limit"))
+        return original(directory, **kwargs)
+
+    monkeypatch.setattr(app_module, "read_export_history", spy)
+    client.post("/api/projects", json={"name": "p1"})
+    assert client.get("/api/projects/p1/progress").status_code == 200
+    assert seen == [1]
+
+
+def test_unreadable_export_history_is_not_reported_as_no_export():
+    deck, sources = _fixture("q3b-project.json")
+    review = _stage(project_progress(deck, sources=sources, export_error="읽기 실패"), "review")
+    assert review.state == "needs_review"
+    assert {p.name: p.reasons for p in review.parts} == {
+        "auto_checks": ["export_history_unreadable"], "human_review": ["export_history_unreadable"],
+        "file": ["export_history_unreadable"]}

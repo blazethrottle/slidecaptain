@@ -73,6 +73,7 @@ from slidecaptain.pipeline.document_changes import (
 from slidecaptain.models.story import ChapterRole, ReportBrief
 from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
+from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
 from slidecaptain.storage.file_store import (
     DeckConflict,
     DraftInfo,
@@ -82,6 +83,7 @@ from slidecaptain.storage.file_store import (
     InvalidSourceEncoding,
     ProjectExists,
     ProjectFormatTooNew,
+    ProjectManifestUnreadable,
     ProjectNotFound,
     ProjectInfo,
     ProjectStore,
@@ -111,7 +113,8 @@ _STATUS_BY_ERROR = [
     (StorageError, 400),
 ]
 
-_SOURCES_TOTAL_MAX_CHARS = 100_000  # 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14)
+# 자료 전문이 프롬프트에 동봉되므로 상한을 명시한다 (단계 4 결정 14). 원본은 진행 모델과 같은 값이다
+_SOURCES_TOTAL_MAX_CHARS = SOURCES_TOTAL_MAX_CHARS
 _TEXT_UPLOAD_EXTENSIONS = {".md", ".txt", ".csv"}  # 업로드로 받는 텍스트 형식 (PDF와 Word는 단계 5 이월)
 _UPLOAD_MAX_BYTES = 5 * 1024 * 1024
 _XLSX_UPLOAD_MAX_BYTES = 20 * 1024 * 1024  # 엑셀 원본은 텍스트보다 큰 것이 흔하다 (계획서 B2, 가정 4)
@@ -826,6 +829,44 @@ def create_app(
                 raise HTTPException(404, str(exc)) from exc
             except HistoryReadError as exc:
                 raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/projects/{name}/progress", response_model=ProjectProgress)
+    def get_progress(name: str):
+        """단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다."""
+        try:
+            deck = store.load_deck(name)
+        except ProjectManifestUnreadable:
+            return ProjectProgress(project_status="unreadable_manifest")
+        except ProjectFormatTooNew:
+            return ProjectProgress(project_status="newer_format")
+        except ProjectNotFound:
+            if any(p.name == unicodedata.normalize("NFC", name) and p.status == "needs_recovery"
+                   for p in store.list_projects()):
+                return ProjectProgress(project_status="needs_recovery")
+            raise
+        except StorageError:
+            return ProjectProgress(project_status="needs_recovery")
+        sources: dict[str, str] | None
+        sources_error = None
+        try:
+            sources = {f: store.read_source(name, f) for f in store.list_sources(name)}
+        except (StorageError, OSError) as exc:
+            sources, sources_error = None, str(exc)
+        item = reviews = None
+        reviews_error = export_error = None
+        try:
+            page = _export_history(name, limit=1)  # 최신 기록 1건만 읽는다(전체 이력의 파일 해시를 다시 계산하지 않는다)
+            item = page.items[0] if page.items else None
+        except (HTTPException, StorageError, OSError) as exc:
+            export_error = str(exc)
+        if item is not None:
+            try:
+                with store.locked(name):
+                    reviews = read_export_reviews(store.export_history_dir(name), item.id, _review_inputs(name))
+            except (HTTPException, StorageError, OSError, ValueError) as exc:
+                reviews_error = str(exc)
+        return project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
+                                reviews=reviews, reviews_error=reviews_error, export_error=export_error)
 
     @app.post("/api/projects/{name}/exports/{export_id}/reviews", response_model=ExportReviews)
     def create_export_review(

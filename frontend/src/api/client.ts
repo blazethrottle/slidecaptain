@@ -15,6 +15,7 @@ export type Preset = components["schemas"]["Preset"];
 export type ProjectInfo = components["schemas"]["ProjectInfo"];
 export type SnapshotInfo = components["schemas"]["SnapshotInfo"];
 export type DraftInfo = components["schemas"]["DraftInfo"];
+export type ProjectProgress = components["schemas"]["ProjectProgress"];
 export type DraftReason = DraftInfo["reason"];
 export type DraftSource = DraftInfo["source"];
 export type RenderPlan = components["schemas"]["RenderPlan"];
@@ -252,6 +253,9 @@ export const api = {
       method: "POST", body: JSON.stringify({ ...req, base_etag: etags.get(name) ?? null }),
     }),
   listDrafts: (name: string) => request<DraftInfo[]>(`/api/projects/${enc(name)}/drafts`),
+  // 단계 준비 상태 (D2a-6). 화면 연결은 D3에서 한다
+  getProgress: (name: string) =>
+    request<ProjectProgress>(`/api/projects/${enc(name)}/progress`, { cache: "no-store" }),
   restoreDraft: (name: string, id: string) =>
     request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
   deleteDraft: (name: string, id: string) =>

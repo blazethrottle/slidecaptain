@@ -339,6 +339,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description 단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.
+         */
+        get: operations["get_progress_api_projects__name__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/exports/{export_id}/qualification": {
         parameters: {
             query?: never;
@@ -2910,6 +2930,18 @@ export interface components {
              */
             status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
         };
+        /** ProjectProgress */
+        ProjectProgress: {
+            /**
+             * Project Status
+             * @enum {string}
+             */
+            project_status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
+            /** Stages */
+            stages?: components["schemas"]["StageProgress"][] | null;
+            /** Jobs */
+            jobs?: unknown[] | null;
+        };
         /** ProviderSettings */
         ProviderSettings: {
             /**
@@ -3105,6 +3137,24 @@ export interface components {
             note: string;
             /** Resolved */
             resolved: boolean;
+        };
+        /** ReviewPart */
+        ReviewPart: {
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "auto_checks" | "human_review" | "file";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_started" | "ready" | "needs_review";
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: string[];
         };
         /** ReviewVerdict */
         ReviewVerdict: {
@@ -3536,6 +3586,30 @@ export interface components {
              * @default 16
              */
             matrix_items_gap: number;
+        };
+        /** StageProgress */
+        StageProgress: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "purpose" | "sources" | "structure" | "editing" | "review";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_started" | "ready" | "needs_review";
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: string[];
+            /** Written Chapters */
+            written_chapters?: number | null;
+            /** Total Chapters */
+            total_chapters?: number | null;
+            /** Parts */
+            parts?: components["schemas"]["ReviewPart"][] | null;
         };
         /** StoryChapter */
         StoryChapter: {
@@ -4725,6 +4799,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportReviews"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_progress_api_projects__name__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProgress"];
                 };
             };
             /** @description Validation Error */
