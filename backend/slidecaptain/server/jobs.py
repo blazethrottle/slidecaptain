@@ -31,6 +31,7 @@ from slidecaptain.storage.job_ledger import (
     LedgerError,
     LedgerUnavailable,
     TransitionRejected,
+    parent_outcome,
     reconcile_job,
 )
 
@@ -43,6 +44,8 @@ JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다."
 JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요."
 LEDGER_WRITE_MESSAGE = "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요."
 FORMAT_ERROR_MESSAGE = "AI 응답을 형식에 맞게 읽지 못했습니다. 입력은 그대로 두었습니다. 다시 생성해 주세요."
+UNFINISHED_PARENT = ("running", "validating", "cancel_requested")
+UNFINISHED_CHILD = ("queued", "running", "validating", "cancel_requested")
 # 생성 뒤 판정의 이유 가운데 낡음으로 굳히지 않는 것. unknown*은 덱이나 자료를 읽지 못한 판정 불가(D2b-2
 # 리뷰 R3), deck_changed_elsewhere는 장 재생성과 축약에서 다른 장이 바뀐 것을 알리기만 하는 이유(계획서 5.8)
 NOTICE_REASONS = frozenset({"deck_changed_elsewhere"})
@@ -99,13 +102,28 @@ Classifier = Callable[[BaseException], tuple[str, int, str, str | None]]
 
 @dataclass
 class JobContext:
-    """실행 중인 작업이 자기 취소 요청을 읽는 통로 (구성 수리의 cancelled 콜백, D2b-3)."""
+    """실행 중인 작업이 자기 취소 요청을 읽는 통로 (구성 수리의 cancelled 콜백, D2b-3).
+
+    묶음 작업은 지금 생성하는 장을 current_chapter로 알린다. 원격 호출 시각을 그 장의 하위 행에 남기기 위해서다.
+    """
 
     handle: "JobHandle"
 
     @property
     def cancel_requested(self) -> bool:
         return self.handle.cancel_requested
+
+    @property
+    def job_id(self) -> str:
+        return self.handle.job_id
+
+    @property
+    def current_chapter(self) -> str | None:
+        return self.handle.current_chapter
+
+    @current_chapter.setter
+    def current_chapter(self, chapter_id: str | None) -> None:
+        self.handle.current_chapter = chapter_id
 
 
 @dataclass
@@ -125,6 +143,8 @@ class JobSpec:
     chapter_ids: list[str] | None = None
     # 판정 뒤, 원장에 쓰기 전에 결과를 마무리한다(수리의 stopped). 원장과 응답의 결과가 같아진다 (D2b-3 리뷰 R8)
     finalize: Callable[[Any, list[str]], Any] | None = None
+    # 장 생성 묶음(D2b-4): run이 장마다 하위 행을 직접 다루고, 끝나면 실행기가 하위 행으로 부모를 종결한다
+    batch: bool = False
 
 
 @dataclass
@@ -143,6 +163,8 @@ class JobHandle:
         self.cancel_sent = False
         self.sent = False  # 제공자를 실제로 불렀는가. 원격 호출 시각은 이때 남긴다 (D2b-3 리뷰 R6)
         self.stage = "queued"  # 메모리의 단계. 진행 중 작업 요약에 쓴다 (α 묶음 리뷰 A7)
+        self.current_chapter: str | None = None  # 묶음에서 지금 생성하는 장
+        self.sent_chapters: set[str] = set()
         self.created_at = _now()
         self.provider_task: asyncio.Task | None = None
         self.outcome: Outcome | None = None
@@ -218,10 +240,13 @@ class JobRunner:
     def __init__(self, *, ledger: JobLedger | None, ledger_error: LedgerUnavailable | None, instance_id: str,
                  acquire: Callable[[str | None, Callable[[], None]], tuple[Any, Callable[[], None]]],
                  classify: Classifier,
-                 on_success: Callable[[JobSpec, Any], None]):
+                 on_success: Callable[[JobSpec, Any], None],
+                 batch_reconcile: Callable[[JobRow, bool], bool] | None = None):
         self.ledger, self.ledger_error = ledger, ledger_error
         self.instance_id = instance_id
         self._acquire, self._classify, self._on_success = acquire, classify, on_success
+        # 묶음의 재시작 조정과 종료 정리. 덱을 읽고 적용을 재개하므로 저장소를 아는 앱이 준다 (α 묶음 리뷰 A8)
+        self._batch_reconcile = batch_reconcile
         self._lock = threading.Lock()
         self._active: JobHandle | None = None
         self._handles: dict[str, JobHandle] = {}
@@ -325,17 +350,17 @@ class JobRunner:
                 service, release = await asyncio.to_thread(self._acquire, spec.selection_id,
                                                            lambda: self._mark_sent(handle))
             except Exception as exc:
-                outcome = Outcome(self._end(job_id, "queued", exc, cancelled=handle.cancel_requested))
+                outcome = Outcome(self._end_before_run(handle, exc, cancelled=handle.cancel_requested))
                 return
             if spec.recheck is not None and not handle.cancel_requested:
                 try:
                     await asyncio.to_thread(spec.recheck)
                 except Exception as exc:
-                    outcome = Outcome(self._end(job_id, "queued", exc, cancelled=handle.cancel_requested))
+                    outcome = Outcome(self._end_before_run(handle, exc, cancelled=handle.cancel_requested))
                     return
             # 획득이나 재비교 중 들어온 취소는 원격 호출 전이다 (D2b-2 리뷰 R4)
             if handle.cancel_requested:
-                outcome = Outcome(self._end(job_id, "queued", None, cancelled=True))
+                outcome = Outcome(self._end_before_run(handle, None, cancelled=True))
                 return
             ledger.transition(job_id, expected="queued", new="running", attempts=1)
             handle.stage = "running"
@@ -370,13 +395,19 @@ class JobRunner:
         시각을 남기지 못하면 호출하지 않는다. 남기지 못한 채 호출하고 프로세스가 죽으면 재시작 조정이 실제
         호출을 "중단"으로 잘못 분류한다 (α 묶음 리뷰 A13).
         """
-        if handle.sent:
+        chapter = handle.current_chapter
+        if handle.sent and (chapter is None or chapter in handle.sent_chapters):
             return
         try:
-            row = self.ledger.get_job(handle.job_id)
-            if row is not None and row.remote_sent_at is None:
-                self.ledger.update_job(handle.job_id, expected=row.state, remote_sent_at=_now())
-        except TransitionRejected as exc:
+            if not handle.sent:
+                row = self.ledger.get_job(handle.job_id)
+                if row is not None and row.remote_sent_at is None:
+                    self.ledger.update_job(handle.job_id, expected=row.state, remote_sent_at=_now())
+            if chapter is not None:
+                [current] = [c for c in self.ledger.chapters(handle.job_id) if c.chapter_id == chapter]
+                self.ledger.update_chapter(handle.job_id, chapter, expected=current.state, remote_sent_at=_now())
+                handle.sent_chapters.add(chapter)
+        except (TransitionRejected, ValueError) as exc:
             raise LedgerError("원격 호출 시각을 남기지 못했습니다.") from exc
         handle.sent = True
 
@@ -418,6 +449,8 @@ class JobRunner:
 
     async def _settle(self, handle: JobHandle) -> Outcome:
         ledger, spec, task, job_id = self.ledger, handle.spec, handle.provider_task, handle.job_id
+        if spec.batch:
+            return await asyncio.to_thread(self._settle_batch, handle)
         if handle.cancel_sent:
             if task.cancelled():
                 return Outcome(ledger.transition(job_id, expected="cancel_requested", new="cancelled",
@@ -462,6 +495,32 @@ class JobRunner:
             self._on_success(spec, result)
         return Outcome(row, result, reasons)
 
+    def _end_before_run(self, handle: JobHandle, exc: BaseException | None, cancelled: bool) -> JobRow:
+        """실행 전에 끝난 작업. 묶음이면 시작하지 않은 장도 같은 이유로 닫는다."""
+        if handle.spec.batch:
+            with self.ledger.batch():
+                for chapter in self.ledger.chapters(handle.job_id):
+                    if chapter.state == "queued":
+                        self.ledger.transition_chapter(handle.job_id, chapter.chapter_id, expected="queued",
+                                                       new="cancelled" if cancelled else "interrupted")
+                return self._end(handle.job_id, "queued", exc, cancelled=cancelled)
+        return self._end(handle.job_id, "queued", exc, cancelled=cancelled)
+
+    def _settle_batch(self, handle: JobHandle) -> Outcome:
+        """묶음 실행이 끝났다. 하위 행이 모두 종결이면 parent_outcome으로 부모를 끝낸다 (계획서 5.3, 5.7)."""
+        task, job_id = handle.provider_task, handle.job_id
+        if task.cancelled() or task.exception() is not None:
+            if not task.cancelled():
+                _LOG.error("장 생성 묶음 실행 중 예기치 않은 오류: %s", job_id, exc_info=task.exception())
+            if self._batch_reconcile is not None:
+                self._batch_reconcile(self.ledger.get_job(job_id), False)
+        row = self.ledger.get_job(job_id)
+        chapters = self.ledger.chapters(job_id)
+        if row.state in UNFINISHED_PARENT and not any(c.state in UNFINISHED_CHILD for c in chapters):
+            state, outcome = parent_outcome(chapters, row.state)
+            row = self.ledger.finish_parent(job_id, expected=row.state, new=state, outcome=outcome)
+        return Outcome(row)
+
     def _end(self, job_id: str, expected: str, exc: BaseException | None, cancelled: bool = False) -> JobRow:
         if cancelled:
             return self.ledger.transition(job_id, expected=expected, new="cancelled", error_class="cancelled")
@@ -494,9 +553,16 @@ class JobRunner:
             return 0
         return sum(1 for row in rows if self._settle_left_over(row))
 
-    def _settle_left_over(self, row: JobRow) -> bool:
+    def _settle_left_over(self, row: JobRow, allow_apply: bool = True) -> bool:
         if row.kind == BATCH_KIND:
-            return False  # 묶음은 하위 행 조정과 parent_outcome이 맡는다 (D2b-4)
+            # 묶음은 하위 행 조정과 parent_outcome이 맡는다. 종료 처리 중에는 적용을 재개하지 않는다 (계획서 5.5 ④)
+            if self._batch_reconcile is None:
+                return False
+            try:
+                return self._batch_reconcile(row, allow_apply)
+            except (TransitionRejected, LedgerError):
+                _LOG.exception("묶음 작업을 조정하지 못했습니다: %s", row.id)
+                return False
         action = reconcile_job(row)
         try:
             if action in ("interrupted", "remote_completion_unknown"):
@@ -543,7 +609,7 @@ class JobRunner:
             _LOG.exception("종료 처리에서 작업 원장을 읽지 못했습니다")
             return
         for row in rows:
-            self._settle_left_over(row)
+            self._settle_left_over(row, allow_apply=False)
 
 
 def new_request_id() -> str:

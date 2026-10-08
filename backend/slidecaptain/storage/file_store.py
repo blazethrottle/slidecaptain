@@ -247,6 +247,7 @@ class ProjectStore(Protocol):
         self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
     ) -> str: ...
     def snapshot_now(self, name: str) -> None: ...
+    def etag_for(self, deck: Deck) -> str: ...
     def list_snapshots(self, name: str) -> list[SnapshotInfo]: ...
     def restore_snapshot(
         self, name: str, snapshot_id: str, expected_etag: str | None = None
@@ -551,6 +552,11 @@ class FileProjectStore:
                 if current != expected_etag:
                     raise DeckConflict(_DECK_CONFLICT_MESSAGE)
             return self._write_deck_recorded(d, deck, snapshot=snapshot)
+
+    def etag_for(self, deck: Deck) -> str:
+        """save_deck이 이 덱을 쓰면 될 ETag. 저장과 같은 검증과 직렬화를 쓴다 (D2b-4, 계획서 5.7 ④)."""
+        deck = Deck.model_validate(_evidence_input(deck))
+        return hashlib.sha256(deck.model_dump_json(indent=2).encode("utf-8")).hexdigest()
 
     def snapshot_now(self, name: str) -> None:
         """의미 시점 스냅샷 (단계 4 결정 1): 내보내기 직전 등 명시적 복구 지점."""

@@ -39,6 +39,12 @@ class RewriteJobParams(BaseModel):
     instructions: str = Field(default="", max_length=8_000)
 
 
+class ChaptersJobParams(BaseModel):
+    """장 생성 묶음 (D2b-4). 화면이 승인 반영 PUT 뒤의 ETag를 If-Match로 주어 등록한다."""
+
+    chapter_ids: list[str] = Field(min_length=1)
+
+
 class _JobRequestBase(BaseModel):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
 
@@ -73,10 +79,15 @@ class RepairJobRequest(_JobRequestBase):
     params: StoryRepairRequest
 
 
-# 도식, 재작성, 수리는 If-Match 헤더로 기준 저장본을 받는다(종전 라우트와 같다). 묶음은 D2b-4가 더한다
+class ChaptersJobRequest(_JobRequestBase):
+    kind: Literal["chapters"]
+    params: ChaptersJobParams
+
+
+# 도식, 재작성, 수리, 장 생성 묶음은 If-Match 헤더로 기준 저장본을 받는다
 JobRequest = Annotated[
     Union[StructureJobRequest, ChapterJobRequest, CondenseJobRequest, DiagramJobRequest, RewriteJobRequest,
-          RepairJobRequest],
+          RepairJobRequest, ChaptersJobRequest],
     Field(discriminator="kind"),
 ]
 
@@ -86,6 +97,19 @@ class JobError(BaseModel):
     status: int | None
     detail: str | None
     code: str | None
+
+
+class ChapterView(BaseModel):
+    """장 생성 묶음의 장 하나 (D2b-4, α 묶음 리뷰 A8)."""
+
+    chapter_id: str
+    position: int
+    state: JobState
+    candidate_status: CandidateStatus
+    error: JobError | None
+    result: dict[str, Any] | None
+    started_at: str | None
+    finished_at: str | None
 
 
 class JobView(BaseModel):
@@ -114,6 +138,7 @@ class JobView(BaseModel):
     cancel_requested: bool
     error: JobError | None
     result: dict[str, Any] | None
+    chapters: list[ChapterView]  # 묶음이 아니면 빈 목록
 
 
 class ActiveJob(BaseModel):

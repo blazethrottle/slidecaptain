@@ -44,6 +44,10 @@ TRANSITIONS: dict[str, frozenset[str]] = {
     "remote_completion_unknown": frozenset(),
 }
 STATES = tuple(TRANSITIONS)
+# 묶음 부모의 종결 전이 (계획서 5.3의 α 묶음 리뷰 A3 정정). 부모는 미종결 어디서든 parent_outcome의 결과로 한 번에
+# 종결한다. 장 적용 중 취소가 와도 모든 장이 적용됐으면 succeeded로 끝낼 수 있어야 하기 때문이다
+PARENT_FINISH = {state: frozenset({"succeeded", "failed", "cancelled"})
+                 for state in ("running", "validating", "cancel_requested")}
 UNFINISHED = ("queued", "running", "validating", "cancel_requested")
 # 후보 처분의 전이표 (계획서 5.8). 버린 후보와 반영한 후보는 되살리지 않는다. delivered는 래퍼가 응답으로
 # 이미 화면에 돌려준 결과다. 화면은 delivered를 "이전에 만든 결과"로 다시 보이지 않는다 (D2b-2 리뷰 R8)
@@ -365,6 +369,25 @@ class JobLedger:
             self._cas("jobs", "id = ?", (job_id,), expected, new, values)
             return self._get_job(job_id)
 
+    def finish_parent(self, job_id: str, *, expected: str, new: str, outcome: str) -> JobRow:
+        """묶음 부모를 parent_outcome의 결과로 종결한다. 부모 전용 전이표를 쓴다 (계획서 5.3, A3)."""
+        if new not in PARENT_FINISH.get(expected, ()):
+            raise TransitionRejected(f"묶음 부모를 {expected}에서 {new}로 끝낼 수 없습니다")
+        values = self._encode({"outcome": outcome, "finished_at": _now()}, _JOB_MUTABLE)
+        with self._lock, self._transaction():
+            row = self._get_job(job_id)
+            if row is None or row.kind != BATCH_KIND:
+                raise TransitionRejected("묶음 작업이 아닙니다")
+            if self._conn.execute("SELECT count(*) FROM job_chapters WHERE job_id = ? AND state IN (?, ?, ?, ?)",
+                                  (job_id, *UNFINISHED)).fetchone()[0]:
+                raise TransitionRejected("미종결 장이 남아 있어 묶음을 끝낼 수 없습니다")
+            sets = ", ".join(f"{name} = ?" for name in values)
+            cursor = self._conn.execute(f"UPDATE jobs SET state = ?, {sets} WHERE id = ? AND state = ?",
+                                        (new, *values.values(), job_id, expected))
+            if cursor.rowcount != 1:
+                raise TransitionRejected(f"작업 상태가 {expected}가 아니어서 바꾸지 않았습니다.")
+            return self._get_job(job_id)
+
     def update_job(self, job_id: str, *, expected: str, **changes) -> JobRow:
         """미종결 행의 열만 바꾼다(상태 유지). 종결 행은 settle_candidate만 쓴다 (리뷰 R10)."""
         values = self._prepare_update(expected, changes, _JOB_MUTABLE)
@@ -578,15 +601,18 @@ def reconcile_chapter(chapter: ChapterRow, *, chain_etag: str, current_etag: str
     return "mark_stale"
 
 
-def parent_outcome(chapters: list[ChapterRow]) -> tuple[str, str]:
-    """묶음 부모의 종결 상태와 outcome을 하위 행에서 계산한다 (계획서 5.3, 리뷰 R9).
+def parent_outcome(chapters: list[ChapterRow], parent_state: str | None = None) -> tuple[str, str]:
+    """묶음 부모의 종결 상태와 outcome을 하위 행에서 계산한다 (계획서 5.3, D2b-1 리뷰 R9, α 묶음 리뷰 A3).
 
-    정상 종결과 재시작 조정이 같은 함수를 쓴다. 하위 행은 모두 종결되어 있어야 한다.
+    정상 종결과 재시작 조정이 같은 함수를 쓴다. 하위 행은 모두 종결되어 있어야 한다. 부모가 취소 요청을
+    받았으면 모든 장이 적용된 경우만 succeeded이고 그 밖에는 cancelled다("취소 후 닫기" 뒤 재시작도 같다).
     """
     if any(c.state in UNFINISHED for c in chapters):
         raise ValueError("미종결 하위 행이 있어 묶음 결과를 계산할 수 없습니다")
     if chapters and all(c.state == "succeeded" for c in chapters):
         return "succeeded", "all_applied"
+    if parent_state == "cancel_requested":
+        return "cancelled", "cancelled"
     if any(c.state == "cancelled" for c in chapters):
         return "cancelled", "cancelled"
     if any(c.error_code == HELD_STALE_PLAN for c in chapters):

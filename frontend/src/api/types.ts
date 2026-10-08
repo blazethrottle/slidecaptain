@@ -1195,6 +1195,54 @@ export interface components {
             condensed: boolean;
             usage: components["schemas"]["GenerationUsage"];
         };
+        /**
+         * ChapterView
+         * @description 장 생성 묶음의 장 하나 (D2b-4, α 묶음 리뷰 A8).
+         */
+        ChapterView: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Position */
+            position: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /**
+             * Candidate Status
+             * @enum {string}
+             */
+            candidate_status: "none" | "held" | "delivered" | "applied" | "stale" | "dismissed";
+            error: components["schemas"]["JobError"] | null;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /**
+         * ChaptersJobParams
+         * @description 장 생성 묶음 (D2b-4). 화면이 승인 반영 PUT 뒤의 ETag를 If-Match로 주어 등록한다.
+         */
+        ChaptersJobParams: {
+            /** Chapter Ids */
+            chapter_ids: string[];
+        };
+        /** ChaptersJobRequest */
+        ChaptersJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chapters";
+            params: components["schemas"]["ChaptersJobParams"];
+        };
         /** ChartPlan */
         ChartPlan: {
             /**
@@ -2710,6 +2758,8 @@ export interface components {
             result: {
                 [key: string]: unknown;
             } | null;
+            /** Chapters */
+            chapters: components["schemas"]["ChapterView"][];
         };
         /** LoginAttempt */
         LoginAttempt: {
@@ -6016,7 +6066,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StructureJobRequest"] | components["schemas"]["ChapterJobRequest"] | components["schemas"]["CondenseJobRequest"] | components["schemas"]["DiagramJobRequest"] | components["schemas"]["RewriteJobRequest"] | components["schemas"]["RepairJobRequest"];
+                "application/json": components["schemas"]["StructureJobRequest"] | components["schemas"]["ChapterJobRequest"] | components["schemas"]["CondenseJobRequest"] | components["schemas"]["DiagramJobRequest"] | components["schemas"]["RewriteJobRequest"] | components["schemas"]["RepairJobRequest"] | components["schemas"]["ChaptersJobRequest"];
             };
         };
         responses: {

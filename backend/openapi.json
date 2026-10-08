@@ -2752,6 +2752,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/RepairJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChaptersJobRequest"
                   }
                 ],
                 "discriminator": {
@@ -2762,7 +2765,8 @@
                     "condense": "#/components/schemas/CondenseJobRequest",
                     "diagram": "#/components/schemas/DiagramJobRequest",
                     "rewrite": "#/components/schemas/RewriteJobRequest",
-                    "repair": "#/components/schemas/RepairJobRequest"
+                    "repair": "#/components/schemas/RepairJobRequest",
+                    "chapters": "#/components/schemas/ChaptersJobRequest"
                   }
                 },
                 "title": "Req"
@@ -4083,6 +4087,144 @@
           "usage"
         ],
         "title": "ChapterResult"
+      },
+      "ChapterView": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "validating",
+              "succeeded",
+              "failed",
+              "cancel_requested",
+              "cancelled",
+              "interrupted",
+              "remote_completion_unknown"
+            ],
+            "title": "State"
+          },
+          "candidate_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "held",
+              "delivered",
+              "applied",
+              "stale",
+              "dismissed"
+            ],
+            "title": "Candidate Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "position",
+          "state",
+          "candidate_status",
+          "error",
+          "result",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "ChapterView",
+        "description": "장 생성 묶음의 장 하나 (D2b-4, α 묶음 리뷰 A8)."
+      },
+      "ChaptersJobParams": {
+        "properties": {
+          "chapter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Chapter Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_ids"
+        ],
+        "title": "ChaptersJobParams",
+        "description": "장 생성 묶음 (D2b-4). 화면이 승인 반영 PUT 뒤의 ETag를 If-Match로 주어 등록한다."
+      },
+      "ChaptersJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "chapters",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ChaptersJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "ChaptersJobRequest"
       },
       "ChartPlan": {
         "properties": {
@@ -8115,6 +8257,13 @@
               }
             ],
             "title": "Result"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterView"
+            },
+            "type": "array",
+            "title": "Chapters"
           }
         },
         "type": "object",
@@ -8139,7 +8288,8 @@
           "stale_reasons",
           "cancel_requested",
           "error",
-          "result"
+          "result",
+          "chapters"
         ],
         "title": "JobView"
       },
