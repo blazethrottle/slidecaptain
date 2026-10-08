@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck, type Preset, type QualityReport, type RenderPlan, type UploadResult } from "../api/client";
+import { api, ApiError, savedEtag, type Deck, type Preset, type QualityReport, type RenderPlan, type UploadResult } from "../api/client";
 import qualityFixture from "../../../backend/tests/fixtures/q1b1-quality.json";
 import { deferred } from "../test/fixtures";
 import { emptyUsage } from "../test/usage";
@@ -571,7 +571,7 @@ it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", a
   vi.mocked(api.getActiveJob)
     .mockResolvedValueOnce(batchActive(project.name))
     .mockResolvedValue({ active: null, ledger_available: true });
-  vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: '"서버의 새 저장본"', sources_fingerprint: "s", evidence_fingerprints: {} });
+  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));  // 서버는 저장 ETag가 다르면 412다
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));  // 구조안 탭이라 덱을 다시 읽는다
 });
@@ -581,7 +581,7 @@ it("편집 탭에 있던 탭은 다른 탭의 묶음이 끝나도 덱을 덮지 
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
-  vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: '"서버의 새 저장본"', sources_fingerprint: "s", evidence_fingerprints: {} });
+  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));  // 서버는 저장 ETag가 다르면 412다
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   const editTab = await screen.findByRole("button", { name: "편집" });
   await waitFor(() => expect(editTab).toBeEnabled());
@@ -647,4 +647,26 @@ it("복구 화면의 후보에서 다시 생성하면 덱을 다시 읽고 맞�
   await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBeGreaterThan(before));
   await waitFor(() => expect(screen.getByRole("button", { name: "구조안" })).toHaveAttribute("aria-pressed", "true"));
   expect(screen.queryByText(/작업 기록을 열 수 없어/)).toBeNull();
+});
+
+it("이 탭이 이미 따라간 묶음이 끝나면 다시 읽지도 충돌로 알리지도 않는다 (β 리뷰 R1)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
+  // If-Match가 서버 저장본과 같으면 기준 조회는 200이고 base_etag는 그 값이다
+  vi.mocked(api.getDocumentChangeBasis).mockImplementation(async (name) => ({ base_etag: savedEtag(name) as string,
+    sources_fingerprint: "s", evidence_fingerprints: {} }));
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
+  const editTab = await screen.findByRole("button", { name: "편집" });
+  await waitFor(() => expect(editTab).toBeEnabled());
+  await userEvent.click(editTab);
+  const reads = vi.mocked(api.getDeck).mock.calls.length;
+  vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive(project.name))
+    .mockImplementation(async () => ({ active: null, ledger_available: true }));
+  window.dispatchEvent(new Event("focus"));
+  await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalled());
+  await new Promise((r) => setTimeout(r, 30));
+  expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads);
+  expect(screen.queryByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeNull();
 });

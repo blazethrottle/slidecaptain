@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, messageOf, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
+import { api, ApiError, messageOf, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
@@ -90,11 +90,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   tabRef.current = tab;
   useEffect(() => {
     if (wasBatchHere.current && !batchHere) {
-      api.getDocumentChangeBasis(project.name).then((basis) => {
-        if (basis.base_etag === savedEtag(project.name)) return;  // 이 탭이 이미 따라갔다
-        if (tabRef.current === "structure") api.getDeck(project.name).then(setDeck).catch(() => {});
-        else setHasConflict(true);
-      }).catch(() => {});
+      // 기준 조회는 이 탭의 저장 ETag를 If-Match로 보낸다. 같으면 200(이 탭이 이미 따라갔다), 다르면 412다.
+      // 다른 실패는 판정하지 않고 다음 저장의 충돌 검사에 맡긴다 (β 리뷰 R1)
+      api.getDocumentChangeBasis(project.name)
+        .then((basis) => basis.base_etag !== savedEtag(project.name))
+        .catch((e) => e instanceof ApiError && e.status === 412)
+        .then((changed) => {
+          if (!changed) return;
+          if (tabRef.current === "structure") api.getDeck(project.name).then(setDeck).catch(() => {});
+          else setHasConflict(true);
+        });
     }
     wasBatchHere.current = batchHere;
   }, [batchHere, project.name]);
