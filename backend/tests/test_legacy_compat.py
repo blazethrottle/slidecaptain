@@ -15,6 +15,7 @@ import pytest
 
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.storage.file_store import FileProjectStore
+from slidecaptain.storage.job_ledger import LEDGER_NAME, FixedInputs, JobLedger
 from slidecaptain.storage.project_format import read_manifest
 
 REPO = Path(__file__).resolve().parents[2]
@@ -87,6 +88,12 @@ def test_legacy_app_opens_a_project_saved_without_new_values(store, legacy_backe
     store.create_project("p1")
     store.save_deck("p1", _deck(title="새 앱에서 고침"), snapshot=False)
     assert (store.root / "p1" / "manifest.json").exists()
+    # D2b-1: 자료 루트의 작업 원장 파일이 0.2.0의 목록과 열기를 깨지 않는다
+    ledger = JobLedger.open(store.root)
+    ledger.create_job(project="p1", kind="structure", request_id="r1", params={}, instance_id="i1",
+                      inputs=FixedInputs(None, None, None, None, None, None))
+    ledger.close()
+    assert (store.root / LEDGER_NAME).exists()
     out = _run_legacy(legacy_backend, store.root, "load")
     assert out == {"statuses": {"p1": "ok"}, "load": "ok"}
 

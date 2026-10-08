@@ -147,9 +147,10 @@ D2 계획 「상위 문서와 다르게 정하는 것」 3항이 이 판단을 D
 | `validating` | `succeeded` | 실행기, 검증 통과(후보형은 `candidate_status=held`, 묶음 하위 행은 적용 완료) |
 | `validating` | `failed` | 실행기, 형식 오류 확정 또는 적용 단계 오류. 결과는 남긴다 |
 | `cancel_requested` | `cancelled` | 실행기, 제공자 태스크가 실제로 끝남. 결과가 있으면 남기고 `candidate_status=held`로 두되 적용하지 않는다 |
-| `cancel_requested` | `remote_completion_unknown` | 재시작 조정과 종료 처리 |
+| `cancel_requested` | `interrupted` | 재시작 조정과 종료 처리, 원격 호출 시각 없음(기술 설계 그림에 있는 전이) |
+| `cancel_requested` | `remote_completion_unknown` | 재시작 조정과 종료 처리, 원격 호출 시각 있음 |
 
-묶음 부모 행의 종결은 하위 행에서 계산한다. 모든 장이 `succeeded`이면 `succeeded`(`outcome: all_applied`)이고, 취소로 끝나면 `cancelled`이며, 그 밖에는 `failed`와 해당 `outcome`이다. 하위 행은 시작하지 않은 장이 `queued`로 대기한다.
+묶음 부모 행은 마지막 장이 끝나면 `validating`을 거쳐 종결한다. 종결 상태는 하위 행에서 계산한다. 모든 장이 `succeeded`이면 `succeeded`(`outcome: all_applied`)이고, 취소로 끝나면 `cancelled`이며, 그 밖에는 `failed`와 해당 `outcome`이다. 하위 행은 시작하지 않은 장이 `queued`로 대기한다.
 
 ### 5.4 등록 검사와 실행 검사, 래퍼의 응답
 
@@ -176,7 +177,7 @@ D2 계획 「상위 문서와 다르게 정하는 것」 3항이 이 판단을 D
 | 행 | 재시작 조정 결과 |
 |---|---|
 | `queued` 작업, 묶음의 시작하지 않은 장 | `interrupted`. 자동으로 시작하지 않는다(계약 규칙 4) |
-| `running`, 원격 호출 시각 없음 | `interrupted` |
+| `running`과 `cancel_requested`, 원격 호출 시각 없음 | `interrupted` |
 | `running`과 `cancel_requested`, 원격 호출 시각 있음, 결과 없음 | `remote_completion_unknown` |
 | 후보형 `validating`(결과 있음) | 원격 호출 없이 생성 뒤 판정을 다시 해 `succeeded`(`held` 또는 `stale`) 또는 `failed`(형식 오류) |
 | 묶음 하위 행 `validating`, 적용 대상 ETag 없음 | 원격 호출 없이 사슬 검사(5.7)와 적용을 재개한다. 임대를 쓰지 않는다 |
@@ -231,7 +232,7 @@ D2 계획 「상위 문서와 다르게 정하는 것」 3항이 이 판단을 D
 - 재시작 조정의 **판정**(5.6 표)을 순수 함수로 구현한다. 입력은 행과 현재 덱 ETag와 덱 내용이고 출력은 조정 결과다. 적용 재개의 실행은 D2b-4가 이 함수를 쓴다.
 - 패키지 시험(`smoke-service.cjs`)에 "가짜 CLI 경로를 존재하지 않는 경로로 지정하고 구조안 작업을 등록한 뒤, 조회에서 `failed`와 원장 오류 코드를 확인한다"를 더한다. 이 시험은 D2b-2 이후에 동작하므로 D2b-1에서는 원장 열기와 행 쓰기, 읽기를 하는 단위 시험으로 `sqlite3` 포함을 확인하고, CI 패키지 단계는 D2b-2 커밋에서 켠다.
 - RED: 없음. 원장은 새 기능이라 지금 코드의 틀린 동작이 없다. 이 태스크의 시험은 모두 새 계약의 시험이며, 수용 기준의 필수 RED에 넣지 않는다.
-- 계약 시험: 표 밖 전이의 거절(`succeeded→running`, `cancelled→running`, `interrupted→succeeded`). compare-and-set이 다른 주체가 먼저 쓴 종결 상태를 덮지 않음. 같은 요청 ID 병합, 매개변수가 다른 같은 ID의 409, 종결 작업과의 병합. 재시작 판정 함수의 표 일곱 경우와 "적용됨, 이후 변경" 판정. 손상된 원장으로 시작해도 덱 저장은 되고 등록만 503. `user_version`이 더 크면 열지 않고 파일 불변. 메모리 원장 공유.
+- 계약 시험: 표 밖 전이의 거절(`succeeded→running`, `cancelled→running`, `interrupted→succeeded`). compare-and-set이 다른 주체가 먼저 쓴 종결 상태를 덮지 않음. 같은 요청 ID 병합, 매개변수가 다른 같은 ID의 409, 종결 작업과의 병합. 재시작 판정 함수의 표 일곱 경우와 "적용됨, 이후 변경" 판정. 손상된 원장은 `LedgerUnavailable`이고 파일 불변(앱 수준의 "덱 저장은 되고 등록만 503"은 원장을 앱에 연결하는 D2b-2가 시험한다). `user_version`이 더 크면 열지 않고 파일 불변. 메모리 원장 공유.
 - 고정: 원장 파일이 루트에 있어도 프로젝트 목록이 같다(현재 앱과 0.2.0 왕복 시험 `test_legacy_compat.py`에 원장 파일을 더한다). 루트 파일 집합 전후 비교 시험(사실 13)이 그대로 통과한다.
 
 ### D2b-2 실행기, 작업 API, 가짜 CLI
