@@ -1,15 +1,27 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api } from "../api/client";
-import { batchView, chapterResult, chapterView } from "../test/jobs";
+import { api, type StructureResult } from "../api/client";
+import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { comparisonDeck, derivedDeck, storyDeck } from "../test/story";
 import { StructureScreen } from "./StructureScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
+  return { ...mod, api: { ...mod.api, startJob: vi.fn(), settleCandidate: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
     startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+});
+
+// D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
+beforeEach(() => {
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateStructure(name, body.params as Record<string, unknown>);
+    const failed = result.status !== "ok";
+    return jobView("structure", { project: name, result: result as unknown as Record<string, unknown>,
+      state: failed ? "failed" : "succeeded", candidate_status: failed ? "none" : "held" });
+  });
 });
 
 beforeEach(() => {
@@ -26,7 +38,7 @@ function generated(structure = storyDeck().structure) {
 it.each([storyDeck, comparisonDeck, derivedDeck])("질문을 계획 요청으로 보내고 근거와 비교 계약을 승인 저장에 보존한다 (%#)", async (makeDeck) => {
   const deck = makeDeck();
   const empty = { ...deck, structure: { chapters: [] } };
-  vi.mocked(api.generateStructure).mockResolvedValue(generated(deck.structure));
+  generateStructure.mockResolvedValue(generated(deck.structure));
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const final = batchView(deck.structure.chapters.map((c) => chapterView(c.id, "succeeded",
     { result: chapterResult({ template: "summary", conclusion: "비용 확인 후 판단", points: [] }) })), { project: "synthetic" });
@@ -48,7 +60,7 @@ it.each([storyDeck, comparisonDeck, derivedDeck])("질문을 계획 요청으로
   if (deck.structure.story_plan!.derivations.length > 0) {
     expect(screen.getByRole("region", { name: "수치 계산" })).toHaveTextContent("계산 불가");
   }
-  expect(api.generateStructure).toHaveBeenCalledWith("synthetic", expect.objectContaining({ brief: deck.structure.story_plan!.brief }));
+  expect(generateStructure).toHaveBeenCalledWith("synthetic", expect.objectContaining({ brief: deck.structure.story_plan!.brief }));
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   // 화면은 승인 반영 1회만 저장하고, 장 내용은 서버의 묶음 작업이 같은 계획 아래에서 만든다
@@ -86,7 +98,7 @@ it("질문이 바뀌면 옛 계획을 승인하기 전에 재생성을 요구한
 
 it("질문을 비워 기존 방식으로 재생성하면 옛 계획을 새 구조안에 붙이지 않는다", async () => {
   const deck = storyDeck();
-  vi.mocked(api.generateStructure).mockResolvedValue(generated({ chapters: deck.structure.chapters }));
+  generateStructure.mockResolvedValue(generated({ chapters: deck.structure.chapters }));
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.startChapters).mockRejectedValue(new Error("시험에서는 생성하지 않는다"));
   render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);

@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import fixture from "../../../backend/tests/fixtures/q3b-project.json";
-import { api, ApiError, type Deck, type Preset, type RenderPlan } from "../api/client";
+import { api, ApiError, type Deck, type Preset, type RenderPlan, type StructureResult } from "../api/client";
 import { PropertyPanel } from "./PropertyPanel";
 import { GeneratePanel } from "./GeneratePanel";
 import { applyTemplateSwitch, switchTemplate } from "./templateSwitch";
@@ -13,10 +13,21 @@ import { batchView, chapterView, jobView } from "../test/jobs";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), generateChapter: vi.fn(),
-    condenseChapter: vi.fn(), putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn(),
-    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn(),
-    startJob: vi.fn() } };
+  return { ...mod, api: { ...mod.api, startJob: vi.fn(), settleCandidate: vi.fn(),
+    putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn(),
+    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+});
+
+// D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
+beforeEach(() => {
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateStructure(name, body.params as Record<string, unknown>);
+    const failed = result.status !== "ok";
+    return jobView("structure", { project: name, result: result as unknown as Record<string, unknown>,
+      state: failed ? "failed" : "succeeded", candidate_status: failed ? "none" : "held" });
+  });
 });
 
 const project = { name: "diagram", title: "합성 도식 보고", updated_at: "", status: "ok" as const };
@@ -39,8 +50,7 @@ it("도식에 AI 재생성이나 축약을 제공하지 않는다", () => {
   render(<GeneratePanel project={project} deck={freshDeck()} chapterId={chapterId} onReplace={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "이 장 다시 생성" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "이 장 축약" })).not.toBeInTheDocument();
-  expect(api.generateChapter).not.toHaveBeenCalled();
-  expect(api.condenseChapter).not.toHaveBeenCalled();
+  expect(api.startJob).not.toHaveBeenCalled();
 });
 
 it("일반 슬롯 편집이나 템플릿 전환으로 도식의 의미 입력을 버리지 않는다", () => {
@@ -78,7 +88,7 @@ it("구조안 재생성과 도식 수정은 막고 기존 도식을 유지해 �
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   expect(api.putDeck).toHaveBeenCalledWith(project.name, deck, true);
-  expect(api.generateStructure).not.toHaveBeenCalled();
+  expect(generateStructure).not.toHaveBeenCalled();
   expect(api.startChapters).not.toHaveBeenCalled();
 });
 
@@ -90,7 +100,7 @@ it("구조안 화면은 도식 편집의 진입점과 재계획 제한의 복구
   expect(screen.getByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
   expect(screen.getByRole("region", { name: "보고 계획 복구 안내" })).not.toHaveTextContent("현재 계획으로 작업을 계속할 수 없습니다");
   expect(screen.getByRole("button", { name: "다시 생성" })).toBeDisabled();
-  expect(api.generateStructure).not.toHaveBeenCalled();
+  expect(generateStructure).not.toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();
 });
 

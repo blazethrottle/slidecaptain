@@ -219,33 +219,6 @@ export const api = {
     request<Deck>(`/api/projects/${enc(name)}/story-plan/diagram`, {
       method: "POST", body: JSON.stringify(req),
     }, { etagKey: name, updateEtag: false }),
-  generateDiagram: async (name: string, req: GenerateDiagramRequest) => {
-    // 동의 중 저장본이 바뀌어도 요청의 기준본은 그대로 유지한다. 후보 응답은 저장 ETag를 바꾸지 않는다.
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    return request<DiagramGenerationResult>(`/api/projects/${enc(name)}/generate/diagram`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
-  },
-  rewriteStory: async (name: string, req: { brief: ReportBrief; instructions: string }) => {
-    // 동의를 기다리기 전의 기준본을 고정한다. 미리보기 응답은 저장 ETag를 진전시키지 않는다.
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    return request<StoryRewriteResult>(`/api/projects/${enc(name)}/story-plan/rewrite`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
-  },
-  repairStory: async (name: string, req: StoryRepairRequest, signal: AbortSignal) => {
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    signal.throwIfAborted();
-    return request<StoryRepairResult>(`/api/projects/${enc(name)}/story-plan/repair`, {
-      method: "POST", body: JSON.stringify(req), signal,
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
-  },
   getDocumentChangeBasis: (name: string) =>
     request<DocumentChangeBasis>(`/api/projects/${enc(name)}/document-changes/basis`, {cache:"no-store"}, {etagKey:name,updateEtag:false}),
   previewDocumentChange: (name: string, req: DocumentChangeRequest, etag: string) =>
@@ -370,25 +343,5 @@ export const api = {
     return request<ExportReviews>(`/api/projects/${enc(name)}/exports/${enc(id)}/reviews`, {
       method: "POST", body: JSON.stringify(input),
     }, { expectedEtag: baseEtag });
-  },
-  // AI 전송은 관문(aiGate)을 거친다: 동의가 없으면 요청을 내보내지 않고 AiConsentDeclined를
-  // 던지고, 있으면 X-AI-Consent 헤더를 붙여 서버의 428 검사를 통과한다 (계획서 B3, 가정 5)
-  generateStructure: async (name: string, req: { target_chapters?: number | null; instructions?: string; brief?: ReportBrief | null }) => {
-    const headers = await aiHeaders();
-    return request<StructureResult>(`/api/projects/${enc(name)}/generate/structure`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { headers });
-  },
-  generateChapter: async (name: string, chapterId: string, instructions = "") => {
-    const headers = await aiHeaders();
-    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}`, {
-      method: "POST", body: JSON.stringify({ instructions }),
-    }, { headers });
-  },
-  condenseChapter: async (name: string, chapterId: string, slots: Slots, instructions = "") => {
-    const headers = await aiHeaders();
-    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}/condense`, {
-      method: "POST", body: JSON.stringify({ slots, instructions }),
-    }, { headers });
   },
 };

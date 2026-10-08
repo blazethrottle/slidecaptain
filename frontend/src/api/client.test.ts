@@ -1,6 +1,7 @@
 import { emptyUsage } from "../test/usage";
 import * as aiGate from "./aiGate";
 import { AiConsentDeclined, api, followJob, resetEtags } from "./client";
+import { startJob } from "./jobs";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 beforeEach(() => {
@@ -164,65 +165,24 @@ it("ETag를 모르면 If-Match를 보내지 않는다", async () => {
 
 // AI 전송 고지 관문 배선 (계획서 B3): 화면 테스트는 api를 통째로 목 처리하므로 관문 배선을 검증할
 // 수 없다. 여기서는 fetch만 스텁하고 aiGate.ensureConsent를 spy해 client.ts의 실제 구현을 검증한다.
-it("동의가 있으면 구조안 생성 요청에 X-AI-Consent 헤더를 붙인다", async () => {
+// D2b-5b: 생성은 작업 API 등록(startJob)으로 나간다. 종류마다 같은 관문을 거친다
+it.each(["structure", "chapter", "condense"] as const)("동의가 있으면 %s 등록 요청에 X-AI-Consent 헤더를 붙인다", async (kind) => {
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
-  const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", structure: null, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
-      format_retried: false }), { status: 200 }));
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "job-1" }), { status: 202 }));
   vi.stubGlobal("fetch", fetchMock);
-  await api.generateStructure("p1", {});
+  await startJob("p1", kind, { chapter_id: "c1" });
   expect(aiGate.ensureConsent).toHaveBeenCalledTimes(1);
-  const [, init] = fetchMock.mock.calls[0];
+  const [url, init] = fetchMock.mock.calls[0];
+  expect(url).toBe("/api/projects/p1/jobs");
   expect(new Headers((init as RequestInit).headers ?? {}).get("X-AI-Consent")).toBe("SlideCaptain");
+  expect(new Headers((init as RequestInit).headers ?? {}).has("If-Match")).toBe(false);
 });
 
-it("동의가 없으면 구조안 생성은 fetch를 부르지 않고 AiConsentDeclined를 던진다", async () => {
+it.each(["structure", "chapter", "condense"] as const)("동의가 없으면 %s 등록은 fetch를 부르지 않고 AiConsentDeclined를 던진다", async (kind) => {
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(false);
   const fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
-  await expect(api.generateStructure("p1", {})).rejects.toBeInstanceOf(AiConsentDeclined);
-  expect(fetchMock).not.toHaveBeenCalled();
-});
-
-it("장 생성도 동의 관문을 거쳐 헤더를 붙인다", async () => {
-  vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
-  const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", slots: null, usage: emptyUsage(), raw_text: "", warnings: [],
-      unverified_numbers: [], format_retried: false, condensed: false }), { status: 200 }));
-  vi.stubGlobal("fetch", fetchMock);
-  await api.generateChapter("p1", "c1");
-  expect(aiGate.ensureConsent).toHaveBeenCalledTimes(1);
-  const [, init] = fetchMock.mock.calls[0];
-  expect(new Headers((init as RequestInit).headers ?? {}).get("X-AI-Consent")).toBe("SlideCaptain");
-});
-
-it("장 생성은 동의가 없으면 fetch를 부르지 않는다", async () => {
-  vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(false);
-  const fetchMock = vi.fn();
-  vi.stubGlobal("fetch", fetchMock);
-  await expect(api.generateChapter("p1", "c1")).rejects.toBeInstanceOf(AiConsentDeclined);
-  expect(fetchMock).not.toHaveBeenCalled();
-});
-
-it("축약도 동의 관문을 거쳐 헤더를 붙인다", async () => {
-  vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
-  const fetchMock = vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ status: "ok", slots: null, usage: emptyUsage(), raw_text: "", warnings: [],
-      unverified_numbers: [], format_retried: false, condensed: false }), { status: 200 }));
-  vi.stubGlobal("fetch", fetchMock);
-  await api.condenseChapter("p1", "c1", { template: "bullet_box", bullets: [], conclusion: "", footnote: "" });
-  expect(aiGate.ensureConsent).toHaveBeenCalledTimes(1);
-  const [, init] = fetchMock.mock.calls[0];
-  expect(new Headers((init as RequestInit).headers ?? {}).get("X-AI-Consent")).toBe("SlideCaptain");
-});
-
-it("축약은 동의가 없으면 fetch를 부르지 않는다", async () => {
-  vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(false);
-  const fetchMock = vi.fn();
-  vi.stubGlobal("fetch", fetchMock);
-  await expect(api.condenseChapter("p1", "c1",
-    { template: "bullet_box", bullets: [], conclusion: "", footnote: "" }))
-    .rejects.toBeInstanceOf(AiConsentDeclined);
+  await expect(startJob("p1", kind, {})).rejects.toBeInstanceOf(AiConsentDeclined);
   expect(fetchMock).not.toHaveBeenCalled();
 });
 
@@ -243,9 +203,9 @@ it("확인한 연결 식별값을 생성 요청에 고정해서 보낸다", asyn
   vi.mocked(api.getStatus).mockResolvedValue({ provider: "chatgpt", model: "gpt-test", selection_id: "selection-one",
     checked_at: "", login: { logged_in: true } });
   vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
-  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "ok" })));
+  const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "job-1" })));
   vi.stubGlobal("fetch", fetchMock);
-  await api.generateStructure("p", {});
+  await startJob("p", "structure", {});
   expect(aiGate.ensureConsent).toHaveBeenCalledWith("selection-one", expect.objectContaining({ provider: "chatgpt" }));
   expect(new Headers(fetchMock.mock.calls[0][1].headers).get("X-AI-Selection")).toBe("selection-one");
 });
@@ -253,9 +213,9 @@ it("확인한 연결 식별값을 생성 요청에 고정해서 보낸다", asyn
 it("로그인 확인 실패와 식별값 없는 새 연결에서는 문서를 보내지 않는다", async () => {
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   vi.mocked(api.getStatus).mockResolvedValue({ provider: "chatgpt", model: "gpt-test", checked_at: "", login: { logged_in: false } });
-  await expect(api.generateStructure("p", {})).rejects.toThrow("로그인 상태");
+  await expect(startJob("p", "structure", {})).rejects.toThrow("로그인 상태");
   vi.mocked(api.getStatus).mockResolvedValue({ provider: "chatgpt", model: "gpt-test", checked_at: "", login: { logged_in: true } });
-  await expect(api.generateStructure("p", {})).rejects.toThrow("AI 설정");
+  await expect(startJob("p", "structure", {})).rejects.toThrow("AI 설정");
   expect(fetchMock).not.toHaveBeenCalled();
 });
 it("계산 문구 대조는 현재 편집본을 앱 헤더와 함께 보내고 AI 동의를 요청하지 않는다", async () => {
@@ -284,7 +244,7 @@ it("재작성은 동의 전의 ETag에 고정하고 미리보기는 ETag 캐시�
     .mockResolvedValueOnce(new Response('{"ok":true}'));
   vi.stubGlobal("fetch",fetchMock);
   await api.getDeck("p1");
-  const pending=api.rewriteStory("p1",{brief:{decision_question:"질문",audience:"",report_type:"research",reading_profile:"미지정",constraints:[]},instructions:""});
+  const pending=startJob("p1","rewrite",{brief:{decision_question:"질문",audience:"",report_type:"research",reading_profile:"미지정",constraints:[]},instructions:""});
   await Promise.resolve();
   await api.putDeck("p1",{} as never,false);
   allow(true); await pending;

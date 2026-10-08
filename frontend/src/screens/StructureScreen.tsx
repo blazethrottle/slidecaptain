@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AiConsentDeclined, api, ApiError, followJob, isStaleStoryPlan, messageOf, newRequestId, TERMINAL_JOB_STATES,
   type Chapter, type ChapterView, type Deck, type GenerationUsage, type JobView, type ProjectInfo, type StoryPlan,
+  type StructureResult,
   type TemplateName,
 } from "../api/client";
-import { slotsText } from "../api/jobs";
+import {
+  blockingReasons, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
+} from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
@@ -91,6 +94,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const setDocumentDirty = useCallback((dirty:boolean)=>{dirtyParts.current.document=dirty;reportDirty();},[reportDirty]);
   // 장 구성 초안이 저장본과 다르면 창 닫기 경고에 포함한다 (D2a-2: 종전에는 경고 없이 사라졌다)
   const draftDirty = JSON.stringify(draft) !== JSON.stringify(deck.structure.chapters);
+  const draftDirtyRef = useRef(draftDirty);
+  draftDirtyRef.current = draftDirty;
+  // 지금 초안에 올린 구조안 후보와 불러오지 않은 이전 입력 기준 후보 (D2b-5b, 처분)
+  const structureJob = useRef<string | null>(null);
+  const staleStructure = useRef<string | null>(null);
+  const [earlierNotice, setEarlierNotice] = useState("");
   const registerRewrite = useCallback((guard:()=>Promise<boolean>)=>{rewriteLeave.current=guard;},[]);
   const registerDocument = useCallback((guard:()=>Promise<boolean>)=>{documentLeave.current=guard;},[]);
   // 화면을 떠나기 전 확인. 저장하지 못한 생성 결과(복사 상자)가 있으면 먼저 확인을 받는다 (리뷰 R1).
@@ -150,6 +159,26 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setError(stale ? "" : messageOf(error));
   };
 
+  // 구조안 작업의 결과를 초안에 올린다. 후보는 항상 AI 재생성 초안으로 보아 승인 때 옛 슬라이드를 계승하지 않는다
+  const showStructure = (view: JobView) => {
+    const result = jobResult<StructureResult>(view);
+    if (result.status === "format_error") {
+      setError(result.format_issue === "answer_not_in_summary"
+        ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요."
+        : "AI 응답을 형식에 맞게 읽지 못했습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요.");
+      setRawText(result.raw_text);
+      setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
+    } else if (result.structure) {
+      structureJob.current = view.id;
+      setDraft(result.structure.chapters);
+      setStoryPlan(result.structure.story_plan ?? null);
+      setDecisionQuestion(result.structure.story_plan?.brief.decision_question ?? decisionQuestion);
+      setDraftGenerated(true);
+      setNumbers(result.unverified_numbers);
+      setStructureUsage(result.usage);
+    }
+  };
+
   const generate = async () => {
     if (hasDiagrams) return;
     setBusy(true);
@@ -163,9 +192,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setChapterUsageSummary(null);
     setChapterUsageCount(0);
     setChapterUsageHadUnaccountedFailure(false);
+    // 다시 생성하면 지금 초안의 후보는 버린다. 새 후보가 그 자리를 대신한다 (D2b-5b)
+    if (structureJob.current) { void settle(project.name, structureJob.current, "dismissed"); structureJob.current = null; }
+    setEarlierNotice("");
     try {
       const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
-      const result = await api.generateStructure(project.name, {
+      const { job: final } = await runJob<StructureResult>(project.name, "structure", {
         target_chapters: n, instructions,
         ...(decisionQuestion.trim() ? { brief: {
           decision_question: decisionQuestion.trim(), audience: deck.meta.audience,
@@ -173,22 +205,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           reading_profile: storyPlan?.brief.reading_profile ?? "미지정",
           constraints: storyPlan?.brief.constraints ?? [],
         } } : {}),
-      });
-      if (result.status === "format_error") {
-        setError(result.format_issue === "answer_not_in_summary"
-          ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요."
-          : "AI 응답을 형식에 맞게 읽지 못했습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요.");
-        setRawText(result.raw_text);
-        setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
-      } else if (result.structure) {
-        setDraft(result.structure.chapters);
-        setStoryPlan(result.structure.story_plan ?? null);
-        setDraftGenerated(true);
-        setNumbers(result.unverified_numbers);
-        setStructureUsage(result.usage);
-      }
+      }, { intervalMs: pollIntervalMs });
+      showStructure(final);
     } catch (e) {
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+      else if (e instanceof JobCancelled) setCancelNotice("구조안 생성이 취소되었습니다.");
       else showFailure(e);
     } finally {
       setBusy(false);
@@ -281,9 +302,38 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 화면을 다시 열면 진행 중인 묶음을 이어서 조회하고, 끝난 묶음은 결과를 보인다 (D2b-5a)
   useEffect(() => {
     let live = true;
-    api.listJobs(project.name).then((jobs) => {
+    api.listJobs(project.name).then(async (jobs) => {
+      if (!live) return;
+      // 구조안: 진행 중이면 이어서 조회하고, 처분하지 않은 후보는 초안으로 불러온다 (D2b-5b)
+      const runningStructure = runningJob(jobs, ["structure"]);
+      if (runningStructure) {
+        setBusy(true);
+        onBusyChange?.(true);
+        const controller = new AbortController();
+        followAbort.current = controller;
+        try {
+          showStructure(await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal }));
+        } catch (e) {
+          if (!controller.signal.aborted) showFailure(e);
+        } finally {
+          if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
+        }
+      } else {
+        const earlier = pendingCandidate(jobs, ["structure"]);
+        const reasons = earlier ? blockingReasons(earlier) : [];
+        if (earlier && reasons.length === 0) {
+          // 저장하지 않은 초안 편집이 있으면 바꾸기 전에 묻는다
+          if (!draftDirtyRef.current || window.confirm("새 구조안 후보가 도착했습니다. 지금 초안을 바꿀까요?")) {
+            showStructure(earlier);
+            setEarlierNotice("이전에 만든 구조안 후보를 불러왔습니다. 승인해야 저장됩니다.");
+          }
+        } else if (earlier) {
+          staleStructure.current = earlier.id;
+          setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 현재 자료로 다시 생성해 주세요.`);
+        }
+      }
       const latest = jobs.find((j) => j.kind === "chapters");
-      if (!live || !latest) return;
+      if (!latest) return;
       latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
       if (!TERMINAL_JOB_STATES.has(latest.state) && latest.owner === "this_instance") void follow(latest.id, false);
       else { setJob(latest); summarize(latest); }
@@ -356,6 +406,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         throw e;
       }
       onDeckChange(current);
+      if (structureJob.current) { void settle(project.name, structureJob.current, "applied"); structureJob.current = null; }
+      setEarlierNotice("");
       setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       setShowJob(false);
       if (targets.length === 0) { onDone(); return; }
@@ -441,6 +493,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       )}
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance hasDiagrams={hasDiagrams} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
+      {earlierNotice && <p className="notice">{earlierNotice}
+        {staleStructure.current && <button onClick={() => {
+          void settle(project.name, staleStructure.current!, "dismissed");
+          staleStructure.current = null;
+          setEarlierNotice("");
+        }}>후보 버리기</button>}</p>}
       {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
       {/* C-1 리뷰 반영: draft 유무와 무관하게 렌더한다(형식 오류 안내 근처).
           draft가 비어 있으면 "장 구성" 섹션 자체가 없어 그 안에 두면 최초 생성의

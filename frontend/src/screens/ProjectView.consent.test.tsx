@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { revokeConsent } from "../api/aiGate";
 import type { AppStatus, Deck } from "../api/client";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
 
@@ -37,11 +38,16 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     if (method === "GET" && url.endsWith("/api/status")) {
       return new Response(JSON.stringify(STATUS), { status: 200 });
     }
-    if (method === "POST" && url.endsWith("/generate/structure")) {
-      return new Response(JSON.stringify({
+    // D2b-5b: 구조안 생성은 작업 API로 등록한다. 등록 응답이 곧 끝난 작업이다
+    if (method === "GET" && url.endsWith("/api/jobs/active")) {
+      return new Response(JSON.stringify({ active: null, ledger_available: true }), { status: 200 });
+    }
+    if (method === "GET" && url.endsWith("/api/projects/p1/jobs")) return new Response("[]", { status: 200 });
+    if (method === "POST" && url.endsWith("/api/projects/p1/jobs")) {
+      return new Response(JSON.stringify(jobView("structure", { result: {
         status: "ok", structure: { chapters: [] }, usage: emptyUsage(),
         raw_text: "", unverified_numbers: [], format_retried: false,
-      }), { status: 200 });
+      } })), { status: 202 });
     }
     throw new Error(`스텁되지 않은 요청: ${method} ${url}`);
   });
@@ -68,7 +74,7 @@ it("첫 구조안 생성 클릭에 대화 상자가 뜨고, 취소하면 요청�
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "자료" })).not.toBeDisabled();
-  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/generate/structure"))).toBe(false);
+  expect(fetchMock.mock.calls.some(([u, init]) => String(u).endsWith("/api/projects/p1/jobs") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
   expect(notice.closest('[role="alert"]')).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
@@ -82,7 +88,7 @@ it("동의하면 요청이 나가고 대화 상자가 닫히며, 두 번째 클�
   await screen.findByRole("dialog");
   await userEvent.click(screen.getByRole("button", { name: "전송에 동의하고 계속" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/generate/structure"))).toBe(true);
+  expect(fetchMock.mock.calls.some(([u, init]) => String(u).endsWith("/api/projects/p1/jobs") && (init as RequestInit | undefined)?.method === "POST")).toBe(true);
   // 두 번째 클릭은 이미 동의한 탭이라 대화 상자 없이 곧장 나간다 (스텁 응답이 빈 구조안이라
   // 버튼 문구는 그대로 "구조안 생성"이다)
   const before = fetchMock.mock.calls.length;
