@@ -4,8 +4,8 @@
 멈추게 한다. 시험은 멈춘 것을 확인한 뒤 이 프로세스를 SIGKILL로 끊는다. 제품 코드에는 시험 장치를 두지 않는다.
 
 환경 변수
-- HARNESS_PAUSE_AT: apply(③ 직전, 결과는 원장에 있고 적용 전) 또는 save(④ 적용 대상 ETag 기록 뒤 ⑤ 저장 전).
-  비우면 멈추지 않는다
+- HARNESS_PAUSE_AT: apply(③ 직전, 결과는 원장에 있고 적용 전), save(④ 적용 대상 ETag 기록 뒤 ⑤ 저장 전),
+  saved(⑤ 저장 뒤 ⑥ 성공 기록 전). 비우면 멈추지 않는다
 - HARNESS_PAUSED: 멈췄음을 알리는 파일 경로
 - HARNESS_UI: 화면 폴더(시험이 만든 빈 index.html 폴더). 화면 빌드 여부와 무관하게 서비스를 띄운다
 """
@@ -45,13 +45,16 @@ def _install() -> None:
                 _pause()
             return original_load(self, name)
         FileProjectStore.load_deck_with_etag = load
-    elif point == "save":
+    elif point in ("save", "saved"):
         original_save = FileProjectStore.save_deck
 
         def save(self, name, deck, *args, **kwargs):
-            if _in_apply():
+            if point == "save" and _in_apply():
                 _pause()
-            return original_save(self, name, deck, *args, **kwargs)
+            saved = original_save(self, name, deck, *args, **kwargs)
+            if point == "saved" and _in_apply():
+                _pause()
+            return saved
         FileProjectStore.save_deck = save
 
 

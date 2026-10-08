@@ -29,6 +29,21 @@ def _dir() -> Path:
     return path
 
 
+def _wait_while_parent(parent: int, done, limit: float = 600.0) -> bool:
+    """done()이 참이 될 때까지 기다린다. 부모(서비스)가 죽어 다른 프로세스에 입양되면 기다리지 않고 거짓을 돌려준다.
+
+    SIGKILL 시험은 서비스만 끊으므로, 이 검사가 없으면 관문 모드의 가짜 CLI가 영구히 남는다 (D2b-6 리뷰 R1).
+    """
+    deadline = time.monotonic() + limit
+    while time.monotonic() < deadline:
+        if done():
+            return True
+        if os.getppid() != parent:
+            return False
+        time.sleep(0.02)
+    return False
+
+
 def _append(name: str, line: str) -> None:
     with open(_dir() / name, "a", encoding="utf-8") as f:
         f.write(line + "\n")
@@ -60,8 +75,9 @@ def main(argv: list[str]) -> int:
         return 0
     _append("pids.log", str(os.getpid()))
     mode = os.environ.get("FAKE_CLAUDE_MODE", "respond")
+    parent = os.getppid()
     if mode == "hang":
-        time.sleep(3600)
+        _wait_while_parent(parent, lambda: False, 3600)
         return 0
     for raw in sys.stdin:
         line = raw.strip()
@@ -80,8 +96,8 @@ def main(argv: list[str]) -> int:
             _append("calls.log", f"{index} {os.getpid()}")
             if mode == "gate":
                 gate = Path(os.environ["FAKE_CLAUDE_GATE"])
-                while not gate.exists():
-                    time.sleep(0.02)
+                if not _wait_while_parent(parent, gate.exists):
+                    return 0
             structured = _next_response(index)
             text = json.dumps(structured, ensure_ascii=False)
             _write({"type": "assistant", "message": {"model": FAKE_MODEL, "content": [{"type": "text", "text": text}]},

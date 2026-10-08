@@ -8,6 +8,7 @@
 
 import json
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from slidecaptain.storage.file_store import FileProjectStore
+from slidecaptain.storage.job_ledger import JobLedger
 from tests.fakes import make_fake_cli
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="가짜 CLI 래퍼와 SIGKILL은 POSIX 전용 (Windows는 회사 PC 확인)")
@@ -41,9 +43,16 @@ class Service:
                "FAKE_CLAUDE_RESPONSES": str(tmp / "responses.json"), "FAKE_CLAUDE_MODE": cli_mode,
                "FAKE_CLAUDE_GATE": str(tmp / "never-opened-gate"), "HARNESS_PAUSE_AT": pause_at,
                "HARNESS_PAUSED": str(self.paused), "HARNESS_UI": str(ui)}
+        self.stderr = tmp / f"stderr-{instance}.log"
         self.process = subprocess.Popen([sys.executable, str(HARNESS), "--data-dir", str(data)], env=env,
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        ready = json.loads(self.process.stdout.readline())
+                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.stderr.open("wb"))
+        # 준비 신호를 30초까지 기다린다. 못 받으면 프로세스를 끊고 오류 출력을 붙인다 (D2b-6 리뷰 R19)
+        line = self.process.stdout.readline() if select.select([self.process.stdout], [], [], 30)[0] else b""
+        if not line:
+            self.process.kill()
+            self.process.wait(10)
+            raise AssertionError("서비스가 준비되지 않았습니다: " + self.stderr.read_text(errors="replace")[-2000:])
+        ready = json.loads(line)
         assert ready["event"] == "ready", ready
         self.origin = f"http://127.0.0.1:{ready['port']}"
 
@@ -108,14 +117,40 @@ def _register(service: Service, store: FileProjectStore):
     return job["id"]
 
 
-@pytest.mark.parametrize("point, expected_c1, calls_before, applied", [
-    ("sent", "remote_completion_unknown", 1, False),   # ①과 ② 사이: 결과가 없어 완료 여부를 모른다
-    ("apply", "succeeded", 1, True),                    # ②와 ③ 사이: 원장의 결과로 호출 없이 적용을 재개한다
-    ("save", "succeeded", 1, True),                     # ④와 ⑤ 사이: 적용 대상만 기록됐고 저장 전이다
-])
-def test_killed_service_resumes_without_calling_again(project, point, expected_c1, calls_before, applied):
+BAD = {"template": "bullet_box"}  # 형식 오류: 재시도 1회까지 같은 응답이면 그 장은 실패로 끝난다
+
+
+def _orphans(tmp: Path) -> list[int]:
+    """끝난 뒤에도 살아 있는 가짜 CLI 프로세스 (D2b-6 리뷰 R1)."""
+    log = tmp / "record" / "pids.log"
+    alive = []
+    for pid in (int(x) for x in log.read_text(encoding="utf-8").split()) if log.exists() else []:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        state = os.popen(f"ps -o stat= -p {pid}").read().strip()
+        if state and not state.startswith("Z"):
+            alive.append(pid)
+    return alive
+
+
+# (끊는 지점, 응답 목록, 재시작 뒤 장 상태, 끊기 전 호출 수, 덱에 적용된 장)
+CASES = [
+    ("sent", [SLOTS], ["remote_completion_unknown", "interrupted"], 1, []),   # ①과 ② 사이: 결과가 없어 완료 여부를 모른다
+    ("apply", [SLOTS], ["succeeded", "interrupted"], 1, ["c1"]),            # ②와 ③ 사이: 원장의 결과로 적용을 재개한다
+    ("save", [SLOTS], ["succeeded", "interrupted"], 1, ["c1"]),             # ④와 ⑤ 사이: 적용 대상만 기록됐고 저장 전이다
+    ("saved", [SLOTS], ["succeeded", "interrupted"], 1, ["c1"]),            # ⑤와 ⑥ 사이: 저장은 됐고 성공 기록 전이다 (R7)
+    # 첫 장은 형식 오류로 실패하고, 둘째 장의 적용 전에 끊긴다: 실패, 적용, 중단을 원장과 덱에서 구분한다 (R10)
+    ("apply", [BAD, BAD, SLOTS], ["failed", "succeeded"], 3, ["c2"]),
+]
+
+
+@pytest.mark.parametrize("point, answers, expected, calls_before, applied", CASES)
+def test_killed_service_resumes_without_calling_again(project, point, answers, expected, calls_before, applied):
     tmp, data, store = project
-    pause = {"sent": "", "apply": "apply", "save": "save"}[point]
+    (tmp / "responses.json").write_text(json.dumps(answers), encoding="utf-8")
+    pause = "" if point == "sent" else point
     first = Service(tmp, data, "run-1", pause_at=pause, cli_mode="gate" if point == "sent" else "respond")
     try:
         job_id = _register(first, store)
@@ -128,7 +163,9 @@ def test_killed_service_resumes_without_calling_again(project, point, expected_c
         if first.process.poll() is None:
             first.kill()
     assert _calls(tmp) == calls_before
-    assert store.load_deck("p1").slides == []  # 끊긴 시점에는 저장되지 않았다
+    before = [s.chapter_id for s in store.load_deck("p1").slides]
+    assert before == (["c1"] if point == "saved" else [])  # ⑤ 뒤에 끊긴 경우만 저장이 끝나 있다
+    etag_before = store.deck_etag("p1")
 
     second = Service(tmp, data, "run-2")
     try:
@@ -136,11 +173,21 @@ def test_killed_service_resumes_without_calling_again(project, point, expected_c
         assert status == 200, view
     finally:
         second.stop()
-    states = [(c["chapter_id"], c["state"]) for c in view["chapters"]]
-    assert states == [("c1", expected_c1), ("c2", "interrupted")]
-    assert view["state"] not in ("queued", "running", "validating", "cancel_requested")
+    assert [c["state"] for c in view["chapters"]] == expected
+    # 부모는 결과를 계산해 종결하고(R8), 사유 없이 중단된 남은 장은 코드가 없다
+    assert view["state"] == "failed" and view["outcome"] == "partial"
+    for chapter in view["chapters"]:
+        if chapter["state"] == "interrupted":
+            assert chapter["error"] is None or chapter["error"]["code"] is None
+        if chapter["state"] == "failed":
+            assert chapter["error"]["error_class"] == "ai_output"
     assert _calls(tmp) == calls_before  # 재시작 뒤 다시 부르지 않았다
     slides = [s.chapter_id for s in store.load_deck("p1").slides]
-    assert slides == (["c1"] if applied else [])
-    if applied:
-        assert view["chapters"][0]["candidate_status"] == "applied"
+    assert slides == applied
+    rows = {c.chapter_id: c for c in JobLedger.open(data).chapters(job_id)}
+    for chapter_id in applied:
+        assert rows[chapter_id].candidate_status == "applied"
+        assert rows[chapter_id].applied_etag == store.deck_etag("p1")  # 적용 결과 ETag가 지금 덱과 같다 (R9)
+    if point == "saved":
+        assert store.deck_etag("p1") == etag_before  # 저장을 다시 하지 않았다
+    _wait(lambda: not _orphans(tmp), timeout=5)  # 서비스를 끊어도 가짜 CLI가 남지 않는다 (R1)

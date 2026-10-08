@@ -7,24 +7,52 @@
     "per_write": {
       "n": 26,
       "median_ms": 0.19,
-      "max_ms": 0.31
+      "max_ms": 0.42
     },
-    "ledger_ms_per_chapter": 1.03,
-    "batch_total_ms": 18.3
+    "job_loop_writes": 16,
+    "job_loop_ms_per_chapter": 0.68,
+    "worker_thread_writes": 10,
+    "worker_thread_ms_per_chapter": 0.41,
+    "ledger_ms_per_chapter": 1.09,
+    "batch_total_ms": 19.0
   },
   "service": {
-    "poll": {
-      "n": 30,
-      "median_ms": 0.9,
-      "max_ms": 3.71
+    "cancel_after_call": [
+      {
+        "route_ms": 1.5,
+        "to_terminal_ms": 5039.7,
+        "state": "cancelled"
+      },
+      {
+        "route_ms": 2.4,
+        "to_terminal_ms": 5043.1,
+        "state": "cancelled"
+      },
+      {
+        "route_ms": 2.6,
+        "to_terminal_ms": 5014.9,
+        "state": "cancelled"
+      }
+    ],
+    "cancel_before_call": {
+      "route_ms": 1.3,
+      "to_terminal_ms": 27.4,
+      "state": "cancelled"
     },
-    "cancel_route_ms": 1.8,
-    "cancel_to_terminal_ms": 62.4,
-    "terminal_state": "cancelled",
-    "chapter_states": [
-      "cancelled",
-      "cancelled",
-      "cancelled"
-    ]
+    "poll_running": {
+      "n": 30,
+      "median_ms": 0.87,
+      "max_ms": 3.54
+    },
+    "poll_list": {
+      "n": 30,
+      "median_ms": 0.8,
+      "max_ms": 26.73
+    },
+    "poll_terminal": {
+      "n": 30,
+      "median_ms": 1.34,
+      "max_ms": 2.75
+    }
   }
 }
