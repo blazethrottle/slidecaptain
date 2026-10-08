@@ -51,7 +51,7 @@ CANDIDATE_TRANSITIONS: dict[str, frozenset[str]] = {
     "none": frozenset({"held", "stale"}),
     "held": frozenset({"delivered", "applied", "dismissed", "stale"}),
     "delivered": frozenset({"applied", "dismissed"}),
-    "stale": frozenset({"dismissed"}),
+    "stale": frozenset({"delivered", "dismissed"}),  # 래퍼가 낡은 결과를 200으로 돌려준 경우 (D2b-3 리뷰 R11)
     "applied": frozenset(),
     "dismissed": frozenset(),
 }

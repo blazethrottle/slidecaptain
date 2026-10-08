@@ -412,7 +412,7 @@ def test_values_are_checked(tmp_path, field, value):
 # 계획서 5.8의 처분 전이를 따로 적은 기대값
 PLAN_CANDIDATE_EDGES = {("none", "held"), ("none", "stale"), ("held", "delivered"), ("held", "applied"),
                         ("held", "dismissed"), ("held", "stale"), ("delivered", "applied"), ("delivered", "dismissed"),
-                        ("stale", "dismissed")}
+                        ("stale", "delivered"), ("stale", "dismissed")}
 
 
 @pytest.mark.parametrize("before", list(CANDIDATE_TRANSITIONS))

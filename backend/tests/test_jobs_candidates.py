@@ -172,3 +172,181 @@ def test_repair_job_reads_its_cancel_request_and_keeps_the_stopped_candidate(rew
     assert view["state"] == "cancelled" and view["candidate_status"] == "held"
     assert view["result"]["status"] == "stopped"
     assert store.load_deck("rewrite") == deck
+
+
+
+# D2b-3 리뷰 반영 (R1, R6, R8, R10, R11, R13)
+
+def test_diagram_job_result_carries_its_basis(diagram_input, store):
+    _, _, payload = diagram_input
+    etag = store.deck_etag("diagram")
+    with TestClient(create_app(store, provider=DiagramProvider(payload)), headers=HEADERS) as client:
+        job = client.post("/api/projects/diagram/jobs", json={"request_id": "diagram-0002", "kind": "diagram",
+                                                              "params": DIAGRAM_REQUEST},
+                          headers={"If-Match": f'"{etag}"'}).json()
+        view = _wait(client, "diagram", job["id"])
+    assert view["result"]["base_etag"] == f'"{etag}"' and len(view["result"]["sources_fingerprint"]) == 64
+    assert view["target"] == DIAGRAM_REQUEST["chapter_id"] and view["params"]["chapter_id"] == "new-diagram"
+
+
+def test_unreadable_basis_after_drawing_is_not_delivered(diagram_input, store):
+    _, _, payload = diagram_input
+    provider = DiagramProvider(payload, effect=lambda: (store.root / "diagram" / "sources" / "unselected.md")
+                               .write_bytes(b"\xff"))
+    with diagram_client(store, provider) as client:
+        response = client.post(DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
+        [row] = _ledger_rows(client, "diagram")
+    assert response.status_code == 409 and row.candidate_status == "held"  # 화면이 받지 못한 결과는 전달됨이 아니다
+
+
+def test_stale_chapter_result_returned_by_the_wrapper_is_delivered(store):
+    deck = _two_chapters(store)
+    provider = GateProvider(SLOTS)
+
+    def edit_then_release():
+        assert provider.entered.wait(5)
+        changed = deck.model_copy(deep=True)
+        changed.structure.chapters[0].conclusion = "바뀐 결론"
+        store.save_deck("p1", changed, snapshot=False)
+        provider.release.set()
+
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        threading.Thread(target=edit_then_release).start()
+        response = client.post("/api/projects/p1/generate/chapter/c1", json={})
+        [row] = _ledger_rows(client, "p1")
+    assert response.status_code == 200 and row.candidate_status == "delivered"
+
+
+@pytest.mark.parametrize("kind", ["rewrite", "chapter"])
+def test_inputs_changed_between_registration_and_lease_make_no_call(rewrite_input, store, kind):
+    # 정정 ⑤: 재작성과 장 재생성은 임대 직후 관련 입력을 다시 비교하고, 바뀌었으면 부르지 않는다
+    deck, _, payload, brief = rewrite_input
+    project = "rewrite"
+    if kind == "chapter":
+        _two_chapters(store)
+        project = "p1"
+    provider = GateProvider(payload if kind == "rewrite" else SLOTS)
+    provider.release.set()
+    app = create_app(store, provider=provider)
+    entered, resume = threading.Event(), threading.Event()
+    with TestClient(app, headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        real_acquire = runner._acquire
+
+        def slow_acquire(*args):
+            entered.set()
+            assert resume.wait(5)
+            return real_acquire(*args)
+
+        runner._acquire = slow_acquire
+        if kind == "rewrite":
+            body = {"request_id": "rewrite-0002", "kind": "rewrite",
+                    "params": {"brief": brief.model_dump(mode="json"), "instructions": "내용 보존"}}
+            headers = {"If-Match": f'"{store.deck_etag(project)}"'}
+        else:
+            body = {"request_id": "chapter-0002", "kind": "chapter", "params": {"chapter_id": "c1"}}
+            headers = {}
+        job = client.post(f"/api/projects/{project}/jobs", json=body, headers=headers).json()
+        assert entered.wait(5)
+        current = store.load_deck(project)
+        if kind == "rewrite":
+            current.meta.presenter = "등록 뒤 편집"
+        else:
+            current.structure.chapters[0].conclusion = "등록 뒤 편집"
+        store.save_deck(project, current, snapshot=False)
+        resume.set()
+        view = _wait(client, project, job["id"])
+    assert view["state"] == "failed" and view["error"]["status"] == 412 and provider.calls == 0
+
+
+def test_chapter_job_api_rejects_a_missing_chapter_without_a_row(store):
+    _two_chapters(store)
+    with TestClient(create_app(store, provider=GateProvider(SLOTS)), headers=HEADERS) as client:
+        response = client.post("/api/projects/p1/jobs", json={"request_id": "chapter-0003", "kind": "chapter",
+                                                              "params": {"chapter_id": "missing"}})
+        assert response.status_code == 404 and _ledger_rows(client, "p1") == []
+
+
+def test_remote_sent_time_is_recorded_only_when_the_provider_is_called(store):
+    _two_chapters(store)
+    with TestClient(create_app(store, provider=GateProvider(SLOTS)), headers=HEADERS) as client:
+        # 래퍼는 종전처럼 없는 장 404를 임대 뒤에 낸다. 제공자를 부르지 않았으므로 원격 호출 시각이 없다
+        assert client.post("/api/projects/p1/generate/chapter/missing", json={}).status_code == 404
+        [row] = _ledger_rows(client, "p1")
+    assert row.state == "failed" and row.remote_sent_at is None
+
+
+def test_repair_stops_between_calls_when_its_cancel_flag_is_set(rewrite_input, store):
+    # 수리의 cancelled 콜백이 작업의 취소 요청을 읽는다. 제공자가 취소를 무시하고 응답해도 다음 호출 전에 멈춘다
+    deck, _, payload, brief = rewrite_input
+    entered, release = threading.Event(), threading.Event()
+
+    class Deaf(RepairProvider):
+        async def complete(self, prompt, schema):  # 호출 기록은 부모 클래스가 한다
+            entered.set()
+            await asyncio.shield(asyncio.to_thread(release.wait, 5))
+            return await super().complete(prompt, schema)
+
+    provider = Deaf(payload)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        job = client.post("/api/projects/rewrite/jobs", json={
+            "request_id": "repair-0002", "kind": "repair", "params": repair_request(brief).model_dump(mode="json")},
+            headers={"If-Match": f'"{store.deck_etag("rewrite")}"'}).json()
+        assert entered.wait(5)
+        runner._handles[job["id"]].cancel_requested = True  # 제공자 태스크에 취소를 보내지 않고 깃발만 세운다
+        release.set()
+        view = _wait(client, "rewrite", job["id"])
+    assert len(provider.calls) == 1 and view["result"]["status"] == "stopped"
+    assert view["result"]["reason"] == "작업이 취소됐습니다. 기존 초안을 보존합니다."
+
+
+def test_repair_result_is_stopped_in_the_ledger_and_the_response_when_the_deck_changes(rewrite_input, store,
+                                                                                        monkeypatch):
+    # 수리 루프의 마지막 확인 뒤, 원장에 쓰기 전에 덱이 바뀌는 틈을 재현한다. 마무리가 stopped로 막는다 (리뷰 R8)
+    import slidecaptain.server.app as app_module
+    deck, _, payload, brief = rewrite_input
+    changed = deck.model_copy(deep=True)
+    changed.meta.presenter = "동시 편집"
+    real_repair = app_module.repair_story
+
+    async def repair_then_edit(*args, **kwargs):
+        result = await real_repair(*args, **kwargs)
+        store.save_deck("rewrite", changed, snapshot=False)
+        return result
+
+    monkeypatch.setattr(app_module, "repair_story", repair_then_edit)
+    with TestClient(create_app(store, provider=RepairProvider(payload)), headers=HEADERS) as client:
+        response = client.post("/api/projects/rewrite/story-plan/repair",
+                               json=repair_request(brief).model_dump(mode="json"),
+                               headers={"If-Match": f'"{store.deck_etag("rewrite")}"'})
+        [row] = _ledger_rows(client, "rewrite")
+    assert response.status_code == 200 and response.json()["status"] == "stopped"
+    assert row.result["status"] == "stopped" and row.candidate_status == "delivered"
+
+
+def test_chapter_recheck_reports_a_stale_story_plan(rewrite_input, store):
+    # 구성 계획이 있는 덱에서 등록 뒤 자료가 바뀌면 종전처럼 stale_story_plan을 낸다 (리뷰 R10)
+    deck, sources, _, _ = rewrite_input
+    chapter_id = next(ch.id for ch in deck.structure.chapters if ch.template != "diagram")
+    provider = GateProvider(SLOTS)
+    provider.release.set()
+    entered, resume = threading.Event(), threading.Event()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        real_acquire = runner._acquire
+
+        def slow_acquire(*args):
+            entered.set()
+            assert resume.wait(5)
+            return real_acquire(*args)
+
+        runner._acquire = slow_acquire
+        job = client.post("/api/projects/rewrite/jobs", json={"request_id": "chapter-0004", "kind": "chapter",
+                                                              "params": {"chapter_id": chapter_id}}).json()
+        assert entered.wait(5)
+        first = next(iter(sources))
+        store.write_source("rewrite", first, sources[first] + " 바뀐 문장")
+        resume.set()
+        view = _wait(client, "rewrite", job["id"])
+    assert view["state"] == "failed" and view["error"]["code"] == "stale_story_plan" and provider.calls == 0

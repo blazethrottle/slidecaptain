@@ -2658,6 +2658,12 @@ export interface components {
              * @enum {string}
              */
             state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /** Target */
+            target: string | null;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
             /**
              * Candidate Status
              * @enum {string}
@@ -2684,6 +2690,8 @@ export interface components {
             base_etag: string | null;
             /** Current Etag */
             current_etag: string | null;
+            /** Relevance Hash */
+            relevance_hash: string | null;
             /** Stale Reasons */
             stale_reasons: string[];
             /** Cancel Requested */

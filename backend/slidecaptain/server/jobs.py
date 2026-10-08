@@ -122,6 +122,8 @@ class JobSpec:
     judge: Callable[[Any], list[str]] | None = None  # 결과 저장 뒤 판정. 비어 있으면 같다
     target: str | None = None  # 대상(장 ID, 도식 장). 진행 중 작업 요약에 쓴다
     chapter_ids: list[str] | None = None
+    # 판정 뒤, 원장에 쓰기 전에 결과를 마무리한다(수리의 stopped). 원장과 응답의 결과가 같아진다 (D2b-3 리뷰 R8)
+    finalize: Callable[[Any, list[str]], Any] | None = None
 
 
 @dataclass
@@ -138,6 +140,7 @@ class JobHandle:
         self.job_id, self.spec = job_id, spec
         self.cancel_requested = False
         self.cancel_sent = False
+        self.sent = False  # 제공자를 실제로 불렀는가. 원격 호출 시각은 이때 남긴다 (D2b-3 리뷰 R6)
         self.provider_task: asyncio.Task | None = None
         self.outcome: Outcome | None = None
         self._done = threading.Event()
@@ -196,6 +199,11 @@ def _encode(result: Any) -> Any:
     return result.model_dump(mode="json") if isinstance(result, BaseModel) else result
 
 
+def _clean(reasons: list[str]) -> bool:
+    """성공 시각을 기록해도 되는가: 알림 외의 판정 이유가 없다. 판정 불가도 종전 라우트처럼 기록하지 않는다."""
+    return not [r for r in reasons if r not in NOTICE_REASONS]
+
+
 def real_reasons(reasons: list[str]) -> list[str]:
     """판정 이유 가운데 관련 입력이 실제로 달라진 것만. 판정 불가는 조회 때 다시 본다 (계획서 5.8)."""
     return [r for r in reasons if not r.startswith("unknown") and r not in NOTICE_REASONS]
@@ -205,7 +213,8 @@ class JobRunner:
     """앱 하나의 작업 실행기. 실행 중 작업은 서비스 전체에서 하나다 (계획서 5.6)."""
 
     def __init__(self, *, ledger: JobLedger | None, ledger_error: LedgerUnavailable | None, instance_id: str,
-                 acquire: Callable[[str | None], tuple[Any, Callable[[], None]]], classify: Classifier,
+                 acquire: Callable[[str | None, Callable[[], None]], tuple[Any, Callable[[], None]]],
+                 classify: Classifier,
                  on_success: Callable[[JobSpec, Any], None]):
         self.ledger, self.ledger_error = ledger, ledger_error
         self.instance_id = instance_id
@@ -309,7 +318,8 @@ class JobRunner:
         outcome: Outcome | None = None
         try:
             try:
-                service, release = await asyncio.to_thread(self._acquire, spec.selection_id)
+                service, release = await asyncio.to_thread(self._acquire, spec.selection_id,
+                                                           lambda: self._mark_sent(handle))
             except Exception as exc:
                 outcome = Outcome(self._end(job_id, "queued", exc, cancelled=handle.cancel_requested))
                 return
@@ -323,7 +333,7 @@ class JobRunner:
             if handle.cancel_requested:
                 outcome = Outcome(self._end(job_id, "queued", None, cancelled=True))
                 return
-            ledger.transition(job_id, expected="queued", new="running", remote_sent_at=_now(), attempts=1)
+            ledger.transition(job_id, expected="queued", new="running", attempts=1)
             handle.provider_task = asyncio.get_running_loop().create_task(spec.run(service, JobContext(handle)))
             await asyncio.wait({handle.provider_task})
             outcome = await self._settle(handle)
@@ -349,6 +359,18 @@ class JobRunner:
                 outcome = Outcome(self._read(job_id), self._memory_result(handle))
             handle._finish(outcome)
 
+    def _mark_sent(self, handle: JobHandle) -> None:
+        """제공자 호출 직전에 작업 루프에서 불린다. 첫 호출 때만 원격 호출 시각을 남긴다."""
+        if handle.sent:
+            return
+        handle.sent = True
+        try:
+            row = self.ledger.get_job(handle.job_id)
+            if row is not None and row.remote_sent_at is None:
+                self.ledger.update_job(handle.job_id, expected=row.state, remote_sent_at=_now())
+        except (TransitionRejected, LedgerError):
+            _LOG.warning("원격 호출 시각을 남기지 못했습니다: %s", handle.job_id)
+
     @staticmethod
     def _memory_result(handle: JobHandle) -> Any:
         task = handle.provider_task
@@ -362,13 +384,18 @@ class JobRunner:
         except LedgerError:
             return None
 
-    def _ledger_failed(self, handle: JobHandle) -> Outcome:
-        """원장 쓰기가 실패했다. failed(ledger)를 시도하고 메모리 결과는 대기자에게 넘긴다 (계획서 5.1, 리뷰 R2)."""
+    def _ledger_failed(self, handle: JobHandle, result: Any = None, reasons: list[str] | None = None) -> Outcome:
+        """원장 쓰기가 실패했다. failed(ledger)를 시도하고 메모리 결과와 판정은 대기자에게 넘긴다.
+
+        판정을 넘겨야 래퍼가 기준 변경을 종전처럼 412/409로 돌려준다 (계획서 5.1, D2b-2 리뷰 R2, D2b-3 리뷰 R9).
+        """
         row = self._fail(handle.job_id, "ledger", 503, LEDGER_WRITE_MESSAGE, "ledger_write_failed")
-        result = self._memory_result(handle)
-        if result is not None and getattr(result, "status", None) == "ok":
+        if result is None:
+            result = self._memory_result(handle)
+        reasons = reasons or []
+        if result is not None and getattr(result, "status", None) == "ok" and _clean(reasons):
             self._on_success(handle.spec, result)
-        return Outcome(row, result)
+        return Outcome(row, result, reasons)
 
     def _fail(self, job_id: str, error_class: str, status: int, detail: str, code: str | None) -> JobRow | None:
         row = self._read(job_id)
@@ -395,27 +422,33 @@ class JobRunner:
             return Outcome(ledger.transition(job_id, expected="cancel_requested", new="cancelled",
                                              result=_encode(task.result()), candidate_status="held",
                                              error_class="cancelled"), task.result())
-        if task.cancelled():  # 실행기가 보내지 않은 취소. 원격 호출을 보냈으므로 완료 여부를 모른다
-            return Outcome(ledger.transition(job_id, expected="running", new="remote_completion_unknown"))
+        if task.cancelled():  # 실행기가 보내지 않은 취소. 호출을 보냈으면 완료 여부를 모른다
+            new = "remote_completion_unknown" if handle.sent else "interrupted"
+            return Outcome(ledger.transition(job_id, expected="running", new=new))
         if task.exception() is not None:
             return Outcome(self._end(job_id, "running", task.exception()))
         result = task.result()
         reasons = await asyncio.to_thread(spec.judge, result) if spec.judge is not None else []
+        if spec.finalize is not None:
+            result = spec.finalize(result, reasons)
         changed = real_reasons(reasons)
         format_error = getattr(result, "status", None) == "format_error"
         # 형식 오류 결과는 원문을 남기되 후보로 보이지 않는다 (리뷰 R11). 낡음은 실제로 달라졌을 때만 (리뷰 R3)
         candidate = "none" if format_error else ("stale" if changed else "held")
-        ledger.transition(job_id, expected="running", new="validating", result=_encode(result),
-                          candidate_status=candidate)
-        if format_error:
-            row = ledger.transition(job_id, expected="validating", new="failed", error_class="ai_output",
-                                    error_detail=FORMAT_ERROR_MESSAGE,
-                                    error_code=getattr(result, "format_issue", None) or "format_error")
-        else:
-            row = ledger.transition(job_id, expected="validating", new="succeeded")
-            # 성공 시각은 알림 외의 판정 이유가 없을 때만 기록한다. 판정 불가도 종전 라우트처럼 기록하지 않는다
-            if not [r for r in reasons if r not in NOTICE_REASONS]:
-                self._on_success(spec, result)
+        try:
+            ledger.transition(job_id, expected="running", new="validating", result=_encode(result),
+                              candidate_status=candidate)
+            if format_error:
+                row = ledger.transition(job_id, expected="validating", new="failed", error_class="ai_output",
+                                        error_detail=FORMAT_ERROR_MESSAGE,
+                                        error_code=getattr(result, "format_issue", None) or "format_error")
+            else:
+                row = ledger.transition(job_id, expected="validating", new="succeeded")
+        except LedgerError:
+            _LOG.exception("생성 결과를 작업 원장에 쓰지 못했습니다: %s", job_id)
+            return self._ledger_failed(handle, result, reasons)
+        if not format_error and _clean(reasons):
+            self._on_success(spec, result)
         return Outcome(row, result, reasons)
 
     def _end(self, job_id: str, expected: str, exc: BaseException | None, cancelled: bool = False) -> JobRow:
@@ -426,11 +459,16 @@ class JobRunner:
                                       error_status=status, error_detail=detail, error_code=code)
 
     def mark_delivered(self, job_id: str) -> None:
-        """래퍼가 결과를 응답으로 돌려줬다. 화면은 이 결과를 "이전에 만든 결과"로 다시 보이지 않는다."""
-        try:
-            self.ledger.settle_candidate(job_id, expected="held", new="delivered")
-        except (TransitionRejected, LedgerError):
-            pass  # 낡은 후보나 원장 문제는 응답을 막지 않는다
+        """래퍼가 결과를 실제로 응답으로 돌려줄 때만 부른다. 화면은 이 결과를 "이전에 만든 결과"로 다시 보이지
+        않는다. 낡은 결과를 200으로 돌려준 경우도 같다 (D2b-3 리뷰 R1, R11)."""
+        for expected in ("held", "stale"):
+            try:
+                self.ledger.settle_candidate(job_id, expected=expected, new="delivered")
+                return
+            except TransitionRejected:
+                continue
+            except LedgerError:
+                return  # 원장 문제는 응답을 막지 않는다
 
     # 재시작 조정과 종료 (계획서 5.5, 5.6)
 

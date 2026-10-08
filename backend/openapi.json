@@ -7935,6 +7935,22 @@
             ],
             "title": "State"
           },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
           "candidate_status": {
             "type": "string",
             "enum": [
@@ -8036,6 +8052,17 @@
             ],
             "title": "Current Etag"
           },
+          "relevance_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance Hash"
+          },
           "stale_reasons": {
             "items": {
               "type": "string"
@@ -8076,6 +8103,8 @@
           "project",
           "kind",
           "state",
+          "target",
+          "params",
           "candidate_status",
           "outcome",
           "owner",
@@ -8086,6 +8115,7 @@
           "model",
           "base_etag",
           "current_etag",
+          "relevance_hash",
           "stale_reasons",
           "cancel_requested",
           "error",

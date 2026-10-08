@@ -514,10 +514,10 @@ def test_settings_busy_while_the_job_waits_for_the_lease(store, manager):
         runner = _runner(client)
         real_acquire = runner._acquire
 
-        def slow_acquire(selection_id):
+        def slow_acquire(*args):
             entered.set()
             assert resume.wait(5)
-            return real_acquire(selection_id)
+            return real_acquire(*args)
 
         runner._acquire = slow_acquire
         job = _register(client, headers={"X-AI-Selection": manager.selection_id}).json()

@@ -73,7 +73,7 @@ from slidecaptain.pipeline.document_changes import (
     preview_evidence_migration, apply_evidence_migration,
 )
 from slidecaptain.models.story import ChapterRole, ReportBrief
-from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan
+from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan, require_current_story
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
 from slidecaptain.models.jobs import (
@@ -273,6 +273,20 @@ class DocumentChangeBasis(BaseModel):
     evidence_fingerprints: dict[str, str]
 
 
+class _CallMarker:
+    """제공자 감싸개: 첫 complete 호출 직전에 on_call을 부른다. 다른 속성은 원래 제공자의 것을 쓴다."""
+
+    def __init__(self, provider, on_call: Callable[[], None]):
+        self._inner, self._on_call = provider, on_call
+
+    async def complete(self, prompt, schema):
+        self._on_call()
+        return await self._inner.complete(prompt, schema)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 def _require_ai_consent(x_ai_consent: str | None) -> None:
     """생성 3종 라우트 공통 관문 (계획서 B3). 헤더가 없거나 값이 다르면 428로 거절한다."""
     if x_ai_consent != _APP_HEADER_VALUE:
@@ -370,14 +384,21 @@ def create_app(
         _LOG.warning("작업 원장을 열지 못했습니다. AI 생성 등록만 막습니다: %s", exc)
         ledger, ledger_error = None, exc
 
-    def _acquire_service(selection_id: str | None):
-        """작업 루프의 작업 스레드에서 임대를 잡는다. 돌려주는 release는 동기 함수다."""
+    def _acquire_service(selection_id: str | None, on_call: Callable[[], None]):
+        """작업 루프의 작업 스레드에서 임대를 잡는다. 돌려주는 release는 동기 함수다.
+
+        제공자는 첫 호출 직전에 on_call을 부르는 감싸개로 넘긴다. 원격 호출 시각을 실제 호출 시점에 남겨
+        재시작 조정이 호출 전 실패를 "완료 여부 불명"으로 잘못 분류하지 않게 한다 (D2b-3 리뷰 R6).
+        """
         if ai_connections is None:
-            return _require_service(), (lambda: None)
+            base = _require_service()
+            return GenerationService(_CallMarker(base._provider, on_call), metrics,
+                                     requested_model=base._requested_model), (lambda: None)
         lease = ai_connections.generation(selection_id)
         selected = lease.__enter__()
         try:
-            svc = GenerationService(selected, metrics, requested_model=ai_connections.selection.model)
+            svc = GenerationService(_CallMarker(selected, on_call), metrics,
+                                    requested_model=ai_connections.selection.model)
         except BaseException:
             lease.__exit__(None, None, None)
             raise
@@ -505,7 +526,11 @@ def create_app(
         return recheck
 
     def _chapter_relevance(deck: Deck, chapter_id: str) -> str:
-        """장 재생성과 축약의 관련 입력: 그 장의 정의와 구성 계획 (계획서 5.8)."""
+        """장 재생성과 축약의 관련 입력 (계획서 5.8): "템플릿|장 정의 해시|구성 계획과 보고 정보 해시".
+
+        템플릿을 따로 두어 조회 때도 템플릿 변경을 구별한다(D2b-3 리뷰 R4). 보고 정보(meta)는 생성 입력이라
+        구성 계획 쪽에 함께 둔다(리뷰 R14). 전역 프리셋은 넣지 않는다.
+        """
         chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
         plan = deck.structure.story_plan
 
@@ -513,30 +538,37 @@ def create_app(
             text = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
             return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
-        return digest(chapter.model_dump(mode="json") if chapter else None) + ":" + digest(
-            plan.model_dump(mode="json") if plan else None)
+        return "|".join([
+            chapter.template if chapter else "",
+            digest(chapter.model_dump(mode="json") if chapter else None),
+            digest({"plan": plan.model_dump(mode="json") if plan else None, "meta": deck.meta.model_dump(mode="json")}),
+        ])
 
-    def _chapter_reasons(name: str, chapter_id: str, relevance: str, template: str | None, etag: str | None,
-                         revision: str | None) -> list[str]:
-        try:
-            with store.locked(name):
-                deck, current_etag = store.load_deck_with_etag(name)
-                current_revision = _sources_revision(name)
-        except (StorageError, OSError):
+    def _chapter_basis(name: str):
+        """덱, ETag, 자료 fingerprint를 한 잠금 안에서 한 번 읽는다. 덱을 읽지 못하면 (None, None, 자료)."""
+        with store.locked(name):
+            try:
+                deck, etag = store.load_deck_with_etag(name)
+            except (StorageError, OSError):
+                deck, etag = None, None
+            return deck, etag, _sources_revision(name)
+
+    def _chapter_reasons(chapter_id: str, relevance: str, etag: str | None, revision: str | None,
+                         basis) -> list[str]:
+        deck, current_etag, current_revision = basis
+        if deck is None:
             return ["unknown_deck"]
-        chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
+        template, fixed_chapter, fixed_report = relevance.split("|")
+        now_template, now_chapter, now_report = _chapter_relevance(deck, chapter_id).split("|")
         reasons = []
-        if chapter is None:
+        if not now_template:
             reasons.append("chapter_missing")
-        elif template is not None and chapter.template != template:
+        elif now_template != template:
             reasons.append("template_changed")
-        else:
-            now_chapter, now_plan = _chapter_relevance(deck, chapter_id).split(":")
-            fixed_chapter, fixed_plan = relevance.split(":")
-            if now_chapter != fixed_chapter:
-                reasons.append("chapter_changed")
-            if now_plan != fixed_plan:
-                reasons.append("story_plan_changed")
+        elif now_chapter != fixed_chapter:
+            reasons.append("chapter_changed")
+        if now_template and now_report != fixed_report:
+            reasons.append("story_plan_changed")
         if current_revision is None:
             reasons.append("unknown_sources")
         elif current_revision != revision:
@@ -545,35 +577,35 @@ def create_app(
             reasons.append("deck_changed_elsewhere")  # 알리기만 하고 반영을 막지 않는다
         return reasons
 
-    def _chapter_recheck(name: str, chapter_id: str, relevance: str, template: str | None, etag: str | None,
-                         revision: str | None):
+    def _chapter_recheck(name: str, chapter_id: str, relevance: str, etag: str | None, revision: str | None):
+        """임대 직후 관련 입력 재비교. 상태 코드는 구조안과 같다: 자료만 바뀌면 409, 그 밖은 412 (리뷰 R5)."""
         def recheck() -> None:
-            reasons = real_reasons(_chapter_reasons(name, chapter_id, relevance, template, etag, revision))
-            if reasons:
-                code = "sources_changed" if reasons == ["sources_changed"] else "base_changed"
-                raise JobFailed(409, "생성을 시작하기 전에 이 장의 입력이나 자료가 바뀌었습니다. 다시 생성해 주세요.", code)
+            basis = _chapter_basis(name)
+            reasons = real_reasons(_chapter_reasons(chapter_id, relevance, etag, revision, basis))
+            if not reasons:
+                return
+            deck = basis[0]
+            if deck is not None and deck.structure.story_plan is not None and (
+                    "sources_changed" in reasons or "story_plan_changed" in reasons):
+                # 구성 계획 낡음은 종전처럼 stale_story_plan으로 알려 화면의 구성 복구 안내가 나오게 한다 (리뷰 R10)
+                require_current_story(deck, _load_sources(name, allow_empty=True))
+            if reasons == ["sources_changed"]:
+                raise JobFailed(409, "생성을 시작하기 전에 자료가 바뀌었습니다. 현재 자료로 다시 생성해 주세요.",
+                                "sources_changed")
+            raise JobFailed(412, "생성을 시작하기 전에 이 장의 입력이 바뀌었습니다. 최신 내용을 확인한 뒤 다시 생성해 주세요.",
+                            "base_changed")
         return recheck
 
-    async def _run_wrapped(build_spec: Callable[[], JobSpec], request: Request | None = None):
-        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 결과를 돌려준다 (계획서 2.2, 5.4).
+    async def _run_wrapped(build_spec: Callable[[], JobSpec]):
+        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 (결과, 작업)을 돌려준다 (계획서 2.2, 5.4).
 
         등록(덱과 자료 읽기, 원장 쓰기)은 작업 스레드에서 한다(D2b-2 리뷰 R9). 요청이 취소되면 작업에
         취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다. 그래야 요청이 끝났을 때 임대가
-        풀려 있다(지금 라우트와 같은 성질). 결과를 돌려준 작업은 delivered로 처분한다(리뷰 R8).
+        풀려 있다(지금 라우트와 같은 성질). 결과를 응답으로 돌려주는 라우트는 _deliver로 처분을 남긴다.
         """
         row, handle, _ = await asyncio.to_thread(lambda: runner.start(build_spec()))
         if handle is None:
             raise http_error_from(row)
-        watcher = None
-        if request is not None:
-            # 구성 수리는 종전처럼 연결이 끊기면 생성을 취소한다. 화면이 작업 API로 옮기는 D2b-5b까지 둔다
-            async def watch_disconnect():
-                while not handle.done:
-                    if await request.is_disconnected():
-                        await asyncio.to_thread(runner.cancel, handle.job_id)
-                        return
-                    await asyncio.sleep(0.2)
-            watcher = asyncio.create_task(watch_disconnect())
         try:
             outcome = await handle.wait()
         except asyncio.CancelledError:
@@ -581,48 +613,48 @@ def create_app(
                 await asyncio.to_thread(runner.cancel, handle.job_id)
                 await handle.wait()
             raise
-        finally:
-            if watcher is not None:
-                watcher.cancel()
-                await asyncio.gather(watcher, return_exceptions=True)
         if outcome.result is None or (outcome.row is not None and outcome.row.state == "cancelled"):
             raise http_error_from(outcome.row)
+        return outcome, handle
+
+    async def _deliver(handle, result):
+        """결과를 응답으로 돌려주기 직전에만 부른다. 오류 응답이면 부르지 않는다 (D2b-3 리뷰 R1)."""
         await asyncio.to_thread(runner.mark_delivered, handle.job_id)
-        return outcome
+        return result
 
     def _job_views(rows: list[JobRow]) -> list[JobView]:
-        """작업 행을 응답으로 바꾼다. 프로젝트마다 덱 ETag와 자료 fingerprint를 한 번만 읽는다 (리뷰 R9)."""
-        basis: dict[str, tuple[str | None, str | None]] = {}
+        """작업 행을 응답으로 바꾼다. 프로젝트마다 덱과 자료를 한 번만 읽고(D2b-2 리뷰 R9, D2b-3 리뷰 R12),
+        실행 중 판정과 같은 이유 이름을 쓴다(D2b-3 리뷰 R4)."""
+        basis: dict[str, tuple] = {}
         views = []
         for row in rows:
             if row.project not in basis:
-                basis[row.project] = (_deck_etag_or_none(row.project), _sources_revision(row.project))
-            current_etag, revision = basis[row.project]
+                basis[row.project] = _chapter_basis(row.project)
+            deck, current_etag, revision = basis[row.project]
             terminal = row.state in ("succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown")
             reasons: list[str] = []
-            if (terminal and row.result is not None and row.candidate_status in ("held", "delivered", "stale")
-                    and row.kind in ("chapter", "condense") and row.relevance_hash):
-                # 장 재생성과 축약은 관련 입력 단위로 판정한다. 템플릿 변경은 장 정의 변경으로 보인다
-                reasons = _chapter_reasons(row.project, row.params.get("chapter_id", ""), row.relevance_hash, None,
-                                           row.base_etag, row.sources_fingerprint)
-            elif terminal and row.result is not None and row.candidate_status in ("held", "delivered", "stale"):
-                if current_etag is None or revision is None:
-                    reasons = ["unknown"]
+            if terminal and row.result is not None and row.candidate_status in ("held", "delivered", "stale"):
+                if row.kind in ("chapter", "condense") and row.relevance_hash:
+                    reasons = _chapter_reasons(row.params.get("chapter_id", ""), row.relevance_hash, row.base_etag,
+                                               row.sources_fingerprint, basis[row.project])
                 else:
-                    reasons = [r for r, changed in (("deck_changed", current_etag != row.base_etag),
-                                                    ("sources_changed", revision != row.sources_fingerprint))
-                               if changed]
+                    reasons = ["unknown_deck"] if current_etag is None else (
+                        ["deck_changed"] if current_etag != row.base_etag else [])
+                    reasons += ["unknown_sources"] if revision is None else (
+                        ["sources_changed"] if revision != row.sources_fingerprint else [])
             error = None
             if row.error_class or row.error_status or row.error_code:
                 error = JobError(error_class=row.error_class, status=row.error_status, detail=row.error_detail,
                                  code=row.error_code)
+            target = row.params.get("chapter_id") if isinstance(row.params, dict) else None
             views.append(JobView(
-                id=row.id, project=row.project, kind=row.kind, state=row.state,
+                id=row.id, project=row.project, kind=row.kind, state=row.state, target=target, params=row.params,
                 candidate_status=row.candidate_status, outcome=row.outcome,
                 owner="this_instance" if row.instance_id == runner.instance_id else "other_instance",
                 created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
                 provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
-                stale_reasons=reasons, cancel_requested=runner.cancel_requested(row.id), error=error,
+                relevance_hash=row.relevance_hash, stale_reasons=reasons,
+                cancel_requested=runner.cancel_requested(row.id), error=error,
                 result=row.result if isinstance(row.result, dict) else None))
         return views
 
@@ -994,11 +1026,15 @@ def create_app(
     ):
         # 래퍼 (계획서 2.2): 생성 뒤 덱이 바뀌면 412, 자료가 바뀌면 409. 결과는 원장에 낡은 후보로 남는다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _rewrite_spec(name, req, if_match, x_ai_selection, new_request_id()))
-        error = _stale_error("rewrite", outcome.stale_reasons)
-        if error is not None:
-            raise error
-        return outcome.result
+        outcome, handle = await _run_wrapped(lambda: _rewrite_spec(name, req, if_match, x_ai_selection,
+                                                                    new_request_id()))
+        if outcome.stale_reasons:
+            # 종전 라우트의 생성 뒤 확인을 그대로 돌려 같은 응답(412, 409, 읽기 오류의 원래 응답)을 낸다 (리뷰 R2)
+            with store.locked(name):
+                _rewrite_base(name, f'"{handle.spec.inputs.base_etag}"')
+                if sources_fingerprint(_load_sources(name, allow_empty=True)) != handle.spec.inputs.sources_fingerprint:
+                    raise HTTPException(409, "재작성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.")
+        return await _deliver(handle, outcome.result)
 
     @app.post("/api/projects/{name}/story-plan/rewrite/apply", response_model=Deck)
     def apply_story_rewrite(
@@ -1036,6 +1072,13 @@ def create_app(
             # 임대가 실행 중 선택 변경을 막으므로 선택 식별자는 비교하지 않는다 (계획서 5.8)
             return not _basis_reasons(name, etag, revision)
 
+        def finalize(result, reasons):
+            # 늦은 변경은 옛 후보를 적용할 수 있게 만들지 않는다. 판정 불가도 종전처럼 멈춘 것으로 본다 (리뷰 R8)
+            if reasons and result.status != "stopped":
+                result.status = "stopped"
+                result.reason = "기준 저장본이나 자료가 바뀌었습니다. 후보를 적용하지 마세요."
+            return result
+
         async def run(svc, ctx):
             return await repair_story(deck, sources, req, svc._provider, metrics, base_etag=f'"{etag}"',
                                       source_revision=revision, unchanged=unchanged,
@@ -1045,27 +1088,21 @@ def create_app(
         return JobSpec(kind="repair", project=name, request_id=request_id, params=req.model_dump(mode="json"),
                        selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
                        run=run, recheck=_stale_recheck("rewrite", name, etag, revision),
-                       judge=_base_judge(name, etag, revision))
-
-    def _finish_repair(outcome):
-        result = outcome.result
-        # 늦은 변경은 옛 후보를 적용할 수 있게 만들지 않는다. 검토용으로만 남긴다
-        if real_reasons(outcome.stale_reasons) and result.status != "stopped":
-            result.status = "stopped"
-            result.reason = "기준 저장본이나 자료가 바뀌었습니다. 후보를 적용하지 마세요."
-        return result
+                       judge=_base_judge(name, etag, revision), finalize=finalize)
 
     @app.post("/api/projects/{name}/story-plan/repair", response_model=StoryRepairResult,
               responses={409: {"model": GenerationActiveBody}})
     async def preview_story_repair(
-        name: str, req: StoryRepairRequest, request: Request,
+        name: str, req: StoryRepairRequest,
         if_match: str | None = Header(default=None),
         x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
     ):
+        # 종전의 연결 끊김 감시는 HTTP 미들웨어 뒤에서 끊김을 감지하지 못해 지웠다(D2b-3 리뷰 R7). 수리 패널의
+        # "실행 중단"은 D2b-5b에서 작업 취소 API로 옮긴다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _repair_spec(name, req, if_match, x_ai_selection, new_request_id()),
-                                     request=request)
-        return _finish_repair(outcome)
+        outcome, handle = await _run_wrapped(lambda: _repair_spec(name, req, if_match, x_ai_selection,
+                                                                   new_request_id()))
+        return await _deliver(handle, outcome.result)
 
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str, final: bool = False):
@@ -1560,11 +1597,14 @@ def create_app(
     ):
         # 래퍼 (계획서 2.2): 임대 직후와 생성 뒤의 기준 변경을 종전 문구로 돌려준다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _diagram_spec(name, req, if_match, x_ai_selection, new_request_id()))
-        error = _stale_error("diagram", outcome.stale_reasons)
+        outcome, handle = await _run_wrapped(lambda: _diagram_spec(name, req, if_match, x_ai_selection,
+                                                                    new_request_id()))
+        error = _stale_error("diagram", _basis_reasons(name, handle.spec.inputs.base_etag,
+                                                       handle.spec.inputs.sources_fingerprint)
+                             if outcome.stale_reasons else [])
         if error is not None:
             raise error
-        return outcome.result
+        return await _deliver(handle, outcome.result)
 
     def _structure_spec(name: str, req: GenerateStructureRequest, selection_id: str | None,
                         request_id: str) -> JobSpec:
@@ -1604,8 +1644,8 @@ def create_app(
     ):
         # 래퍼 (계획서 2.2): 생성 뒤 덱이나 자료가 바뀌어도 종전처럼 결과를 돌려준다. 원장에는 낡음으로 남는다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _structure_spec(name, req, x_ai_selection, new_request_id()))
-        return outcome.result
+        outcome, handle = await _run_wrapped(lambda: _structure_spec(name, req, x_ai_selection, new_request_id()))
+        return await _deliver(handle, outcome.result)
 
     # 작업 API (계획서 5.9)
 
@@ -1622,11 +1662,11 @@ def create_app(
             dumped = params.model_dump(mode="json")
         elif req.kind == "chapter":
             params = GenerateChapterRequest(instructions=req.params.instructions)
-            build = lambda: _chapter_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id)
+            build = lambda: _chapter_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id, strict=True)
             dumped = {"chapter_id": req.params.chapter_id, **params.model_dump(mode="json")}
         elif req.kind == "condense":
             params = CondenseChapterRequest(slots=req.params.slots, instructions=req.params.instructions)
-            build = lambda: _condense_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id)
+            build = lambda: _condense_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id, strict=True)
             dumped = {"chapter_id": req.params.chapter_id, **params.model_dump(mode="json")}
         elif req.kind == "diagram":
             build = lambda: _diagram_spec(name, req.params, if_match, x_ai_selection, req.request_id)
@@ -1681,15 +1721,24 @@ def create_app(
         return ActiveJobStatus(active=ActiveJob(**summary) if summary else None)
 
     def _chapter_spec(name: str, chapter_id: str, req: GenerateChapterRequest, selection_id: str | None,
-                      request_id: str) -> JobSpec:
-        """장 생성의 등록 검사와 작업 정의. 없는 장 404와 자료 422는 종전처럼 임대 뒤에 낸다."""
-        deck, etag = store.load_deck_with_etag(name)
+                      request_id: str, strict: bool = False) -> JobSpec:
+        """장 생성의 등록 검사와 작업 정의.
+
+        래퍼는 종전처럼 없는 장 404와 자료 422를 임대 뒤에 낸다. 작업 API(strict)는 계획서 5.4대로 등록
+        검사에서 내고 행을 만들지 않는다 (D2b-3 리뷰 R6).
+        """
+        with store.locked(name):
+            deck, etag = store.load_deck_with_etag(name)
+            revision = _sources_revision(name)
         chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
         if chapter is not None and chapter.template == "diagram":
             raise DiagramGenerationUnsupported()
         _require_current_selection(selection_id)
-        revision, relevance = _sources_revision(name), _chapter_relevance(deck, chapter_id)
-        template = chapter.template if chapter is not None else None
+        if strict:
+            if chapter is None:
+                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+            _load_sources(name)
+        relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
@@ -1703,9 +1752,9 @@ def create_app(
         return JobSpec(kind="chapter", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
                        inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
-                       recheck=_chapter_recheck(name, chapter_id, relevance, template, etag, revision)
+                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision)
                        if chapter is not None else None,
-                       judge=lambda _r: _chapter_reasons(name, chapter_id, relevance, template, etag, revision),
+                       judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)
 
     @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult,
@@ -1717,29 +1766,41 @@ def create_app(
     ):
         # 래퍼 (계획서 2.2): 생성 뒤 다른 곳이 바뀌어도 종전처럼 결과를 돌려준다. 판정은 원장에 남는다
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _chapter_spec(name, chapter_id, req, x_ai_selection, new_request_id()))
-        return outcome.result
+        outcome, handle = await _run_wrapped(lambda: _chapter_spec(name, chapter_id, req, x_ai_selection,
+                                                                    new_request_id()))
+        return await _deliver(handle, outcome.result)
 
     def _condense_spec(name: str, chapter_id: str, req: CondenseChapterRequest, selection_id: str | None,
-                       request_id: str) -> JobSpec:
-        deck, etag = store.load_deck_with_etag(name)
+                       request_id: str, strict: bool = False) -> JobSpec:
+        with store.locked(name):
+            deck, etag = store.load_deck_with_etag(name)
+            revision = _sources_revision(name)
         chapter = next((ch for ch in deck.structure.chapters if ch.id == chapter_id), None)
         if req.slots.template == "diagram" or (chapter is not None and chapter.template == "diagram"):
             raise DiagramGenerationUnsupported()
         _require_current_selection(selection_id)
-        revision, relevance = _sources_revision(name), _chapter_relevance(deck, chapter_id)
-        template = chapter.template if chapter is not None else None
+
+        def template_mismatch() -> HTTPException:
+            return HTTPException(
+                422,
+                f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
+                "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+            )
+
+        if strict:  # 작업 API는 등록 검사에서 거절하고 행을 만들지 않는다 (D2b-3 리뷰 R6)
+            if chapter is None:
+                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+            if req.slots.template != chapter.template:
+                raise template_mismatch()
+            _load_sources(name)
+        relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
             if chapter is None:
                 raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
             if req.slots.template != chapter.template:
-                raise HTTPException(
-                    422,
-                    f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
-                    "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
-                )
+                raise template_mismatch()
             preset = _preset_for(deck)
             sources = _load_sources(name)
             return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions,
@@ -1748,9 +1809,9 @@ def create_app(
         return JobSpec(kind="condense", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
                        inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
-                       recheck=_chapter_recheck(name, chapter_id, relevance, template, etag, revision)
+                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision)
                        if chapter is not None else None,
-                       judge=lambda _r: _chapter_reasons(name, chapter_id, relevance, template, etag, revision),
+                       judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)
 
     @app.post(
@@ -1763,8 +1824,9 @@ def create_app(
         x_ai_selection: str | None = Header(default=None),
     ):
         _require_ai_consent(x_ai_consent)
-        outcome = await _run_wrapped(lambda: _condense_spec(name, chapter_id, req, x_ai_selection, new_request_id()))
-        return outcome.result
+        outcome, handle = await _run_wrapped(lambda: _condense_spec(name, chapter_id, req, x_ai_selection,
+                                                                     new_request_id()))
+        return await _deliver(handle, outcome.result)
 
     if static_dir is not None and static_dir.is_dir():
         # 빌드된 화면을 같은 주소에서 서빙한다 (결정 7). API 라우트가 먼저 등록되어 우선한다
