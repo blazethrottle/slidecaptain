@@ -122,8 +122,10 @@ class DraftInfo(BaseModel):
 
     id: str  # draft-<시각>[-n]
     saved_at: str
-    reason: Literal["conflict", "generation_unsaved"]
-    source: Literal["editor", "structure_approval"]
+    # 저장 요청은 아래 값만 받는다(SaveDraftRequest). 목록은 이후 버전이 늘린 값도 그대로 보인다
+    # (리뷰 R5: 모르는 값 때문에 보존본이 목록에서 사라지거나 다음 보존이 실패하지 않게)
+    reason: str  # conflict | generation_unsaved
+    source: str  # editor | structure_approval
     base_etag: str | None = None  # 이 편집이 기준으로 삼은 저장본. 서버 쪽 변경과 비교할 때 쓴다
 
 
@@ -599,19 +601,27 @@ class FileProjectStore:
         """덱 원문을 검증하지 않고 보존한다. 검증에 실패한 덱도 사용자 내용이라 버리지 않는다.
         같은 내용은 새로 만들지 않는다. 개수 상한과 자동 삭제는 없다."""
         name = _nfc(name)
-        deck_bytes = json.dumps(deck, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        if len(deck_bytes) > DRAFT_MAX_BYTES:
-            raise DraftTooLarge(
-                "보존할 변경이 너무 커서 저장하지 못했습니다. 변경 내용을 복사해 따로 보관해 주세요."
-            )
+        # 화면이 보내는 압축 JSON과 같은 기준으로 잰다(리뷰 R7: 브리지 상한과 측정 대상을 맞춘다)
+        deck_bytes = json.dumps(deck, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         content_sha256 = hashlib.sha256(deck_bytes).hexdigest()
         with self.locked(name):
-            d = self._project_dir(name)
+            d = self._project_dir(name)  # 존재와 형식 검사를 크기 검사보다 먼저 한다
+            if len(deck_bytes) > DRAFT_MAX_BYTES:
+                raise DraftTooLarge(
+                    "보존할 변경이 너무 커서 저장하지 못했습니다. 변경 내용을 복사해 따로 보관해 주세요."
+                )
             drafts_dir = d / "drafts"
             drafts_dir.mkdir(exist_ok=True)
+            # 연속 클릭 병합: 내용, 사유, 출처, 기준 저장본이 모두 같은 요청만 묶는다 (리뷰 R4)
+            key = (content_sha256, reason, source, base_etag)
             for existing in self._read_draft_envelopes(drafts_dir):
-                if existing.get("content_sha256") == content_sha256:
-                    return self._draft_info(existing)
+                existing_key = (existing.get("content_sha256"), existing.get("reason"),
+                                existing.get("source"), existing.get("base_etag"))
+                if existing_key == key:
+                    try:
+                        return self._draft_info(existing)
+                    except ValidationError:
+                        continue  # 모양이 맞지 않는 보존본은 건너뛰고 새로 만든다 (리뷰 R5)
             ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
             stem = f"draft-{ts}"
             n = 1
@@ -637,7 +647,14 @@ class FileProjectStore:
         envelopes = []
         if not drafts_dir.is_dir():
             return envelopes
-        for path in sorted(drafts_dir.glob("draft-*.json")):
+
+        def order(path: Path) -> tuple[str, int]:
+            # 파일 이름 정렬은 "-1"을 원래 이름보다 앞에 둔다. 시각과 충돌 번호로 정렬한다 (리뷰 R6)
+            m = _DRAFT_RE.match(path.stem)
+            suffix = path.stem[len(f"draft-{m.group(1)}"):] if m else ""
+            return (m.group(1) if m else "", int(suffix[1:]) if suffix else 0)
+
+        for path in sorted(drafts_dir.glob("draft-*.json"), key=order):
             if not _DRAFT_RE.match(path.stem):
                 continue
             try:

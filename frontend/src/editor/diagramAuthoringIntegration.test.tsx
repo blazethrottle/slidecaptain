@@ -6,7 +6,7 @@ import { EditorScreen } from "../screens/EditorScreen";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn(), reconcileDiagramStory: vi.fn(), getPreset: vi.fn(), reviewNumbers: vi.fn() } };
+  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn(), reconcileDiagramStory: vi.fn(), getPreset: vi.fn(), reviewNumbers: vi.fn(), saveDraft: vi.fn() } };
 });
 const project = { name: "authoring", title: "합성 작성", updated_at: "", status: "ok" as const };
 const fresh = () => structuredClone(fixture.deck) as Deck;
@@ -137,4 +137,6 @@ it("연결 확인의 412도 작성 입력을 보존하고 닫은 뒤 서버본 �
   await waitFor(() => expect(onDeckChange).toHaveBeenLastCalledWith(serverDeck));
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeEnabled();
   expect(api.putDeck).not.toHaveBeenCalled();
+  // 덱에 미저장 변경이 없는 충돌이라 보존 요청을 보내지 않는다 (D2a-2 리뷰 R17)
+  expect(api.saveDraft).not.toHaveBeenCalled();
 });

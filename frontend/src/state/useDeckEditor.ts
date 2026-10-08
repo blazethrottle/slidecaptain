@@ -35,7 +35,8 @@ export function useDeckEditor(
   // 충돌 해소의 미저장본 보존 (D2a-2): 진행 중 표시, 보존 결과, 보존 실패 시 복사할 내용
   const [reloading, setReloading] = useState(false);
   const [preservedDraft, setPreservedDraft] = useState<DraftInfo | null>(null);
-  const [preserveFailure, setPreserveFailure] = useState<{ deckJson: string; message: string } | null>(null);
+  // 보존 실패의 원인 문구. 복사할 내용은 화면이 현재 덱에서 만든다: 실패 뒤의 편집도 담기 위해서다 (리뷰 R2)
+  const [preserveFailure, setPreserveFailure] = useState<{ message: string } | null>(null);
   const reloadInFlight = useRef<Promise<void> | null>(null);
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
@@ -197,11 +198,21 @@ export function useDeckEditor(
           try {
             preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
           } catch (e) {
-            setPreserveFailure({ deckJson: JSON.stringify(unsaved, null, 2), message: messageOf(e) });
+            setPreserveFailure({ message: messageOf(e) });
             return;
           }
+          setPreserveFailure(null);
+          setPreservedDraft(preserved);  // 다음 읽기가 실패해도 보존 사실은 알린다 (리뷰 R3)
         }
-        const serverDeck = await api.getDeck(projectName);
+        let serverDeck: Deck;
+        try {
+          serverDeck = await api.getDeck(projectName);
+        } catch (e) {
+          setSaveError(preserved
+            ? `변경은 보존했지만 서버 내용을 읽지 못했습니다. 다시 시도해 주세요. (${messageOf(e)})`
+            : messageOf(e));
+          return;
+        }
         dispatch({ type: "reset", deck: serverDeck });
         savedDeck.current = serverDeck;
         deckRef.current = serverDeck;
@@ -210,7 +221,7 @@ export function useDeckEditor(
         snapshotSaved.current = 0;
         setSaveError("");
         setPreserveFailure(null);
-        setPreservedDraft(preserved);
+        if (!preserved) setPreservedDraft(null);  // 이번 되돌리기에서 보존한 것이 없으면 지난 안내를 지운다
         conflictRef.current = false;
         setConflict(false);
         setSaveState("저장됨");

@@ -104,3 +104,18 @@ it("보존 목록을 읽지 못해도 스냅샷 목록은 보인다 (D2a-2)", as
   expect(await screen.findByText("이 시점으로 복원")).toBeInTheDocument();
   expect(await screen.findByText(/보존한 변경 목록을 읽지 못했습니다/)).toBeInTheDocument();
 });
+
+
+it("승인하려던 장 구성은 내용 생성 전임을 알리고, 모르는 사유도 목록에 보인다 (리뷰 R5, R12)", async () => {
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  vi.mocked(api.listDrafts).mockResolvedValue([
+    { ...draft, id: "draft-20261008-100000-000002", reason: "conflict", source: "structure_approval" },
+    { ...draft, id: "draft-20261008-100000-000003", reason: "later_reason", source: "editor" },
+  ]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  const section = (await screen.findByRole("heading", { name: "충돌로 보존한 변경" })).closest("section")!;
+  expect(section).toHaveTextContent("승인하려던 장 구성(내용 생성 전)");
+  expect(section).toHaveTextContent("알 수 없는 사유(later_reason)");
+  expect(section).toHaveTextContent("2026-10-08 10:00");
+  expect(section).toHaveTextContent("복원 직전 시점의 스냅샷으로 남습니다");
+});

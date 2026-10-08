@@ -154,5 +154,53 @@ def test_api_draft_routes_require_app_header(store):
 
     bare = TestClient(create_app(store))
     store.create_project("p2")
-    r = bare.post("/api/projects/p2/drafts", json={"reason": "conflict", "source": "editor", "deck": {}})
-    assert r.status_code == 403
+    body = {"reason": "conflict", "source": "editor", "deck": {}}
+    assert bare.post("/api/projects/p2/drafts", json=body).status_code == 403
+    # 헤더를 붙이면 같은 요청이 성공해야 라우트가 실제로 있다는 뜻이다 (리뷰 R13)
+    created = bare.post("/api/projects/p2/drafts", json=body, headers={"X-Requested-With": "SlideCaptain"})
+    assert created.status_code == 201
+    draft_id = created.json()["id"]
+    assert bare.post(f"/api/projects/p2/drafts/{draft_id}/restore").status_code == 403
+    assert bare.delete(f"/api/projects/p2/drafts/{draft_id}").status_code == 403
+
+
+
+def test_same_content_with_different_reason_is_a_separate_draft(store):
+    a = store.save_draft("p1", deck=_deck_json(), reason="conflict", source="editor", base_etag="e1")
+    b = store.save_draft("p1", deck=_deck_json(), reason="generation_unsaved", source="structure_approval", base_etag="e2")
+    assert a.id != b.id
+    assert (b.reason, b.source, b.base_etag) == ("generation_unsaved", "structure_approval", "e2")
+
+
+def test_unknown_reason_from_a_later_version_is_listed_and_does_not_break_saving(store):
+    info = store.save_draft("p1", deck=_deck_json(), reason="conflict", source="editor", base_etag=None)
+    path = store.root / "p1" / "drafts" / f"{info.id}.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    envelope["reason"] = "later_reason"
+    path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+    assert [d.reason for d in store.list_drafts("p1")] == ["later_reason"]
+    again = store.save_draft("p1", deck=_deck_json(), reason="conflict", source="editor", base_etag=None)
+    assert again.id != info.id
+
+
+def test_same_microsecond_drafts_are_listed_in_creation_order(store):
+    drafts = store.root / "p1" / "drafts"
+    drafts.mkdir()
+    for stem in ("draft-20261008-100000-000001", "draft-20261008-100000-000001-1"):
+        drafts.joinpath(f"{stem}.json").write_text(json.dumps({
+            "id": stem, "saved_at": "2026-10-08T10:00:00+09:00", "reason": "conflict", "source": "editor",
+            "base_etag": None, "content_sha256": stem, "deck": {}}), encoding="utf-8")
+    assert [d.id for d in store.list_drafts("p1")] == [
+        "draft-20261008-100000-000001", "draft-20261008-100000-000001-1"]
+
+
+def test_size_is_measured_on_compact_json_and_after_project_checks(store):
+    from slidecaptain.storage.file_store import ProjectNotFound
+
+    big = _deck_json()
+    big["meta"]["audience"] = "x" * (DRAFT_MAX_BYTES - 1000)
+    with pytest.raises(ProjectNotFound):
+        store.save_draft("없음", deck=big, reason="conflict", source="editor", base_etag=None)
+    compact = len(json.dumps(big, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    assert compact <= DRAFT_MAX_BYTES
+    store.save_draft("p1", deck=big, reason="conflict", source="editor", base_etag=None)

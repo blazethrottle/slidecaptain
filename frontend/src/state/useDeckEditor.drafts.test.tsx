@@ -59,7 +59,7 @@ it("보존이 실패하면 교체하지 않고 복사할 내용과 확인 뒤 �
   await act(async () => { await result.current.reloadFromServer(); });
   expect(result.current.deck).toBe(E1);
   expect(result.current.conflict).toBe(true);
-  expect(result.current.preserveFailure?.deckJson).toContain("둘");
+  expect(result.current.preserveFailure?.message).toBeTruthy();
   expect(api.getDeck).not.toHaveBeenCalled();
   await act(async () => { await result.current.reloadFromServer({ discardUnsaved: true }); });
   expect(result.current.deck).toBe(serverDeck);
@@ -79,4 +79,15 @@ it("되돌리기가 진행되는 동안 reloading이 켜지고 겹친 호출은 
   expect(api.saveDraft).toHaveBeenCalledOnce();
   expect(result.current.reloading).toBe(false);
   expect(result.current.deck).toBe(serverDeck);
+});
+
+
+it("보존이 성공한 뒤 서버 덱 읽기가 실패해도 보존 사실과 충돌 맥락을 남긴다 (리뷰 R3)", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  const { result } = await conflicted();
+  vi.mocked(api.getDeck).mockRejectedValueOnce(new Error("서버 응답 없음"));
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.preservedDraft).toEqual(draftInfo);
+  expect(result.current.saveError).toContain("변경은 보존했지만 서버 내용을 읽지 못했습니다");
+  expect(result.current.conflict).toBe(true);
 });

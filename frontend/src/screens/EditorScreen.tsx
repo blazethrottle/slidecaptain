@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
+import { formatSavedAt } from "../api/time";
 import type { Deck, ProjectInfo, TemplateName } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
@@ -91,7 +92,8 @@ export function EditorScreen({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (diagramDraft || diagramBusy || templateBusyRef.current) return;
+      // 되돌리기(서버 내용 다시 읽기) 중에는 보존할 덱이 바뀌지 않게 단축키도 막는다 (리뷰 R11)
+      if (diagramDraft || diagramBusy || templateBusyRef.current || editor.reloading) return;
       // 인라인 편집 입력 중에는 브라우저 네이티브 undo가 동작해야 하므로 덱 undo가 끼어들지 않는다
       // (2026-08-29 최종 리뷰 발견)
       const t = e.target as HTMLElement;
@@ -103,7 +105,7 @@ export function EditorScreen({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor.undo, editor.redo, diagramDraft, diagramBusy]);
+  }, [editor.undo, editor.redo, editor.reloading, diagramDraft, diagramBusy]);
 
   const slide = editor.plan?.slides.find((s) => s.chapter_id === chapterId) ?? null;
   const commitText = (ref: TextRef, text: string) =>
@@ -135,12 +137,13 @@ export function EditorScreen({
           </p>
         )}
         {editor.preserveFailure && (
-          <div role="alert">
-            <p>
+          <div>
+            {/* 알림은 첫 문단에만 둔다: 덱 전체를 담은 복사 상자를 화면 낭독기가 읽지 않게 (리뷰 R15) */}
+            <p role="alert">
               변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다. ({editor.preserveFailure.message}){" "}
               아래 내용을 복사해 두거나, 그래도 되돌리면 이 화면의 변경은 사라집니다.
             </p>
-            <UnsavedChangeBackup text={editor.preserveFailure.deckJson} label="보존하지 못한 변경" />
+            <UnsavedChangeBackup text={JSON.stringify(editor.deck, null, 2)} label="보존하지 못한 변경" />
             <button disabled={editor.reloading} onClick={() => {
               if (window.confirm("보존하지 못한 변경은 사라집니다. 서버 내용으로 되돌릴까요?")) {
                 void editor.reloadFromServer({ discardUnsaved: true });
@@ -151,7 +154,7 @@ export function EditorScreen({
         {editor.preservedDraft && (
           <p role="status">
             다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
-            ({editor.preservedDraft.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의
+            ({formatSavedAt(editor.preservedDraft.saved_at)}). 스냅샷 복구 화면의
             "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
             <button onClick={editor.dismissPreservedDraft}>닫기</button>
           </p>

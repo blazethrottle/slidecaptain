@@ -10,6 +10,7 @@ import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { StoryRewritePanel } from "./StoryRewritePanel";
 import { DocumentChangePanel } from "./DocumentChangePanel";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
+import { formatSavedAt } from "../api/time";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
@@ -18,6 +19,8 @@ const FAILED_CHAPTER_USAGE_NOTICE =
 // 취소는 실패가 아니다 (계획서 B3): AI 전송 고지를 취소하면 "취소"로 표시하고 role=alert 배너를
 // 띄우지 않는다. 이 문구는 GeneratePanel의 취소 안내와 같다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
+const UNSAVED_RESULT_CONFIRM =
+  "저장하지 못한 생성 결과가 있습니다. 복사하지 않고 계속하면 그 결과는 사라집니다. 계속할까요?";
 
 type Progress = Record<string, "대기" | "생성 중" | "완료" | "실패" | "취소" | "보류">;
 
@@ -50,17 +53,24 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [documentOpen,setDocumentOpen] = useState(false);
   const rewriteLeave = useRef<()=>Promise<boolean>>(async()=>true);
   const documentLeave = useRef<()=>Promise<boolean>>(async()=>true);
-  const dirtyParts = useRef({rewrite:false,document:false,draft:false});
+  const dirtyParts = useRef({rewrite:false,document:false,draft:false,backup:false});
   const parentDirty = useRef(onDirtyChange);parentDirty.current=onDirtyChange;
-  const reportDirty = useCallback(()=>{const d=dirtyParts.current;parentDirty.current?.(d.rewrite||d.document||d.draft);},[]);
+  const reportDirty = useCallback(()=>{const d=dirtyParts.current;parentDirty.current?.(d.rewrite||d.document||d.draft||d.backup);},[]);
   const setRewriteDirty = useCallback((dirty:boolean)=>{dirtyParts.current.rewrite=dirty;reportDirty();},[reportDirty]);
   const setDocumentDirty = useCallback((dirty:boolean)=>{dirtyParts.current.document=dirty;reportDirty();},[reportDirty]);
   // 장 구성 초안이 저장본과 다르면 창 닫기 경고에 포함한다 (D2a-2: 종전에는 경고 없이 사라졌다)
   const draftDirty = JSON.stringify(draft) !== JSON.stringify(deck.structure.chapters);
-  useEffect(()=>{dirtyParts.current.draft=draftDirty;reportDirty();},[draftDirty,reportDirty]);
   const registerRewrite = useCallback((guard:()=>Promise<boolean>)=>{rewriteLeave.current=guard;},[]);
   const registerDocument = useCallback((guard:()=>Promise<boolean>)=>{documentLeave.current=guard;},[]);
-  useEffect(()=>{onScreenReady?.(async()=>await documentLeave.current() && await rewriteLeave.current());},[onScreenReady]);
+  // 화면을 떠나기 전 확인. 저장하지 못한 생성 결과(복사 상자)가 있으면 먼저 확인을 받는다 (리뷰 R1).
+  // 끝에 미저장 신호를 다시 보고한다: 부모가 이동 준비 중 신호를 지우면 내보내기처럼 화면이 남는
+  // 경우 초안의 미저장 표시가 꺼진 채 남았다 (리뷰 R9)
+  useEffect(()=>{onScreenReady?.(async()=>{
+    if(dirtyParts.current.backup&&!window.confirm(UNSAVED_RESULT_CONFIRM))return false;
+    const ok=await documentLeave.current() && await rewriteLeave.current();
+    queueMicrotask(reportDirty);
+    return ok;
+  });},[onScreenReady,reportDirty]);
   const [error, setError] = useState("");
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
@@ -75,14 +85,20 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [chapterUsageCount, setChapterUsageCount] = useState(0);  // 합계에 실제로 실린 장 수
   const [chapterUsageHadUnaccountedFailure, setChapterUsageHadUnaccountedFailure] = useState(false);
   const questionChanged = decisionQuestion.trim() !== (storyPlan?.brief.decision_question ?? "");
+  // 장 구성 초안, 보고 질문, 저장하지 못한 생성 결과가 남아 있으면 창 닫기 경고에 포함한다 (D2a-2, 리뷰 R1, R16)
+  useEffect(()=>{
+    dirtyParts.current.draft=draftDirty||questionChanged;
+    dirtyParts.current.backup=unsavedBackup!==null;
+    reportDirty();
+  },[draftDirty,questionChanged,unsavedBackup,reportDirty]);
   const hasDiagrams = deck.structure.chapters.some(c => c.template === "diagram");
   const preserveUnsaved = async (target: Deck, reason: "conflict" | "generation_unsaved") => {
     try {
       const info = await api.saveDraft(project.name, { reason, source: "structure_approval", deck: target });
       setUnsavedBackup(null);
       setPreservedNotice(reason === "generation_unsaved"
-        ? `저장하지 못한 생성 결과를 보존했습니다(${info.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`
-        : `승인하려던 장 구성을 보존했습니다(${info.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
+        ? `저장하지 못한 생성 결과를 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`
+        : `승인하려던 장 구성을 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
     } catch {
       setPreservedNotice("");
       setUnsavedBackup(JSON.stringify(target, null, 2));
@@ -159,6 +175,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   };
 
   const approve = async () => {
+    // 다시 승인하면 복사 상자가 지워지고 실패한 장을 다시 생성한다(AI 비용). 먼저 확인한다 (리뷰 R1)
+    if (unsavedBackup !== null && !window.confirm(UNSAVED_RESULT_CONFIRM)) return;
     // AI 재생성 초안은 장 id가 재부여되어 옛 슬라이드와의 대응이 보장되지 않으므로 전면 교체한다 (결정 15).
     // 기존 구조안을 손으로 고친 경우에만 id와 템플릿이 일치하는 슬라이드를 계승한다
     const draftById = new Map(draft.map((c) => [c.id, c]));

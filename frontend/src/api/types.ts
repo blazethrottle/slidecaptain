@@ -1814,16 +1814,10 @@ export interface components {
             id: string;
             /** Saved At */
             saved_at: string;
-            /**
-             * Reason
-             * @enum {string}
-             */
-            reason: "conflict" | "generation_unsaved";
-            /**
-             * Source
-             * @enum {string}
-             */
-            source: "editor" | "structure_approval";
+            /** Reason */
+            reason: string;
+            /** Source */
+            source: string;
             /** Base Etag */
             base_etag?: string | null;
         };

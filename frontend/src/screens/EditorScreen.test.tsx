@@ -289,3 +289,22 @@ it("보존이 실패하면 변경 복사와 확인 뒤 되돌리기를 제시한
   await userEvent.click(screen.getByRole("button", { name: "그래도 서버 내용으로 되돌리기" }));
   await waitFor(() => expect(onDeckChange).toHaveBeenCalledWith(serverDeck));
 });
+
+
+it("보존 실패 뒤의 편집도 복사 상자에 담긴다 (리뷰 R2)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  await screen.findByText(/변경을 보존하지 못해/);
+  const box = screen.getByLabelText("보관용 변경 내용") as HTMLTextAreaElement;
+  expect(box.value).toContain("고침");
+  // 실패 뒤 편집(여기서는 되돌리기)이 복사 상자에 바로 반영된다: 실패 순간의 덱으로 굳지 않는다
+  await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));
+  await waitFor(() => expect(box.value).not.toContain("고침"));
+});

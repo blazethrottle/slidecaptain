@@ -523,3 +523,40 @@ it("장 구성 초안을 고치면 창 닫기 경고를 위해 미저장을 알�
   await screen.findByDisplayValue("본문");
   await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 });
+
+it("보존도 실패한 생성 결과는 미저장으로 알리고, 다시 승인하기 전에 확인을 받는다 (리뷰 R1)", async () => {
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  const onDirtyChange = vi.fn();
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValueOnce({ ok: true })
+    .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.generateChapter).mockResolvedValue(coverResult);
+  // 부모가 승인 반영으로 덱을 갱신하는 흐름을 흉내 낸다: 초안 자체는 저장본과 같아진다
+  function Host() {
+    const [current, setCurrent] = useState(emptyDeck());
+    return <StructureScreen project={project} deck={current} onDeckChange={setCurrent} onDone={() => {}}
+      onConflict={() => {}} onDirtyChange={onDirtyChange} />;
+  }
+  render(<Host />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByText(/보존도 하지 못했습니다/);
+  await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  expect(confirm.mock.calls[0][0]).toContain("저장하지 못한 생성 결과");
+  expect(screen.getByText(/보존도 하지 못했습니다/)).toBeInTheDocument();
+  expect(api.generateChapter).toHaveBeenCalledTimes(1);
+});
+
+it("결정 질문만 고쳐도 미저장으로 알린다 (리뷰 R16)", async () => {
+  const onDirtyChange = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onDirtyChange={onDirtyChange} />);
+  await userEvent.type(screen.getByLabelText("보고 질문"), "무엇을 결정하나");
+  await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+});

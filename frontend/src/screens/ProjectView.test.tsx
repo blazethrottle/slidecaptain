@@ -11,7 +11,15 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
-    getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn() } };
+    getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn(),
+    saveDraft: vi.fn(), listDrafts: vi.fn() } };
+});
+
+// D2a-2: 충돌 시 보존 요청은 기본으로 성공한다
+beforeEach(() => {
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "draft-20261008-100000-000001",
+    saved_at: "2026-10-08T10:00:00+09:00", reason: "generation_unsaved", source: "structure_approval", base_etag: null });
+  vi.mocked(api.listDrafts).mockResolvedValue([]);
 });
 
 // 업로드 잠금과 beforeunload 테스트가 공용으로 쓰는 XLSX 픽스처와 헬퍼 (계획서 B4)

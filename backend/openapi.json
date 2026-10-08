@@ -5253,18 +5253,10 @@
           },
           "reason": {
             "type": "string",
-            "enum": [
-              "conflict",
-              "generation_unsaved"
-            ],
             "title": "Reason"
           },
           "source": {
             "type": "string",
-            "enum": [
-              "editor",
-              "structure_approval"
-            ],
             "title": "Source"
           },
           "base_etag": {
