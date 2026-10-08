@@ -99,6 +99,10 @@ jobs:
         working-directory: frontend
         run: npm test
 
+      - name: 디자인 토큰 검사
+        working-directory: frontend
+        run: npm run check:tokens
+
       - name: 화면 빌드
         working-directory: frontend
         run: npm run build

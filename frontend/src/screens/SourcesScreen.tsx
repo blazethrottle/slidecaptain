@@ -63,6 +63,9 @@ export function SourcesScreen({
   const [saving, setSaving] = useState(false);
   const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));  // 버튼 저장과 플러시를 한 줄로 직렬화
   const [notice, setNotice] = useState("");
+  // 저장 성공 안내는 오류 알림(role=alert)과 나눈다: 성공이 빨간 경고로 보이지 않게 (D2a-4)
+  const [success, setSuccess] = useState("");
+  useEffect(() => { if (notice) setSuccess(""); }, [notice]);
   const [info, setInfo] = useState("");  // 성공 안내 (오류 영역과 분리, 파일럿 관찰 1)
   const [truncationNotice, setTruncationNotice] = useState("");  // 잘린 파일 알림 (오류 아님, 결과 안내와 별도)
   const [uploading, setUploading] = useState(false);  // 업로드 진행 중 (계획서 B4 가정 7)
@@ -85,7 +88,8 @@ export function SourcesScreen({
       await api.putDeck(project.name, updated, false);
       savedMeta.current = target;
       onDeckChange(updated);
-      setNotice("보고 정보를 저장했습니다.");
+      setNotice("");
+      setSuccess("보고 정보를 저장했습니다.");
       onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== savedText.current);
       return true;
     } catch (e) {
@@ -163,7 +167,8 @@ export function SourcesScreen({
       if (request !== sourceRequest.current || !mountedRef.current) return;
       savedText.current = text;
       onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== text);
-      setNotice("자료를 저장했습니다.");
+      setNotice("");
+      setSuccess("자료를 저장했습니다.");
     } catch (e) {
       if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
     } finally {
@@ -274,6 +279,7 @@ export function SourcesScreen({
   return (
     <div className="sources-screen">
       {notice && <p role="alert">{notice}</p>}
+      {success && !notice && <p role="status">{success}</p>}
       {info && <p className="info">{info}</p>}
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
       <section>

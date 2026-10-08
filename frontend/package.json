@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "check:tokens": "node scripts/check-design-tokens.mjs",
     "generate-types": "openapi-typescript ../backend/openapi.json -o src/api/types.ts"
   },
   "dependencies": {

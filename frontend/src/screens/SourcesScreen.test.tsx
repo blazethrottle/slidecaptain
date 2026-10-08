@@ -536,3 +536,14 @@ describe("보고 정보 플러시와 충돌 (A5)", () => {
     await waitFor(() => expect(onConflict).toHaveBeenCalled());
   });
 });
+
+it("저장 성공 안내는 오류 알림이 아니라 상태 안내로 보인다 (D2a-4)", async () => {
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");  // 변경이 있어야 저장한다
+  await userEvent.click(screen.getByText("보고 정보 저장"));
+  const notice = await screen.findByText("보고 정보를 저장했습니다.");
+  expect(notice).toHaveAttribute("role", "status");
+  expect(screen.queryByRole("alert")).toBeNull();
+});

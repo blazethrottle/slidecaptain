@@ -232,3 +232,11 @@ it("process 단계의 라벨 넘침 경고가 라벨 프레임에 강조를 붙�
   // 형제 프레임 이름이 서로의 접두어가 되는 기존 구조적 한계라 이 커밋의 범위 밖이다.)
   expect(container.querySelector('[data-frame="c5:step0_badge"]')).not.toHaveClass("warned");
 });
+
+it("미리보기 캔버스는 화면 글자색이 아니라 프리셋 글자색을 쓴다 (D2a-4)", () => {
+  // 표 칸은 글자색을 따로 지정하지 않아 캔버스의 색을 물려받는다. 화면 토큰이 새어 PPTX와 달라지면 안 된다
+  const { container } = render(<Preview slide={slide} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  const canvas = container.querySelector(".preview-canvas") as HTMLElement;
+  expect(canvas.style.color).toBe("rgb(32, 32, 32)");
+});

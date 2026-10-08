@@ -138,6 +138,9 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
           width: pageW, height: pageH, position: "relative", background: "#ffffff",
           transform: `scale(${scale})`, transformOrigin: "top left",
           fontFamily: `"${style.korean_font}", sans-serif`,
+          // 화면 토큰(styles.css의 본문 색)을 물려받지 않게 프리셋 글자색을 명시한다 (D2a-4).
+          // 표 칸은 글자색을 따로 정하지 않아 이 값을 쓰고, PPTX와 같은 색이 된다
+          color: `#${style.text_color}`,
         }}
         onClick={() => { setEditing(null); onSelect(null); }}
       >
