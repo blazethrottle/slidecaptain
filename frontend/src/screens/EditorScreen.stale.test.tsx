@@ -61,7 +61,8 @@ it("실측 실패는 저장 성공에 지워지지 않고, '다시 그리기' �
   await userEvent.clear(box);
   await userEvent.type(box, "둘{Enter}");
   await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(1));
-  await screen.findByText("저장 상태: 저장됨");
+  // D2a-5: 저장 상태는 상태 표시 컴포넌트로 보인다
+  await waitFor(() => expect(document.querySelector(".editor-save-status .status-label")?.textContent).toBe("저장됨"));
   // 저장은 성공했지만 실측 오류 문구는 남아 있고, 미리보기는 낡은 것으로 표시된다
   expect(screen.getByRole("alert")).toHaveTextContent("실측 실패");
   expect(document.querySelector(".preview-canvas")).toHaveClass("stale");

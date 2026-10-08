@@ -8,7 +8,8 @@ vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return {
     ...mod,
-    api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(), getDeck: vi.fn(), saveDraft: vi.fn() },
+    api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(), getDeck: vi.fn(), saveDraft: vi.fn(),
+      listDrafts: vi.fn() },
   };
 });
 
@@ -28,7 +29,10 @@ const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as c
 const draftInfo = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
   reason: "conflict" as const, source: "editor" as const, base_etag: null };
 // D2a-2: 되돌리기는 교체 직전에 미저장 덱을 보존한다. 기본은 보존 성공이다
-beforeEach(() => { vi.mocked(api.saveDraft).mockResolvedValue(draftInfo); });
+beforeEach(() => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  vi.mocked(api.listDrafts).mockResolvedValue([]);
+});
 
 const deck: Deck = {
   schema_version: 1,
@@ -307,4 +311,58 @@ it("보존 실패 뒤의 편집도 복사 상자에 담긴다 (리뷰 R2)", asyn
   // 실패 뒤 편집(여기서는 되돌리기)이 복사 상자에 바로 반영된다: 실패 순간의 덱으로 굳지 않는다
   await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));
   await waitFor(() => expect(box.value).not.toContain("고침"));
+});
+
+
+const statusLabel = () => document.querySelector(".editor-save-status .status-label")?.textContent;
+
+it("저장 상태를 가운데 영역 위에 문구와 아이콘으로 보인다 (D2a-5)", async () => {
+  const pending = deferred<{ ok: boolean }>();
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.putDeck).mockImplementation(() => pending.promise);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const center = document.querySelector(".editor-center") as HTMLElement;
+  await within(center).findByText("하나");
+  expect(center.querySelector(".editor-save-status")).not.toBeNull();
+  expect(statusLabel()).toBe("저장됨");
+  await editBullet(center, "하나", "고침");
+  await waitFor(() => expect(statusLabel()).toBe("저장 중"));
+  await act(async () => { pending.resolve({ ok: true }); });
+  await waitFor(() => expect(statusLabel()).toBe("저장됨"));
+});
+
+it("충돌은 저장 실패와 다른 문구로 보이고 다시 저장을 권하지 않는다 (D2a-5)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const center = document.querySelector(".editor-center") as HTMLElement;
+  await within(center).findByText("하나");
+  await editBullet(center, "하나", "고침");
+  await waitFor(() => expect(statusLabel()).toBe("다른 곳에서 먼저 저장했습니다"));
+  expect(screen.queryByRole("button", { name: "다시 저장" })).toBeNull();
+});
+
+it("보존한 변경이 있으면 저장 상태 옆에 건수를 보인다 (D2a-5)", async () => {
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.listDrafts).mockResolvedValue([draftInfo, { ...draftInfo, id: "draft-20261008-100000-000002" }]);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  expect(await screen.findByText(/보존한 변경 2건/)).toBeInTheDocument();
+});
+
+it("되돌리기가 끝나면 결과 안내로 키보드 초점을 옮긴다 (D2a-2 이월, D2a-5)", async () => {
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  const notice = await screen.findByText(/되돌리기 전의 변경은 보존했습니다/);
+  await waitFor(() => expect(document.activeElement).toBe(notice.closest("p")));
 });

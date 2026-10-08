@@ -125,7 +125,8 @@ it("프로젝트에서 도식 미리보기를 열고 다른 장을 저장해도 
   const onDeckChange = vi.fn();
   render(<EditorScreen project={project} deck={freshDeck()} onDeckChange={onDeckChange}
     timings={{ measureMs: 1, saveMs: 1 }} />);
-  await screen.findByText("저장 상태: 저장됨");
+  // D2a-5: 저장 상태는 상태 표시 컴포넌트로 보인다
+  await waitFor(() => expect(document.querySelector(".editor-save-status .status-label")?.textContent).toBe("저장됨"));
   await waitFor(() => expect(api.measure).toHaveBeenCalled());
   // 장 목록은 주제 이름으로 접근할 수 있다.
   await userEvent.click(screen.getByRole("button", { name: /요청 처리 흐름/ }));

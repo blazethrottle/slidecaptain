@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import { formatSavedAt } from "../api/time";
+import { api } from "../api/client";
+import { SaveAnnouncer, StatusIndicator, saveStatusKind } from "../ui/StatusIndicator";
 import type { Deck, ProjectInfo, TemplateName } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
@@ -107,6 +109,22 @@ export function EditorScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [editor.undo, editor.redo, editor.reloading, diagramDraft, diagramBusy]);
 
+  // 보존한 변경 건수 (D2a-5). 목록을 읽지 못하면 건수를 보이지 않을 뿐 편집은 막지 않는다
+  const [draftCount, setDraftCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api.listDrafts(project.name).then((list) => { if (!cancelled) setDraftCount(list.length); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [project.name, editor.preservedDraft]);
+  const saveKind = saveStatusKind(editor.saveState, editor.conflict);
+  // 되돌리기 중에는 버튼이 잠긴 영역 안에 있어 초점이 사라진다. 끝나면 결과 안내로 초점을 옮긴다
+  const outcomeRef = useRef<HTMLParagraphElement | null>(null);
+  const wasReloading = useRef(false);
+  useEffect(() => {
+    if (wasReloading.current && !editor.reloading) outcomeRef.current?.focus();
+    wasReloading.current = editor.reloading;
+  }, [editor.reloading]);
+
   const slide = editor.plan?.slides.find((s) => s.chapter_id === chapterId) ?? null;
   const commitText = (ref: TextRef, text: string) =>
     editor.apply((d) => applyTextEdit(d, ref, text));
@@ -124,6 +142,12 @@ export function EditorScreen({
         <button disabled={editor.conflict || diagramBusy} onClick={() => setDiagramDraft(createDiagramDraft(editor.deck))}>도식 추가</button>
       </aside>
       <section className="editor-center">
+        {/* 저장 상태는 좁은 창에서도 첫 화면에 보이도록 가운데 영역 위에 둔다 (D2a-5). 상단 머리 이동은 D3 */}
+        <div className="editor-save-status">
+          <StatusIndicator kind={saveKind} />
+          <SaveAnnouncer kind={saveKind} />
+          {draftCount > 0 && <span>보존한 변경 {draftCount}건 (스냅샷 복구 화면에서 볼 수 있습니다)</span>}
+        </div>
         {editor.saveError && (
           <p role="alert">
             {editor.saveError}{" "}
@@ -139,7 +163,7 @@ export function EditorScreen({
         {editor.preserveFailure && (
           <div>
             {/* 알림은 첫 문단에만 둔다: 덱 전체를 담은 복사 상자를 화면 낭독기가 읽지 않게 (리뷰 R15) */}
-            <p role="alert">
+            <p role="alert" tabIndex={-1} ref={outcomeRef}>
               변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다. ({editor.preserveFailure.message}){" "}
               아래 내용을 복사해 두거나, 그래도 되돌리면 이 화면의 변경은 사라집니다.
             </p>
@@ -152,7 +176,7 @@ export function EditorScreen({
           </div>
         )}
         {editor.preservedDraft && (
-          <p role="status">
+          <p role="status" tabIndex={-1} ref={outcomeRef}>
             다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
             ({formatSavedAt(editor.preservedDraft.saved_at)}). 스냅샷 복구 화면의
             "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
@@ -182,7 +206,6 @@ export function EditorScreen({
         )}
       </section>
       <aside className="editor-right">
-        <p>저장 상태: {editor.saveState}</p>
         <button onClick={editor.undo} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
         <button onClick={editor.redo} disabled={!editor.canRedo}>다시 실행</button>
         {chapterId && (
