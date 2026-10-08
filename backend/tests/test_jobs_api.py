@@ -642,3 +642,13 @@ def test_single_job_routes_accept_nfd_project_names(store):
         _runner(client)._handles[job["id"]].wait_sync(10)
         nfd = unicodedata.normalize("NFD", "보고")
         assert client.get(f"/api/projects/{nfd}/jobs/{job['id']}").status_code == 200
+
+
+
+def test_app_shutdown_closes_the_ledger_file(store):
+    # Windows는 열린 파일을 지우지 못한다. 앱 종료 뒤 원장 연결이 닫혀야 자료 폴더 정리가 된다
+    import sqlite3
+    with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
+        ledger = _runner(client).ledger
+    with pytest.raises(sqlite3.ProgrammingError):
+        ledger._conn.execute("SELECT 1")

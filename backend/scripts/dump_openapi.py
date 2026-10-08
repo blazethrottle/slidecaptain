@@ -14,7 +14,10 @@ from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
 
 with tempfile.TemporaryDirectory() as tmp:
-    schema = create_app(FileProjectStore(tmp)).openapi()
+    app = create_app(FileProjectStore(tmp))
+    schema = app.openapi()
+    # 작업 원장 파일을 닫아야 Windows가 임시 폴더를 지울 수 있다 (D2b-2 뒤 Windows CI 실측)
+    app.state.job_runner.close()
 
 out = Path(__file__).resolve().parent.parent / "openapi.json"
 # newline="\n": Windows 에서도 LF 로 써서 CI 의 생성 파일 무변경 확인이 줄바꿈 때문에 흔들리지 않게 한다

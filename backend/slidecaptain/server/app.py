@@ -327,6 +327,7 @@ def create_app(
         yield
         # 계획서 5.5의 종료 순서: 새 등록 거절, 실행 중 작업에 취소 한 번, 기다림, 남은 행 정리
         await asyncio.to_thread(runner.shutdown)
+        await asyncio.to_thread(runner.close)
         if ai_connections is not None:
             await asyncio.to_thread(ai_connections.close)
 

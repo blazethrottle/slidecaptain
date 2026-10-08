@@ -505,6 +505,13 @@ class JobRunner:
             return False
         return True
 
+    def close(self) -> None:
+        """원장 파일을 닫는다. 종료 처리 뒤에 부른다. Windows는 열린 파일을 지우지 못한다(임시 폴더 정리)."""
+        with self._lock:
+            self._stopping = True
+        if self.ledger is not None:
+            self.ledger.close()
+
     def shutdown(self, wait_seconds: float = SHUTDOWN_WAIT_SECONDS) -> None:
         """① 새 등록 거절 ② 실행 중 작업에 취소 한 번 ③ 남은 예산만큼 기다림 ④ 남은 행 정리 (계획서 5.5).
 
