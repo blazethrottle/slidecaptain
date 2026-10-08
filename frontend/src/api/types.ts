@@ -715,6 +715,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_api_projects__name__jobs_get"];
+        put?: never;
+        /** Create Job */
+        post: operations["create_job_api_projects__name__jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job */
+        get: operations["get_job_api_projects__name__jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_api_projects__name__jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}/candidate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Settle Candidate */
+        post: operations["settle_candidate_api_projects__name__jobs__job_id__candidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Active Job */
+        get: operations["get_active_job_api_jobs_active_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/generate/chapter/{chapter_id}": {
         parameters: {
             query?: never;
@@ -776,6 +862,31 @@ export interface components {
             providers: components["schemas"]["ProviderSettings"][];
             /** Busy */
             busy: boolean;
+        };
+        /**
+         * ActiveJob
+         * @description 서비스 전체에서 실행 중인 작업 하나의 요약. 409 generation_active 응답에도 같은 모양이 실린다.
+         */
+        ActiveJob: {
+            /** Id */
+            id: string;
+            /** Project */
+            project: string;
+            /** Kind */
+            kind: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /** Created At */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+        };
+        /** ActiveJobStatus */
+        ActiveJobStatus: {
+            active: components["schemas"]["ActiveJob"] | null;
         };
         /** AppStatus */
         AppStatus: {
@@ -924,6 +1035,14 @@ export interface components {
              * @enum {string}
              */
             tone: "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger";
+        };
+        /** CandidateAction */
+        CandidateAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "applied" | "dismissed";
         };
         /** CapacityWarning */
         CapacityWarning: {
@@ -2454,6 +2573,64 @@ export interface components {
             /** Signature */
             signature: string;
         };
+        /** JobError */
+        JobError: {
+            /** Error Class */
+            error_class: ("input" | "ai_output" | "connection" | "base_changed" | "cancelled" | "ledger") | null;
+            /** Status */
+            status: number | null;
+            /** Detail */
+            detail: string | null;
+            /** Code */
+            code: string | null;
+        };
+        /** JobView */
+        JobView: {
+            /** Id */
+            id: string;
+            /** Project */
+            project: string;
+            /** Kind */
+            kind: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /**
+             * Candidate Status
+             * @enum {string}
+             */
+            candidate_status: "none" | "held" | "applied" | "stale" | "dismissed";
+            /** Outcome */
+            outcome: string | null;
+            /**
+             * Owner
+             * @enum {string}
+             */
+            owner: "this_instance" | "other_instance";
+            /** Created At */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Provider */
+            provider: string | null;
+            /** Model */
+            model: string | null;
+            /** Base Etag */
+            base_etag: string | null;
+            /** Current Etag */
+            current_etag: string | null;
+            /** Stale Reasons */
+            stale_reasons: string[];
+            error: components["schemas"]["JobError"] | null;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** LoginAttempt */
         LoginAttempt: {
             /**
@@ -2943,7 +3120,7 @@ export interface components {
             /** Stages */
             stages?: components["schemas"]["StageProgress"][] | null;
             /** Jobs */
-            jobs?: unknown[] | null;
+            jobs?: components["schemas"]["JobView"][] | null;
         };
         /** ProviderSettings */
         ProviderSettings: {
@@ -3772,6 +3949,28 @@ export interface components {
              */
             chapters: components["schemas"]["Chapter"][];
             story_plan?: components["schemas"]["StoryPlan"] | null;
+        };
+        /** StructureJobParams */
+        StructureJobParams: {
+            /** Target Chapters */
+            target_chapters?: number | null;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            brief?: components["schemas"]["ReportBrief"] | null;
+        };
+        /** StructureJobRequest */
+        StructureJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "structure";
+            params: components["schemas"]["StructureJobParams"];
         };
         /** StructureResult */
         StructureResult: {
@@ -5620,6 +5819,195 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_api_projects__name__jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_job_api_projects__name__jobs_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-ai-consent"?: string | null;
+                "x-ai-selection"?: string | null;
+            };
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StructureJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_api_projects__name__jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_api_projects__name__jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    settle_candidate_api_projects__name__jobs__job_id__candidate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateAction"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_job_api_jobs_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveJobStatus"];
                 };
             };
         };

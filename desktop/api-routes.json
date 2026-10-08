@@ -250,6 +250,37 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/jobs",
+    "methods": [
+      "POST",
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/jobs/{job_id}",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/jobs/{job_id}/cancel",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/jobs/{job_id}/candidate",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/jobs/active",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
     "path": "/api/projects/{name}/generate/chapter/{chapter_id}",
     "methods": [
       "POST"

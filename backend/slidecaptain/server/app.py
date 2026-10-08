@@ -11,6 +11,7 @@ import secrets
 import threading
 import time
 import unicodedata
+import uuid
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -74,6 +75,14 @@ from slidecaptain.models.story import ChapterRole, ReportBrief
 from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_plan
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
+from slidecaptain.models.jobs import ActiveJob, ActiveJobStatus, CandidateAction, JobError, JobRequest, JobView
+from slidecaptain.server.jobs import (
+    GENERATION_ACTIVE_MESSAGE, SERVICE_STOPPING_MESSAGE, GenerationActive, JobFailed, JobRunner, JobSpec,
+    ServiceStopping, http_error_from, new_request_id,
+)
+from slidecaptain.storage.job_ledger import (
+    FixedInputs, JobLedger, JobRow, LedgerError, LedgerUnavailable, RequestIdConflict, TransitionRejected,
+)
 from slidecaptain.storage.file_store import (
     DeckConflict,
     DeckUnreadable,
@@ -298,6 +307,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app):
         yield
+        # 계획서 5.5의 종료 순서: 새 등록 거절, 실행 중 작업에 취소 한 번, 기다림, 남은 행 정리
+        await asyncio.to_thread(runner.shutdown)
         if ai_connections is not None:
             await asyncio.to_thread(ai_connections.close)
 
@@ -350,13 +361,18 @@ def create_app(
     def _now_iso() -> str:
         return datetime.now().astimezone().isoformat(timespec="seconds")
 
-    def _record_success(result) -> None:
-        """구조안 생성, 장별 생성, 축약이 status == "ok"로 끝나면 마지막 성공 시각을 갱신한다."""
+    def _record_success(result, provider: str | None = None, model: str | None = None) -> None:
+        """생성이 status == "ok"로 끝나면 마지막 성공 시각을 갱신한다.
+
+        작업 원장 경로(D2b-2)는 작업에 고정한 제공자와 모델을 넘긴다. 넘기지 않으면 지금 선택을 쓴다.
+        """
         if getattr(result, "status", None) == "ok":
             status_state["last_generation_at"] = _now_iso()
             if ai_connections is not None:
-                selection = ai_connections.selection
-                generation_success[(selection.provider, selection.model)] = status_state["last_generation_at"]
+                if provider is None or model is None:
+                    selection = ai_connections.selection
+                    provider, model = selection.provider, selection.model
+                generation_success[(provider, model)] = status_state["last_generation_at"]
 
     def _append_usage(name: str, record) -> None:
         """생성 서비스의 on_usage 콜백 (단계 5A 묶음 C 태스크 C3, 가정 4와 5).
@@ -369,6 +385,164 @@ def create_app(
             store.append_usage(name, record.model_dump_json())
         except Exception:
             _LOG.warning("AI 사용량 기록(ai-usage.jsonl) 쓰기 실패: 프로젝트 %s", name, exc_info=True)
+
+    # 작업 원장과 실행기 (개정판 D2b-2, 계획서 2.3, 5.1~5.6)
+    instance_id = desktop_instance_id or uuid.uuid4().hex
+    try:
+        ledger, ledger_error = JobLedger.open(getattr(store, "root", None)), None
+    except LedgerUnavailable as exc:
+        _LOG.warning("작업 원장을 열지 못했습니다. AI 생성 등록만 막습니다: %s", exc)
+        ledger, ledger_error = None, exc
+
+    def _acquire_service(selection_id: str | None):
+        """작업 루프의 작업 스레드에서 임대를 잡는다. 돌려주는 release는 동기 함수다."""
+        if ai_connections is None:
+            return _require_service(), (lambda: None)
+        lease = ai_connections.generation(selection_id)
+        selected = lease.__enter__()
+        try:
+            svc = GenerationService(selected, metrics, requested_model=ai_connections.selection.model)
+        except BaseException:
+            lease.__exit__(None, None, None)
+            raise
+        return svc, (lambda: lease.__exit__(None, None, None))
+
+    def _classify(exc: BaseException) -> tuple[str, int, str, str | None]:
+        """작업 안의 실패를 원인 분류, HTTP 상태, 문구, 코드로 바꾼다 (계획서 5.2, 5.4)."""
+        if isinstance(exc, JobFailed):
+            kind = "base_changed" if exc.code in ("base_changed", "sources_changed") else "input"
+            return kind, exc.status, exc.detail, exc.code
+        if isinstance(exc, HTTPException):
+            return "input", exc.status_code, str(exc.detail), None
+        if isinstance(exc, DeckConflict):
+            return "base_changed", 412, str(exc), None
+        if isinstance(exc, ConnectionConflict):
+            return "connection", 409, str(exc), None
+        if isinstance(exc, ProviderError):
+            return "connection", 503, str(exc), None
+        if isinstance(exc, StaleStoryPlan):
+            return "input", 409, str(exc), "stale_story_plan"
+        if isinstance(exc, ProtectedEvidenceChanged):
+            return "input", 409, str(exc), "rewrite_protected_evidence"
+        if isinstance(exc, (DiagramGenerationUnsupported, QualityExportBlocked, DiagramRenderBlocked)):
+            return "input", 422, str(exc), None
+        if isinstance(exc, ProjectFormatTooNew):
+            return "input", 409, str(exc), exc.code
+        if isinstance(exc, StorageError):
+            return "input", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc), None
+        _LOG.error("AI 생성 작업의 예기치 않은 오류", exc_info=exc)
+        return "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None
+
+    def _on_job_success(spec: JobSpec, result) -> None:
+        _record_success(result, spec.inputs.provider, spec.inputs.model)
+
+    runner = JobRunner(ledger=ledger, ledger_error=ledger_error, instance_id=instance_id,
+                       acquire=_acquire_service, classify=_classify, on_success=_on_job_success)
+    runner.reconcile_on_start(data_dir_lock)
+    app.state.job_runner = runner  # 시험이 실행기의 대기와 종료를 직접 부를 수 있게 둔다
+
+    def _fixed_selection() -> tuple[str | None, str | None]:
+        if ai_connections is not None:
+            return ai_connections.selection.provider, ai_connections.selection.model
+        return ("subscription" if provider is not None else None), getattr(provider, "model", None)
+
+    def _require_current_selection(selection_id: str | None) -> None:
+        """등록 검사: 선택 헤더가 지금 선택과 다르면 로그인 확인 없이 409 (계획서 5.4)."""
+        if ai_connections is None:
+            _require_service()
+        elif selection_id != ai_connections.selection_id:
+            raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+
+    def _sources_revision(name: str) -> str | None:
+        try:
+            return sources_fingerprint(_load_sources(name, allow_empty=True))
+        except (HTTPException, StorageError, OSError):
+            return None
+
+    def _deck_etag_or_none(name: str) -> str | None:
+        try:
+            return store.deck_etag(name)
+        except (StorageError, OSError):
+            return None
+
+    def _base_recheck(name: str, etag: str | None, revision: str | None):
+        """임대 직후 재비교: 등록 때 고정한 덱 ETag와 자료 fingerprint (계획서 5.4)."""
+        def recheck() -> None:
+            with store.locked(name):
+                if _deck_etag_or_none(name) != etag:
+                    raise JobFailed(412, "생성을 시작하기 전에 저장본이 바뀌었습니다. 최신 내용을 확인한 뒤 다시 생성해 주세요.",
+                                    "base_changed")
+                if _sources_revision(name) != revision:
+                    raise JobFailed(409, "생성을 시작하기 전에 자료가 바뀌었습니다. 현재 자료로 다시 생성해 주세요.",
+                                    "sources_changed")
+        return recheck
+
+    def _base_judge(name: str, etag: str | None, revision: str | None):
+        """결과 저장 뒤 판정: 덱 전체와 자료 (계획서 5.8의 구조안, 도식, 재작성, 수리)."""
+        def judge(_result) -> list[str]:
+            with store.locked(name):
+                current_etag, current_revision = _deck_etag_or_none(name), _sources_revision(name)
+            if current_etag is None or current_revision is None:
+                return ["unknown"]
+            return [reason for reason, changed in (("deck_changed", current_etag != etag),
+                                                   ("sources_changed", current_revision != revision)) if changed]
+        return judge
+
+    async def _run_wrapped(spec: JobSpec):
+        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 결과 모델을 돌려준다 (계획서 2.2, 5.4).
+
+        요청이 취소되면 작업에 취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다.
+        그래야 요청이 끝났을 때 임대가 풀려 있다(지금 라우트와 같은 성질).
+        """
+        row, handle, _ = runner.start(spec)
+        if handle is None:
+            raise http_error_from(row)
+        try:
+            outcome = await handle.wait()
+        except asyncio.CancelledError:
+            with anyio.CancelScope(shield=True):
+                await asyncio.to_thread(runner.cancel, handle.job_id)
+                await handle.wait()
+            raise
+        if outcome.result is None or outcome.row.state == "cancelled":
+            raise http_error_from(outcome.row)
+        return outcome
+
+    def _job_view(row: JobRow) -> JobView:
+        terminal = row.state in ("succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown")
+        current_etag = _deck_etag_or_none(row.project)
+        reasons: list[str] = []
+        if terminal and row.result is not None and row.candidate_status in ("held", "stale"):
+            revision = _sources_revision(row.project)
+            if current_etag is None or revision is None:
+                reasons = ["unknown"]
+            else:
+                reasons = [r for r, changed in (("deck_changed", current_etag != row.base_etag),
+                                                ("sources_changed", revision != row.sources_fingerprint)) if changed]
+        error = None
+        if row.error_class or row.error_status or row.error_code:
+            error = JobError(error_class=row.error_class, status=row.error_status, detail=row.error_detail,
+                             code=row.error_code)
+        return JobView(id=row.id, project=row.project, kind=row.kind, state=row.state,
+                       candidate_status=row.candidate_status, outcome=row.outcome,
+                       owner="this_instance" if row.instance_id == runner.instance_id else "other_instance",
+                       created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
+                       provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
+                       stale_reasons=reasons, error=error,
+                       result=row.result if isinstance(row.result, dict) else None)
+
+    def _project_jobs(name: str) -> list[JobRow]:
+        """미종결 작업, 처분되지 않은 후보, 종류마다 가장 최근 작업 (계획서 5.9)."""
+        if ledger is None:
+            return []
+        rows, latest = [], set()
+        for row in ledger.list_jobs(name):
+            keep = (row.state in ("queued", "running", "validating", "cancel_requested")
+                    or row.candidate_status in ("held", "stale") or row.kind not in latest)
+            latest.add(row.kind)
+            if keep:
+                rows.append(row)
+        return rows
 
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -422,6 +596,37 @@ def create_app(
     @app.exception_handler(DiagramGenerationUnsupported)
     async def quality_export_error_handler(request, exc: QualityExportBlocked):
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    @app.exception_handler(JobFailed)
+    async def job_failed_handler(request, exc: JobFailed):
+        content = {"detail": exc.detail}
+        if exc.code:
+            content["code"] = exc.code
+        return JSONResponse(status_code=exc.status, content=content)
+
+    @app.exception_handler(GenerationActive)
+    async def generation_active_handler(request, exc: GenerationActive):
+        return JSONResponse(status_code=409, content={"detail": GENERATION_ACTIVE_MESSAGE, "code": "generation_active",
+                                                      "active": exc.active})
+
+    @app.exception_handler(ServiceStopping)
+    async def service_stopping_handler(request, exc: ServiceStopping):
+        return JSONResponse(status_code=503, content={"detail": SERVICE_STOPPING_MESSAGE, "code": exc.code})
+
+    @app.exception_handler(LedgerUnavailable)
+    async def ledger_unavailable_handler(request, exc: LedgerUnavailable):
+        return JSONResponse(status_code=503, content={
+            "detail": "작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.",
+            "code": exc.code})
+
+    @app.exception_handler(LedgerError)
+    async def ledger_error_handler(request, exc: LedgerError):
+        return JSONResponse(status_code=503, content={
+            "detail": "작업 기록을 읽거나 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요.", "code": exc.code})
+
+    @app.exception_handler(RequestIdConflict)
+    async def request_id_conflict_handler(request, exc: RequestIdConflict):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": exc.code})
 
     @app.exception_handler(StaleStoryPlan)
     async def stale_story_handler(request, exc: StaleStoryPlan):
@@ -884,8 +1089,10 @@ def create_app(
                                                   ReviewInputs(f'"{etag}"', fingerprint, current_error))
                 except (HistoryNotFound, HistoryReadError, StorageError, OSError, ValueError) as exc:
                     reviews_error = str(exc)
-        return project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
-                                reviews=reviews, reviews_error=reviews_error, export_error=export_error)
+        progress = project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
+                                    reviews=reviews, reviews_error=reviews_error, export_error=export_error)
+        progress.jobs = [_job_view(row) for row in _project_jobs(name)] if ledger is not None else None
+        return progress
 
     @app.post("/api/projects/{name}/exports/{export_id}/reviews", response_model=ExportReviews)
     def create_export_review(
@@ -1155,7 +1362,10 @@ def create_app(
 
     @app.get("/api/ai/settings", response_model=AISettings)
     def get_ai_settings():
-        return connections().settings()
+        current = connections().settings()
+        if runner.active_summary() is not None:  # 임대를 잡기 전 queued도 생성 중이다 (계획서 5.6)
+            current.busy = True
+        return current
 
     @app.put("/api/ai/selection", response_model=AISelection)
     def select_ai(selection: AISelection):
@@ -1240,24 +1450,85 @@ def create_app(
         result.sources_fingerprint = revision
         return result
 
+    def _structure_spec(name: str, req: GenerateStructureRequest, selection_id: str | None,
+                        request_id: str) -> JobSpec:
+        """구조안의 등록 검사와 작업 정의. 검사 순서는 종전 라우트와 같다 (계획서 5.4)."""
+        deck, etag = store.load_deck_with_etag(name)
+        if any(ch.template == "diagram" for ch in deck.structure.chapters):
+            raise DiagramGenerationUnsupported()
+        _require_current_selection(selection_id)
+        revision = _sources_revision(name)
+        provider_id, model = _fixed_selection()
+
+        async def run(svc):
+            # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다
+            sources = _load_sources(name)
+            return await svc.generate_structure(
+                deck.meta, sources, req.target_chapters, req.instructions,
+                on_usage=lambda rec: _append_usage(name, rec), brief=req.brief,
+            )
+
+        return JobSpec(kind="structure", project=name, request_id=request_id,
+                       params=req.model_dump(mode="json"), selection_id=selection_id,
+                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       run=run, recheck=_base_recheck(name, etag, revision), judge=_base_judge(name, etag, revision))
+
     @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult)
     async def generate_structure(
         name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None),
         x_ai_selection: str | None = Header(default=None),
     ):
+        # 래퍼 (계획서 2.2): 생성 뒤 덱이나 자료가 바뀌어도 종전처럼 결과를 돌려준다. 원장에는 낡음으로 남는다
         _require_ai_consent(x_ai_consent)
-        deck = store.load_deck(name)
-        if any(ch.template == "diagram" for ch in deck.structure.chapters):
-            raise DiagramGenerationUnsupported()
-        async with generation_service(x_ai_selection) as svc:
-            sources = _load_sources(name)
-            result = await svc.generate_structure(
-                deck.meta, sources, req.target_chapters, req.instructions,
-                on_usage=lambda rec: _append_usage(name, rec),
-                brief=req.brief,
-            )
-            _record_success(result)
-            return result
+        outcome = await _run_wrapped(_structure_spec(name, req, x_ai_selection, new_request_id()))
+        return outcome.result
+
+    # 작업 API (계획서 5.9)
+
+    @app.post("/api/projects/{name}/jobs", response_model=JobView, status_code=202)
+    def create_job(
+        name: str, req: JobRequest, response: Response,
+        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
+    ):
+        _require_ai_consent(x_ai_consent)
+        params = GenerateStructureRequest.model_validate(req.params.model_dump())
+        row, _, created = runner.start(_structure_spec(name, params, x_ai_selection, req.request_id))
+        if not created:
+            response.status_code = 200
+        return _job_view(row)
+
+    @app.get("/api/projects/{name}/jobs", response_model=list[JobView])
+    def list_jobs(name: str):
+        return [_job_view(row) for row in _project_jobs(name)]
+
+    def _project_job(name: str, job_id: str) -> JobRow:
+        row = runner.require_ledger().get_job(job_id)
+        if row is None or row.project != name:
+            raise HTTPException(404, "작업을 찾지 못했습니다.")
+        return row
+
+    @app.get("/api/projects/{name}/jobs/{job_id}", response_model=JobView)
+    def get_job(name: str, job_id: str):
+        return _job_view(_project_job(name, job_id))
+
+    @app.post("/api/projects/{name}/jobs/{job_id}/cancel", response_model=JobView)
+    def cancel_job(name: str, job_id: str):
+        _project_job(name, job_id)
+        return _job_view(runner.cancel(job_id) or _project_job(name, job_id))
+
+    @app.post("/api/projects/{name}/jobs/{job_id}/candidate", response_model=JobView)
+    def settle_candidate(name: str, job_id: str, req: CandidateAction):
+        row = _project_job(name, job_id)
+        try:
+            settled = runner.require_ledger().settle_candidate(job_id, expected=row.candidate_status, new=req.action)
+        except TransitionRejected:
+            raise HTTPException(409, "처분할 결과 후보가 없거나 이미 처분했습니다.") from None
+        return _job_view(settled)
+
+    @app.get("/api/jobs/active", response_model=ActiveJobStatus)
+    def get_active_job():
+        summary = runner.active_summary()
+        return ActiveJobStatus(active=ActiveJob(**summary) if summary else None)
 
     @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult)
     async def generate_chapter(

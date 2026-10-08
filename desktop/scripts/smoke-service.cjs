@@ -26,6 +26,11 @@ async function main() {
         process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
       );
   const args = executable ? [] : ["-m", "slidecaptain.desktop_service"];
+  // D2b-2: never reach a real Claude login. A missing CLI path makes the login check fail closed.
+  const serviceEnv = {
+    PYTHONPATH: path.join(root, "backend"),
+    SLIDECAPTAIN_CLAUDE_CLI: path.join(folder, "no-claude-cli"),
+  };
   let service;
   const unrelated = http.createServer((_request, response) => response.end("unrelated"));
   await new Promise(resolve => unrelated.listen(0, "127.0.0.1", resolve));
@@ -35,7 +40,7 @@ async function main() {
       command,
       args: [...args, "--data-dir", data],
       cwd: root,
-      env: { PYTHONPATH: path.join(root, "backend") },
+      env: serviceEnv,
       version,
     });
     if ((await fetch(service.origin + "/api/health")).status !== 403)
@@ -126,6 +131,30 @@ async function main() {
     const history = (await request("/api/projects/desktop-smoke/exports")).value;
     if (history.total !== 1 || history.items[0]?.artifact_status !== "matched" || history.items[0]?.slide_count !== 1)
       throw Error("History missing");
+    // D2b-2: the job ledger opens in the packaged service and records a generation that cannot log in.
+    const status = (await request("/api/status")).value;
+    if (status.login.logged_in === true) throw Error("Claude login visible; refusing to register a generation");
+    const registered = await request(
+      "/api/projects/desktop-smoke/jobs",
+      "POST",
+      JSON.stringify({ request_id: "smoke-ledger-0001", kind: "structure", params: {} }),
+      { "X-AI-Consent": "SlideCaptain", "X-AI-Selection": status.selection_id },
+    );
+    let job = registered.value;
+    const deadline = Date.now() + 30000;
+    while (["queued", "running", "validating", "cancel_requested"].includes(job.state) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      job = (await request("/api/projects/desktop-smoke/jobs/" + job.id)).value;
+    }
+    if (job.state !== "failed" || job.error?.error_class !== "connection")
+      throw Error("Ledger job did not fail closed: " + JSON.stringify(job));
+    await fs.access(path.join(data, ".slidecaptain-jobs.sqlite3"));
+    try {
+      await fs.access(path.join(data, "desktop-smoke", "ai-usage.jsonl"));
+      throw Error("A usage record exists although no AI call was allowed");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
     // D2a-3: the same data folder cannot get a second service; the first one keeps answering.
     let secondRefused = false;
     try {
@@ -133,7 +162,7 @@ async function main() {
         command,
         args: [...args, "--data-dir", data],
         cwd: root,
-        env: { PYTHONPATH: path.join(root, "backend") },
+        env: serviceEnv,
         version,
         timeoutMs: 30000,
       });
@@ -158,7 +187,7 @@ async function main() {
       command,
       args: [...args, "--data-dir", data],
       cwd: root,
-      env: { PYTHONPATH: path.join(root, "backend") },
+      env: serviceEnv,
       version,
     });
     try {
@@ -182,6 +211,7 @@ async function main() {
         parent_eof_shutdown: "passed",
         unrelated_service_preserved: "passed",
         same_folder_second_service_refused: "passed",
+        job_ledger_fail_closed: "passed",
         ai_calls: 0,
       }),
     );

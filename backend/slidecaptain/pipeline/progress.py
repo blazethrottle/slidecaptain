@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from slidecaptain.models.jobs import JobView
+
 from slidecaptain.pipeline.story import story_fingerprint
 
 # 생성에 넣는 자료 합계의 상한 (단계 4 결정 14). server/app.py도 이 값을 쓴다
@@ -37,7 +39,7 @@ class ProjectProgress(BaseModel):
     project_status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"]
     stages: list[StageProgress] | None = None
     # 생성 작업과 장별 실패. D2b의 작업 원장이 채운다. 그 전까지 항상 null이다
-    jobs: list[Any] | None = None
+    jobs: list[JobView] | None = None  # D2b-2가 원장으로 채운다. 화면 연결은 D3
 
 
 def _purpose(deck) -> StageProgress:
