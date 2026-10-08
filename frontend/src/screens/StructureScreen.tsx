@@ -10,6 +10,7 @@ import {
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { ActiveJobNotice } from "../ui/ActiveJobNotice";
+import { StatusIndicator } from "../ui/StatusIndicator";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
@@ -693,7 +694,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             const chapters = deck.structure.chapters;
             const missing = chapters.filter((ch) => !deck.slides.some((sl) => sl.chapter_id === ch.id));
             return missing.length > 0
-              ? <p className="notice">{chapters.length}장 중 {missing.length}장을 만들지 못했습니다. 아래 버튼을 누르면 만들지 못한 장만 다시 생성합니다.</p>
+              ? <p className="notice"><StatusIndicator kind="failed" detail={`${chapters.length}장 중 ${missing.length}장 실패`} />{" "}
+                {chapters.length}장 중 {missing.length}장을 만들지 못했습니다. 아래 버튼을 누르면 만들지 못한 장만 다시 생성합니다.</p>
               : null;
           })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}

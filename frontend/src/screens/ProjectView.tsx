@@ -7,6 +7,7 @@ import { EditorScreen } from "./EditorScreen";
 import { ExportQualitySummary } from "./ExportQualitySummary";
 import { ExportHistoryPanel } from "./ExportHistoryPanel";
 import { RecoveryScreen } from "./RecoveryScreen";
+import { JobAnnouncer, StatusIndicator } from "../ui/StatusIndicator";
 import { SourcesScreen } from "./SourcesScreen";
 import { StructureScreen } from "./StructureScreen";
 
@@ -306,6 +307,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       {activeJob && (
         // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
         <p className="notice">
+          <StatusIndicator kind={activeJob.cancel_requested ? "cancel_requested" : "running"} />{" "}
           {activeJob.project === project.name
             ? "이 프로젝트에서 AI 생성이 진행 중입니다."
             : `다른 프로젝트(${activeJob.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.`}{" "}
@@ -313,6 +315,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
         </p>
       )}
+      <JobAnnouncer active={activeJob !== null} />
       {!ledgerAvailable && (
         // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
         <p className="notice">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>

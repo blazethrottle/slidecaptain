@@ -9,6 +9,7 @@ const {
   validateReady,
   readSelectedFiles,
   assertCaller,
+  settleJobBeforeClose,
 } = require("../runtime.cjs");
 const origin = "http://127.0.0.1:45678";
 test("known API methods and encoded project names are allowed", () => {
@@ -163,4 +164,53 @@ test("folder input is bounded by count and aggregate bytes", async () => {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+// D2b-5c: 창 닫기 전 진행 중 AI 작업 확인
+function fakeService(active, { failActive = false, failCancel = false } = {}) {
+  const calls = [];
+  const request = async (input) => {
+    calls.push(input);
+    if (input.path === "/api/jobs/active") {
+      if (failActive) throw Error("서비스 응답 없음");
+      return { status: 200, body: new TextEncoder().encode(JSON.stringify({ active, ledger_available: true })) };
+    }
+    if (failCancel) throw Error("취소 실패");
+    return { status: 200, body: new TextEncoder().encode("{}") };
+  };
+  return { request, calls };
+}
+const activeJob = { id: "job-1", project: "합성 보고", kind: "chapters", target: null, stage: "running",
+  created_at: "", cancel_requested: false };
+
+test("진행 중 작업이 없으면 묻지 않고 닫는다", async () => {
+  const { request, calls } = fakeService(null);
+  let asked = false;
+  assert.equal(await settleJobBeforeClose(request, async () => { asked = true; return "cancel"; }), "close");
+  assert.equal(asked, false);
+  assert.deepEqual(calls.map((c) => c.path), ["/api/jobs/active"]);
+});
+
+test("계속 작업을 고르면 취소하지 않고 창을 남긴다", async () => {
+  const { request, calls } = fakeService(activeJob);
+  assert.equal(await settleJobBeforeClose(request, async () => "continue"), "stay");
+  assert.equal(calls.length, 1);
+});
+
+test("취소 후 닫기는 그 작업의 취소 라우트를 부르고 닫는다", async () => {
+  const { request, calls } = fakeService(activeJob);
+  let seen;
+  assert.equal(await settleJobBeforeClose(request, async (job) => { seen = job; return "cancel"; }), "close");
+  assert.equal(seen.id, "job-1");
+  assert.equal(calls[1].method, "POST");
+  assert.equal(calls[1].path, `/api/projects/${encodeURIComponent("합성 보고")}/jobs/job-1/cancel`);
+  assert.equal(calls[1].headers["X-Requested-With"], "SlideCaptain");
+  // 서비스 요청 검증을 통과하는 경로와 헤더다
+  assert.doesNotThrow(() => validateRequest(calls[1], "http://127.0.0.1:8765", "token"));
+  assert.doesNotThrow(() => validateRequest(calls[0], "http://127.0.0.1:8765", "token"));
+});
+
+test("작업을 확인하지 못하거나 취소 요청이 실패해도 닫는다", async () => {
+  assert.equal(await settleJobBeforeClose(fakeService(activeJob, { failActive: true }).request, async () => "cancel"), "close");
+  assert.equal(await settleJobBeforeClose(fakeService(activeJob, { failCancel: true }).request, async () => "cancel"), "close");
 });

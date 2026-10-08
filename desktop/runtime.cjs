@@ -410,7 +410,35 @@ async function startService({
     throw error;
   }
 }
+// 창을 닫기 전에 진행 중 AI 작업을 확인한다 (D2b-5c, 계획서 5.5). request는 서비스 요청 함수, ask는 진행 중 작업을
+// 받아 "cancel"(취소 후 닫기) 또는 그 밖의 값(계속 작업)을 돌려준다. 결과는 "close" 또는 "stay"다.
+// 작업을 확인하지 못하면 닫는다: 서비스 종료 처리가 남은 행을 정리한다
+async function settleJobBeforeClose(request, ask) {
+  const headers = { "X-Requested-With": "SlideCaptain" };
+  let active = null;
+  try {
+    const response = await request({ path: "/api/jobs/active", method: "GET", headers });
+    if (response.status !== 200) return "close";
+    active = JSON.parse(new TextDecoder().decode(response.body)).active ?? null;
+  } catch {
+    return "close";
+  }
+  if (!active) return "close";
+  if ((await ask(active)) !== "cancel") return "stay";
+  try {
+    await request({
+      path: `/api/projects/${encodeURIComponent(active.project)}/jobs/${encodeURIComponent(active.id)}/cancel`,
+      method: "POST",
+      headers,
+    });
+  } catch {
+    // 취소 요청이 실패해도 닫는다. 종료 처리가 실행 중 작업에 취소를 한 번 보내고 남은 행을 정리한다
+  }
+  return "close";
+}
+
 module.exports = {
+  settleJobBeforeClose,
   validateRequest,
   validateReady,
   isOfficialLogin,

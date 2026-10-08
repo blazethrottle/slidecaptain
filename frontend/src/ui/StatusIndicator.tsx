@@ -5,7 +5,7 @@ import type { SaveState } from "../state/useDeckEditor";
 // "현재 보고 있는 단계"는 내비게이션의 선택 표시라 D3에서 다룬다. 작업 상태(취소 요청, 완료 불명)는 D2b다.
 export const STATUS_KINDS = [
   "not_started", "unsaved", "saving", "saved", "save_failed", "conflict",
-  "ready", "needs_review", "failed", "running",
+  "ready", "needs_review", "failed", "running", "cancel_requested", "completion_unknown",
 ] as const;
 export type StatusKind = (typeof STATUS_KINDS)[number];
 
@@ -23,6 +23,9 @@ const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; 
   needs_review: { label: "확인 필요", icon: "!", iconName: "느낌표", tone: "warning" },
   failed: { label: "실행 실패", icon: "✕", iconName: "엑스", tone: "danger" },
   running: { label: "생성 중", icon: "\u22EF\uFE0E", iconName: "진행 점", tone: "primary" },
+  // 작업 상태 (D2b-5c). 취소 요청은 아직 진행 중이라 중립색, 완료 불명은 사용자의 확인이 필요해 주의색이다
+  cancel_requested: { label: "취소 요청됨", icon: "\u23F8\uFE0E", iconName: "일시 정지", tone: "neutral" },
+  completion_unknown: { label: "완료 여부 확인 필요", icon: "?", iconName: "물음표", tone: "warning" },
 };
 
 /** 저장 훅의 상태를 표시 종류로 옮긴다. 충돌은 저장 실패와 조치가 반대라 따로 둔다. */
@@ -33,7 +36,7 @@ export function saveStatusKind(saveState: SaveState, conflict: boolean): StatusK
   return conflict ? "conflict" : "save_failed";
 }
 
-/** 상태 한 줄. running 같은 작업 상태는 호출자가 정해 넘긴다(D2b에서 원천이 작업 원장으로 바뀐다). */
+/** 상태 한 줄. 작업 상태(생성 중, 취소 요청됨, 완료 여부 확인 필요)는 작업 원장에서 정해 넘긴다 (D2b-5c). */
 export function StatusIndicator({ kind, detail }: { kind: StatusKind; detail?: string }) {
   const spec = SPEC[kind];
   return (
@@ -58,5 +61,20 @@ export function SaveAnnouncer({ kind }: { kind: StatusKind }) {
     else if (kind !== "saved") setMessage("");
     previous.current = kind;
   }, [kind]);
+  return <p className="visually-hidden" role="status">{message}</p>;
+}
+
+/**
+ * 작업 상태의 보조기기 알림 (D2b-5c). 진행 중 작업이 사라질 때(종결 전이)에만 알린다.
+ * 조회는 1초마다 반복되므로 진행 중 상태가 바뀔 때마다 알리면 읽기가 끊긴다.
+ */
+export function JobAnnouncer({ active }: { active: boolean }) {
+  const previous = useRef(active);
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (previous.current && !active) setMessage("AI 생성 작업이 끝났습니다");
+    else if (active) setMessage("");
+    previous.current = active;
+  }, [active]);
   return <p className="visually-hidden" role="status">{message}</p>;
 }

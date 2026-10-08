@@ -1,8 +1,8 @@
 // 상태 표시 컴포넌트 (개정판 D2a-5). 색 없이도 문구와 아이콘으로 상태를 구별한다.
 import { act, render, screen } from "@testing-library/react";
-import { SaveAnnouncer, STATUS_KINDS, StatusIndicator, saveStatusKind } from "./StatusIndicator";
+import { JobAnnouncer, SaveAnnouncer, STATUS_KINDS, StatusIndicator, saveStatusKind } from "./StatusIndicator";
 
-it("상태 10종은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
+it("상태 12종(작업 상태 2종 포함)은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
   const labels = new Set<string>();
   const icons = new Set<string>();
   for (const kind of STATUS_KINDS) {
@@ -12,9 +12,9 @@ it("상태 10종은 문구와 아이콘의 접근 가능한 이름이 모두 다
     labels.add(container.querySelector(".status-label")!.textContent!);
     unmount();
   }
-  expect(STATUS_KINDS).toHaveLength(10);
-  expect(labels.size).toBe(10);
-  expect(icons.size).toBe(10);
+  expect(STATUS_KINDS).toHaveLength(12);
+  expect(labels.size).toBe(12);
+  expect(icons.size).toBe(12);
 });
 
 it("저장 상태와 충돌 여부를 표시 종류로 옮긴다", () => {
@@ -63,4 +63,16 @@ it("아이콘 글자는 색 이모지가 아니라 글자 모양으로 그리도
     expect(container.querySelector('[role="img"]')!.textContent).toMatch(/\uFE0E$/);
     unmount();
   }
+});
+
+it("작업 알림은 진행 중 작업이 사라질 때만 알린다 (D2b-5c)", () => {
+  const { rerender, container } = render(<JobAnnouncer active={false} />);
+  const status = () => container.querySelector('[role="status"]')!.textContent;
+  expect(status()).toBe("");
+  rerender(<JobAnnouncer active />);
+  expect(status()).toBe("");
+  rerender(<JobAnnouncer active />);
+  expect(status()).toBe("");
+  rerender(<JobAnnouncer active={false} />);
+  expect(status()).toBe("AI 생성 작업이 끝났습니다");
 });

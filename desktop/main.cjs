@@ -7,12 +7,16 @@ const {
   assertCaller,
   readSelectedFiles,
   isOfficialLogin,
+  settleJobBeforeClose,
 } = require("./runtime.cjs");
 let service,
   window,
   quitting = false,
   shutdownComplete = false,
-  closing = false;
+  closing = false,
+  // 창을 닫기 전 진행 중 AI 작업을 확인했는지 (D2b-5c). 계속 작업을 고르면 다시 거짓이 된다
+  jobCloseChecked = false,
+  jobCloseChecking = false;
 const requests = new Map();
 // D2a-3: 앱을 두 번 실행하면 두 번째 실행은 기존 창을 앞으로 가져오고 끝난다.
 // 서비스의 자료 폴더 잠금은 그 아래의 방어선이다(다른 설치본이나 웹 모드와 겹칠 때)
@@ -250,6 +254,37 @@ async function start() {
       app.quit();
     }
   });
+  // 진행 중 AI 작업이 있으면 "계속 작업 / 취소 후 닫기"를 묻는다. 취소 후 닫기는 그 작업에 취소를 요청한 뒤
+  // 닫고, 서비스 종료 처리가 남은 행을 정리한다 (계획서 D2b-5c, 5.5)
+  window.on("close", (event) => {
+    if (jobCloseChecked || quitting) return;
+    event.preventDefault();
+    if (jobCloseChecking) return;
+    jobCloseChecking = true;
+    void settleJobBeforeClose(
+      (input) => service.request(input),
+      async (active) => {
+        const { response } = await dialog.showMessageBox(window, {
+          type: "warning",
+          buttons: ["계속 작업", "취소 후 닫기"],
+          defaultId: 0,
+          cancelId: 0,
+          title: "SlideCaptain",
+          message: "AI 생성이 진행 중입니다. 작업을 취소하고 닫을까요?",
+          detail: `프로젝트: ${active.project}. 취소 후 닫으면 다시 열 때 그 작업은 취소됨이나 완료 여부 확인 필요로 보입니다.`,
+        });
+        return response === 1 ? "cancel" : "continue";
+      },
+    ).then((decision) => {
+      jobCloseChecking = false;
+      if (decision === "stay") {
+        closing = false;
+        return;
+      }
+      jobCloseChecked = true;
+      if (window && !window.isDestroyed()) window.close();
+    });
+  });
   window.webContents.on("will-prevent-unload", (event) => {
     const leave = dialog.showMessageBoxSync(window, {
       type: "warning",
@@ -261,7 +296,10 @@ async function start() {
         "저장하지 않은 변경이나 진행 중인 작업이 있습니다. 앱을 종료할까요?",
     });
     if (leave === 0) event.preventDefault();
-    else closing = false;
+    else {
+      closing = false;
+      jobCloseChecked = false;
+    }
   });
   window.on("closed", () => {
     window = null;
