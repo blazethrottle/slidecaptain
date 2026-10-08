@@ -4,6 +4,7 @@ import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { revokeConsent } from "../api/aiGate";
 import { resetEtags, type Deck } from "../api/client";
 import { deferred, preset, project } from "../test/fixtures";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
 
@@ -22,7 +23,14 @@ async function open() {
     if (url === "/api/render-plan") return new Response(JSON.stringify(fixture.render_plan));
     if (url === "/api/status") return new Response(JSON.stringify({ provider: "chatgpt", model: "selected-model", selection_id: "selected",
       checked_at: "", login: { logged_in: true } }));
-    if (url.endsWith("/generate/diagram") && init?.method === "POST") return pending.promise;
+    // D2b-5b: 도식 생성은 작업 API로 등록하고 조회한다. 조회 응답은 시험이 생성 결과로 풀어 준다
+    if (url === "/api/jobs/active") return new Response(JSON.stringify({ active: null, ledger_available: true }));
+    if (url.endsWith("/jobs") && init?.method === "POST") return new Response(JSON.stringify(
+      jobView("diagram", { state: "running", candidate_status: "none" })), { status: 202 });
+    if (url.endsWith("/jobs")) return new Response("[]");
+    if (url.endsWith("/jobs/job-1")) return pending.promise.then(async (r) => new Response(JSON.stringify(
+      jobView("diagram", { result: await r.json() }))));
+    if (url.endsWith("/jobs/job-1/candidate")) return new Response(JSON.stringify(jobView("diagram")));
     throw new Error(`unexpected ${url}`);
   });
   vi.stubGlobal("fetch", fetch);
@@ -49,7 +57,7 @@ it("도식 생성 동의창은 정확한 전송 범위를 알리고 포커스를
   await userEvent.click(cancel);
   expect(await screen.findByText(/전송을 취소했습니다/)).toBeInTheDocument();
   expect(screen.getByLabelText("도식 제목")).toHaveValue("AI 도식 요청");
-  expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/generate/diagram"))).toBe(false);
+  expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(false);
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeEnabled();
   expect(screen.getByRole("dialog", { name: "도식 작성" }).contains(document.activeElement)).toBe(true);
 });
@@ -57,7 +65,7 @@ it("도식 생성 동의창은 정확한 전송 범위를 알리고 포커스를
 it("AI 전송 승인 뒤 응답 대기 중에도 포커스는 살아 있는 도식 작성창에 돌아온다", async () => {
   const { pending, fetch } = await open();
   await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
-  await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/generate/diagram"))).toBe(true));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
   const dialog = screen.getByRole("dialog", { name: "도식 작성" });
   expect(screen.getByRole("button", { name: "AI 도식 초안 생성" })).toBeDisabled();
   expect(dialog.contains(document.activeElement)).toBe(true);
@@ -71,7 +79,7 @@ it("AI 전송 승인 뒤 응답 대기 중에도 포커스는 살아 있는 도�
 it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델과 화면 이동을 잠근다", async () => {
   const { pending, fetch } = await open();
   await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
-  await waitFor(() => expect(fetch.mock.calls.some(([url]) => String(url).endsWith("/generate/diagram"))).toBe(true));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();

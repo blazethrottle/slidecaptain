@@ -5,15 +5,28 @@ import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { api, ApiError, type Deck, type DiagramGenerationResult, type DocumentChangeBasis,
   type DocumentChangePreview, type RenderPlan } from "../api/client";
 import { deferred } from "../test/fixtures";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { DiagramAuthoringDialog } from "./DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
 vi.mock("../api/client", async original => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateDiagram: vi.fn(), measure: vi.fn(), putDeck: vi.fn(),
+  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(),
     reconcileDiagramStory: vi.fn(), getDocumentChangeBasis: vi.fn(), previewDocumentChange: vi.fn(), applyDocumentChange: vi.fn() } };
 });
+
+// D2b-5b: 도식 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateDiagram = vi.fn<(name: string, params: GenerateDiagramParams) => Promise<DiagramGenerationResult>>();
+type GenerateDiagramParams = Record<string, unknown>;
+function bridgeJobs() {
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("diagram"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateDiagram(name, body.params as GenerateDiagramParams);
+    return jobView("diagram", { result: result as unknown as Record<string, unknown> });
+  });
+}
 const fresh = () => structuredClone(fixture.deck) as Deck;
 const basis: DocumentChangeBasis = { base_etag: '"old"', sources_fingerprint: "b".repeat(64), evidence_fingerprints: {} };
 function generation(): DiagramGenerationResult {
@@ -38,7 +51,8 @@ function open(props: Partial<React.ComponentProps<typeof DiagramAuthoringDialog>
   return { ...render(<DiagramAuthoringDialog {...all} />), props: all, ...defaults };
 }
 beforeEach(() => {
-  vi.mocked(api.generateDiagram).mockResolvedValue(generation());
+  bridgeJobs();
+  generateDiagram.mockResolvedValue(generation());
   vi.mocked(api.reconcileDiagramStory).mockImplementation(async (_name, request) => request.deck);
   vi.mocked(api.measure).mockResolvedValue(structuredClone(fixture.render_plan) as RenderPlan);
   vi.mocked(api.getDocumentChangeBasis).mockResolvedValue(basis);
@@ -61,7 +75,7 @@ async function confirmAll() {
 
 it("기존 도식 mode replace·프로젝트 실측·전후 모든 변경 확인 후 저장된 후보만 인계한다", async () => {
   const ui = open(); await checkCandidate();
-  expect(api.generateDiagram).toHaveBeenCalledWith("synthetic", expect.objectContaining({ mode: "replace", chapter_id: "synthetic-flow",
+  expect(generateDiagram).toHaveBeenCalledWith("synthetic", expect.objectContaining({ mode: "replace", chapter_id: "synthetic-flow",
     role: "answer", claim_ids: ["claim"] }));
   expect(api.measure).toHaveBeenCalledWith(expect.any(Object), "synthetic");
   expect(screen.getByRole("region", { name: "도식 교체 전후 확인" })).toHaveTextContent("원래 도식");

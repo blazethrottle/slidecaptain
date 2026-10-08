@@ -4,6 +4,7 @@ import {
   type Chapter, type ChapterView, type Deck, type GenerationUsage, type JobView, type ProjectInfo, type StoryPlan,
   type TemplateName,
 } from "../api/client";
+import { slotsText } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
@@ -49,17 +50,8 @@ function chapterLabel(chapter: ChapterView, hasSlide: boolean): ProgressLabel {
 // 다시 생성할 수 있는 장 상태. 보류(구성 계획 낡음)는 복구 안내를 따른다
 const RETRYABLE_STATES = new Set(["failed", "interrupted", "cancelled", "remote_completion_unknown"]);
 
-// 후보 슬롯의 글자만 모아 보인다. 사용자가 반영 여부를 판단하는 데는 구조보다 내용이 필요하다
 function candidateText(chapter: ChapterView): string {
-  const slots = (chapter.result as { slots?: unknown } | null)?.slots;
-  const texts: string[] = [];
-  const walk = (value: unknown, key = "") => {
-    if (typeof value === "string") { if (value && key !== "template" && key !== "tone") texts.push(value); }
-    else if (Array.isArray(value)) value.forEach((v) => walk(v));
-    else if (value && typeof value === "object") Object.entries(value).forEach(([k, v]) => walk(v, k));
-  };
-  walk(slots);
-  return texts.join("\n");
+  return slotsText((chapter.result as { slots?: unknown } | null)?.slots);
 }
 
 function nextChapterId(chapters: Chapter[]): string {

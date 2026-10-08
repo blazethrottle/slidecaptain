@@ -3,14 +3,27 @@ import userEvent from "@testing-library/user-event";
 import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { api, AiConsentDeclined, ApiError, type Deck, type DiagramGenerationResult, type RenderPlan } from "../api/client";
 import { deferred } from "../test/fixtures";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { DiagramAuthoringDialog } from "./DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateDiagram: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
+  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
 });
+
+// D2b-5b: 도식 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateDiagram = vi.fn<(name: string, params: GenerateDiagramParams) => Promise<DiagramGenerationResult>>();
+type GenerateDiagramParams = Record<string, unknown>;
+function bridgeJobs() {
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("diagram"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateDiagram(name, body.params as GenerateDiagramParams);
+    return jobView("diagram", { result: result as unknown as Record<string, unknown> });
+  });
+}
 const fresh = () => structuredClone(fixture.deck) as Deck;
 function response(): DiagramGenerationResult {
   const slide = fresh().slides.find(s => s.slots.template === "diagram")!;
@@ -29,7 +42,8 @@ function open(props: Partial<React.ComponentProps<typeof DiagramAuthoringDialog>
   return { ...view, props: fullProps, draft, deck, onApply, onCancel, onBusyChange, flushBeforeCheck };
 }
 beforeEach(() => {
-  vi.mocked(api.generateDiagram).mockReset().mockResolvedValue(response());
+  bridgeJobs();
+  generateDiagram.mockReset().mockResolvedValue(response());
   vi.mocked(api.putDeck).mockClear();
   vi.mocked(api.measure).mockReset();
   vi.mocked(api.reconcileDiagramStory).mockReset().mockImplementation(async (_name, req) => req.deck);
@@ -53,7 +67,7 @@ it("AI 후보는 폼과 분리해 근거와 조건을 보이고 불러오기 뒤
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   const candidate = await screen.findByRole("region", { name: "AI 도식 후보 검토" });
   expect(flushBeforeCheck).toHaveBeenCalledOnce();
-  expect(api.generateDiagram).toHaveBeenCalledWith("synthetic", {
+  expect(generateDiagram).toHaveBeenCalledWith("synthetic", {
     chapter_id: draft.id, topic: "사용자 제목", role: "answer", claim_ids: ["claim"], instructions: "",
   });
   expect(within(candidate).getByText("AI 접수 후보")).toBeInTheDocument();
@@ -66,6 +80,10 @@ it("AI 후보는 폼과 분리해 근거와 조건을 보이고 불러오기 뒤
   expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "작성 폼에 불러오기" }));
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("AI 접수 후보");
+  // D2b-5b: 불러온 후보는 반영으로 처분하고, 등록은 동의 전에 고정한 저장 ETag를 If-Match로 보낸다
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "applied");
+  expect(vi.mocked(api.startJob).mock.calls[0][1].kind).toBe("diagram");
+  expect(vi.mocked(api.startJob).mock.calls[0][3]).toBe('"etag"');
   expect(screen.getByLabelText("도식 제목")).toHaveValue("사용자 제목");
   expect(screen.getByLabelText("도식 장 보고 역할")).toHaveValue("answer");
   expect(screen.getByLabelText("보고 계획 주장 claim")).toBeChecked();
@@ -80,12 +98,12 @@ it("기존 편집을 저장하지 못하면 AI를 호출하지 않고 작성 입
   open({ flushBeforeCheck: vi.fn().mockResolvedValue(false) });
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("저장하지 못했습니다");
-  expect(api.generateDiagram).not.toHaveBeenCalled();
+  expect(generateDiagram).not.toHaveBeenCalled();
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("요청 접수");
 });
 
 it("동의 취소는 오류 대신 안내를 보이고 호출 잠금을 해제한다", async () => {
-  vi.mocked(api.generateDiagram).mockRejectedValue(new AiConsentDeclined());
+  generateDiagram.mockRejectedValue(new AiConsentDeclined());
   const { onBusyChange } = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   expect(await screen.findByText(/전송을 취소했습니다/)).toBeInTheDocument();
@@ -95,7 +113,7 @@ it("동의 취소는 오류 대신 안내를 보이고 호출 잠금을 해제�
 });
 
 it("형식 오류여도 원문과 사용량을 보이고 불러오기를 허용하지 않는다", async () => {
-  vi.mocked(api.generateDiagram).mockResolvedValue({ ...response(), status: "format_error", diagram: null, format_retried: true });
+  generateDiagram.mockResolvedValue({ ...response(), status: "format_error", diagram: null, format_retried: true });
   open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("형식에 맞게 읽지 못했습니다");
@@ -106,7 +124,7 @@ it("형식 오류여도 원문과 사용량을 보이고 불러오기를 허용�
 
 it("입력 변경은 늦은 후보를 무효화하되 응답이 끝날 때까지 호출 잠금을 유지한다", async () => {
   const pending = deferred<DiagramGenerationResult>();
-  vi.mocked(api.generateDiagram).mockReturnValue(pending.promise);
+  generateDiagram.mockReturnValue(pending.promise);
   const { onBusyChange } = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   fireEvent.change(screen.getByLabelText("항목 1 내용"), { target: { value: "계속 작성한 입력" } });
@@ -120,7 +138,7 @@ it("입력 변경은 늦은 후보를 무효화하되 응답이 끝날 때까지
 
 it("닫은 창의 응답은 후보를 적용하지 않고 응답 완료 때 소유한 잠금만 해제한다", async () => {
   const pending = deferred<DiagramGenerationResult>();
-  vi.mocked(api.generateDiagram).mockReturnValue(pending.promise);
+  generateDiagram.mockReturnValue(pending.promise);
   const { onBusyChange, onApply, onCancel, unmount } = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
@@ -141,7 +159,7 @@ it.each(["deck", "blocked"])("%s 변경은 도착한 후보의 불러오기를 �
 });
 
 it("AI 응답의 412는 충돌로 전달하고 현재 폼과 Deck을 보존한다", async () => {
-  vi.mocked(api.generateDiagram).mockRejectedValue(new ApiError(412, "다른 창에서 저장되었습니다."));
+  generateDiagram.mockRejectedValue(new ApiError(412, "다른 창에서 저장되었습니다."));
   const onConflict = vi.fn(); const { onApply } = open({ onConflict });
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   await waitFor(() => expect(onConflict).toHaveBeenCalledWith("다른 창에서 저장되었습니다."));
@@ -153,7 +171,7 @@ it("AI 응답의 412는 충돌로 전달하고 현재 폼과 Deck을 보존한�
 it("지원하지 않는 관계 후보는 수동 배치 검사에서 멈추고 후보 내용과 Deck을 보존한다", async () => {
   const generated = response();
   generated.diagram!.edges[0].to_node_id = generated.diagram!.nodes[2].id;
-  vi.mocked(api.generateDiagram).mockResolvedValue(generated);
+  generateDiagram.mockResolvedValue(generated);
   vi.mocked(api.measure).mockRejectedValue(new ApiError(422, "한 줄의 인접한 노드 연결만 지원합니다."));
   const { onApply } = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
@@ -169,10 +187,10 @@ it("기존 편집 저장을 기다리다 입력이 바뀌면 AI 전송을 시작
   const saving = deferred<boolean>();
   const { onBusyChange } = open({ flushBeforeCheck: () => saving.promise });
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
-  expect(api.generateDiagram).not.toHaveBeenCalled();
+  expect(generateDiagram).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("AI 도식 지시사항"), { target: { value: "바꾼 지시" } });
   await act(async () => saving.resolve(true));
-  expect(api.generateDiagram).not.toHaveBeenCalled();
+  expect(generateDiagram).not.toHaveBeenCalled();
   expect(screen.getByLabelText("AI 도식 지시사항")).toHaveValue("바꾼 지시");
   expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
 });
@@ -188,7 +206,7 @@ it("도착한 후보가 있어도 제목이나 지시를 바꾸면 기존 후보
 
 it.each(["deck", "blocked"])("응답 대기 중 %s 변경이 있으면 늦은 후보를 표시하거나 적용하지 않는다", async (change) => {
   const pending = deferred<DiagramGenerationResult>();
-  vi.mocked(api.generateDiagram).mockReturnValue(pending.promise);
+  generateDiagram.mockReturnValue(pending.promise);
   const view = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   view.rerender(<DiagramAuthoringDialog {...view.props} {...(change === "deck" ? { deck: structuredClone(view.deck) } : { blocked: true })} />);
@@ -201,7 +219,7 @@ it.each(["deck", "blocked"])("응답 대기 중 %s 변경이 있으면 늦은 �
 
 it("입력을 바꾼 뒤 도착한 412도 충돌로 전달하고 새 요청을 차단한다", async () => {
   const pending = deferred<DiagramGenerationResult>();
-  vi.mocked(api.generateDiagram).mockReturnValue(pending.promise);
+  generateDiagram.mockReturnValue(pending.promise);
   const onConflict = vi.fn(); open({ onConflict });
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   fireEvent.change(screen.getByLabelText("항목 1 내용"), { target: { value: "응답 중 작성한 입력" } });
@@ -213,7 +231,7 @@ it("입력을 바꾼 뒤 도착한 412도 충돌로 전달하고 새 요청을 �
 
 it("부모 콜백이 바뀌어도 호출 시작 때 얻은 잠금의 소유자에게만 해제를 알린다", async () => {
   const pending = deferred<DiagramGenerationResult>();
-  vi.mocked(api.generateDiagram).mockReturnValue(pending.promise);
+  generateDiagram.mockReturnValue(pending.promise);
   const view = open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   const replacement = vi.fn();
@@ -221,4 +239,15 @@ it("부모 콜백이 바뀌어도 호출 시작 때 얻은 잠금의 소유자�
   await act(async () => pending.resolve(response()));
   expect(view.onBusyChange.mock.calls).toEqual([[true], [false]]);
   expect(replacement).not.toHaveBeenCalled();
+});
+
+it("만드는 동안 저장본이 바뀐 후보는 종전처럼 412 충돌로 알리고 후보를 버린다 (D2b-5b)", async () => {
+  vi.mocked(api.startJob).mockResolvedValue(jobView("diagram", { result: response() as unknown as Record<string, unknown>,
+    candidate_status: "stale", stale_reasons: ["deck_changed"] }));
+  const onConflict = vi.fn();
+  open({ onConflict });
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalledWith("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "dismissed");
+  expect(screen.queryByRole("region", { name: "AI 도식 후보 검토" })).toBeNull();
 });

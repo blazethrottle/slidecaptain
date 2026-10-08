@@ -9,13 +9,14 @@ import { applyTextEdit, reorderChapters } from "./slotOps";
 import { editorReducer } from "../state/deckStore";
 import { StructureScreen } from "../screens/StructureScreen";
 import { EditorScreen } from "../screens/EditorScreen";
-import { batchView, chapterView } from "../test/jobs";
+import { batchView, chapterView, jobView } from "../test/jobs";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), generateChapter: vi.fn(),
     condenseChapter: vi.fn(), putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn(),
-    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn(),
+    startJob: vi.fn() } };
 });
 
 const project = { name: "diagram", title: "합성 도식 보고", updated_at: "", status: "ok" as const };
@@ -94,9 +95,10 @@ it("구조안 화면은 도식 편집의 진입점과 재계획 제한의 복구
 });
 
 it.each(["generate", "condense"])("일반 장의 %s도 낡은 계획을 도식 재계획으로 잘못 안내하지 않는다", async (operation) => {
-  const stale = Object.assign(new ApiError(409, "구조안을 다시 생성해 주세요."), { code: "stale_story_plan" });
-  vi.mocked(api.generateChapter).mockRejectedValue(stale);
-  vi.mocked(api.condenseChapter).mockRejectedValue(stale);
+  // 작업이 구성 계획 낡음으로 실패했다 (D2b-5b: 재생성과 축약은 작업 API를 쓴다)
+  vi.mocked(api.startJob).mockResolvedValue(jobView(operation === "generate" ? "chapter" : "condense", {
+    state: "failed", candidate_status: "none",
+    error: { error_class: "input", status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } }));
   const deck = freshDeck();
   const onReplace = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="cover" onReplace={onReplace} />);

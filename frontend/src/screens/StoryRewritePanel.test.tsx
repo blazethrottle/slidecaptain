@@ -2,15 +2,27 @@ import { useState } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, AiConsentDeclined, type Deck, type StoryRewriteResult } from "../api/client";
-import { batchView, chapterView } from "../test/jobs";
+import { batchView, chapterView, jobView } from "../test/jobs";
 import { storyDeck } from "../test/story";
 import { emptyUsage } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, rewriteStory: vi.fn(), applyStoryRewrite: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
-    startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+  return { ...mod, savedEtag: () => '"old"', api: { ...mod.api, applyStoryRewrite: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
+    startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn(), startJob: vi.fn(),
+    settleCandidate: vi.fn(), cancelJob: vi.fn() } };
 });
+
+// D2b-5b: 재작성과 수리는 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const rewriteStory = vi.fn<(name: string, params: unknown) => Promise<StoryRewriteResult>>();
+function bridgeJobs() {
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("rewrite"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await rewriteStory(name, body.params);
+    return jobView(body.kind, { project: name, result: result as unknown as Record<string, unknown>,
+      state: result.status === "ok" ? "succeeded" : "failed", candidate_status: result.status === "ok" ? "held" : "none" });
+  });
+}
 const project = { name: "synthetic", title: "합성", updated_at: "", status: "ok" as const };
 function candidate(): StoryRewriteResult {
   const deck = storyDeck();
@@ -24,7 +36,8 @@ function Harness({ onConflict = vi.fn(), onBusy = vi.fn(), onReady = vi.fn(), on
     onBusyChange={onBusy} onScreenReady={onReady} onDirtyChange={onDirty} />;
 }
 beforeEach(() => {
-  vi.mocked(api.rewriteStory).mockResolvedValue(candidate());
+  bridgeJobs();
+  rewriteStory.mockReset().mockResolvedValue(candidate());
   vi.mocked(api.applyStoryRewrite).mockResolvedValue(candidate().deck!);
   vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
   vi.mocked(api.listJobs).mockResolvedValue([]);
@@ -72,7 +85,7 @@ it("후보가 있으면 이탈 취소와 새로고침 경고를 연결한다", a
 });
 it("생성 중 기존 편집과 승인을 잠근다", async () => {
   let resolve!: (r: StoryRewriteResult)=>void;
-  vi.mocked(api.rewriteStory).mockReturnValue(new Promise(r=>{resolve=r;}));
+  rewriteStory.mockReturnValue(new Promise(r=>{resolve=r;}));
   const busy=vi.fn(); render(<Harness onBusy={busy}/>);
   await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
   expect(busy).toHaveBeenLastCalledWith(true);
@@ -85,14 +98,14 @@ it("미승인 장 구성 변경은 재작성을 차단한다", async () => {
   expect(screen.getByRole("button",{name:"재작성 미리보기"})).toBeDisabled();
 });
 it("형식 오류의 원문을 표시하고 적용하지 않는다",async()=>{
-  vi.mocked(api.rewriteStory).mockResolvedValue({...candidate(),status:"format_error",deck:null,raw_text:"합성 오류"});
+  rewriteStory.mockResolvedValue({...candidate(),status:"format_error",deck:null,raw_text:"합성 오류"});
   render(<Harness/>); await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
   expect(await screen.findByRole("alert")).toHaveTextContent("형식");
   expect(screen.getByText("합성 오류")).toBeInTheDocument();
   expect(screen.queryByRole("button",{name:"이 계획 적용"})).not.toBeInTheDocument();
 });
 it("동의 취소는 실패로 표시하지 않는다",async()=>{
-  vi.mocked(api.rewriteStory).mockRejectedValue(new AiConsentDeclined());
+  rewriteStory.mockRejectedValue(new AiConsentDeclined());
   render(<Harness/>); await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
   expect(await screen.findByText(/재작성을 취소했습니다/)).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -112,4 +125,70 @@ it("기존 장 생성 중 저장본이 바뀌어도 재작성 패널이 부모 �
   expect(busy).toHaveBeenLastCalledWith(true);
   await act(async()=>finish(batchView([chapterView("c1", "failed")], { project: project.name, state: "failed", outcome: "partial" })));
   await waitFor(()=>expect(busy).toHaveBeenLastCalledWith(false));
+});
+
+// -- D2b-5b: 작업 연결과 후보 처분 ------------------------------------------------------------------
+
+it("적용한 후보는 반영으로, 재작성 취소는 버림으로 처분한다", async () => {
+  render(<Harness />);
+  await showCandidate();
+  await applyCandidate();
+  await waitFor(() => expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "applied"));
+});
+
+it("재작성 후보가 이전 입력 기준이면 적용 대신 다시 생성을 보이고 적용 라우트를 부르지 않는다", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("rewrite", { project: "synthetic", candidate_status: "stale",
+    stale_reasons: ["sources_changed"], result: candidate() as unknown as Record<string, unknown> }));
+  render(<Harness />);
+  const region = await showCandidate();
+  expect(region).toHaveTextContent("이전 입력 기준 후보입니다(자료가 바뀌었습니다)");
+  expect(screen.queryByRole("button", { name: "이 계획 적용" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "현재 입력으로 다시 생성" }));
+  await waitFor(() => expect(api.startJob).toHaveBeenCalledTimes(2));
+  expect(api.applyStoryRewrite).not.toHaveBeenCalled();
+});
+
+it("다시 열면 처분하지 않은 재작성 후보를 보인다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("rewrite", { project: "synthetic",
+    params: { brief: { decision_question: "새 질문" }, instructions: "" },
+    result: candidate() as unknown as Record<string, unknown> })]);
+  render(<Harness />);
+  const region = await screen.findByRole("region", { name: "재작성 후보" });
+  expect(region).toHaveTextContent("이전에 만든 결과가 있습니다.");
+  expect(screen.getByLabelText("재작성 보고 질문")).toHaveValue("새 질문");
+  expect(api.startJob).not.toHaveBeenCalled();
+});
+
+async function startRepair() {
+  await userEvent.click(screen.getByText("문제 목록으로 제한된 수정·재검수"));
+  await userEvent.type(screen.getByLabelText("수정 문제 목록"), "근거가 약하다");
+  await userEvent.click(screen.getByLabelText(/상한을 확인했습니다/));
+  await userEvent.click(screen.getByRole("button", { name: "제한된 수정 미리보기" }));
+}
+
+it("수리 실행 중단은 취소를 요청하고, 작업이 취소로 끝난 뒤에만 취소 완료를 알린다 (지금은 즉시 알린다)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("repair", { id: "job-r", project: "synthetic",
+    state: "running", candidate_status: "none" }));
+  let finish!: (view: ReturnType<typeof jobView>) => void;
+  vi.mocked(api.getJob).mockReturnValueOnce(new Promise((r) => { finish = r; }));
+  vi.mocked(api.cancelJob).mockResolvedValue(jobView("repair", { state: "cancel_requested" }));
+  render(<Harness />);
+  await startRepair();
+  await userEvent.click(await screen.findByRole("button", { name: "실행 중단" }));
+  expect(api.cancelJob).toHaveBeenCalledWith("synthetic", "job-r");
+  expect(await screen.findByText("취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.")).toBeInTheDocument();
+  expect(screen.queryByText(/수정 요청을 취소했습니다/)).toBeNull();
+  await act(async () => finish(jobView("repair", { id: "job-r", state: "cancelled", candidate_status: "held" })));
+  expect(await screen.findByText("수정 요청을 취소했습니다. 입력과 기존 저장본은 유지됩니다.")).toBeInTheDocument();
+});
+
+it("패널을 닫으면 조회만 멈추고 작업은 취소하지 않는다", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("repair", { id: "job-r", project: "synthetic",
+    state: "running", candidate_status: "none" }));
+  vi.mocked(api.getJob).mockReturnValue(new Promise(() => {}));
+  const view = render(<Harness />);
+  await startRepair();
+  await screen.findByRole("button", { name: "실행 중단" });
+  view.unmount();
+  expect(api.cancelJob).not.toHaveBeenCalled();
 });

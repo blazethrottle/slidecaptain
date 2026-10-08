@@ -69,7 +69,8 @@ export type ProviderId = AISelection["provider"];
 export type LoginAttempt = components["schemas"]["LoginAttempt"];
 
 export class ApiError extends Error {
-  constructor(public status: number, detail: string, public code?: string) {
+  // active: 409 generation_active 응답이 담은 진행 중 작업 (D2b-5b). 화면이 그 작업의 취소 버튼을 보인다
+  constructor(public status: number, detail: string, public code?: string, public active?: ActiveJob) {
     super(detail);
   }
 }
@@ -94,9 +95,11 @@ async function throwIfFailed(r: Response): Promise<void> {
   if (r.ok) return;
   let detail = "요청이 실패했습니다. 잠시 후 다시 시도해 주세요.";
   let code: string | undefined;
+  let active: ActiveJob | undefined;
   try {
     const body = await r.json();
     if (typeof body.code === "string") code = body.code;
+    if (body.active && typeof body.active === "object" && typeof body.active.id === "string") active = body.active;
     if (typeof body.detail === "string") detail = body.detail;
     else if (Array.isArray(body.detail)) {
       // FastAPI 입력 오류에는 원래 입력도 담긴다. 메시지만 취하고 입력/ctx를 출력하지 않는다.
@@ -111,7 +114,7 @@ async function throwIfFailed(r: Response): Promise<void> {
   } catch {
     // JSON 본문이 아니면 기본 문구 유지
   }
-  throw new ApiError(r.status, detail, code);
+  throw new ApiError(r.status, detail, code, active);
 }
 
 // 저장본 식별값(ETag): 프로젝트 이름을 키로 마지막으로 본 값을 기억해, 다음 PUT/POST에 If-Match로 실어 보낸다
@@ -143,6 +146,11 @@ async function request<T>(
 }
 
 const enc = encodeURIComponent;
+
+// 마지막으로 본 저장 ETag. 기준 저장본을 받는 작업(도식, 재작성, 수리)의 등록이 동의 전에 고정한다
+export function savedEtag(name: string): string | undefined {
+  return etags.get(name);
+}
 
 async function aiHeaders(): Promise<Record<string, string>> {
   const status = await api.getStatus();
@@ -293,6 +301,15 @@ export const api = {
   listJobs: (name: string) => request<JobView[]>(`/api/projects/${enc(name)}/jobs`, { cache: "no-store" }),
   cancelJob: (name: string, jobId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/cancel`, { method: "POST" }),
+  // 작업 등록 (D2b-5b). 기준 저장본을 받는 종류만 expectedEtag를 If-Match로 보낸다. 등록은 저장 ETag를 바꾸지 않는다
+  startJob: (name: string, body: { request_id: string; kind: string; params: unknown }, headers: Record<string, string>,
+    expectedEtag?: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs`, { method: "POST", body: JSON.stringify(body) },
+      { expectedEtag, headers }),
+  settleCandidate: (name: string, jobId: string, action: "applied" | "dismissed") =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
+      method: "POST", body: JSON.stringify({ action }),
+    }),
   // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
   dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {

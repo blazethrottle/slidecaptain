@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, type Deck, type DiagramGenerationResult,
   type GenerationUsage, type RenderPlan, type StoryPlan, type DocumentChangePreview, type DocumentChangeBasis } from "../api/client";
+import { runJob, settle, staleError } from "../api/jobs";
 import { formatUsage } from "../api/usage";
 import { Preview } from "./Preview";
 import { DiagramDraftBackup } from "./DiagramDraftBackup";
@@ -85,12 +86,13 @@ function GeneratedDiagramReview({ diagram, evidence }: {
 }
 
 export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onApply, onCancel, blocked = false,
-  flushBeforeCheck, onConflict, onBusyChange }: {
+  flushBeforeCheck, onConflict, onBusyChange, pollIntervalMs = 1000 }: {
   projectName: string; deck: Deck; initialDraft: DiagramDraft;
   onApply: (candidate: Deck, base: Deck, chapterId: string, persisted?: boolean) => void; onCancel: () => void;
   blocked?: boolean;
   flushBeforeCheck?: () => Promise<boolean>; onConflict?: (message: string) => void;
   onBusyChange?: (busy: boolean) => void;
+  pollIntervalMs?: number;
 }) {
   const [base] = useState(deck);
   const [draft, setDraft] = useState(initialDraft);
@@ -110,6 +112,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [lossChecks,setLossChecks] = useState<string[]>([]);
   const [applying,setApplying] = useState(false);
   const generationLease = useRef<symbol | null>(null);
+  const generationJob = useRef<string | null>(null);  // 지금 보이는 후보를 만든 작업 (처분)
   const live = useRef(true);
   const serial = useRef(0);
   const currentDeck = useRef(deck);
@@ -187,11 +190,16 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
           return;
         }
       }
-      const result = await api.generateDiagram(projectName, {
+      // 작업 API로 등록하고 끝날 때까지 조회한다 (D2b-5b). 창을 닫아도 작업은 끝까지 돈다
+      const { result, job } = await runJob<DiagramGenerationResult>(projectName, "diagram", {
         chapter_id: draft.id, topic: draft.topic, role: draft.storyRole as StoryRole,
         claim_ids: draft.claimIds, instructions,
         ...(!draft.isNew ? {mode:"replace" as const} : {}),
-      });
+      }, { intervalMs: pollIntervalMs });
+      // 만드는 동안 기준 저장본이나 자료가 바뀌었으면 종전처럼 오류로 알리고 후보는 버린다
+      const stale = staleError("diagram", job.stale_reasons);
+      if (stale) { void settle(projectName, job.id, "dismissed"); throw stale; }
+      generationJob.current = job.id;
       if (!current()) return;
       setGenerationUsage(result.usage);
       if (requestId !== serial.current) {
@@ -393,6 +401,8 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               <button disabled={generating} onClick={() => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
                 edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
+                // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
+                if (generationJob.current) void settle(projectName, generationJob.current, "applied");
                 if(!draft.isNew)setAiReplacement(true);
                 setGenerationNotice("AI 후보의 항목과 관계를 작성 폼에 불러왔습니다. 내용과 근거를 확인한 뒤 입력과 배치 확인을 눌러 주세요.");
               }}>작성 폼에 불러오기</button>
