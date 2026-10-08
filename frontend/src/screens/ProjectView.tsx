@@ -297,7 +297,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       <p className="quality-notice">현재 산출물은 검수 전 초안입니다. 보고 흐름, 근거와 실제 PowerPoint 표시를 확인한 뒤 제출해 주세요.</p>
       {exportResult?.projectName === project.name && <ExportQualitySummary result={exportResult.result} />}
       {showRecovery && (
-        <RecoveryScreen project={project} onConflict={onConflict} onBack={() => {
+        <RecoveryScreen project={project} onConflict={onConflict} onOpen={(next) => {
+          setShowRecovery(false);
+          setTab(next);
+        }} onBack={() => {
           setShowRecovery(false);
           // 412로 뜬 배너를 이 경로에서도 내린다: 아래에서 덱을 새로 읽으므로 이미 해소된
           // 상황이고, 그렇지 않으면 배너가 영구히 남는다 (A5b 리뷰 발견 2)

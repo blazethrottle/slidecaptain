@@ -1,17 +1,22 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError } from "../api/client";
+import { batchView, chapterView, jobView } from "../test/jobs";
 import { RecoveryScreen } from "./RecoveryScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
-    listDrafts: vi.fn(), restoreDraft: vi.fn(), deleteDraft: vi.fn() } };
+    listDrafts: vi.fn(), restoreDraft: vi.fn(), deleteDraft: vi.fn(), listJobs: vi.fn(), settleCandidate: vi.fn(),
+    dismissChapterCandidate: vi.fn() } };
 });
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "needs_recovery" as const };
 
-beforeEach(() => { vi.mocked(api.listDrafts).mockResolvedValue([]); });
+beforeEach(() => {
+  vi.mocked(api.listDrafts).mockResolvedValue([]);
+  vi.mocked(api.listJobs).mockResolvedValue([]);
+});
 
 it("스냅샷 목록을 보여주고 확인 후 복원한다", async () => {
   vi.mocked(api.listSnapshots).mockResolvedValue([
@@ -118,4 +123,50 @@ it("승인하려던 장 구성은 내용 생성 전임을 알리고, 모르는 �
   expect(section).toHaveTextContent("알 수 없는 사유(later_reason)");
   expect(section).toHaveTextContent("2026-10-08 10:00");
   expect(section).toHaveTextContent("복원 직전 시점의 스냅샷으로 남습니다");
+});
+
+// -- D2b-5c: AI 결과 후보 ------------------------------------------------------------------------
+
+const slots = { template: "bullet_box" as const, bullets: [{ text: "후보 내용", level: 0 as const }], conclusion: "결론", footnote: "" };
+
+it("재시작 뒤 복구 화면에 이전 입력 기준 후보가 기준과 지금 저장본, 이유와 함께 보인다 (지금은 후보가 없다)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-c", target: "c2", candidate_status: "stale",
+    stale_reasons: ["template_changed"], base_etag: '"aaaaaaaa1111"', current_etag: '"bbbbbbbb2222"',
+    result: { status: "ok", slots } })]);
+  const onOpen = vi.fn();
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={onOpen} />);
+  expect(await screen.findByText(/장 다시 생성 \(장 c2\)/)).toBeInTheDocument();
+  expect(screen.getByText(/기준 저장본 aaaaaaaa, 지금 저장본 bbbbbbbb/)).toBeInTheDocument();
+  expect(screen.getByText(/이전 입력 기준 후보입니다\(이 장의 템플릿이 바뀌었습니다\)/)).toBeInTheDocument();
+  await userEvent.click(screen.getByText("보기"));
+  expect(screen.getByText(/후보 내용/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "현재 입력으로 다시 생성" }));
+  expect(onOpen).toHaveBeenCalledWith("editor");
+});
+
+it("후보를 버리면 처분하고 목록을 다시 읽는다. 묶음의 장 후보는 장 단위로 버린다 (D2b-5c)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([
+    jobView("structure", { id: "job-s", result: { status: "ok", structure: { chapters: [{ topic: "첫 장" }] } } }),
+    batchView([chapterView("c1", "failed", { candidate_status: "stale", result: { status: "ok", slots } })], { id: "job-b" }),
+  ]).mockResolvedValue([]);
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.dismissChapterCandidate).mockResolvedValue(batchView([]));
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  const buttons = await screen.findAllByRole("button", { name: "버리기" });
+  expect(buttons).toHaveLength(2);
+  await userEvent.click(buttons[1]);
+  expect(api.dismissChapterCandidate).toHaveBeenCalledWith("p1", "job-b", "c1");
+  expect(await screen.findByText("남아 있는 AI 결과 후보가 없습니다.")).toBeInTheDocument();
+});
+
+it("덱 전체 후보는 보기만 하고, 저장본을 읽지 못하면 판정 불가로 보인다 (D2b-5c)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("rewrite", { id: "job-r", current_etag: null,
+    result: { status: "ok", deck: { structure: { chapters: [{ topic: "새 순서의 첫 장" }] } } } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  expect(await screen.findByText(/보고 계획 재작성/)).toBeInTheDocument();
+  expect(screen.getByText(/저장본을 읽지 못해 지금 입력과 비교할 수 없습니다/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "버리기" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
+  await userEvent.click(screen.getByText("보기"));
+  expect(screen.getByText(/1\. 새 순서의 첫 장/)).toBeInTheDocument();
 });
