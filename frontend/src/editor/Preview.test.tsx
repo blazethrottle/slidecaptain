@@ -233,10 +233,21 @@ it("process 단계의 라벨 넘침 경고가 라벨 프레임에 강조를 붙�
   expect(container.querySelector('[data-frame="c5:step0_badge"]')).not.toHaveClass("warned");
 });
 
-it("미리보기 캔버스는 화면 글자색이 아니라 프리셋 글자색을 쓴다 (D2a-4)", () => {
-  // 표 칸은 글자색을 따로 지정하지 않아 캔버스의 색을 물려받는다. 화면 토큰이 새어 PPTX와 달라지면 안 된다
-  const { container } = render(<Preview slide={slide} style={style} pageW={960} pageH={540}
+it("미리보기 표 칸은 화면 글자색이 아니라 프리셋 글자색을 쓴다 (D2a-4, 리뷰 R6)", () => {
+  // 표 칸은 글자색을 따로 지정하지 않아 캔버스의 색을 물려받는다. 화면 토큰이 새어 PPTX와 달라지면 안 된다.
+  // 프리셋 색을 화면 색과 다른 값으로 두어, 캔버스가 아닌 표 칸의 계산 색으로 확인한다
+  const tableSlide: SlidePlan = {
+    chapter_id: "c1", template: "table", warnings: [],
+    frames: [{ name: "c1:table", x: 50, y: 92, w: 860, h: 400, fill: null, border: null,
+      valign: "top", paras: [],
+      table: {
+        col_widths_pt: [200, 660], header: ["구분", "내용"], rows: [["A", "값"]],
+        font_pt: 12, header_fill: "F2F2F2", row_heights_pt: [22.8, 22.8],
+        header_lines: [["구분"], ["내용"]], cell_lines: [[["A"], ["값"]]],
+        header_fills: [], body_fills: [],
+      } }],
+  };
+  render(<Preview slide={tableSlide} style={{ ...style, text_color: "123456" }} pageW={960} pageH={540}
     selected={null} onSelect={() => {}} onCommitText={() => {}} />);
-  const canvas = container.querySelector(".preview-canvas") as HTMLElement;
-  expect(canvas.style.color).toBe("rgb(32, 32, 32)");
+  expect(getComputedStyle(screen.getByText("값")).color).toBe("rgb(18, 52, 86)");
 });

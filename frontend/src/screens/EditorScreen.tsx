@@ -113,15 +113,19 @@ export function EditorScreen({
   const [draftCount, setDraftCount] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    api.listDrafts(project.name).then((list) => { if (!cancelled) setDraftCount(list.length); }).catch(() => {});
+    api.listDrafts(project.name)
+      .then((list) => { if (!cancelled) setDraftCount(list.length); })
+      .catch(() => { if (!cancelled) setDraftCount(0); });  // 낡은 건수를 남기지 않는다 (리뷰 R12)
     return () => { cancelled = true; };
-  }, [project.name, editor.preservedDraft]);
+  }, [project.name, editor.preservedDraft?.id]);
   const saveKind = saveStatusKind(editor.saveState, editor.conflict);
   // 되돌리기 중에는 버튼이 잠긴 영역 안에 있어 초점이 사라진다. 끝나면 결과 안내로 초점을 옮긴다
   const outcomeRef = useRef<HTMLParagraphElement | null>(null);
+  const saveStatusRef = useRef<HTMLDivElement | null>(null);
   const wasReloading = useRef(false);
   useEffect(() => {
-    if (wasReloading.current && !editor.reloading) outcomeRef.current?.focus();
+    // 결과 안내가 없는 경로(보존할 변경 없음, 확인 뒤 되돌리기)는 저장 상태로 초점을 옮긴다 (리뷰 R11)
+    if (wasReloading.current && !editor.reloading) (outcomeRef.current ?? saveStatusRef.current)?.focus();
     wasReloading.current = editor.reloading;
   }, [editor.reloading]);
 
@@ -143,7 +147,7 @@ export function EditorScreen({
       </aside>
       <section className="editor-center">
         {/* 저장 상태는 좁은 창에서도 첫 화면에 보이도록 가운데 영역 위에 둔다 (D2a-5). 상단 머리 이동은 D3 */}
-        <div className="editor-save-status">
+        <div className="editor-save-status" tabIndex={-1} ref={saveStatusRef}>
           <StatusIndicator kind={saveKind} />
           <SaveAnnouncer kind={saveKind} />
           {draftCount > 0 && <span>보존한 변경 {draftCount}건 (스냅샷 복구 화면에서 볼 수 있습니다)</span>}

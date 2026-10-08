@@ -1,6 +1,6 @@
 /* 디자인 토큰 (개정판 D2a-4, 제품 설계 4절). 화면 색은 이 블록의 변수로만 쓴다.
    검사: npm run check:tokens (대비율과 토큰 밖 직접 색 금지). 크기 토큰은 D3에서 적용과 함께 정의한다.
-   옛 색 30종의 대응은 계획서 D2a-4 매핑표를 따른다. 슬라이드 미리보기 캔버스는 프리셋 색을 쓴다. */
+   옛 색 27종과 알파 색 2종의 대응은 계획서 D2a-4 매핑표를 따른다. 슬라이드 미리보기 캔버스는 프리셋 색을 쓴다. */
 :root {
   --color-bg: #F4F6F8;
   --color-panel: #FFFFFF;
@@ -20,7 +20,7 @@
   --color-overlay: rgba(32, 32, 32, 0.55);
   --shadow-color: rgba(0, 0, 0, 0.25);
   --focus-width: 2px;
-  --radius-sm: 6px;
+  --radius-sm: 6px;                /* 작은 상태 표시용. 패널 모서리(8~12px)는 D3에서 정의한다 */
   --space-1: 4px;
   --space-2: 8px;
 }
@@ -91,7 +91,7 @@ button { cursor: pointer; }
 .ai-settings-body button, .ai-settings > button { min-height: 34px; padding: 6px 12px; }
 .ai-settings-body p { line-height: 1.6; }
 .ai-settings-body a { color: var(--color-primary); overflow-wrap: anywhere; }
-.ai-login-link { display: inline-block; padding: 8px 12px; background: var(--color-accent-bg); border-radius: 5px; }
+.ai-login-link { display: inline-block; padding: 8px 12px; background: var(--color-accent-bg); border: 1px solid var(--color-border); border-radius: 5px; }
 @media (max-width: 600px) { .ai-settings-body { padding: 14px; } }
 
 /* AI 전송 고지 대화 상자: 화면 전체를 덮는 오버레이로 뒤 화면의 클릭을 막는다 (계획서 B3, 가정 5) */

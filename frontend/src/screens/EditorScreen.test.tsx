@@ -366,3 +366,21 @@ it("되돌리기가 끝나면 결과 안내로 키보드 초점을 옮긴다 (D2
   const notice = await screen.findByText(/되돌리기 전의 변경은 보존했습니다/);
   await waitFor(() => expect(document.activeElement).toBe(notice.closest("p")));
 });
+
+
+it("결과 안내가 없는 되돌리기 뒤에는 저장 상태로 초점을 옮긴다 (D2a-5 리뷰 R11)", async () => {
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await screen.findByRole("button", { name: "서버 내용으로 되돌리기" });
+  await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));  // 보존할 변경이 없어진다
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
+  await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".editor-save-status")));
+  expect(api.saveDraft).not.toHaveBeenCalled();
+});

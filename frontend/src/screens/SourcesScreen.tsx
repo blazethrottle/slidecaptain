@@ -81,6 +81,9 @@ export function SourcesScreen({
     onDirtyChange?.(!metaEqual(meta, savedMeta.current) || uploading || sourceDirty);
   }, [meta, uploading, sourceDirty, onDirtyChange]);
 
+  // 저장한 뒤 내용을 다시 고치거나 다른 자료를 열면 지난 성공 안내를 지운다 (D2a-4 리뷰 R1)
+  useEffect(() => { setSuccess(""); }, [meta, text, selected]);
+
   const doSaveMeta = useCallback(async (target: Deck["meta"]): Promise<boolean> => {
     setSaving(true);
     try {
@@ -206,6 +209,7 @@ export function SourcesScreen({
     // (B4 리뷰 F1). 파일 입력은 uploading 동안 disabled로도 막지만, 이 확인이 실제 방지선이다
     if (uploading) return;
     setInfo("");  // 지난 안내가 남아 있지 않게 한다
+    setSuccess("");
     setTruncationNotice("");
     setUploading(true);
     onBusyChange?.(true);  // 부모(ProjectView)가 탭 전환 등 이동 경로를 잠근다(계획서 B4)

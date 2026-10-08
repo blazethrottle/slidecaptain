@@ -48,3 +48,19 @@ it("저장 알림은 저장됨으로 바뀔 때만 알리고 대기와 저장 �
   act(() => { rerender(<SaveAnnouncer kind="saved" />); });
   expect(region).toHaveTextContent("저장됨");
 });
+
+
+it("충돌을 서버 내용으로 되돌린 뒤의 저장됨은 알리지 않는다 (D2a-5 리뷰 R10)", () => {
+  const { rerender } = render(<SaveAnnouncer kind="unsaved" />);
+  rerender(<SaveAnnouncer kind="conflict" />);
+  act(() => { rerender(<SaveAnnouncer kind="saved" />); });
+  expect(screen.getByRole("status")).toHaveTextContent("");
+});
+
+it("아이콘 글자는 색 이모지가 아니라 글자 모양으로 그리도록 요청한다 (D2a-5 리뷰 R13)", () => {
+  for (const kind of ["unsaved", "saving", "save_failed", "conflict", "ready", "running"] as const) {
+    const { container, unmount } = render(<StatusIndicator kind={kind} />);
+    expect(container.querySelector('[role="img"]')!.textContent).toMatch(/\uFE0E$/);
+    unmount();
+  }
+});

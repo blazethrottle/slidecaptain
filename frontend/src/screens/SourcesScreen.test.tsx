@@ -547,3 +547,16 @@ it("저장 성공 안내는 오류 알림이 아니라 상태 안내로 보인�
   expect(notice).toHaveAttribute("role", "status");
   expect(screen.queryByRole("alert")).toBeNull();
 });
+
+
+it("저장 뒤 다른 자료를 열면 지난 성공 안내를 지운다 (D2a-4 리뷰 R1)", async () => {
+  vi.mocked(api.listSources).mockResolvedValue(["자료.md"]);
+  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
+  await userEvent.click(screen.getByText("보고 정보 저장"));
+  await screen.findByText("보고 정보를 저장했습니다.");
+  await userEvent.click(await screen.findByText("자료.md"));
+  await waitFor(() => expect(screen.queryByText("보고 정보를 저장했습니다.")).toBeNull());
+});

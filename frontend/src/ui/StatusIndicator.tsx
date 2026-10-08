@@ -13,15 +13,16 @@ type Tone = "neutral" | "warning" | "success" | "danger" | "primary";
 
 const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; tone: Tone }> = {
   not_started: { label: "시작 전", icon: "○", iconName: "빈 원", tone: "neutral" },
-  unsaved: { label: "변경사항 있음", icon: "✎", iconName: "연필", tone: "warning" },
-  saving: { label: "저장 중", icon: "↻", iconName: "회전 화살표", tone: "neutral" },
+  // 일부 글자는 운영체제가 색 이모지로 그려 글자색이 적용되지 않는다. U+FE0E로 글자 모양을 요청한다 (D2a-5 리뷰 R13)
+  unsaved: { label: "변경사항 있음", icon: "\u270E\uFE0E", iconName: "연필", tone: "warning" },
+  saving: { label: "저장 중", icon: "\u21BB\uFE0E", iconName: "회전 화살표", tone: "neutral" },
   saved: { label: "저장됨", icon: "✓", iconName: "체크", tone: "success" },
-  save_failed: { label: "저장하지 못했습니다. 변경은 이 화면에 남아 있습니다", icon: "⚠", iconName: "경고 삼각형", tone: "danger" },
-  conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "⇄", iconName: "엇갈린 화살표", tone: "danger" },
-  ready: { label: "준비됨", icon: "☑", iconName: "체크 상자", tone: "success" },
+  save_failed: { label: "저장하지 못했습니다. 변경은 이 화면에 남아 있습니다", icon: "\u26A0\uFE0E", iconName: "경고 삼각형", tone: "danger" },
+  conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "\u21C4\uFE0E", iconName: "엇갈린 화살표", tone: "danger" },
+  ready: { label: "준비됨", icon: "\u2611\uFE0E", iconName: "체크 상자", tone: "success" },
   needs_review: { label: "확인 필요", icon: "!", iconName: "느낌표", tone: "warning" },
   failed: { label: "실행 실패", icon: "✕", iconName: "엑스", tone: "danger" },
-  running: { label: "생성 중", icon: "⋯", iconName: "진행 점", tone: "primary" },
+  running: { label: "생성 중", icon: "\u22EF\uFE0E", iconName: "진행 점", tone: "primary" },
 };
 
 /** 저장 훅의 상태를 표시 종류로 옮긴다. 충돌은 저장 실패와 조치가 반대라 따로 둔다. */
@@ -52,7 +53,8 @@ export function SaveAnnouncer({ kind }: { kind: StatusKind }) {
   const previous = useRef(kind);
   const [message, setMessage] = useState("");
   useEffect(() => {
-    if (kind === "saved" && previous.current !== "saved") setMessage("저장됨");
+    // 충돌을 서버 내용으로 되돌린 뒤의 "저장됨"은 내 편집이 저장된 것이 아니므로 알리지 않는다 (리뷰 R10)
+    if (kind === "saved" && previous.current !== "saved" && previous.current !== "conflict") setMessage("저장됨");
     else if (kind !== "saved") setMessage("");
     previous.current = kind;
   }, [kind]);
