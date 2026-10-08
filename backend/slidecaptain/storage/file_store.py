@@ -12,6 +12,7 @@ projects/<프로젝트명>/
 """
 
 import hashlib
+import logging
 import os
 import re
 import tempfile
@@ -67,6 +68,15 @@ class ProjectFormatTooNew(StorageError):
     """이 앱이 읽을 수 있는 것보다 새 형식의 프로젝트 (D2a-1). 모르는 필드를 버린 채 열거나
     내보내지 않도록 모든 접근을 거절한다. 파일은 바꾸지 않는다."""
 
+    code = "project_format_too_new"
+
+
+class ProjectManifestUnreadable(ProjectFormatTooNew):
+    """형식 기록(manifest.json)을 이 앱이 해석할 수 없다 (D2a-1 리뷰 R2, R4). 덮어쓰면 이후 앱의
+    기록이 사라지므로 더 새 형식과 같이 열지 않는다."""
+
+    code = "project_manifest_unreadable"
+
 
 class SourceNotFound(StorageError):
     pass
@@ -85,7 +95,7 @@ class ProjectInfo(BaseModel):
     name: str
     title: str
     updated_at: str  # ISO 8601
-    status: Literal["ok", "needs_recovery", "newer_format"] = "ok"
+    status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"] = "ok"
 
 
 class SnapshotInfo(BaseModel):
@@ -99,6 +109,11 @@ _NEWER_FORMAT_MESSAGE = (
     "이 프로젝트는 더 새 버전의 SlideCaptain이 만들었습니다. 이 버전에서는 열 수 없습니다. "
     "프로젝트 파일은 바꾸지 않았습니다. 새 버전의 앱으로 열어 주세요."
 )
+_UNREADABLE_MANIFEST_MESSAGE = (
+    "이 프로젝트의 형식 기록 파일(manifest.json)을 읽지 못했습니다. 기록을 지우지 않도록 프로젝트를 "
+    "열지 않았습니다. 새 버전의 앱으로 열거나, 파일을 다른 곳에 보관한 뒤 지우면 다시 열 수 있습니다."
+)
+_LOG = logging.getLogger("slidecaptain.storage.file_store")
 
 
 def _nfc(value: str) -> str:
@@ -290,14 +305,12 @@ class FileProjectStore:
         self._require_supported_format(d)
         return d
 
-    @staticmethod
-    def _is_newer_format(project_dir: Path) -> bool:
-        version = project_format.manifest_format_version(project_dir)
-        return version is not None and version > project_format.MAX_SUPPORTED_FORMAT
-
     def _require_supported_format(self, project_dir: Path) -> None:
-        if self._is_newer_format(project_dir):
+        state = project_format.manifest_state(project_dir)
+        if state == "newer":
             raise ProjectFormatTooNew(_NEWER_FORMAT_MESSAGE)
+        if state == "unreadable":
+            raise ProjectManifestUnreadable(_UNREADABLE_MANIFEST_MESSAGE)
 
     def _write_deck(self, project_dir: Path, deck: Deck) -> str:
         """deck.json을 원자적으로 쓰고 그 바이트의 SHA-256 16진수(ETag)를 돌려준다."""
@@ -312,6 +325,7 @@ class FileProjectStore:
         if not src.exists():
             return None
         data = src.read_bytes()
+        source_stat = src.stat()
         snapshots_dir = project_dir / "snapshots"
         snapshots_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -321,6 +335,11 @@ class FileProjectStore:
             stem = f"deck-{ts}-{n}"
             n += 1
         self._atomic_write(snapshots_dir, f"{stem}.json", data, prefix=".snapshot-", suffix=".tmp")
+        try:
+            # 복사(copy2)였을 때처럼 원본 덱의 수정 시각을 남긴다: 복구 필요 목록이 이 시각을 쓴다
+            os.utime(snapshots_dir / f"{stem}.json", ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
+        except OSError:
+            pass  # 시각 복사 실패는 복구 지점의 내용과 무관하다
         return stem
 
     def _write_deck_recorded(self, project_dir: Path, deck: Deck, *, snapshot: bool) -> str:
@@ -332,10 +351,12 @@ class FileProjectStore:
         다음 쓰기가 덱 내용으로 pending을 마무리한다.
         """
         deck_path = project_dir / "deck.json"
-        old = project_format.deck_format_of_bytes(deck_path.read_bytes()) if deck_path.exists() else None
+        old_bytes = deck_path.read_bytes() if deck_path.exists() else None
+        old = project_format.deck_format_of_bytes(old_bytes) if old_bytes is not None else None
         new = project_format.deck_format(deck)
         manifest = project_format.reconcile(project_format.read_manifest(project_dir), old)
-        if old == 1 and new == 2:
+        # 이전 전 복사본은 0.2.0이 실제로 열 수 있는 덱일 때만 기록한다 (리뷰 R9: 깨진 덱 제외)
+        if old == 1 and new == 2 and project_format.legacy_readable(old_bytes):
             snapshot_id = self._snapshot_current(project_dir)
             record = project_format.MigrationRecord(
                 at=project_format.now_iso(), kind="upgrade", from_format=1, to_format=2,
@@ -354,7 +375,12 @@ class FileProjectStore:
                     snapshot_id=snapshot_id,
                 ))
         manifest.format_version = new
-        project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        try:
+            project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        except OSError:
+            # 덱은 이미 저장됐다. 기록 실패를 저장 실패로 돌려주면 화면이 새 ETag를 모른 채 다시
+            # 저장해 자기 저장과 충돌한다(리뷰 R5). 다음 쓰기의 reconcile이 기록을 바로잡는다
+            _LOG.warning("형식 기록(manifest.json) 쓰기 실패: %s", project_dir, exc_info=True)
         return etag
 
     # -- 프로젝트 ----------------------------------------------------------
@@ -390,14 +416,16 @@ class FileProjectStore:
         for d in sorted(self.root.iterdir()):
             if not d.is_dir():
                 continue
-            if self._is_newer_format(d):  # 덱 검증보다 먼저: 복구 필요로 잘못 안내하지 않는다
+            state = project_format.manifest_state(d)
+            if state in ("newer", "unreadable"):  # 덱 검증보다 먼저: 복구 필요로 잘못 안내하지 않는다
                 manifest_path = d / project_format.MANIFEST_NAME
                 mtime = datetime.fromtimestamp(manifest_path.stat().st_mtime).astimezone()
                 infos.append(ProjectInfo(
                     name=_nfc(d.name),
-                    title="(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)",
+                    title=("(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)" if state == "newer"
+                           else "(형식 기록 파일을 읽을 수 없는 프로젝트입니다)"),
                     updated_at=mtime.isoformat(timespec="seconds"),
-                    status="newer_format",
+                    status="newer_format" if state == "newer" else "unreadable_manifest",
                 ))
                 continue
             if (d / "deck.json").exists():
@@ -418,7 +446,7 @@ class FileProjectStore:
     def _info(self, d: Path) -> ProjectInfo:
         # d.name은 실제 폴더 이름(Finder가 만든 것이면 NFD일 수 있다)이라 응답 직전에 NFC로 맞춘다 (A4).
         deck_path = d / "deck.json"
-        status: Literal["ok", "needs_recovery"] = "ok"
+        status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"] = "ok"
         try:
             title = Deck.model_validate_json(deck_path.read_text(encoding="utf-8")).meta.title
         except (ValueError, ValidationError):

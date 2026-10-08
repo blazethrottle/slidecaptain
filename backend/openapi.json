@@ -7800,7 +7800,8 @@
             "enum": [
               "ok",
               "needs_recovery",
-              "newer_format"
+              "newer_format",
+              "unreadable_manifest"
             ],
             "title": "Status",
             "default": "ok"

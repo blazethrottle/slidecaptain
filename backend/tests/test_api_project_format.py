@@ -38,3 +38,28 @@ def test_newer_format_project_is_listed_and_refused_with_code(client, store):
     ):
         assert response.status_code == 409
         assert response.json()["code"] == "project_format_too_new"
+
+
+def test_newer_format_refusal_covers_state_changing_routes(client, store):
+    """리뷰 R8: 복원, 내보내기, 업로드도 같은 409와 code로 거절한다."""
+    client.post("/api/projects", json={"name": "p1"})
+    _make_newer(store)
+    for response in (
+        client.post("/api/projects/p1/snapshots/deck-20260101-000000-000000/restore"),
+        client.post("/api/projects/p1/snapshots"),
+        client.post("/api/projects/p1/export"),
+        client.get("/api/projects/p1/exports"),
+        client.post("/api/projects/p1/sources/a.md/upload", files={"file": ("a.md", b"x")}),
+    ):
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "project_format_too_new"
+
+
+def test_unreadable_manifest_is_listed_and_refused_with_its_own_code(client, store):
+    client.post("/api/projects", json={"name": "p1"})
+    (store.root / "p1" / "manifest.json").write_text("{깨진", encoding="utf-8")
+    [info] = client.get("/api/projects").json()
+    assert info["status"] == "unreadable_manifest"
+    response = client.get("/api/projects/p1/deck")
+    assert response.status_code == 409
+    assert response.json()["code"] == "project_manifest_unreadable"

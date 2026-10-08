@@ -135,11 +135,13 @@ def test_interrupted_upgrade_after_pending_record_is_repaired_on_next_write(stor
     store.save_deck("p1", _deck("research", title="다음"), snapshot=False)
     statuses = [m.status for m in _manifest(store).migrations]
     assert "pending" not in statuses
-    assert statuses[0] == "interrupted"  # deck.json은 형식 1 그대로였다
+    assert statuses[0] == "not_applied"  # deck.json은 형식 1 그대로였다
     assert _manifest(store).format_version == 1
 
 
-def test_interrupted_after_deck_before_manifest_is_repaired_on_next_write(store, monkeypatch):
+def test_manifest_failure_after_deck_does_not_fail_the_save_and_next_write_repairs(store, monkeypatch):
+    """덱 교체 뒤의 기록 실패는 저장 실패가 아니다 (리뷰 R5). 저장은 ETag를 돌려주고,
+    다음 쓰기가 pending 기록을 덱 내용으로 마무리한다."""
     store.create_project("p1")
     calls = {"n": 0}
     original = project_format.write_manifest
@@ -151,14 +153,27 @@ def test_interrupted_after_deck_before_manifest_is_repaired_on_next_write(store,
         return original(project_dir, manifest, atomic_write)
 
     monkeypatch.setattr(project_format, "write_manifest", flaky)
-    with pytest.raises(OSError):
-        store.save_deck("p1", _deck("weekly"), snapshot=False)
+    etag = store.save_deck("p1", _deck("weekly"), snapshot=False)
+    assert etag == store.deck_etag("p1")
     monkeypatch.setattr(project_format, "write_manifest", original)
     assert _manifest(store).migrations[-1].status == "pending"
     store.save_deck("p1", _deck("weekly", title="다음"), snapshot=False)
     manifest = _manifest(store)
     assert manifest.format_version == 2
     assert [m.status for m in manifest.migrations] == ["done"]
+
+
+def test_pending_record_failure_before_deck_still_fails_and_keeps_deck(store, monkeypatch):
+    store.create_project("p1")
+    before = (store.root / "p1" / "deck.json").read_bytes()
+
+    def boom(project_dir, manifest, atomic_write):
+        raise OSError("디스크 오류 흉내")
+
+    monkeypatch.setattr(project_format, "write_manifest", boom)
+    with pytest.raises(OSError):
+        store.save_deck("p1", _deck("weekly"), snapshot=False)
+    assert (store.root / "p1" / "deck.json").read_bytes() == before
 
 
 def test_snapshot_writes_are_atomic(store, monkeypatch):
@@ -235,6 +250,10 @@ def test_newer_format_project_is_listed_without_reading_deck(store):
         lambda s: s.exports_dir("p1"),
         lambda s: s.export_history_dir("p1"),
         lambda s: s.append_usage("p1", "{}"),
+        lambda s: s.read_source("p1", "a.md"),
+        lambda s: s.source_exists("p1", "a.md"),
+        lambda s: s.read_upload("p1", "a.md"),
+        lambda s: s.delete_upload("p1", "a.md"),
     ],
 )
 def test_newer_format_project_refuses_every_access_and_keeps_files(store, operation):
@@ -261,3 +280,175 @@ def test_deck_json_schema_is_pinned_to_the_supported_format():
         "덱 스키마가 바뀌었습니다. storage/project_format.py의 deck_format과 MAX_SUPPORTED_FORMAT을 "
         f"검토하고 PINNED_DECK_SCHEMA_SHA256을 {digest}로 갱신해 주세요"
     )
+
+
+# -- 독립 리뷰 반영 (2026-10-08, R1~R12) -------------------------------------------------
+
+FIXTURES = __import__("pathlib").Path(__file__).parent / "fixtures"
+
+
+def _story_deck(meta_type="research", brief_type="approval"):
+    payload = json.loads((FIXTURES / "q2a-story-deck.json").read_text(encoding="utf-8"))["deck"]
+    payload["meta"]["report_type"] = meta_type
+    payload["structure"]["story_plan"]["brief"]["report_type"] = brief_type
+    return Deck.model_validate(payload)
+
+
+def test_report_type_inside_the_story_plan_also_decides_the_format():
+    """0.2.0은 구성 계획의 보고 유형도 검증한다 (리뷰 R1)."""
+    assert deck_format(_story_deck("research", "approval")) == 1
+    assert deck_format(_story_deck("research", "weekly")) == 2
+    data = _story_deck("research", "weekly").model_dump_json().encode("utf-8")
+    assert project_format.deck_format_of_bytes(data) == 2
+
+
+def test_format_judgement_covers_every_report_type_location_in_the_schema():
+    schema = Deck.model_json_schema()
+    found = set()
+    for definition, body in schema["$defs"].items():
+        for prop, spec in body.get("properties", {}).items():
+            if "weekly" in json.dumps(spec):
+                found.add((definition, prop))
+    assert found == project_format.REPORT_TYPE_LOCATIONS
+
+
+def test_reverting_meta_type_while_plan_keeps_new_type_stays_format_two(store):
+    store.create_project("p1")
+    store.save_deck("p1", _story_deck("weekly", "weekly"), snapshot=False)
+    store.save_deck("p1", _story_deck("research", "weekly"), snapshot=False)  # 자료 화면의 유형 되돌림
+    manifest = _manifest(store)
+    assert manifest.format_version == 2
+    assert [m.kind for m in manifest.migrations] == ["upgrade"]
+
+
+def test_unknown_manifest_fields_and_record_kinds_are_preserved(store):
+    store.create_project("p1")
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    path = store.root / "p1" / "manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["future_field"] = {"x": 1}
+    data["migrations"].append({"at": "2026-12-01T00:00:00+09:00", "kind": "repair", "from_format": 2,
+                               "to_format": 2, "status": "verified", "note": "이후 앱"})
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    store.save_deck("p1", _deck("weekly", title="다시"), snapshot=False)
+    after = json.loads(path.read_text(encoding="utf-8"))
+    assert after["future_field"] == {"x": 1}
+    assert [m["kind"] for m in after["migrations"]] == ["upgrade", "repair"]
+    assert after["migrations"][1]["note"] == "이후 앱"
+    assert [s.kind for s in store.list_snapshots("p1")] == ["pre_migration"]
+
+
+@pytest.mark.parametrize("content", [
+    b"{not json", b"[]", b'{"format_version": "3"}', b'{"format_version": 3.0}',
+    b'{"format_version": 0}', b'{"format_version": -1}', b'{"format_version": true}',
+    b'{"format_version": 2, "migrations": "x"}',
+])
+def test_unreadable_manifest_blocks_the_project_and_is_never_overwritten(store, content):
+    from slidecaptain.storage.file_store import ProjectManifestUnreadable
+
+    store.create_project("p1")
+    path = store.root / "p1" / "manifest.json"
+    path.write_bytes(content)
+    [info] = store.list_projects()
+    assert info.status == "unreadable_manifest"
+    with pytest.raises(ProjectManifestUnreadable):
+        store.save_deck("p1", _deck())
+    with pytest.raises(ProjectManifestUnreadable):
+        store.load_deck("p1")
+    assert path.read_bytes() == content
+
+
+def test_interrupted_between_snapshot_and_pending_loses_nothing_and_next_save_marks_a_new_copy(store, monkeypatch):
+    """리뷰 R6: 덱은 그대로이고, 다음 형식 2 저장이 새 복구 지점을 만든다."""
+    store.create_project("p1")
+    before = (store.root / "p1" / "deck.json").read_bytes()
+
+    def boom(project_dir, manifest, atomic_write):
+        raise OSError("pending 기록 실패 흉내")
+
+    monkeypatch.setattr(project_format, "write_manifest", boom)
+    with pytest.raises(OSError):
+        store.save_deck("p1", _deck("weekly"), snapshot=False)
+    monkeypatch.undo()
+    assert (store.root / "p1" / "deck.json").read_bytes() == before
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    kinds = [s.kind for s in store.list_snapshots("p1")]
+    assert kinds.count("pre_migration") == 1
+
+
+def test_not_applied_upgrade_snapshot_is_not_marked_pre_migration(store, monkeypatch):
+    store.create_project("p1")
+
+    def boom(project_dir, deck):
+        raise OSError("덱 교체 실패 흉내")
+
+    monkeypatch.setattr(store, "_write_deck", boom)
+    with pytest.raises(OSError):
+        store.save_deck("p1", _deck("weekly"), snapshot=False)
+    monkeypatch.undo()
+    store.save_deck("p1", _deck("research", title="다음"), snapshot=False)
+    assert [m.status for m in _manifest(store).migrations] == ["not_applied"]
+    assert "pre_migration" not in [s.kind for s in store.list_snapshots("p1")]
+
+
+def test_external_revert_by_old_app_is_recorded(store):
+    store.create_project("p1")
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    _write_legacy_deck(store, report_type="approval")  # 0.2.0의 저장이나 복원
+    store.save_deck("p1", _deck("approval", title="새 앱"), snapshot=False)
+    kinds = [m.kind for m in _manifest(store).migrations]
+    assert kinds == ["upgrade", "external_downgrade"]
+    assert _manifest(store).format_version == 1
+
+
+def test_broken_legacy_typed_deck_is_not_offered_as_pre_migration_copy(store):
+    """리뷰 R9: 형식 판정이 1이어도 0.2.0이 열지 못하는 깨진 덱은 이전 전 복사본이 아니다."""
+    store.create_project("p1")
+    path = store.root / "p1" / "deck.json"
+    path.write_text('{"schema_version": 1, "meta": {"title": "x", "report_type": "research"}, "slides": 5}',
+                    encoding="utf-8")
+    store.save_deck("p1", _deck("weekly"), snapshot=False)
+    assert [m.kind for m in _manifest(store).migrations if m.kind == "upgrade"] == []
+    assert "pre_migration" not in [s.kind for s in store.list_snapshots("p1")]
+
+
+def test_snapshot_keeps_the_saved_deck_modification_time(store):
+    import os
+
+    store.create_project("p1")
+    deck_path = store.root / "p1" / "deck.json"
+    os.utime(deck_path, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    store.save_deck("p1", _deck(title="다음"), snapshot=True)
+    [snapshot] = list((store.root / "p1" / "snapshots").glob("deck-*.json"))
+    assert snapshot.stat().st_mtime_ns == 1_700_000_000_000_000_000
+
+
+def test_unchanged_manifest_is_not_rewritten(store, monkeypatch):
+    store.create_project("p1")
+    store.save_deck("p1", _deck(title="한 번"), snapshot=False)
+    writes = []
+    original = store._atomic_write
+
+    def spy(dir_path, filename, data, **kwargs):
+        writes.append(filename)
+        return original(dir_path, filename, data, **kwargs)
+
+    monkeypatch.setattr(store, "_atomic_write", spy)
+    store.save_deck("p1", _deck(title="두 번"), snapshot=False)
+    assert writes == ["deck.json"]
+
+
+def test_cli_export_and_quality_refuse_a_newer_format_project(store):
+    import subprocess
+    import sys
+
+    store.create_project("p1")
+    _make_newer(store)
+    deck = store.root / "p1" / "deck.json"
+    for command in ("export", "quality"):
+        result = subprocess.run([sys.executable, "-m", "slidecaptain", command, str(deck)],
+                                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                env={**__import__("os").environ, "PYTHONUTF8": "1"})
+        assert result.returncode == 1, (command, result.stdout, result.stderr)
+        assert "더 새 버전" in result.stderr
+    assert not any((store.root / "p1" / "exports").iterdir())

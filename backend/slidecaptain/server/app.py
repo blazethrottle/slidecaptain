@@ -376,7 +376,7 @@ def create_app(
 
     @app.exception_handler(ProjectFormatTooNew)
     async def project_format_error_handler(request, exc: ProjectFormatTooNew):
-        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "project_format_too_new"})
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": exc.code})
 
     @app.exception_handler(ProviderError)
     async def provider_error_handler(request, exc: ProviderError):

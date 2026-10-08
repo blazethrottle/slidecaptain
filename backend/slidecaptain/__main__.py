@@ -58,9 +58,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _unsupported_project_format(deck_path) -> bool:
+    """덱 파일이 프로젝트 폴더 안에 있고 그 형식 기록을 이 앱이 다룰 수 없으면 안내하고 True.
+
+    CLI는 저장소를 거치지 않고 deck.json을 직접 읽으므로 같은 차단을 여기서 한다(D2a-1 리뷰 R3).
+    프로젝트 폴더 밖의 덱 파일은 형식 기록이 없어 판정하지 않는다.
+    """
+    from slidecaptain.storage import project_format
+
+    state = project_format.manifest_state(deck_path.resolve().parent)
+    if state == "newer":
+        print("이 프로젝트는 더 새 버전의 SlideCaptain이 만들었습니다. 이 버전에서는 열 수 없습니다. "
+              "파일은 바꾸지 않았습니다.", file=sys.stderr)
+        return True
+    if state == "unreadable":
+        print("이 프로젝트의 형식 기록 파일(manifest.json)을 읽지 못했습니다. 파일은 바꾸지 않았습니다.",
+              file=sys.stderr)
+        return True
+    return False
+
+
 def _run_export(args) -> int:
     if not args.deck.exists():
         print(f"덱 파일을 찾을 수 없습니다: {args.deck}", file=sys.stderr)
+        return 1
+    if _unsupported_project_format(args.deck):
         return 1
     out_dir = args.out if args.out is not None else args.deck.parent / "exports"
     if out_dir.exists() and not out_dir.is_dir():
@@ -90,6 +112,8 @@ def _run_quality(args) -> int:
     from slidecaptain.models.preset import Preset, apply_overrides
     from slidecaptain.pipeline.quality import assess_quality
 
+    if _unsupported_project_format(args.deck):
+        return 1
     try:
         deck = Deck.model_validate_json(args.deck.read_text(encoding="utf-8"))
         preset = apply_overrides(Preset(), deck.meta.preset_overrides)

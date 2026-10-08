@@ -2824,7 +2824,7 @@ export interface components {
              * @default ok
              * @enum {string}
              */
-            status: "ok" | "needs_recovery" | "newer_format";
+            status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
         };
         /** ProviderSettings */
         ProviderSettings: {

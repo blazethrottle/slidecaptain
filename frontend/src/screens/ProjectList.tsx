@@ -85,6 +85,7 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
                   {p.title} <small>({p.name}, {p.updated_at})</small>
                   {p.status === "needs_recovery" && <em> 복구 필요</em>}
                   {p.status === "newer_format" && <em> 새 버전 필요</em>}
+                  {p.status === "unreadable_manifest" && <em> 기록 확인 필요</em>}
                 </button>
               </li>
             ))}

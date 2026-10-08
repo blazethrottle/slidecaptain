@@ -454,3 +454,10 @@ it("더 새 형식 프로젝트는 열지 않고 안내만 보인다 (D2a-1)", a
   expect(api.listSnapshots).not.toHaveBeenCalled();
   expect(screen.getByRole("button", { name: "목록으로" })).toBeInTheDocument();
 });
+
+it("형식 기록을 읽을 수 없는 프로젝트는 열지 않고 보관 방법을 안내한다 (D2a-1 리뷰 R2)", async () => {
+  render(<ProjectView project={{ ...project, status: "unreadable_manifest" }} onBack={() => {}} />);
+  expect(await screen.findByText(/형식 기록 파일\(manifest.json\)을 읽지 못했습니다/)).toBeInTheDocument();
+  expect(api.getDeck).not.toHaveBeenCalled();
+  expect(api.listSnapshots).not.toHaveBeenCalled();
+});

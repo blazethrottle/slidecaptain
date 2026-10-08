@@ -133,3 +133,11 @@ it("더 새 형식 프로젝트에는 새 버전 필요 표지를 보여준다 (
   render(<ProjectList onOpen={() => {}} />);
   expect(await screen.findByText("새 버전 필요")).toBeInTheDocument();
 });
+
+it("형식 기록을 읽을 수 없는 프로젝트에는 기록 확인 필요 표지를 보여준다 (D2a-1 리뷰 R2)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { name: "p4", title: "(형식 기록 파일을 읽을 수 없는 프로젝트입니다)", updated_at: "", status: "unreadable_manifest" },
+  ]);
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("기록 확인 필요")).toBeInTheDocument();
+});

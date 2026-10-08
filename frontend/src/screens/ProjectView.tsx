@@ -85,6 +85,20 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     );
   }
 
+  if (project.status === "unreadable_manifest") {
+    // 형식 기록을 덮어쓰면 이후 앱의 기록이 사라지므로 열지 않는다 (D2a-1 리뷰 R2)
+    return (
+      <main>
+        <h1>{project.name}</h1>
+        <p role="alert">
+          이 프로젝트의 형식 기록 파일(manifest.json)을 읽지 못했습니다. 기록을 지우지 않도록 프로젝트를
+          열지 않았습니다. 새 버전의 앱으로 열거나, 파일을 다른 곳에 보관한 뒤 지우면 다시 열 수 있습니다.
+        </p>
+        <button onClick={onBack}>목록으로</button>
+      </main>
+    );
+  }
+
   if (project.status === "needs_recovery") {
     return (
       <main>
