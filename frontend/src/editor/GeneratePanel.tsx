@@ -4,7 +4,7 @@ import {
   type Slots,
 } from "../api/client";
 import {
-  blockingReasons, JOB_FOLLOW_ERROR, slotsText, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
+  blockingReasons, JOB_FOLLOW_ERROR, sameSlots, slotsText, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
   waitJob,
 } from "../api/jobs";
 import { formatUsage } from "../api/usage";
@@ -96,6 +96,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const run = async (kind: "chapter" | "condense", params: object) => {
     const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     const controller = follow.current;
+    const previous = job;  // 등록에 성공하면 보이던 후보는 새 생성이 대신한다 (D2b-5b 리뷰 R2)
     setBusy(true);
     setError("");
     setFailure(null);
@@ -108,7 +109,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     try {
       // 장을 옮기면 조회만 멈춘다. 작업은 끝까지 돌고 결과는 돌아왔을 때 지난 후보로 보인다
       const { job: final } = await runJob<ChapterResult>(project.name, kind, { chapter_id: requestedChapterId, ...params },
-        { intervalMs: pollIntervalMs, signal: controller?.signal, onError: () => setFollowError(JOB_FOLLOW_ERROR) });
+        { intervalMs: pollIntervalMs, signal: controller?.signal, onError: () => setFollowError(JOB_FOLLOW_ERROR),
+          onStarted: () => { if (previous && previous.candidate_status !== "applied") void settle(project.name, previous.id, "dismissed"); } });
       if (chapterIdRef.current !== requestedChapterId) return;  // 그사이 장이 바뀌었으면 응답을 버린다
       setFollowError("");
       show(final, false);
@@ -116,7 +118,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
       if (chapterIdRef.current !== requestedChapterId || controller?.signal.aborted) return;
       showError(e);
     } finally {
-      if (chapterIdRef.current === requestedChapterId) setBusy(false);
+      // 장을 오가며 효과가 새 조회를 시작했으면 그쪽이 바쁨을 관리한다 (리뷰 R17)
+      if (chapterIdRef.current === requestedChapterId && follow.current === controller) setBusy(false);
     }
   };
 
@@ -129,7 +132,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   // 반영을 막는 낡음: 서버 판정에 더해, 축약은 요청한 슬롯과 지금 슬롯이 다르면 낡았다(화면 판정, 계획서 5.8)
   const reasons = job ? blockingReasons(job) : [];
   if (job?.kind === "condense" && slide
-      && JSON.stringify((job.params as { slots?: Slots }).slots) !== JSON.stringify(slide.slots)) {
+      && !sameSlots((job.params as { slots?: Slots }).slots, slide.slots)) {
     reasons.push("slots_changed");
   }
   const elsewhere = job?.stale_reasons.includes("deck_changed_elsewhere") ?? false;
@@ -186,7 +189,9 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
         <div className="generate-result">
           <p>이전 입력 기준 후보입니다({reasonText(reasons)}). 반영하지 않고 현재 입력으로 다시 생성해 주세요.</p>
           <details><summary>후보 보기</summary><pre>{slotsText(result.slots)}</pre></details>
-          <button onClick={() => (job?.kind === "condense" ? condense() : void regenerate())}>현재 입력으로 다시 생성</button>
+          {(job?.kind !== "condense" || slide) && (
+            <button onClick={() => (job?.kind === "condense" ? condense() : void regenerate())}>현재 입력으로 다시 생성</button>
+          )}
           <button onClick={dismiss}>버리기</button>
         </div>
       )}

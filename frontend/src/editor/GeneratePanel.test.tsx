@@ -262,3 +262,70 @@ it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다
   expect(screen.getByLabelText("재생성 지시사항").closest(".field")).not.toBeNull();
   expect(screen.getByText("이 장 다시 생성").closest(".actions")).not.toBeNull();
 });
+
+// -- D2b-5b 리뷰 반영 ------------------------------------------------------------------------
+
+it("후보가 보이는 채로 다시 생성하면 등록 뒤 앞 후보를 버림으로 처분한다 (리뷰 R2)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-a", target: "c1",
+    result: okResult as unknown as Record<string, unknown> })]);
+  answer(okResult, "chapter", { id: "job-b" });
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await screen.findByText("이전에 만든 결과가 있습니다.");
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await waitFor(() => expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-a", "dismissed"));
+});
+
+it("동의를 거절하면 보이던 후보를 버리지 않는다 (리뷰 R2)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-a", target: "c1",
+    result: okResult as unknown as Record<string, unknown> })]);
+  vi.mocked(api.prepareAi).mockRejectedValue(new AiConsentDeclined());
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await screen.findByText("이전에 만든 결과가 있습니다.");
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
+  expect(api.settleCandidate).not.toHaveBeenCalled();
+});
+
+it("서버가 키 순서와 기본값을 바꿔 저장한 축약 요청도 지금 슬롯과 같으면 반영할 수 있다 (리뷰 R3)", async () => {
+  const sent = deck.slides[0].slots as { bullets: unknown[]; conclusion: string };
+  answer(okResult, "condense", { target: "c1", params: { chapter_id: "c1", instructions: "",
+    slots: { footnote: "", conclusion: sent.conclusion, bullets: sent.bullets, template: "bullet_box" } } });
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 축약"));
+  expect(await screen.findByText("반영")).toBeInTheDocument();
+});
+
+it("서버가 낡은 후보로 기록한 결과는 반영 대신 다시 생성을 보인다 (리뷰 R10)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { target: "c1", candidate_status: "stale",
+    result: okResult as unknown as Record<string, unknown> })]);
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  expect(await screen.findByText(/만드는 동안 입력이 바뀌었던 후보입니다/)).toBeInTheDocument();
+  expect(screen.queryByText("반영")).toBeNull();
+});
+
+it("조회가 실패하면 확인하지 못했다고 알리고 계속 조회한다", async () => {
+  vi.mocked(api.startJob).mockResolvedValue(jobView("chapter", { target: "c1", state: "running", candidate_status: "none" }));
+  vi.mocked(api.getJob).mockRejectedValueOnce(new ApiError(503, "연결 오류"))
+    .mockResolvedValueOnce(jobView("chapter", { target: "c1", result: okResult as unknown as Record<string, unknown> }));
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} pollIntervalMs={30} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  expect(await screen.findByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeInTheDocument();
+  expect(await screen.findByText("반영")).toBeInTheDocument();
+  expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
+});
+
+it("앞 작업의 취소 안내가 다음 작업의 취소 버튼을 가리지 않는다 (리뷰 R13)", async () => {
+  const active = (id: string) => new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active",
+    { id, project: "다른보고", kind: "diagram", target: null, stage: "running", created_at: "", cancel_requested: false });
+  vi.mocked(api.startJob).mockRejectedValueOnce(active("job-9")).mockRejectedValueOnce(new ApiError(503, "다른 오류"))
+    .mockRejectedValueOnce(active("job-10"));
+  vi.mocked(api.cancelJob).mockResolvedValue(jobView("diagram"));
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByText("그 작업 취소"));
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await screen.findByText("다른 오류");
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByText("그 작업 취소"));
+  expect(api.cancelJob).toHaveBeenLastCalledWith("다른보고", "job-10");
+});

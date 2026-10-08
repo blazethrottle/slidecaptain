@@ -3,6 +3,7 @@ import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, type Dec
   type GenerationUsage, type RenderPlan, type StoryPlan, type DocumentChangePreview, type DocumentChangeBasis } from "../api/client";
 import { runJob, settle, staleError } from "../api/jobs";
 import { formatUsage } from "../api/usage";
+import { ActiveJobNotice } from "../ui/ActiveJobNotice";
 import { Preview } from "./Preview";
 import { DiagramDraftBackup } from "./DiagramDraftBackup";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
@@ -113,6 +114,8 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [applying,setApplying] = useState(false);
   const generationLease = useRef<symbol | null>(null);
   const generationJob = useRef<string | null>(null);  // 지금 보이는 후보를 만든 작업 (처분)
+  const [generationFollowError, setGenerationFollowError] = useState("");
+  const [generationFailure, setGenerationFailure] = useState<unknown>(null);
   const live = useRef(true);
   const serial = useRef(0);
   const currentDeck = useRef(deck);
@@ -154,8 +157,14 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     if (storyStale) review.current?.focus();
   }, [storyStale]);
 
+  // 보이던 후보를 쓰지 않고 지우면 버림으로 처분한다. 복구 목록에 사용자가 버린 후보가 쌓이지 않는다 (리뷰 R9)
+  const dropCandidate = () => {
+    if (generationJob.current) void settle(projectName, generationJob.current, "dismissed");
+    generationJob.current = null;
+  };
   const edit = (next: DiagramDraft) => {
     if (applying) return;
+    dropCandidate();
     serial.current++;
     setDraft(next); setChecked(null); setErrors([]); setChecking(false);
     setReplacement(null);setLossChecks([]);
@@ -171,7 +180,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     const missing = [!draft.topic.trim() && "도식 제목을 입력해 주세요.",
       !draft.storyRole && "보고 계획 연결 역할을 선택해 주세요.",
       !draft.claimIds.length && "보고 계획에 연결할 주장을 하나 이상 선택해 주세요."].filter(Boolean);
-    setGenerationError(""); setGenerationNotice(""); setGenerationResult(null);
+    setGenerationError(""); setGenerationNotice(""); setGenerationResult(null); setGenerationFailure(null);
     if (missing.length) { setGenerationError(missing.join("\n")); return; }
     const requestId = ++serial.current;
     const lease = Symbol("diagram-generation");
@@ -195,17 +204,20 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         chapter_id: draft.id, topic: draft.topic, role: draft.storyRole as StoryRole,
         claim_ids: draft.claimIds, instructions,
         ...(!draft.isNew ? {mode:"replace" as const} : {}),
-      }, { intervalMs: pollIntervalMs });
+      }, { intervalMs: pollIntervalMs, onStarted: () => dropCandidate(),
+        onError: () => setGenerationFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });  // 리뷰 R11
+      setGenerationFollowError("");
       // 만드는 동안 기준 저장본이나 자료가 바뀌었으면 종전처럼 오류로 알리고 후보는 버린다
-      const stale = staleError("diagram", job.stale_reasons);
+      const stale = staleError(job.stale_reasons);
       if (stale) { void settle(projectName, job.id, "dismissed"); throw stale; }
-      generationJob.current = job.id;
-      if (!current()) return;
+      if (!current()) return;  // 창을 닫은 뒤 도착한 후보는 복구 목록에 남긴다
       setGenerationUsage(result.usage);
       if (requestId !== serial.current) {
+        void settle(projectName, job.id, "dismissed");  // 입력을 바꿔 쓰지 않는 후보 (리뷰 R9)
         setGenerationNotice("입력이 변경되어 도착한 AI 후보를 사용하지 않았습니다. 현재 입력으로 다시 생성할 수 있습니다.");
         return;
       }
+      generationJob.current = job.id;
       setGenerationResult(result);
     } catch (error) {
       if (!current()) return;
@@ -217,7 +229,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       } else if (requestId === serial.current) {
         if (error instanceof AiConsentDeclined) setGenerationNotice("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
         else if (isStaleStoryPlan(error)) setStoryStale(true);
-        else setGenerationError(messageOf(error));
+        else { setGenerationError(messageOf(error)); setGenerationFailure(error); }
       }
     } finally {
       if (generationLease.current === lease) {
@@ -386,7 +398,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
                 onChange={e => { edit(draft); setInstructions(e.target.value); }} /></label></div>
             <button disabled={generating || checking || applying || stale || unavailable} onClick={() => void generate()}>{draft.isNew ? "AI 도식 초안 생성" : "AI 도식 교체 후보 생성"}</button>
             {generating && <p role="status">AI 후보를 기다리고 있습니다. 입력을 바꾸면 이 후보를 사용하지 않습니다. 창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
+            {generationFollowError && generating && <p role="status">{generationFollowError}</p>}
             {generationError && <p role="alert">{generationError}</p>}
+            <ActiveJobNotice error={generationFailure} />
             {generationNotice && <p className="notice">{generationNotice}</p>}
             {generationResult?.status === "format_error" && <div role="alert">
               <p>AI 응답을 형식에 맞게 읽지 못했습니다. 작성 입력을 유지했습니다. 원문을 확인하고 다시 시도해 주세요.</p>
@@ -400,9 +414,10 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               </p>}
               <button disabled={generating} onClick={() => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
-                edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
                 // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
                 if (generationJob.current) void settle(projectName, generationJob.current, "applied");
+                generationJob.current = null;
+                edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
                 if(!draft.isNew)setAiReplacement(true);
                 setGenerationNotice("AI 후보의 항목과 관계를 작성 폼에 불러왔습니다. 내용과 근거를 확인한 뒤 입력과 배치 확인을 눌러 주세요.");
               }}>작성 폼에 불러오기</button>

@@ -1,7 +1,7 @@
 // 작업 API 연결의 계약 (개정판 D2b-5b, 계획서 5.8, 5.9)
 import { jobView } from "../test/jobs";
 import { api, ApiError, resetEtags } from "./client";
-import { jobResult, pendingCandidate, runningJob, startJob } from "./jobs";
+import { blockingReasons, jobResult, pendingCandidate, runningJob, sameSlots, startJob } from "./jobs";
 
 afterEach(() => { vi.restoreAllMocks(); resetEtags(); });
 
@@ -66,4 +66,22 @@ it("409 generation_active 응답의 진행 중 작업을 오류에 담는다", a
   vi.unstubAllGlobals();
   expect(error).toBeInstanceOf(ApiError);
   expect(error.active).toEqual(active);
+});
+
+it("취소로 끝나 값이 남은 작업은 지난 후보로 고르지 않는다 (D2b-5b 리뷰 R5)", () => {
+  const cancelled = jobView("repair", { state: "cancelled", candidate_status: "held", result: { status: "stopped" } });
+  expect(pendingCandidate([cancelled], ["repair"])).toBeNull();
+});
+
+it("서버가 낡은 후보로 기록한 작업은 조회 때 이유가 비어도 반영을 막는다 (D2b-5b 리뷰 R10)", () => {
+  expect(blockingReasons(jobView("chapter", { candidate_status: "stale", stale_reasons: [] }))).toEqual(["candidate_stale"]);
+  expect(blockingReasons(jobView("chapter", { candidate_status: "held", stale_reasons: ["deck_changed_elsewhere"] }))).toEqual([]);
+});
+
+it("슬롯 비교는 키 순서와 서버가 채운 빈 기본값을 무시하고 내용 차이는 잡는다 (D2b-5b 리뷰 R3)", () => {
+  const screen = { template: "cards", cards: [{ heading: "가", badge: "", tail: "끝", bullets: ["하나"] }] };
+  const server = { template: "cards", cards: [{ badge: "", heading: "가", bullets: ["하나"], tail: "끝", emphasis: false }],
+    footnote: "" };
+  expect(sameSlots(server, screen)).toBe(true);
+  expect(sameSlots(server, { ...screen, cards: [{ ...screen.cards[0], heading: "나" }] })).toBe(false);
 });

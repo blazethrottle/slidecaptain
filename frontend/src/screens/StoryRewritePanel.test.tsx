@@ -192,3 +192,56 @@ it("패널을 닫으면 조회만 멈추고 작업은 취소하지 않는다", a
   view.unmount();
   expect(api.cancelJob).not.toHaveBeenCalled();
 });
+
+// -- D2b-5b 리뷰 반영 ------------------------------------------------------------------------
+
+it("재작성 취소와 입력 변경은 보이던 후보를 버림으로 처분한다 (리뷰 R20)", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<Harness />);
+  await showCandidate();
+  await userEvent.click(screen.getByRole("button", { name: "재작성 취소" }));
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "dismissed");
+  vi.mocked(api.settleCandidate).mockClear();
+  await showCandidate();
+  await userEvent.type(screen.getByLabelText("재작성 지시사항"), "가");
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "dismissed");
+});
+
+it("방금 적용한 후보는 처분 응답이 늦어도 다시 보이지 않고 충돌로 알리지 않는다 (리뷰 R4)", async () => {
+  vi.mocked(api.settleCandidate).mockReturnValue(new Promise(() => {}));  // 처분 응답이 오지 않는다
+  const conflict = vi.fn();
+  render(<Harness onConflict={conflict} />);
+  await showCandidate();
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("rewrite", { project: "synthetic", stale_reasons: ["deck_changed"],
+    result: candidate() as unknown as Record<string, unknown> })]);
+  const before = vi.mocked(api.listJobs).mock.calls.length;
+  await applyCandidate();
+  await waitFor(() => expect(vi.mocked(api.listJobs).mock.calls.length).toBeGreaterThan(before));  // 적용 뒤 다시 찾았다
+  expect(screen.queryByRole("region", { name: "재작성 후보" })).toBeNull();
+  expect(conflict).not.toHaveBeenCalled();
+});
+
+it("다시 연 낡은 후보는 충돌 배너 없이 안내만 하고, 수리 후보는 재작성으로 바꿔 보내지 않는다 (리뷰 R6, R7)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("repair", { project: "synthetic", candidate_status: "held",
+    stale_reasons: ["deck_changed"], params: { brief: { decision_question: "새 질문" }, instructions: "원래 지시" },
+    result: { ...candidate(), status: "reviewed_candidate", submission_approved: false, calls: 2, review_calls: 1, rounds: 1,
+      findings: [], review_notes: [], notice: "수리 결과", reason: null } as unknown as Record<string, unknown> })]);
+  const conflict = vi.fn();
+  render(<Harness onConflict={conflict} />);
+  expect(await screen.findByText(/문제 목록과 상한을 확인한 뒤 제한된 수정 미리보기를 다시 눌러 주세요/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
+  expect(screen.getByLabelText("재작성 지시사항")).toHaveValue("원래 지시");  // 리뷰 R19
+  expect(conflict).not.toHaveBeenCalled();
+});
+
+it("취소 응답보다 결과가 먼저 끝났으면 취소 예고 문구를 붙이지 않는다 (리뷰 R18)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("repair", { id: "job-r", project: "synthetic",
+    state: "running", candidate_status: "none" }));
+  vi.mocked(api.getJob).mockReturnValue(new Promise(() => {}));
+  vi.mocked(api.cancelJob).mockResolvedValue(jobView("repair", { state: "succeeded" }));
+  render(<Harness />);
+  await startRepair();
+  await userEvent.click(await screen.findByRole("button", { name: "실행 중단" }));
+  await waitFor(() => expect(api.cancelJob).toHaveBeenCalled());
+  expect(screen.queryByText("취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.")).toBeNull();
+});

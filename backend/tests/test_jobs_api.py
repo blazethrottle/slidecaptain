@@ -756,3 +756,27 @@ def test_provider_is_not_called_when_the_send_time_cannot_be_written(store, monk
         [row] = ledger.list_jobs("p1")
     assert response.status_code == 503 and response.json()["code"] == "ledger_write_failed"
     assert provider.calls == 0 and row.state == "failed" and row.error_class == "ledger"
+
+
+# D2b-5b 리뷰 R1: 장 재생성은 장마다 최신 행을 목록에 둔다. 다른 장의 더 새 작업 때문에 이 장의 마지막 처분이
+# 빠지면 화면이 그보다 오래된 미처분 후보를 이 장의 최신으로 보고 되살린다
+
+def test_listing_keeps_the_latest_job_of_each_chapter(store):
+    _project(store)
+    with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
+        ledger = client.app.state.job_runner.ledger
+        ids = []
+        for request_id, chapter, candidate in (("r1", "c1", None), ("r2", "c1", "applied"), ("r3", "c2", "dismissed")):
+            row, _ = ledger.create_job(project="p1", kind="chapter", request_id=f"req-{request_id}-0001",
+                                       params={"chapter_id": chapter, "instructions": ""},
+                                       instance_id=client.app.state.job_runner.instance_id,
+                                       inputs=FixedInputs(None, None, None, "e", None, None))
+            ledger.transition(row.id, expected="queued", new="running", remote_sent_at="t")
+            ledger.transition(row.id, expected="running", new="validating", result={"status": "ok"},
+                              candidate_status="held")
+            ledger.transition(row.id, expected="validating", new="succeeded")
+            if candidate:
+                ledger.settle_candidate(row.id, expected="held", new=candidate)
+            ids.append(row.id)
+        listed = [job["id"] for job in client.get("/api/projects/p1/jobs").json()]
+    assert listed == [ids[2], ids[1], ids[0]]  # c1의 마지막 처분(r2)이 빠지지 않는다

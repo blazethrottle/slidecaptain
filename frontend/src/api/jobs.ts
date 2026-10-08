@@ -60,10 +60,11 @@ export async function runJob<T>(name: string, kind: JobKind, params: unknown, op
   return { result: jobResult<T>(final), job: final };
 }
 
-// 지난 후보: 이 종류와 대상의 가장 최근 작업이 처분되지 않은 결과를 가졌으면 돌려준다(목록은 최신 순)
+// 지난 후보: 이 종류와 대상의 가장 최근 작업이 성공으로 끝나 처분되지 않은 결과일 때만 돌려준다(목록은 최신 순).
+// 취소로 끝나 값이 남은 작업은 고르지 않는다. 그런 값은 복구 화면에서만 다룬다 (D2b-5b 리뷰 R5)
 export function pendingCandidate(jobs: JobView[], kinds: JobKind[], target: string | null = null): JobView | null {
   const latest = jobs.find((j) => (kinds as string[]).includes(j.kind) && (target === null || j.target === target));
-  if (!latest || !TERMINAL_JOB_STATES.has(latest.state) || !latest.result) return null;
+  if (!latest || latest.state !== "succeeded" || !latest.result) return null;
   return latest.candidate_status === "held" || latest.candidate_status === "stale" ? latest : null;
 }
 
@@ -73,9 +74,27 @@ export function runningJob(jobs: JobView[], kinds: JobKind[], target: string | n
     && !TERMINAL_JOB_STATES.has(j.state) && j.owner === "this_instance") ?? null;
 }
 
-// 반영을 막는 낡음 이유. deck_changed_elsewhere는 알리기만 한다 (계획서 5.8)
+// 반영을 막는 낡음 이유. deck_changed_elsewhere는 알리기만 한다 (계획서 5.8). 서버가 낡은 후보(stale)로
+// 기록한 작업은 조회 때 이유가 비어도 반영할 수 없다. 서버가 그 처분을 거절한다 (D2b-5b 리뷰 R10)
 export function blockingReasons(view: JobView): string[] {
-  return view.stale_reasons.filter((r) => r !== "deck_changed_elsewhere");
+  const reasons = view.stale_reasons.filter((r) => r !== "deck_changed_elsewhere");
+  return view.candidate_status === "stale" && reasons.length === 0 ? ["candidate_stale"] : reasons;
+}
+
+// 슬롯 내용이 같은지. 서버는 기본값을 채우고 모델 순서로 키를 다시 놓으므로 키 순서와 빈 기본값을 무시한다
+// (D2b-5b 리뷰 R3)
+export function sameSlots(a: unknown, b: unknown): boolean {
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value)
+        .filter(([, v]) => !(v === null || v === "" || v === false || (Array.isArray(v) && v.length === 0)))
+        .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0))
+        .map(([k, v]) => [k, canonical(v)]));
+    }
+    return value;
+  };
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
 }
 
 // 처분은 화면 동작을 막지 않는다. 실패하면 다음에 열 때 후보가 한 번 더 보일 뿐이다
@@ -98,6 +117,7 @@ export const STALE_REASON_LABELS: Record<string, string> = {
   slots_changed: "이 장의 내용이 바뀌었습니다",
   deck_changed: "저장본이 바뀌었습니다",
   unknown_deck: "저장본을 확인하지 못했습니다",
+  candidate_stale: "만드는 동안 입력이 바뀌었던 후보입니다",
 };
 
 export function reasonText(reasons: string[]): string {
@@ -116,26 +136,19 @@ export function slotsText(slots: unknown): string {
   return texts.join("\n");
 }
 
-// 도식과 재작성의 낡은 결과는 종전 라우트처럼 오류로 알린다 (서버 _STALE_RESPONSES와 같은 표)
-const STALE_RESPONSES: Record<"diagram" | "rewrite", Record<string, [number, string]>> = {
-  diagram: {
-    unknown_deck: [412, "도식 생성 중 기준 저장본을 읽을 수 없게 되었습니다. 프로젝트를 다시 열어 주세요."],
-    deck_changed: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
-    unknown_sources: [409, "도식 생성 중 자료를 읽을 수 없게 되었습니다. 자료를 확인한 뒤 다시 작성해 주세요."],
-    sources_changed: [409, "도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요."],
-  },
-  rewrite: {
-    unknown_deck: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
-    deck_changed: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
-    unknown_sources: [409, "재작성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요."],
-    sources_changed: [409, "재작성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요."],
-  },
+// 도식의 낡은 결과는 종전 라우트처럼 오류로 알린다 (서버 _STALE_RESPONSES["diagram"]과 같은 표).
+// 재작성의 낡은 후보는 오류가 아니라 이전 입력 기준 후보로 보인다 (계획서 D2b-5b 정정 ⑦, 리뷰 R14)
+const STALE_RESPONSES: Record<string, [number, string]> = {
+  unknown_deck: [412, "도식 생성 중 기준 저장본을 읽을 수 없게 되었습니다. 프로젝트를 다시 열어 주세요."],
+  deck_changed: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
+  unknown_sources: [409, "도식 생성 중 자료를 읽을 수 없게 되었습니다. 자료를 확인한 뒤 다시 작성해 주세요."],
+  sources_changed: [409, "도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요."],
 };
 
-export function staleError(kind: "diagram" | "rewrite", reasons: string[]): ApiError | null {
+export function staleError(reasons: string[]): ApiError | null {
   for (const reason of ["unknown_deck", "deck_changed", "unknown_sources", "sources_changed"]) {
     if (reasons.includes(reason)) {
-      const [status, detail] = STALE_RESPONSES[kind][reason];
+      const [status, detail] = STALE_RESPONSES[reason];
       return new ApiError(status, detail);
     }
   }

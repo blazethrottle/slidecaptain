@@ -202,9 +202,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setChapterUsageSummary(null);
     setChapterUsageCount(0);
     setChapterUsageHadUnaccountedFailure(false);
-    // 다시 생성하면 지금 초안의 후보는 버린다. 새 후보가 그 자리를 대신한다 (D2b-5b)
-    if (structureJob.current) { void settle(project.name, structureJob.current, "dismissed"); structureJob.current = null; }
-    setEarlierNotice("");
+    setStartError(null);
+    setFollowError("");
+    // 등록에 성공하면 지금 초안의 후보와 불러오지 않은 낡은 후보를 버린다. 등록이 실패하면 남긴다 (리뷰 R8)
+    const previous = [structureJob.current, staleStructure.current].filter((id): id is string => id !== null);
+    const controller = new AbortController();
+    followAbort.current = controller;
     try {
       const n = targetChapters.trim() === "" ? undefined : Number(targetChapters);
       const { job: final } = await runJob<StructureResult>(project.name, "structure", {
@@ -215,15 +218,27 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           reading_profile: storyPlan?.brief.reading_profile ?? "미지정",
           constraints: storyPlan?.brief.constraints ?? [],
         } } : {}),
-      }, { intervalMs: pollIntervalMs });
+      }, { intervalMs: pollIntervalMs, signal: controller.signal,
+        onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다."),  // 리뷰 R11
+        onStarted: () => {
+          previous.forEach((id) => void settle(project.name, id, "dismissed"));
+          structureJob.current = null;
+          staleStructure.current = null;
+          setEarlierNotice("");
+        } });
+      setFollowError("");
       showStructure(final);
+      // 만드는 동안 자료나 저장본이 바뀌었으면 승인 전에 알린다 (리뷰 R22)
+      const reasons = blockingReasons(final);
+      if (reasons.length > 0) setEarlierNotice(`구조안을 만드는 동안 입력이 바뀌었습니다(${reasonText(reasons)}). 승인하기 전에 다시 생성을 검토해 주세요.`);
     } catch (e) {
+      if (controller.signal.aborted) return;  // 화면이 내려갔다 (리뷰 R23)
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
       else if (e instanceof JobCancelled) setCancelNotice("구조안 생성이 취소되었습니다.");
-      else showFailure(e);
+      else { showFailure(e); setStartError(e); }  // 다른 작업이 진행 중이면 그 작업 취소 버튼 (리뷰 R12)
     } finally {
-      setBusy(false);
-      onBusyChange?.(false);
+      if (followAbort.current === controller) followAbort.current = null;
+      if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
     }
   };
 
@@ -334,6 +349,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     api.listJobs(project.name).then(async (jobs) => {
       if (!current()) return;
       // 구조안: 진행 중이면 이어서 조회하고, 처분하지 않은 후보는 초안으로 불러온다 (D2b-5b)
+      try {
       const runningStructure = runningJob(jobs, ["structure"]);
       if (runningStructure) {
         setBusy(true);
@@ -341,7 +357,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         const controller = new AbortController();
         followAbort.current = controller;
         try {
-          showStructure(await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal }));
+          showStructure(await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
+            onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") }));
+          setFollowError("");
         } catch (e) {
           if (!controller.signal.aborted) showFailure(e);
         } finally {
@@ -360,6 +378,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           staleStructure.current = earlier.id;
           setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 현재 자료로 다시 생성해 주세요.`);
         }
+      }
+      } catch (e) {
+        // 지난 구조안을 보이지 못해도 아래 장 생성 묶음은 이어서 본다 (D2b-5b 리뷰 R5)
+        if (current()) showFailure(e);
       }
       if (!current()) return;
       // 다른 실행이 남긴 미종결 묶음은 따라가지 않는다. 그 실행이 끝났는지 이 화면은 알 수 없다 (D2b-5a 리뷰 R6)

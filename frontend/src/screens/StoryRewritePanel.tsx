@@ -41,6 +41,8 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
   const [staleReasons, setStaleReasons] = useState<string[]>([]);  // 이전 입력 기준 후보의 이유 (D2b-5b)
   const [earlier, setEarlier] = useState(false);
   const candidateJob = useRef<string | null>(null);  // 지금 보이는 후보를 만든 작업 (처분)
+  const [candidateKind, setCandidateKind] = useState("rewrite");
+  const appliedJobs = useRef(new Set<string>());  // 이 패널이 적용한 후보 (처분 응답 전 다시 찾기 방지)
   const running = useRef<string | null>(null);  // 실행 중인 수리 작업 (실행 중단)
   const [repairJob, setRepairJobState] = useState<string | null>(null);
   const setRepairJob = (id: string | null) => { running.current = id; setRepairJobState(id); };
@@ -66,11 +68,13 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
   const showJob = (view: JobView, fromEarlier: boolean) => {
     const response = jobResult<StoryRewriteResult | StoryRepairResult>(view);
     candidateJob.current = view.id;
+    setCandidateKind(view.kind);
     setResult(response);
     setEarlier(fromEarlier);
     const reasons = blockingReasons(view);
     setStaleReasons(reasons);
-    if (reasons.some((r) => r === "deck_changed" || r === "unknown_deck")) onConflict?.();
+    // 새로 받은 결과의 덱 변경만 충돌로 알린다. 다시 연 후보는 이 창의 편집만으로도 기준이 달라진다 (리뷰 R7)
+    if (!fromEarlier && reasons.some((r) => r === "deck_changed" || r === "unknown_deck")) onConflict?.();
     if (reasons.length === 0) {
       if ("submission_approved" in response) {
         if (response.status !== "reviewed_candidate") setNotice(response.reason ?? "해결되지 않은 문제가 있습니다. 후보와 기존 저장본을 보존했습니다.");
@@ -103,9 +107,11 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
         return;
       }
       const earlierJob = pendingCandidate(jobs, ["rewrite", "repair"]);
-      if (earlierJob) {
-        const brief = (earlierJob.params as { brief?: { decision_question?: string } }).brief;
-        if (brief?.decision_question) setQuestion(brief.decision_question);
+      // 방금 이 패널이 적용한 후보는 처분 응답이 늦어도 다시 보이지 않는다 (리뷰 R4)
+      if (earlierJob && !appliedJobs.current.has(earlierJob.id)) {
+        const params = earlierJob.params as { brief?: { decision_question?: string }; instructions?: string };
+        if (params.brief?.decision_question) setQuestion(params.brief.decision_question);
+        if (params.instructions) setInstructions(params.instructions);  // 후보의 입력을 그대로 복원한다 (리뷰 R19)
         showJob(earlierJob, true);
       }
     }).catch(() => { /* 지난 후보를 찾지 못해도 새 재작성은 할 수 있다 */ });
@@ -189,8 +195,9 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
   const stopRepair = async () => {
     if (!running.current) return;
     try {
-      await api.cancelJob(projectName, running.current);
-      setNotice(CANCEL_REQUESTED_NOTICE);
+      const view = await api.cancelJob(projectName, running.current);
+      // 취소 응답보다 결과가 먼저 끝났으면 예고 문구를 붙이지 않는다 (리뷰 R18)
+      if (view.state === "cancel_requested" || view.cancel_requested) setNotice(CANCEL_REQUESTED_NOTICE);
     } catch (e) { setError(messageOf(e)); }
   };
   const apply = async () => {
@@ -200,7 +207,10 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     setRunning(true); setError("");
     try {
       const saved = await api.applyStoryRewrite(projectName, result);
-      if (candidateJob.current) void settle(projectName, candidateJob.current, "applied");
+      if (candidateJob.current) {
+        appliedJobs.current.add(candidateJob.current);
+        void settle(projectName, candidateJob.current, "applied");
+      }
       candidateJob.current = null;
       if (id !== epoch.current || current.current.deck !== deck || current.current.projectName !== projectName) return;
       setResult(null); setInstructions(""); setQuestion(saved.structure.story_plan!.brief.decision_question);
@@ -261,7 +271,10 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
         onChange={e => setAcknowledged(e.target.checked)} />본문 재검토가 필요함을 확인했습니다</label>
       {staleReasons.length > 0 ? <>
         <p className="notice">이전 입력 기준 후보입니다({reasonText(staleReasons)}). 적용하지 않고 현재 입력으로 다시 만들어 주세요.</p>
-        <button disabled={busy || disabled || !question.trim()} onClick={() => void preview()}>현재 입력으로 다시 생성</button>
+        {candidateKind === "repair"
+          // 수리는 문제 목록과 상한을 다시 확인해야 한다. 재작성으로 바꿔 보내지 않는다 (리뷰 R6)
+          ? <p>아래 문제 목록 수정 영역에서 문제 목록과 상한을 확인한 뒤 제한된 수정 미리보기를 다시 눌러 주세요.</p>
+          : <button disabled={busy || disabled || !question.trim()} onClick={() => void preview()}>현재 입력으로 다시 생성</button>}
       </> : <button disabled={busy || disabled || blocked || !acknowledged || !candidateReady} onClick={apply}>이 계획 적용</button>}
     </section>}
   </section>;

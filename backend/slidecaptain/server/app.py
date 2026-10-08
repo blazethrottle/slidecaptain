@@ -690,7 +690,7 @@ def create_app(
         return _job_views([row])[0]
 
     def _project_jobs(name: str, chapters: dict[str, list] | None = None) -> list[JobRow]:
-        """미종결 작업을 앞에, 그다음 화면에 전달되지 않은 후보와 종류마다 가장 최근 작업 (계획서 5.9).
+        """미종결 작업을 앞에, 그다음 화면에 전달되지 않은 후보와 종류와 대상 장마다 가장 최근 작업 (계획서 5.9).
 
         chapters를 넘기면 읽은 묶음의 하위 행을 담아 응답 구성이 다시 읽지 않게 한다 (D2b-4 리뷰 R17).
         """
@@ -699,15 +699,17 @@ def create_app(
         cache = chapters if chapters is not None else {}
         unfinished, rest, latest = [], [], set()
         for row in ledger.list_jobs(name):
+            # 장 재생성과 축약은 장마다 최신 행이 있어야 화면이 그 장의 마지막 처분을 안다 (D2b-5b 리뷰 R1)
+            key = (row.kind, row.params.get("chapter_id") if isinstance(row.params, dict) else None)
             if row.kind == BATCH_KIND:
                 cache[row.id] = ledger.chapters(row.id)
             if row.state in ("queued", "running", "validating", "cancel_requested"):
                 unfinished.append(row)
-            elif (row.candidate_status in ("held", "stale") or row.kind not in latest
+            elif (row.candidate_status in ("held", "stale") or key not in latest
                   or (row.kind == BATCH_KIND and any(c.candidate_status in ("held", "stale")
                                                      for c in cache[row.id]))):
                 rest.append(row)
-            latest.add(row.kind)
+            latest.add(key)
         return unfinished + rest
 
     def _project_job_views(name: str) -> list[JobView]:

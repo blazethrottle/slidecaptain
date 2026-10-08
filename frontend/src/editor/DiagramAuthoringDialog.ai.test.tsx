@@ -251,3 +251,19 @@ it("만드는 동안 저장본이 바뀐 후보는 종전처럼 412 충돌로 �
   expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "dismissed");
   expect(screen.queryByRole("region", { name: "AI 도식 후보 검토" })).toBeNull();
 });
+
+it("보이던 후보를 쓰지 않고 입력을 바꾸면 버림으로 처분한다 (D2b-5b 리뷰 R9)", async () => {
+  open();
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await screen.findByRole("region", { name: "AI 도식 후보 검토" });
+  fireEvent.change(screen.getByLabelText("도식 제목"), { target: { value: "바꾼 제목" } });
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "dismissed");
+});
+
+it("다른 AI 생성이 진행 중이면 그 작업 취소 버튼을 보인다 (D2b-5b 리뷰 R12)", async () => {
+  generateDiagram.mockRejectedValue(new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active",
+    { id: "job-9", project: "다른보고", kind: "chapters", target: null, stage: "running", created_at: "", cancel_requested: false }));
+  open();
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  expect(await screen.findByRole("button", { name: "그 작업 취소" })).toBeInTheDocument();
+});

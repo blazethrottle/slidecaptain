@@ -1050,3 +1050,52 @@ it("시작 전에 취소를 받은 묶음(대기 상태)도 중단 버튼을 잠
     pollIntervalMs={0} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "생성 중단" })).toBeDisabled());
 });
+
+// -- D2b-5b 리뷰 반영 ------------------------------------------------------------------------
+
+it("취소로 끝난 구조안 값은 지난 후보로 고르지 않고, 뒤따르는 묶음 재부착을 막지 않는다 (리뷰 R5)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([
+    running([chapterView("c1", "running")]),
+    jobView("structure", { id: "job-s", state: "cancelled", candidate_status: "held",
+      result: { status: "ok", structure: { chapters: [CH1] }, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
+        format_retried: false } }),
+  ]);
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await waitFor(() => expect(api.getJob).toHaveBeenCalled());
+  expect(screen.queryByText(/이전에 만든 구조안 후보/)).toBeNull();
+  expect(screen.queryByText(/취소되었습니다/)).toBeNull();
+});
+
+it("구조안 다시 생성의 등록이 실패하면 앞 후보를 버리지 않고, 다른 작업이면 취소 버튼을 보인다 (리뷰 R8, R12)", async () => {
+  generateStructure.mockResolvedValue(structureResult([CH1, CH2]));
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  vi.mocked(api.startJob).mockRejectedValueOnce(new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active",
+    { id: "job-9", project: "다른보고", kind: "diagram", target: null, stage: "running", created_at: "", cancel_requested: false }));
+  await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
+  expect(await screen.findByRole("button", { name: "그 작업 취소" })).toBeInTheDocument();
+  expect(api.settleCandidate).not.toHaveBeenCalled();
+});
+
+it("구조안을 만드는 동안 입력이 바뀌었으면 승인 전에 알린다 (리뷰 R22)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("structure", { stale_reasons: ["sources_changed"],
+    result: structureResult([CH1, CH2]) as unknown as Record<string, unknown> }));
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  expect(await screen.findByText(/구조안을 만드는 동안 입력이 바뀌었습니다\(자료가 바뀌었습니다\)/)).toBeInTheDocument();
+});
+
+it("구조안 생성의 조회가 실패하면 확인하지 못했다고 알린다 (리뷰 R11)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("structure", { state: "running", candidate_status: "none" }));
+  vi.mocked(api.getJob).mockRejectedValueOnce(new ApiError(503, "연결 오류"))
+    .mockResolvedValueOnce(jobView("structure", { result: structureResult([CH1]) as unknown as Record<string, unknown> }));
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={30} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  expect(await screen.findByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeInTheDocument();
+  await screen.findByLabelText("1번 장 주제");
+  expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
+});
