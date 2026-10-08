@@ -1129,6 +1129,27 @@ export interface components {
              */
             source_refs: string[];
         };
+        /** ChapterJobParams */
+        ChapterJobParams: {
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** ChapterJobRequest */
+        ChapterJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chapter";
+            params: components["schemas"]["ChapterJobParams"];
+        };
         /** ChapterResult */
         ChapterResult: {
             /**
@@ -1401,6 +1422,29 @@ export interface components {
              * @default
              */
             instructions: string;
+        };
+        /** CondenseJobParams */
+        CondenseJobParams: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Slots */
+            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"] | components["schemas"]["DiagramSlots"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** CondenseJobRequest */
+        CondenseJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "condense";
+            params: components["schemas"]["CondenseJobParams"];
         };
         /**
          * CoverSlots
@@ -1686,6 +1730,17 @@ export interface components {
              * @constant
              */
             layout_variant: "flow_horizontal";
+        };
+        /** DiagramJobRequest */
+        DiagramJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "diagram";
+            params: components["schemas"]["GenerateDiagramRequest"];
         };
         /** DiagramNode */
         DiagramNode: {
@@ -3284,6 +3339,17 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RepairJobRequest */
+        RepairJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "repair";
+            params: components["schemas"]["StoryRepairRequest"];
+        };
         /** ReportBrief */
         ReportBrief: {
             /** Decision Question */
@@ -3358,6 +3424,26 @@ export interface components {
             status: "passed" | "needs_revision";
             /** Note */
             note: string;
+        };
+        /** RewriteJobParams */
+        RewriteJobParams: {
+            brief: components["schemas"]["ReportBrief"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** RewriteJobRequest */
+        RewriteJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rewrite";
+            params: components["schemas"]["RewriteJobParams"];
         };
         /**
          * RewriteReview
@@ -3974,8 +4060,8 @@ export interface components {
             /** Request Id */
             request_id: string;
             /**
-             * Kind
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             kind: "structure";
             params: components["schemas"]["StructureJobParams"];
@@ -4766,6 +4852,15 @@ export interface operations {
                     "application/json": components["schemas"]["StoryRewriteResult"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4840,6 +4935,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoryRepairResult"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
                 };
             };
             /** @description Validation Error */
@@ -5782,6 +5886,15 @@ export interface operations {
                     "application/json": components["schemas"]["DiagramGenerationResult"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -5875,6 +5988,7 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
+                "if-match"?: string | null;
                 "x-ai-consent"?: string | null;
                 "x-ai-selection"?: string | null;
             };
@@ -5885,7 +5999,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StructureJobRequest"];
+                "application/json": components["schemas"]["StructureJobRequest"] | components["schemas"]["ChapterJobRequest"] | components["schemas"]["CondenseJobRequest"] | components["schemas"]["DiagramJobRequest"] | components["schemas"]["RewriteJobRequest"] | components["schemas"]["RepairJobRequest"];
             };
         };
         responses: {
@@ -6066,6 +6180,15 @@ export interface operations {
                     "application/json": components["schemas"]["ChapterResult"];
                 };
             };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -6103,6 +6226,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChapterResult"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
                 };
             };
             /** @description Validation Error */

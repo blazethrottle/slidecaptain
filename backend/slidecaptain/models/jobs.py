@@ -1,10 +1,13 @@
 """작업 API의 요청과 응답 모델 (개정판 D2b-2, 계획서 5.9)."""
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
+from slidecaptain.models.deck import Slots
 from slidecaptain.models.story import ReportBrief
+from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest
+from slidecaptain.pipeline.story_repair import StoryRepairRequest
 
 JobState = Literal["queued", "running", "validating", "succeeded", "failed", "cancel_requested", "cancelled",
                    "interrupted", "remote_completion_unknown"]
@@ -20,13 +23,62 @@ class StructureJobParams(BaseModel):
     brief: ReportBrief | None = None
 
 
-class StructureJobRequest(BaseModel):
+class ChapterJobParams(BaseModel):
+    chapter_id: str
+    instructions: str = ""
+
+
+class CondenseJobParams(BaseModel):
+    chapter_id: str
+    slots: Slots  # 화면이 들고 있는 현재 슬롯 (미저장 수정 포함. 설계 결정 13)
+    instructions: str = ""
+
+
+class RewriteJobParams(BaseModel):
+    brief: ReportBrief
+    instructions: str = Field(default="", max_length=8_000)
+
+
+class _JobRequestBase(BaseModel):
     request_id: str = Field(pattern=REQUEST_ID_PATTERN)
+
+
+class StructureJobRequest(_JobRequestBase):
     kind: Literal["structure"]
     params: StructureJobParams
 
 
-JobRequest = StructureJobRequest  # D2b-3과 D2b-4가 종류를 구별 유니언으로 늘린다
+class ChapterJobRequest(_JobRequestBase):
+    kind: Literal["chapter"]
+    params: ChapterJobParams
+
+
+class CondenseJobRequest(_JobRequestBase):
+    kind: Literal["condense"]
+    params: CondenseJobParams
+
+
+class DiagramJobRequest(_JobRequestBase):
+    kind: Literal["diagram"]
+    params: GenerateDiagramRequest
+
+
+class RewriteJobRequest(_JobRequestBase):
+    kind: Literal["rewrite"]
+    params: RewriteJobParams
+
+
+class RepairJobRequest(_JobRequestBase):
+    kind: Literal["repair"]
+    params: StoryRepairRequest
+
+
+# 도식, 재작성, 수리는 If-Match 헤더로 기준 저장본을 받는다(종전 라우트와 같다). 묶음은 D2b-4가 더한다
+JobRequest = Annotated[
+    Union[StructureJobRequest, ChapterJobRequest, CondenseJobRequest, DiagramJobRequest, RewriteJobRequest,
+          RepairJobRequest],
+    Field(discriminator="kind"),
+]
 
 
 class JobError(BaseModel):

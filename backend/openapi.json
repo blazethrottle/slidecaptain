@@ -899,6 +899,16 @@
               }
             }
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1060,6 +1070,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "description": "Validation Error",
@@ -2532,6 +2552,16 @@
               }
             }
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -2651,6 +2681,22 @@
             }
           },
           {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          },
+          {
             "name": "x-ai-consent",
             "in": "header",
             "required": false,
@@ -2688,7 +2734,38 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/StructureJobRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StructureJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChapterJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CondenseJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DiagramJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RewriteJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RepairJobRequest"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "structure": "#/components/schemas/StructureJobRequest",
+                    "chapter": "#/components/schemas/ChapterJobRequest",
+                    "condense": "#/components/schemas/CondenseJobRequest",
+                    "diagram": "#/components/schemas/DiagramJobRequest",
+                    "rewrite": "#/components/schemas/RewriteJobRequest",
+                    "repair": "#/components/schemas/RepairJobRequest"
+                  }
+                },
+                "title": "Req"
               }
             }
           }
@@ -3017,6 +3094,16 @@
               }
             }
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -3106,6 +3193,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "description": "Validation Error",
@@ -3816,6 +3913,48 @@
         ],
         "title": "Chapter"
       },
+      "ChapterJobParams": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id"
+        ],
+        "title": "ChapterJobParams"
+      },
+      "ChapterJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "chapter",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ChapterJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "ChapterJobRequest"
+      },
       "ChapterResult": {
         "properties": {
           "status": {
@@ -4462,6 +4601,103 @@
         ],
         "title": "CondenseChapterRequest"
       },
+      "CondenseJobParams": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "slots": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CoverSlots"
+              },
+              {
+                "$ref": "#/components/schemas/SummarySlots"
+              },
+              {
+                "$ref": "#/components/schemas/BulletBoxSlots"
+              },
+              {
+                "$ref": "#/components/schemas/TableSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CompareSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DividerSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CalloutSlots"
+              },
+              {
+                "$ref": "#/components/schemas/CardsSlots"
+              },
+              {
+                "$ref": "#/components/schemas/ProcessSlots"
+              },
+              {
+                "$ref": "#/components/schemas/MatrixSlots"
+              },
+              {
+                "$ref": "#/components/schemas/DiagramSlots"
+              }
+            ],
+            "title": "Slots",
+            "discriminator": {
+              "propertyName": "template",
+              "mapping": {
+                "bullet_box": "#/components/schemas/BulletBoxSlots",
+                "callout": "#/components/schemas/CalloutSlots",
+                "cards": "#/components/schemas/CardsSlots",
+                "compare2": "#/components/schemas/CompareSlots",
+                "cover": "#/components/schemas/CoverSlots",
+                "diagram": "#/components/schemas/DiagramSlots",
+                "divider": "#/components/schemas/DividerSlots",
+                "matrix": "#/components/schemas/MatrixSlots",
+                "process": "#/components/schemas/ProcessSlots",
+                "summary": "#/components/schemas/SummarySlots",
+                "table": "#/components/schemas/TableSlots"
+              }
+            }
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "slots"
+        ],
+        "title": "CondenseJobParams"
+      },
+      "CondenseJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "condense",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/CondenseJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "CondenseJobRequest"
+      },
       "CoverSlots": {
         "properties": {
           "template": {
@@ -5095,6 +5331,30 @@
         ],
         "title": "DiagramInput",
         "description": "저장할 의미 입력. 근거 ID의 존재 검사는 Deck 전체 또는 공개 파서가 수행한다."
+      },
+      "DiagramJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "diagram",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/GenerateDiagramRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "DiagramJobRequest"
       },
       "DiagramNode": {
         "properties": {
@@ -9260,6 +9520,30 @@
         ],
         "title": "RepairFinding"
       },
+      "RepairJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "repair",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/StoryRepairRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "RepairJobRequest"
+      },
       "ReportBrief": {
         "properties": {
           "decision_question": {
@@ -9433,6 +9717,48 @@
           "note"
         ],
         "title": "ReviewVerdict"
+      },
+      "RewriteJobParams": {
+        "properties": {
+          "brief": {
+            "$ref": "#/components/schemas/ReportBrief"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "brief"
+        ],
+        "title": "RewriteJobParams"
+      },
+      "RewriteJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "rewrite",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/RewriteJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "RewriteJobRequest"
       },
       "RewriteReview": {
         "properties": {

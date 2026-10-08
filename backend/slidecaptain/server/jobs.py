@@ -42,7 +42,9 @@ JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다."
 JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요."
 LEDGER_WRITE_MESSAGE = "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요."
 FORMAT_ERROR_MESSAGE = "AI 응답을 형식에 맞게 읽지 못했습니다. 입력은 그대로 두었습니다. 다시 생성해 주세요."
-UNKNOWN = "unknown"  # 생성 뒤 판정에서 덱이나 자료를 읽지 못함. 낡음으로 굳히지 않는다 (D2b-2 리뷰 R3)
+# 생성 뒤 판정의 이유 가운데 낡음으로 굳히지 않는 것. unknown*은 덱이나 자료를 읽지 못한 판정 불가(D2b-2
+# 리뷰 R3), deck_changed_elsewhere는 장 재생성과 축약에서 다른 장이 바뀐 것을 알리기만 하는 이유(계획서 5.8)
+NOTICE_REASONS = frozenset({"deck_changed_elsewhere"})
 # 종료 처리가 실행 중 작업의 종료를 기다리는 시간. 서비스의 강제 종료 시간 10초(desktop_service의
 # parent_lifeline)에서 uvicorn의 종료 대기 5초(timeout_graceful_shutdown)를 뺀 값이다 (계획서 5.5)
 SHUTDOWN_WAIT_SECONDS = 5.0
@@ -74,9 +76,11 @@ def _on_job_loop() -> bool:
 class JobFailed(Exception):
     """작업 안에서 난 실패를 지금 라우트와 같은 HTTP 응답으로 돌려준다 (계획서 5.4 오류 표현)."""
 
-    def __init__(self, status: int, detail: str, code: str | None = None):
+    def __init__(self, status: int, detail: str, code: str | None = None, error_class: str | None = None):
         super().__init__(detail)
         self.status, self.detail, self.code = status, detail, code
+        # 응답 문구와 코드는 종전 라우트와 같게 두고 원장의 원인 분류만 따로 정할 때 쓴다
+        self.error_class = error_class
 
 
 class GenerationActive(Exception):
@@ -193,8 +197,8 @@ def _encode(result: Any) -> Any:
 
 
 def real_reasons(reasons: list[str]) -> list[str]:
-    """판정 이유 가운데 실제로 달라진 것만. 판정 불가(unknown)는 조회 때 다시 본다 (계획서 5.8)."""
-    return [r for r in reasons if r != UNKNOWN]
+    """판정 이유 가운데 관련 입력이 실제로 달라진 것만. 판정 불가는 조회 때 다시 본다 (계획서 5.8)."""
+    return [r for r in reasons if not r.startswith("unknown") and r not in NOTICE_REASONS]
 
 
 class JobRunner:
@@ -409,7 +413,8 @@ class JobRunner:
                                     error_code=getattr(result, "format_issue", None) or "format_error")
         else:
             row = ledger.transition(job_id, expected="validating", new="succeeded")
-            if not changed:
+            # 성공 시각은 알림 외의 판정 이유가 없을 때만 기록한다. 판정 불가도 종전 라우트처럼 기록하지 않는다
+            if not [r for r in reasons if r not in NOTICE_REASONS]:
                 self._on_success(spec, result)
         return Outcome(row, result, reasons)
 
