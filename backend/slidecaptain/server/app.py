@@ -78,6 +78,7 @@ from slidecaptain.storage.file_store import (
     InvalidName,
     InvalidSourceEncoding,
     ProjectExists,
+    ProjectFormatTooNew,
     ProjectNotFound,
     ProjectInfo,
     ProjectStore,
@@ -99,6 +100,7 @@ _STATUS_BY_ERROR = [
     (SnapshotNotFound, 404),
     (SourceNotFound, 404),
     (ProjectExists, 409),
+    (ProjectFormatTooNew, 409),  # 전용 처리기가 code를 붙인다. 목록에도 StorageError보다 앞에 둔다
     (DeckConflict, 412),  # StorageError보다 앞에 둔다: 목록은 첫 매치를 쓰므로 뒤에 두면 400으로 샌다
     (SourceConflict, 409),  # 마찬가지로 StorageError보다 앞에 둔다
     (StorageError, 400),
@@ -371,6 +373,10 @@ def create_app(
     async def storage_error_handler(request, exc: StorageError):
         status = next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls))
         return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    @app.exception_handler(ProjectFormatTooNew)
+    async def project_format_error_handler(request, exc: ProjectFormatTooNew):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "project_format_too_new"})
 
     @app.exception_handler(ProviderError)
     async def provider_error_handler(request, exc: ProviderError):

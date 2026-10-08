@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import sys
 import threading
@@ -408,8 +409,11 @@ def test_unique_tmp_paths_and_closed_before_replace(store, monkeypatch):
     monkeypatch.setattr(fs.os, "replace", spy)
     store.save_deck("p1", _deck("첫 저장"))
     store.save_deck("p1", _deck("둘째 저장"))
-    assert len(seen_srcs) == 2
-    assert seen_srcs[0] != seen_srcs[1]  # 서로 다른 임시 경로
+    # D2a-1부터 스냅샷과 manifest도 원자적으로 쓴다. 덱 임시 파일은 저장마다 하나다
+    deck_srcs = [s for s in seen_srcs if os.path.basename(s).startswith(".deck-")]
+    assert len(deck_srcs) == 2
+    assert deck_srcs[0] != deck_srcs[1]  # 서로 다른 임시 경로
+    assert len(set(seen_srcs)) == len(seen_srcs)
 
 
 def test_write_exception_leaves_no_tmp_file(store, monkeypatch):

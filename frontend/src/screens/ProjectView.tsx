@@ -71,6 +71,20 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty, uploading, generating, diagramGenerating]);
 
+  if (project.status === "newer_format") {
+    // 이 앱이 모르는 형식이다. 모르는 필드를 버린 채 열거나 내보내지 않도록 아무 것도 읽지 않는다 (D2a-1)
+    return (
+      <main>
+        <h1>{project.name}</h1>
+        <p role="alert">
+          이 프로젝트는 더 새 버전의 SlideCaptain이 만든 프로젝트입니다. 이 버전에서는 열 수 없습니다.
+          프로젝트 파일은 바꾸지 않았습니다. 새 버전의 앱으로 열어 주세요.
+        </p>
+        <button onClick={onBack}>목록으로</button>
+      </main>
+    );
+  }
+
   if (project.status === "needs_recovery") {
     return (
       <main>

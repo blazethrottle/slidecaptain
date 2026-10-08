@@ -13,6 +13,9 @@ from slidecaptain.models.story import ReportType, StoryPlan
 from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
 from slidecaptain.models.change_review import DocumentChangeReview
 
+# 2026-10-08 D2a-1: 이 값은 1로 동결한다. 0.2.0이 읽을 수 있는지(형식 1, 2)는 storage/project_format.py의
+# deck_format이 덱 내용으로 판정하고 프로젝트의 manifest.json에 기록한다. 덱 스키마를 바꾸면
+# test_project_format의 스키마 해시 시험이 실패하므로 그때 형식 판정을 함께 갱신한다.
 SCHEMA_VERSION = 1
 
 GeneratedTemplateName = Literal[
@@ -214,7 +217,7 @@ class Slide(BaseModel):
     chapter_id: str
     # 제목 위 분류 라벨과 제목 아래 한 문장 (2026-09-07 DA-4). 값이 없으면 자리를 차지하지 않는다.
     # 각주는 슬롯 레벨에 이미 있어 여기 두지 않는다: 두 곳에 같은 개념이 생기고 통합은
-    # 다르게 해석되는 변경이라 스키마 버전 상향이 필요해진다 (적대 리뷰 확인)
+    # 다르게 해석되는 변경이라 형식 상향이 필요해진다 (적대 리뷰 확인. 2026-10-08부터 storage/project_format.py)
     eyebrow: str = ""
     subtitle: str = ""
     slots: Slots

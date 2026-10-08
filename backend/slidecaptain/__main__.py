@@ -210,6 +210,8 @@ def _run_qualification(args):
         store = FileProjectStore(args.deck.resolve().parent.parent)
         project = args.deck.resolve().parent.name
         with store.locked(project):
+            # 형식 확인을 내보내기 폴더 쓰기보다 먼저 한다: 더 새 형식이면 여기서 거절된다 (D2a-1)
+            store.deck_etag(project)
             def get_inputs():
                 deck, etag = store.load_deck_with_etag(project)
                 sources = load_source_directory(args.deck.resolve().parent / "sources")

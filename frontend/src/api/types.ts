@@ -2824,7 +2824,7 @@ export interface components {
              * @default ok
              * @enum {string}
              */
-            status: "ok" | "needs_recovery";
+            status: "ok" | "needs_recovery" | "newer_format";
         };
         /** ProviderSettings */
         ProviderSettings: {
@@ -3165,6 +3165,12 @@ export interface components {
             id: string;
             /** Saved At */
             saved_at: string;
+            /**
+             * Kind
+             * @default snapshot
+             * @enum {string}
+             */
+            kind: "snapshot" | "pre_migration";
         };
         /**
          * SourceLocator

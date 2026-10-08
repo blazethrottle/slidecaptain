@@ -7799,7 +7799,8 @@
             "type": "string",
             "enum": [
               "ok",
-              "needs_recovery"
+              "needs_recovery",
+              "newer_format"
             ],
             "title": "Status",
             "default": "ok"
@@ -8724,6 +8725,15 @@
           "saved_at": {
             "type": "string",
             "title": "Saved At"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "pre_migration"
+            ],
+            "title": "Kind",
+            "default": "snapshot"
           }
         },
         "type": "object",

@@ -45,7 +45,9 @@ export function RecoveryScreen({ project, onBack, onConflict }: {
         <ul>
           {snapshots.map((s) => (
             <li key={s.id}>
-              {s.saved_at} <button onClick={() => restore(s.id)}>이 시점으로 복원</button>
+              {s.saved_at}
+              {s.kind === "pre_migration" && <em> (새 형식으로 바꾸기 전)</em>}
+              {" "}<button onClick={() => restore(s.id)}>이 시점으로 복원</button>
             </li>
           ))}
         </ul>

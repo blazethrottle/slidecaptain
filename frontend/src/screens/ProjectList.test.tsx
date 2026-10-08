@@ -125,3 +125,11 @@ it("새 프로젝트의 이름과 제목 입력이 각각 한 줄을 차지한�
   expect(title).not.toBeNull();
   expect(name).not.toBe(title);
 });
+
+it("더 새 형식 프로젝트에는 새 버전 필요 표지를 보여준다 (D2a-1)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { name: "p3", title: "(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)", updated_at: "", status: "newer_format" },
+  ]);
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("새 버전 필요")).toBeInTheDocument();
+});

@@ -319,7 +319,7 @@ it("스냅샷 복구가 412면 배너가 뜨고, 다시 읽기를 누르면 최�
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithSlide).mockResolvedValue(serverDeck);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.listSnapshots).mockResolvedValue([
-    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "snapshot" }]);
   vi.mocked(api.restoreSnapshot).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -338,7 +338,7 @@ it("스냅샷 복구가 412인 채로 '목록으로'를 눌러 나가도 충돌 
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithSlide).mockResolvedValue(serverDeck);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.listSnapshots).mockResolvedValue([
-    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "snapshot" }]);
   vi.mocked(api.restoreSnapshot).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -444,4 +444,13 @@ it("장별 순차 생성이 진행 중이면 beforeunload가 막힌다", async (
   await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toBeDisabled());
   expect(dispatchBeforeUnload()).toBe(true);
+});
+
+it("더 새 형식 프로젝트는 열지 않고 안내만 보인다 (D2a-1)", async () => {
+  render(<ProjectView project={{ ...project, status: "newer_format" }} onBack={() => {}} />);
+  expect(await screen.findByText(/더 새 버전의 SlideCaptain이 만든 프로젝트/)).toBeInTheDocument();
+  expect(screen.getByText(/프로젝트 파일은 바꾸지 않았습니다/)).toBeInTheDocument();
+  expect(api.getDeck).not.toHaveBeenCalled();
+  expect(api.listSnapshots).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "목록으로" })).toBeInTheDocument();
 });

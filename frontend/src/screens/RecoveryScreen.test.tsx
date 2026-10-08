@@ -12,7 +12,7 @@ const project = { name: "p1", title: "제목", updated_at: "", status: "needs_re
 
 it("스냅샷 목록을 보여주고 확인 후 복원한다", async () => {
   vi.mocked(api.listSnapshots).mockResolvedValue([
-    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "snapshot" }]);
   vi.mocked(api.restoreSnapshot).mockResolvedValue({} as never);
   vi.spyOn(window, "confirm").mockReturnValue(true);
   const onBack = vi.fn();
@@ -24,7 +24,7 @@ it("스냅샷 목록을 보여주고 확인 후 복원한다", async () => {
 
 it("확인을 취소하면 복원하지 않는다", async () => {
   vi.mocked(api.listSnapshots).mockResolvedValue([
-    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "snapshot" }]);
   vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   await userEvent.click(await screen.findByText("이 시점으로 복원"));
@@ -33,7 +33,7 @@ it("확인을 취소하면 복원하지 않는다", async () => {
 
 it("복원이 412면 onConflict를 부르고 목록으로 돌아가지 않는다 (A5)", async () => {
   vi.mocked(api.listSnapshots).mockResolvedValue([
-    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00" }]);
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "snapshot" }]);
   vi.mocked(api.restoreSnapshot).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -43,4 +43,15 @@ it("복원이 412면 onConflict를 부르고 목록으로 돌아가지 않는다
   await userEvent.click(await screen.findByText("이 시점으로 복원"));
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
   expect(onBack).not.toHaveBeenCalled();
+});
+
+it("새 형식으로 바꾸기 전 복사본을 구별해 보인다 (D2a-1)", async () => {
+  vi.mocked(api.listSnapshots).mockResolvedValue([
+    { id: "deck-20260829-100000-000001", saved_at: "2026-08-29T10:00:00+09:00", kind: "pre_migration" },
+    { id: "deck-20260829-110000-000001", saved_at: "2026-08-29T11:00:00+09:00", kind: "snapshot" },
+  ]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  const items = await screen.findAllByRole("listitem");
+  expect(items[0]).not.toHaveTextContent("새 형식으로 바꾸기 전");  // 최신이 위로
+  expect(items[1]).toHaveTextContent("새 형식으로 바꾸기 전");
 });

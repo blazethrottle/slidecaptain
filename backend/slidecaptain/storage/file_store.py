@@ -5,6 +5,7 @@ projects/<프로젝트명>/
   sources/       # 입력 자료 원문 (수치 대조의 기준)
   snapshots/     # 저장 시점 스냅샷
   exports/       # 내보낸 PPTX
+  manifest.json  # 형식 기록 (D2a-1, storage/project_format.py). 판정은 덱 내용으로 한다
 
 - 저장은 원자적: 같은 폴더의 임시 파일에 쓴 뒤 os.replace로 교체
 - 저장마다 직전 deck.json을 스냅샷으로 보존 (복구 경로)
@@ -13,7 +14,6 @@ projects/<프로젝트명>/
 import hashlib
 import os
 import re
-import shutil
 import tempfile
 import threading
 import unicodedata
@@ -27,6 +27,7 @@ from pydantic import BaseModel, ValidationError
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
+from slidecaptain.storage import project_format
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
@@ -62,6 +63,11 @@ class SnapshotNotFound(StorageError):
     pass
 
 
+class ProjectFormatTooNew(StorageError):
+    """이 앱이 읽을 수 있는 것보다 새 형식의 프로젝트 (D2a-1). 모르는 필드를 버린 채 열거나
+    내보내지 않도록 모든 접근을 거절한다. 파일은 바꾸지 않는다."""
+
+
 class SourceNotFound(StorageError):
     pass
 
@@ -79,12 +85,20 @@ class ProjectInfo(BaseModel):
     name: str
     title: str
     updated_at: str  # ISO 8601
-    status: Literal["ok", "needs_recovery"] = "ok"
+    status: Literal["ok", "needs_recovery", "newer_format"] = "ok"
 
 
 class SnapshotInfo(BaseModel):
     id: str  # 파일 이름에서 확장자를 뺀 것 (예: deck-20260828-153000-123456)
     saved_at: str
+    # pre_migration: 형식 1 덱을 형식 2로 처음 바꾸기 직전의 복사본 (0.2.0으로 되돌릴 지점)
+    kind: Literal["snapshot", "pre_migration"] = "snapshot"
+
+
+_NEWER_FORMAT_MESSAGE = (
+    "이 프로젝트는 더 새 버전의 SlideCaptain이 만들었습니다. 이 버전에서는 열 수 없습니다. "
+    "프로젝트 파일은 바꾸지 않았습니다. 새 버전의 앱으로 열어 주세요."
+)
 
 
 def _nfc(value: str) -> str:
@@ -264,6 +278,7 @@ class FileProjectStore:
         d = self.root / name
         if not (d / "deck.json").exists():
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
+        self._require_supported_format(d)
         return d
 
     def _project_dir_any(self, name: str) -> Path:
@@ -272,7 +287,17 @@ class FileProjectStore:
         d = self.root / name
         if not d.is_dir():
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
+        self._require_supported_format(d)
         return d
+
+    @staticmethod
+    def _is_newer_format(project_dir: Path) -> bool:
+        version = project_format.manifest_format_version(project_dir)
+        return version is not None and version > project_format.MAX_SUPPORTED_FORMAT
+
+    def _require_supported_format(self, project_dir: Path) -> None:
+        if self._is_newer_format(project_dir):
+            raise ProjectFormatTooNew(_NEWER_FORMAT_MESSAGE)
 
     def _write_deck(self, project_dir: Path, deck: Deck) -> str:
         """deck.json을 원자적으로 쓰고 그 바이트의 SHA-256 16진수(ETag)를 돌려준다."""
@@ -280,17 +305,57 @@ class FileProjectStore:
         self._atomic_write(project_dir, "deck.json", data, prefix=".deck-", suffix=".tmp")
         return hashlib.sha256(data).hexdigest()
 
-    def _snapshot_current(self, project_dir: Path) -> None:
+    def _snapshot_current(self, project_dir: Path) -> str | None:
+        """현재 deck.json을 스냅샷으로 남기고 그 ID를 돌려준다. 임시 파일에 쓴 뒤 교체하므로
+        중간에 끊겨도 잘린 스냅샷이 목록에 남지 않는다 (D2a-1, 이전 전 복사본이 복구 지점이다)."""
         src = project_dir / "deck.json"
         if not src.exists():
-            return
+            return None
+        data = src.read_bytes()
+        snapshots_dir = project_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        dst = project_dir / "snapshots" / f"deck-{ts}.json"
+        stem = f"deck-{ts}"
         n = 1
-        while dst.exists():  # 같은 마이크로초 충돌 백스톱
-            dst = project_dir / "snapshots" / f"deck-{ts}-{n}.json"
+        while (snapshots_dir / f"{stem}.json").exists():  # 같은 마이크로초 충돌 백스톱
+            stem = f"deck-{ts}-{n}"
             n += 1
-        shutil.copy2(src, dst)
+        self._atomic_write(snapshots_dir, f"{stem}.json", data, prefix=".snapshot-", suffix=".tmp")
+        return stem
+
+    def _write_deck_recorded(self, project_dir: Path, deck: Deck, *, snapshot: bool) -> str:
+        """덱을 쓰고 형식 기록을 덱 내용에 맞춘다 (D2a-1).
+
+        디스크의 덱이 형식 1이고 새 덱이 형식 2이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을
+        남긴다. 몇 번째 저장이든 같다: 0.2.0이 manifest를 모른 채 형식 1 덱을 써 넣은 뒤에도
+        다시 복구 지점이 생긴다. 순서는 스냅샷, pending 기록, 덱 교체, 완료 기록이다. 끊기면
+        다음 쓰기가 덱 내용으로 pending을 마무리한다.
+        """
+        deck_path = project_dir / "deck.json"
+        old = project_format.deck_format_of_bytes(deck_path.read_bytes()) if deck_path.exists() else None
+        new = project_format.deck_format(deck)
+        manifest = project_format.reconcile(project_format.read_manifest(project_dir), old)
+        if old == 1 and new == 2:
+            snapshot_id = self._snapshot_current(project_dir)
+            record = project_format.MigrationRecord(
+                at=project_format.now_iso(), kind="upgrade", from_format=1, to_format=2,
+                snapshot_id=snapshot_id, status="pending",
+            )
+            manifest.migrations.append(record)
+            project_format.write_manifest(project_dir, manifest, self._atomic_write)
+            etag = self._write_deck(project_dir, deck)
+            record.status = "done"
+        else:
+            snapshot_id = self._snapshot_current(project_dir) if snapshot else None
+            etag = self._write_deck(project_dir, deck)
+            if old == 2 and new == 1:
+                manifest.migrations.append(project_format.MigrationRecord(
+                    at=project_format.now_iso(), kind="downgrade", from_format=2, to_format=1,
+                    snapshot_id=snapshot_id,
+                ))
+        manifest.format_version = new
+        project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        return etag
 
     # -- 프로젝트 ----------------------------------------------------------
 
@@ -317,13 +382,23 @@ class FileProjectStore:
             (d / "snapshots").mkdir()
             (d / "exports").mkdir()
             (d / "uploads").mkdir()  # 원본 업로드 보존 (계획서 B2, sources/는 AI 입력용 추출본만 둔다)
-            self._write_deck(d, Deck(meta=DeckMeta(title=title or name)))
+            self._write_deck_recorded(d, Deck(meta=DeckMeta(title=title or name)), snapshot=False)
             return self._info(d)
 
     def list_projects(self) -> list[ProjectInfo]:
         infos = []
         for d in sorted(self.root.iterdir()):
             if not d.is_dir():
+                continue
+            if self._is_newer_format(d):  # 덱 검증보다 먼저: 복구 필요로 잘못 안내하지 않는다
+                manifest_path = d / project_format.MANIFEST_NAME
+                mtime = datetime.fromtimestamp(manifest_path.stat().st_mtime).astimezone()
+                infos.append(ProjectInfo(
+                    name=_nfc(d.name),
+                    title="(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)",
+                    updated_at=mtime.isoformat(timespec="seconds"),
+                    status="newer_format",
+                ))
                 continue
             if (d / "deck.json").exists():
                 infos.append(self._info(d))
@@ -398,9 +473,7 @@ class FileProjectStore:
                 current = hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
                 if current != expected_etag:
                     raise DeckConflict(_DECK_CONFLICT_MESSAGE)
-            if snapshot:
-                self._snapshot_current(d)
-            return self._write_deck(d, deck)
+            return self._write_deck_recorded(d, deck, snapshot=snapshot)
 
     def snapshot_now(self, name: str) -> None:
         """의미 시점 스냅샷 (단계 4 결정 1): 내보내기 직전 등 명시적 복구 지점."""
@@ -413,13 +486,17 @@ class FileProjectStore:
     def list_snapshots(self, name: str) -> list[SnapshotInfo]:
         name = _nfc(name)
         d = self._project_dir_any(name)
+        pre_migration = project_format.pre_migration_snapshot_ids(d)
         infos = []
         for p in sorted((d / "snapshots").glob("deck-*.json")):
             m = _SNAPSHOT_RE.match(p.stem)
             if m is None:
                 continue
             ts = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S-%f").astimezone()
-            infos.append(SnapshotInfo(id=p.stem, saved_at=ts.isoformat(timespec="seconds")))
+            infos.append(SnapshotInfo(
+                id=p.stem, saved_at=ts.isoformat(timespec="seconds"),
+                kind="pre_migration" if p.stem in pre_migration else "snapshot",
+            ))
         return infos
 
     def restore_snapshot(
@@ -443,8 +520,8 @@ class FileProjectStore:
                 raise StorageError(
                     f"스냅샷 {snapshot_id}을 읽지 못했습니다. 다른 스냅샷을 골라 주세요. 원인: {e}"
                 ) from e
-            self._snapshot_current(d)  # 복원 직전 상태도 스냅샷으로 남긴다
-            etag = self._write_deck(d, deck)
+            # 복원 직전 상태도 스냅샷으로 남긴다. 형식이 바뀌면 형식 기록도 함께 쓴다 (D2a-1)
+            etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
 
     # -- 입력 자료 ----------------------------------------------------------
