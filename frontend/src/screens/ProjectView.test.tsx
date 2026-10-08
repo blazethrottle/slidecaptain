@@ -526,3 +526,71 @@ it("진행 중 작업을 확인하기 전에는 탭을 잠그고 확인 중이�
   status.resolve({ active: null, ledger_available: true });
   await waitFor(() => expect(editorBtn).not.toBeDisabled());
 });
+
+// -- D2b-5a 리뷰 반영 -------------------------------------------------------------------------
+
+const batchActive = (project_: string, kind = "chapters") => ({ ledger_available: true, active: {
+  id: "job-1", project: project_, kind, target: null, stage: "running" as const, created_at: "2026-10-08T10:00:00+09:00",
+  cancel_requested: false } });
+
+it("열고 난 뒤 나타난 이 프로젝트 묶음은 편집 탭을 강제로 바꾸지 않고 잠금과 안내만 한다 (리뷰 R3)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+  const editTab = await screen.findByRole("button", { name: "편집" });
+  await waitFor(() => expect(editTab).toBeEnabled());
+  await userEvent.click(editTab);
+  vi.mocked(api.getActiveJob).mockResolvedValue(batchActive(project.name));
+  window.dispatchEvent(new Event("focus"));  // 초점을 얻을 때 다시 조회한다
+  expect(await screen.findByText("이 프로젝트에서 AI 생성이 진행 중입니다.", { exact: false })).toBeInTheDocument();
+  await new Promise((r) => setTimeout(r, 30));  // 탭을 바꾸는 효과가 있었다면 실행될 시간을 준다
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(document.querySelector(".structure-screen")).toBeNull();
+  expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
+});
+
+it("진행 중으로 확인한 작업은 조회가 한 번 실패해도 잠금을 유지하고 계속 조회한다 (리뷰 R4)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob)
+    .mockResolvedValueOnce(batchActive(project.name))
+    .mockRejectedValueOnce(new ApiError(503, "연결 오류"))
+    .mockImplementation(async () => batchActive(project.name));  // 응답마다 새 객체 (리뷰 R22)
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
+  await waitFor(() => expect(vi.mocked(api.getActiveJob).mock.calls.length).toBeGreaterThanOrEqual(4));
+  expect(screen.getByRole("button", { name: "편집" })).toBeDisabled();
+  expect(dispatchBeforeUnload()).toBe(true);
+});
+
+it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listJobs).mockRejectedValue(new ApiError(503, "목록 오류"));  // 구조안 화면은 따라가지 못한다
+  vi.mocked(api.getActiveJob)
+    .mockResolvedValueOnce(batchActive(project.name))
+    .mockResolvedValue({ active: null, ledger_available: true });
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+});
+
+it("같은 프로젝트의 다른 종류 작업도 안내하고, 취소가 실패하면 원인을 보인다 (리뷰 R14, R15)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob).mockResolvedValue(batchActive(project.name, "diagram"));
+  vi.mocked(api.cancelJob).mockRejectedValue(new ApiError(503, "취소 요청을 보내지 못했습니다."));
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+  await userEvent.click(await screen.findByRole("button", { name: "그 작업 취소" }));
+  expect(api.cancelJob).toHaveBeenCalledWith(project.name, "job-1");
+  expect(await screen.findByText("취소 요청을 보내지 못했습니다.")).toBeInTheDocument();
+});
+
+it("작업 기록을 열 수 없으면 AI 생성만 막혔다고 알린다 (D2b-5c)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob).mockResolvedValue({ active: null, ledger_available: false });
+  render(<ProjectView project={project} onBack={() => {}} />);
+  expect(await screen.findByText("작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다."))
+    .toBeInTheDocument();
+});

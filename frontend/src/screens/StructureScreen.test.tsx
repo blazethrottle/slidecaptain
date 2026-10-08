@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type Deck, type GenerationUsage, type StructureResult } from "../api/client";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
@@ -364,6 +364,7 @@ it("승인 루프가 끝나면 장 생성 합계 한 줄을 보인다", async ()
   expect(await screen.findByText(/장 생성 2회.*입력 200 토큰/)).toBeInTheDocument();
 });
 
+const STARTED = "2026-10-08T10:00:01+09:00";  // 시작한 장만 사용량 누락 단서가 된다 (D2b-5a 리뷰 R11)
 const FAILED_503 = { error_class: "connection" as const, status: 503, detail: "AI 서비스가 응답하지 않습니다.", code: null };
 
 it("승인 루프에서 한 장이 503으로 실패하면 합계 줄에 포함되지 않았다는 단서가 보인다", async () => {
@@ -373,7 +374,7 @@ it("승인 루프에서 한 장이 503으로 실패하면 합계 줄에 포함�
   });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   mockBatch(batchView([chapterView("c1", "succeeded", { result: chapterResult(COVER, measuredUsage()) }),
-    chapterView("c2", "failed", { error: FAILED_503 })], { state: "failed", outcome: "partial" }),
+    chapterView("c2", "failed", { error: FAILED_503, started_at: STARTED })], { state: "failed", outcome: "partial" }),
   deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]));
   const onDone = vi.fn();
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={onDone} pollIntervalMs={0} />);
@@ -418,7 +419,7 @@ it("승인 루프에서 모든 장이 실패해도 실패 단서가 보인다", 
     usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
   });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  mockBatch(batchView([chapterView("c1", "failed", { error: FAILED_503 }), chapterView("c2", "interrupted",
+  mockBatch(batchView([chapterView("c1", "failed", { error: FAILED_503, started_at: STARTED }), chapterView("c2", "interrupted",
     { error: { error_class: null, status: null, detail: null, code: "provider_failed" } })],
   { state: "failed", outcome: "partial" }), deckWith([CH1, CH2], []));
   const onDone = vi.fn();
@@ -713,7 +714,8 @@ it("장 하나 다시 생성의 등록이 412면 충돌로 알린다 (D2b-5a)", 
     onConflict={onConflict} />);
   await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
-  expect(screen.getByRole("alert")).toHaveTextContent("먼저 저장되었습니다");
+  expect(screen.getByRole("alert")).toHaveTextContent("먼저 저장되어 내용 생성을 시작하지 못했습니다");
+  expect(screen.queryByRole("button", { name: "내용 생성 다시 시작" })).toBeNull();  // 다시 읽기가 먼저다 (리뷰 R10)
 });
 
 it("이전 입력 기준 후보를 버리면 후보 표시가 사라지고 다시 생성은 남는다 (D2b-4 리뷰 R5)", async () => {
@@ -730,7 +732,7 @@ it("이전 입력 기준 후보를 버리면 후보 표시가 사라지고 다�
   expect(screen.getByRole("button", { name: "1번 장 다시 생성" })).toBeInTheDocument();
 });
 
-it("시작하기 전에 끝난 묶음은 작업의 원인을 보이고, 다른 저장이 원인이면 충돌로 알린다 (D2b-4 리뷰 R12)", async () => {
+it("시작하기 전에 끝난 지난 묶음은 원인을 요약으로만 보이고 충돌 배너를 다시 띄우지 않는다 (D2b-4 리뷰 R12, D2b-5a 리뷰 R2)", async () => {
   vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([
     chapterView("c1", "interrupted", { error: { error_class: null, status: null, detail: null, code: "base_changed" } })],
   { state: "failed", outcome: null, started_at: null,
@@ -738,9 +740,10 @@ it("시작하기 전에 끝난 묶음은 작업의 원인을 보이고, 다른 �
   const onConflict = vi.fn();
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
     onConflict={onConflict} />);
-  expect(await screen.findByText("내용 생성을 시작하지 못했습니다. 다른 창이나 프로그램에서 먼저 저장되었습니다."))
+  expect(await screen.findByText("지난 내용 생성: 내용 생성을 시작하지 못했습니다. 다른 창이나 프로그램에서 먼저 저장되었습니다."))
     .toBeInTheDocument();
-  expect(onConflict).toHaveBeenCalled();
+  expect(onConflict).not.toHaveBeenCalled();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 it("취소 뒤 도착한 결과도 후보로 보고 버릴 수 있다 (D2b-4 리뷰 R6)", async () => {
@@ -813,4 +816,237 @@ it("구조안을 다시 생성하면 앞 후보를 버림으로 처분한다 (D2
   await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
   await waitFor(() => expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-1", "dismissed"));
   expect(vi.mocked(api.startJob).mock.calls.map((c) => c[1].kind)).toEqual(["structure", "structure"]);
+});
+
+// -- D2b-5a 리뷰 반영 -------------------------------------------------------------------------
+
+function running(chapters: ReturnType<typeof chapterView>[], extra: Parameters<typeof batchView>[1] = {}) {
+  return batchView(chapters, { state: "running", outcome: null, ...extra });
+}
+
+it("종결 뒤 덱을 다시 읽지 못해도 조회를 끝내고 다시 읽기를 안내한다 (리뷰 R1)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([running([chapterView("c1", "running")])]);
+  vi.mocked(api.getJob).mockResolvedValue(batchView([chapterView("c1", "succeeded")]));
+  vi.mocked(api.getDeck).mockRejectedValue(new ApiError(503, "덱을 읽지 못했습니다."));
+  const onBusyChange = vi.fn();
+  const onConflict = vi.fn();
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    onBusyChange={onBusyChange} onConflict={onConflict} pollIntervalMs={0} />);
+  expect(await screen.findByText(/AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다/)).toBeInTheDocument();
+  await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+  expect(onConflict).toHaveBeenCalled();
+  expect(api.getJob).toHaveBeenCalledTimes(1);
+});
+
+it("장이 적용될 때마다 덱을 다시 읽는다 (계획서 D2b-5a 덱 따라가기)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([running([chapterView("c1", "running"), chapterView("c2", "queued")])]);
+  vi.mocked(api.getJob)
+    .mockResolvedValueOnce(running([chapterView("c1", "succeeded"), chapterView("c2", "running")]))
+    .mockResolvedValueOnce(batchView([chapterView("c1", "succeeded"), chapterView("c2", "succeeded")]));
+  const mid = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]);
+  const done = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.getDeck).mockResolvedValueOnce(mid).mockResolvedValueOnce(done);
+  const onDeckChange = vi.fn();
+  render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={onDeckChange}
+    onDone={() => {}} pollIntervalMs={0} />);
+  await waitFor(() => expect(onDeckChange).toHaveBeenLastCalledWith(done));
+  expect(onDeckChange.mock.calls[0][0]).toBe(mid);  // 종결 전에 c1이 적용된 덱을 먼저 올렸다
+});
+
+it("지난 묶음은 충돌 배너를 다시 띄우지 않고, 덱이 완성됐으면 요약도 보이지 않는다 (리뷰 R2)", async () => {
+  const broken = batchView([chapterView("c1", "succeeded"), chapterView("c2", "interrupted",
+    { error: { error_class: null, status: null, detail: null, code: "chain_broken" } })], { state: "failed", outcome: "chain_broken" });
+  vi.mocked(api.listJobs).mockResolvedValue([broken]);
+  const onConflict = vi.fn();
+  const first = render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }])}
+    onDeckChange={() => {}} onDone={() => {}} onConflict={onConflict} />);
+  expect(await screen.findByText(/지난 내용 생성: 다른 창이나 프로그램에서 덱이 바뀌어/)).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
+  first.unmount();
+  render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER },
+    { chapter_id: "c2", slots: BODY }])} onDeckChange={() => {}} onDone={() => {}} onConflict={onConflict} />);
+  await waitFor(() => expect(api.listJobs).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText(/지난 내용 생성/)).toBeNull();
+  expect(onConflict).not.toHaveBeenCalled();
+});
+
+it("다른 실행의 미종결 묶음은 따라가지 않고 안내만 한다 (리뷰 R6)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([running([chapterView("c1", "running")], { owner: "other_instance" })]);
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  expect(await screen.findByText(/다른 실행의 내용 생성 작업이 끝나지 않은 채 남아 있습니다/)).toBeInTheDocument();
+  expect(api.getJob).not.toHaveBeenCalled();
+  expect(screen.queryByText(/장 중 .장을 만들지 못했습니다/)).toBeNull();
+});
+
+it("승인 뒤에 도착한 옛 목록 응답은 새 묶음을 덮지 않는다 (리뷰 R7)", async () => {
+  let listed!: (jobs: ReturnType<typeof batchView>[]) => void;
+  vi.mocked(api.listJobs).mockReturnValue(new Promise((r) => { listed = r; }));
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockResolvedValue(running([chapterView("c1", "running")], { id: "job-new" }));
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByRole("button", { name: "생성 중단" });
+  await act(async () => listed([batchView([chapterView("c1", "failed", { error: { error_class: "connection", status: 503,
+    detail: "옛 실패", code: null } })], { id: "job-old", state: "failed", outcome: "partial" })]));
+  expect(screen.getByRole("button", { name: "생성 중단" })).toBeInTheDocument();
+  expect(screen.queryByText(/옛 실패/)).toBeNull();
+});
+
+it("승인 도중 화면이 내려가면 등록 뒤 조회를 시작하지 않는다 (리뷰 R8)", async () => {
+  let consent!: (h: Record<string, string>) => void;
+  vi.mocked(api.prepareAi).mockReturnValue(new Promise((r) => { consent = r; }));
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockResolvedValue(running([chapterView("c1", "running")]));
+  vi.mocked(api.getJob).mockResolvedValue(running([chapterView("c1", "running")]));
+  const view = render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}}
+    onDone={() => {}} pollIntervalMs={0} />);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  view.unmount();
+  await act(async () => consent({ "X-AI-Consent": "SlideCaptain" }));
+  await waitFor(() => expect(api.startChapters).toHaveBeenCalled());
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(api.getJob).not.toHaveBeenCalled();
+});
+
+it("응답을 받지 못한 등록은 승인을 다시 하지 않고 같은 요청 ID로만 다시 보낸다 (리뷰 R9)", async () => {
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(running([chapterView("c1", "running")]));
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "내용 생성 다시 시작" }));
+  await waitFor(() => expect(api.startChapters).toHaveBeenCalledTimes(2));
+  const [first, second] = vi.mocked(api.startChapters).mock.calls;
+  expect(second[3]).toBe(first[3]);
+  expect(api.putDeck).toHaveBeenCalledTimes(1);
+});
+
+it("다른 AI 생성 때문에 등록이 거절되면 그 작업을 취소할 수 있다 (리뷰 R9)", async () => {
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active",
+    { id: "job-9", project: "다른보고", kind: "diagram", target: null, stage: "running", created_at: "", cancel_requested: false }));
+  vi.mocked(api.cancelJob).mockResolvedValue(jobView("diagram"));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "그 작업 취소" }));
+  expect(api.cancelJob).toHaveBeenCalledWith("다른보고", "job-9");
+});
+
+it("로그인 확인에 실패하면 승인 반영 PUT을 보내지 않는다", async () => {
+  vi.mocked(api.prepareAi).mockRejectedValue(new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요."));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("로그인 상태");
+  expect(api.putDeck).not.toHaveBeenCalled();
+});
+
+it("장별 상태 문구: 취소 요청됨, 검증 중은 생성 중, 슬라이드가 생긴 장은 완료", async () => {
+  const view = running([chapterView("c1", "cancel_requested"), chapterView("c2", "validating"), chapterView("c3", "failed")]);
+  vi.mocked(api.listJobs).mockResolvedValue([view]);
+  vi.mocked(api.getJob).mockResolvedValueOnce(view).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1, CH2, CH3], [{ chapter_id: "c3", slots: BODY }])}
+    onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={0} />);
+  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("tr")!;
+  await waitFor(() => expect(within(row(1)).getByText("취소 요청됨", { exact: false })).toBeInTheDocument());
+  expect(within(row(2)).getByText("생성 중", { exact: false })).toBeInTheDocument();
+  expect(within(row(3)).getByText("완료", { exact: false })).toBeInTheDocument();
+});
+
+it("취소 요청을 받은 묶음은 중단 버튼을 잠그고, 취소로 끝나면 예고 문구를 지운다 (리뷰 R12, R19)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([running([chapterView("c1", "running")])]);
+  let finish!: (v: ReturnType<typeof batchView>) => void;
+  vi.mocked(api.getJob)
+    .mockResolvedValueOnce(running([chapterView("c1", "running")]))
+    .mockImplementationOnce(() => new Promise((r) => { finish = r; }));
+  vi.mocked(api.cancelJob).mockResolvedValue(running([chapterView("c1", "cancel_requested")],
+    { state: "cancel_requested", cancel_requested: true }));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(await screen.findByRole("button", { name: "생성 중단" }));
+  expect(screen.getByRole("button", { name: "생성 중단" })).toBeDisabled();
+  const row = screen.getByLabelText("1번 장 주제").closest("tr")!;
+  expect(within(row).getByText("취소 요청됨", { exact: false })).toBeInTheDocument();
+  await act(async () => finish(batchView([chapterView("c1", "cancelled")], { state: "cancelled", outcome: "cancelled" })));
+  await waitFor(() => expect(screen.queryByText("취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.")).toBeNull());
+});
+
+it("이미 처분된 후보를 다시 버려도 오류 대신 지금 상태를 보인다 (리뷰 R13)", async () => {
+  const stale = chapterView("c1", "failed", { candidate_status: "stale", result: chapterResult(COVER) });
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([stale], { state: "failed", outcome: "chain_broken" })]);
+  vi.mocked(api.dismissChapterCandidate).mockRejectedValue(new ApiError(409, "처분할 결과 후보가 없거나 이미 처분했습니다."));
+  vi.mocked(api.getJob).mockResolvedValue(batchView([{ ...stale, candidate_status: "dismissed" }],
+    { state: "failed", outcome: "chain_broken" }));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 후보 버리기" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "1번 장 후보 버리기" })).toBeNull());
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("이전 입력 기준 장은 현재 입력으로 다시 생성하고 옛 후보를 버린다 (리뷰 R17, R20)", async () => {
+  const stale = chapterView("c1", "failed", { candidate_status: "stale", result: chapterResult(COVER) });
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([stale], { id: "job-old", state: "failed", outcome: "chain_broken" })]);
+  vi.mocked(api.dismissChapterCandidate).mockResolvedValue(batchView([]));
+  vi.mocked(api.startChapters).mockResolvedValue(running([chapterView("c1", "running")], { id: "job-new" }));
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  const button = await screen.findByRole("button", { name: "1번 장 다시 생성" });
+  expect(button).toHaveTextContent("현재 입력으로 다시 생성");
+  await userEvent.click(button);
+  await waitFor(() => expect(api.startChapters).toHaveBeenCalled());
+  expect(api.dismissChapterCandidate).toHaveBeenCalledWith("p1", "job-old", "c1");
+});
+
+it("장 하나 다시 생성: 동의 거절은 안내, 완료 여부 확인은 그 장에만, 덱이 완성되면 편집 탭으로", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c1", "remote_completion_unknown"),
+    chapterView("c2", "failed", { error: FAILED_503 })], { state: "failed", outcome: "partial" })]);
+  vi.mocked(api.prepareAi).mockRejectedValueOnce(new AiConsentDeclined());
+  const confirm = vi.spyOn(window, "confirm");
+  const onDone = vi.fn();
+  render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }])}
+    onDeckChange={() => {}} onDone={onDone} pollIntervalMs={0} />);
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 다시 생성" }));
+  expect(await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(confirm).not.toHaveBeenCalled();  // c2는 완료 여부를 모르는 장이 아니다
+  mockBatch(batchView([chapterView("c2", "succeeded")], { id: "job-2" }),
+    deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]));
+  await userEvent.click(screen.getByRole("button", { name: "2번 장 다시 생성" }));
+  await waitFor(() => expect(onDone).toHaveBeenCalled());
+  confirm.mockRestore();
+});
+
+it("구성 계획 낡음으로 보류된 지난 묶음은 복구 안내를 보인다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c1", "failed", { error: { error_class: "input",
+    status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } })], { state: "failed", outcome: "held_stale_plan" })]);
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toBeInTheDocument();
+});
+
+it("새로 승인하면 지난 묶음의 요약을 숨긴다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c1", "failed", { error: FAILED_503 })],
+    { state: "failed", outcome: "partial" })]);
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockResolvedValue(running([chapterView("c1", "running")]));
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  expect(await screen.findByText(/1장 중 1장을 만들지 못했습니다/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await screen.findByRole("button", { name: "생성 중단" });
+  expect(screen.queryByText(/1장 중 1장을 만들지 못했습니다/)).toBeNull();
+  expect(screen.queryByText(/지난 내용 생성/)).toBeNull();
+});
+
+it("시작 전에 취소를 받은 묶음(대기 상태)도 중단 버튼을 잠근다 (리뷰 R12)", async () => {
+  const queued = running([chapterView("c1", "queued")], { state: "queued", cancel_requested: true });
+  vi.mocked(api.listJobs).mockResolvedValue([queued]);
+  vi.mocked(api.getJob).mockResolvedValueOnce(queued).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "생성 중단" })).toBeDisabled());
 });

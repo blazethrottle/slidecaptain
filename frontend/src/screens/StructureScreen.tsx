@@ -9,6 +9,7 @@ import {
   blockingReasons, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
+import { ActiveJobNotice } from "../ui/ActiveJobNotice";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
@@ -114,6 +115,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [error, setError] = useState("");
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
+  const cancelNoticeRef = useRef("");
+  cancelNoticeRef.current = cancelNotice;
   const [rawText, setRawText] = useState("");
   // 저장하지 못한 생성 결과의 보존 (D2a-2): 보존 안내 또는 보존마저 실패했을 때 복사할 내용
   const [preservedNotice, setPreservedNotice] = useState("");
@@ -124,7 +127,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [showJob, setShowJob] = useState(true);  // 새 승인이나 재작성 적용 뒤에는 이전 요약을 숨긴다
   const [followError, setFollowError] = useState("");
   const [startFailure, setStartFailure] = useState("");
+  const [startError, setStartError] = useState<unknown>(null);
+  const [pastNotice, setPastNotice] = useState("");  // 지난 묶음과 다른 실행의 묶음 안내 (알림이 아니다)
   const followAbort = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  const startEpoch = useRef(0);  // 승인이나 장 다시 생성을 시작할 때마다 늘린다 (늦은 목록 응답 무시)
+  const pendingStart = useRef<{ targets: string[]; headers: Record<string, string>; requestId: string } | null>(null);
+  const dismissing = useRef(false);
   const appliedSeen = useRef<Set<string>>(new Set());
   const progress: Progress = job && showJob ? Object.fromEntries(job.chapters.map((c) =>
     [c.chapter_id, chapterLabel(c, deck.slides.some((s) => s.chapter_id === c.chapter_id))])) : {};
@@ -236,31 +245,35 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   };
 
   // 장별 결과에서 사용량 합계, 결과 없는 실패, 미검증 숫자, 형식 오류 원문, 구성 계획 낡음을 계산한다
-  const summarize = (view: JobView) => {
+  // live: 이 화면에서 따라간 묶음. 지난 묶음(다시 열기)은 충돌 알림 없이 요약만 보이고, 덱이 완성됐으면 숨긴다 (D2b-5a 리뷰 R2)
+  const summarize = (view: JobView, live = true, current: Deck = deck) => {
     const results = view.chapters.filter((c) => c.result);
     const usages = results.map((c) => (c.result as { usage?: GenerationUsage }).usage).filter(Boolean) as GenerationUsage[];
     setChapterUsageSummary(usages.length > 0 ? sumUsage(usages) : null);
     setChapterUsageCount(usages.length);
-    // 시작 전에 취소된 장은 AI에 보내지 않았으므로 사용량 누락의 단서가 아니다
-    setChapterUsageHadUnaccountedFailure(view.chapters.some((c) => !c.result
-      && (["failed", "interrupted", "remote_completion_unknown"].includes(c.state)
-        || (c.state === "cancelled" && c.started_at !== null))));
+    // 시작하지 않은 장은 AI에 보내지 않았으므로 사용량 누락의 단서가 아니다 (D2b-5a 리뷰 R11)
+    setChapterUsageHadUnaccountedFailure(view.chapters.some((c) => !c.result && c.started_at !== null
+      && ["failed", "interrupted", "remote_completion_unknown", "cancelled"].includes(c.state)));
     const found = results.flatMap((c) => (c.result as { unverified_numbers?: string[] }).unverified_numbers ?? []);
     setNumbers((n) => [...new Set([...n, ...found])]);
     const malformed = view.chapters.filter((c) => c.error?.error_class === "ai_output" && c.result);
     if (malformed.length) setRawText((malformed[malformed.length - 1].result as { raw_text?: string }).raw_text ?? "");
     if (view.chapters.some((c) => c.error?.code === "stale_story_plan")) setStoryStale(true);
+    if (cancelNoticeRef.current === CANCEL_REQUESTED_NOTICE) setCancelNotice("");  // 종결 뒤 예고 문구를 지운다 (리뷰 R19)
+    const complete = current.structure.chapters.every((ch) => current.slides.some((sl) => sl.chapter_id === ch.id));
+    if (!live && complete) return;
+    const show = (message: string) => (live ? setError(message) : setPastNotice(`지난 내용 생성: ${message}`));
     if (view.started_at === null && view.error) {
       // 시작하기 전에 끝났다(다른 저장, AI 연결 변경 등). 장마다가 아니라 작업의 원인을 보인다 (D2b-4 리뷰 R12)
-      setError(`내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim());
-      if (view.error.error_class === "base_changed") onConflict?.();
+      show(`내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim());
+      if (live && view.error.error_class === "base_changed") onConflict?.();
     } else if (view.outcome === "chain_broken") {
-      setError("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
-      onConflict?.();
+      show("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
+      if (live) onConflict?.();
     } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
       const malformedOnly = view.chapters.every((c) => c.state === "succeeded" || c.error?.error_class === "ai_output");
       const detail = view.chapters.find((c) => c.state === "failed" && c.error?.detail)?.error?.detail;
-      setError(malformedOnly ? "일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요."
+      show(malformedOnly ? "일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요."
         : `일부 장을 만들지 못했습니다${detail ? `(${detail})` : ""}. 실패한 장만 다시 생성해 주세요.`);
     }
   };
@@ -273,23 +286,34 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const controller = new AbortController();
     followAbort.current = controller;
     let latest: Deck | null = null;
+    let deckUnread = false;
     try {
       const final = await followJob(() => api.getJob(project.name, jobId), async (view) => {
         setJob(view);
         setFollowError("");
         const newly = view.chapters.filter((c) => c.state === "succeeded" && !appliedSeen.current.has(c.chapter_id));
         if (newly.length > 0 || TERMINAL_JOB_STATES.has(view.state)) {
-          newly.forEach((c) => appliedSeen.current.add(c.chapter_id));
-          latest = await api.getDeck(project.name);
-          onDeckChange(latest);
+          try {
+            latest = await api.getDeck(project.name);
+            onDeckChange(latest);
+            newly.forEach((c) => appliedSeen.current.add(c.chapter_id));
+          } catch (e) {
+            // 종결 뒤의 덱 읽기 실패로 조회를 끝없이 반복하지 않는다. 다시 읽기는 충돌 배너가 맡는다 (D2b-5a 리뷰 R1)
+            if (!TERMINAL_JOB_STATES.has(view.state)) throw e;
+            deckUnread = true;
+          }
         }
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
         onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });
-      summarize(final);
+      summarize(final, true, latest ?? deck);
+      if (deckUnread) {
+        setError("AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다. 서버 내용을 다시 읽어 주세요.");
+        onConflict?.();
+      }
       // 장 하나만 다시 만든 경우에도 다른 장이 비어 있으면 편집 탭으로 옮기지 않는다
       const complete = latest === null || (latest as Deck).structure.chapters
         .every((ch) => (latest as Deck).slides.some((sl) => sl.chapter_id === ch.id));
-      if (registeredHere && final.state === "succeeded" && complete) onDone();
+      if (registeredHere && final.state === "succeeded" && complete && !deckUnread) onDone();
     } catch (e) {
       if (!controller.signal.aborted) showFailure(e);
     } finally {
@@ -302,8 +326,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 화면을 다시 열면 진행 중인 묶음을 이어서 조회하고, 끝난 묶음은 결과를 보인다 (D2b-5a)
   useEffect(() => {
     let live = true;
+    mounted.current = true;
+    const startedAt = startEpoch.current;
+    // 승인이나 장 다시 생성이 그사이 시작했으면 늦게 온 목록으로 새 작업을 덮지 않는다 (D2b-5a 리뷰 R7)
+    const current = () => live && startEpoch.current === startedAt;
     api.listJobs(project.name).then(async (jobs) => {
-      if (!live) return;
+      if (!current()) return;
       // 구조안: 진행 중이면 이어서 조회하고, 처분하지 않은 후보는 초안으로 불러온다 (D2b-5b)
       const runningStructure = runningJob(jobs, ["structure"]);
       if (runningStructure) {
@@ -332,24 +360,74 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 현재 자료로 다시 생성해 주세요.`);
         }
       }
-      const latest = jobs.find((j) => j.kind === "chapters");
+      if (!current()) return;
+      // 다른 실행이 남긴 미종결 묶음은 따라가지 않는다. 그 실행이 끝났는지 이 화면은 알 수 없다 (D2b-5a 리뷰 R6)
+      const batches = jobs.filter((j) => j.kind === "chapters");
+      const latest = batches.find((j) => TERMINAL_JOB_STATES.has(j.state) || j.owner === "this_instance");
+      if (batches.some((j) => !TERMINAL_JOB_STATES.has(j.state) && j.owner !== "this_instance")) {
+        setPastNotice("다른 실행의 내용 생성 작업이 끝나지 않은 채 남아 있습니다. 앱을 다시 시작하면 상태를 확인합니다.");
+      }
       if (!latest) return;
-      latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
-      if (!TERMINAL_JOB_STATES.has(latest.state) && latest.owner === "this_instance") void follow(latest.id, false);
-      else { setJob(latest); summarize(latest); }
+      if (!TERMINAL_JOB_STATES.has(latest.state)) {
+        latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
+        void follow(latest.id, false);
+      } else { setJob(latest); summarize(latest, false); }
     }).catch(() => { /* 원장 문제는 생성 버튼을 누를 때 안내한다 */ });
-    return () => { live = false; followAbort.current?.abort(); };
+    return () => { live = false; mounted.current = false; followAbort.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.name]);
 
   const cancelGeneration = async () => {
     if (!job) return;
     try {
-      await api.cancelJob(project.name, job.id);
+      const view = await api.cancelJob(project.name, job.id);
+      if (view.kind === "chapters") setJob(view);  // 다음 조회까지 중단 버튼이 열려 있지 않게 한다 (리뷰 R12)
       setCancelNotice(CANCEL_REQUESTED_NOTICE);
     } catch (e) {
       setError(messageOf(e));
     }
+  };
+
+  // 묶음 등록. 응답을 받지 못한 등록은 같은 요청 ID로만 다시 보낸다 (계획서 5.9, D2b-5a 리뷰 R9).
+  // 같은 장의 지난 후보는 새 묶음이 대신하므로 버린다 (리뷰 R17)
+  const register = async (targets: string[], headers: Record<string, string>, requestId: string) => {
+    startEpoch.current += 1;
+    for (const c of job?.chapters ?? []) {
+      if (targets.includes(c.chapter_id) && (c.candidate_status === "held" || c.candidate_status === "stale")) {
+        void api.dismissChapterCandidate(project.name, job!.id, c.chapter_id).catch(() => {});
+      }
+    }
+    try {
+      const started = await api.startChapters(project.name, targets, headers, requestId);
+      pendingStart.current = null;
+      return started;
+    } catch (e) {
+      pendingStart.current = e instanceof ApiError ? null : { targets, headers, requestId };
+      setStartError(e);
+      if (e instanceof ApiError && e.status === 412) {
+        // 등록 기준 저장본이 바뀌었다. 다시 시작 대신 서버 내용을 다시 읽게 한다 (리뷰 R10)
+        setStartFailure("장 구성은 저장했지만 다른 곳에서 먼저 저장되어 내용 생성을 시작하지 못했습니다. 서버 내용을 다시 읽어 주세요.");
+        onConflict?.();
+      } else {
+        setStartFailure(`장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`);
+      }
+      return null;
+    }
+  };
+
+  // 등록만 다시 보낸다. 응답을 받지 못한 경우는 같은 요청 ID, 그 밖에는 승인부터 다시 한다
+  const restart = async () => {
+    const pending = pendingStart.current;
+    if (!pending) { void approve(); return; }
+    setBusy(true);
+    onBusyChange?.(true);
+    setStartFailure("");
+    setStartError(null);
+    const started = await register(pending.targets, pending.headers, pending.requestId);
+    if (!started || !mounted.current) { setBusy(false); onBusyChange?.(false); return; }
+    appliedSeen.current = new Set();
+    setJob(started);
+    await follow(started.id, true);
   };
 
   const approve = async () => {
@@ -381,6 +459,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setCancelNotice("");
     setPreservedNotice("");
     setStartFailure("");
+    setStartError(null);
+    setPastNotice("");
+    pendingStart.current = null;
     setUnsavedBackup(null);
     setChapterUsageSummary(null);
     setChapterUsageCount(0);
@@ -411,18 +492,14 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       setShowJob(false);
       if (targets.length === 0) { onDone(); return; }
-      try {
-        started = await api.startChapters(project.name, targets, headers, newRequestId());
-      } catch (e) {
-        setStartFailure(`장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`);
-        return;
-      }
+      started = await register(targets, headers, newRequestId());
     } catch (e) {
       showFailure(e);
     } finally {
-      if (!started) { setBusy(false); onBusyChange?.(false); }
+      if (!started || !mounted.current) { setBusy(false); onBusyChange?.(false); }
     }
-    if (started) {
+    // 승인 도중 화면이 내려갔으면 조회를 시작하지 않는다 (리뷰 R8)
+    if (started && mounted.current) {
       appliedSeen.current = new Set();
       setJob(started);
       await follow(started.id, true);
@@ -439,20 +516,18 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setStoryStale(false);
     setCancelNotice("");
     setStartFailure("");
+    setStartError(null);
     let started: JobView | null = null;
     try {
       const headers = await api.prepareAi();
-      started = await api.startChapters(project.name, [chapterId], headers, newRequestId());
+      started = await register([chapterId], headers, newRequestId());
     } catch (e) {
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
-      else {
-        showFailure(e);
-        if (e instanceof ApiError && e.status === 412) onConflict?.();
-      }
+      else showFailure(e);
     } finally {
-      if (!started) { setBusy(false); onBusyChange?.(false); }
+      if (!started || !mounted.current) { setBusy(false); onBusyChange?.(false); }
     }
-    if (started) {
+    if (started && mounted.current) {
       setJob(started);
       await follow(started.id, true);
     }
@@ -460,11 +535,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
 
   // 이전 입력 기준 후보나 취소 뒤 도착한 결과를 버린다. 버린 장은 결과 없이 실패한 장과 같이 다시 생성할 수 있다
   const dismissCandidate = async (chapterId: string) => {
-    if (!job) return;
+    if (!job || dismissing.current) return;
+    dismissing.current = true;
     try {
       setJob(await api.dismissChapterCandidate(project.name, job.id, chapterId));
     } catch (e) {
-      setError(messageOf(e));
+      // 이미 처분된 후보면 오류 대신 지금 상태를 다시 읽는다 (리뷰 R13)
+      if (e instanceof ApiError && e.status === 409) setJob(await api.getJob(project.name, job.id).catch(() => job));
+      else setError(messageOf(e));
+    } finally {
+      dismissing.current = false;
     }
   };
 
@@ -478,12 +558,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     <div className="structure-screen">
       {/* 생성 중에는 아래 입력 영역이 잠기므로 중단 버튼은 그 밖에 둔다 */}
       {busy && job && !TERMINAL_JOB_STATES.has(job.state) && (
-        <p><button onClick={cancelGeneration} disabled={job.state === "cancel_requested"}>생성 중단</button></p>
+        <p><button onClick={cancelGeneration} disabled={job.state === "cancel_requested" || job.cancel_requested}>생성 중단</button></p>
       )}
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
-      {startFailure && <p role="alert">{startFailure} <button onClick={approve}>내용 생성 다시 시작</button></p>}
+      {startFailure && <p role="alert">{startFailure}
+        {!(startError instanceof ApiError && startError.status === 412) && <> <button onClick={() => void restart()}>내용 생성 다시 시작</button></>}
+      </p>}
+      <ActiveJobNotice error={startError} />
+      {pastNotice && <p className="notice">{pastNotice}</p>}
       {preservedNotice && <p role="status">{preservedNotice}</p>}
       {unsavedBackup && (
         <div role="alert">
@@ -577,7 +661,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                     <button aria-label={`${c.topic} 삭제`} disabled={c.template === "diagram"} onClick={() => remove(i)}>삭제</button>
                     {progress[c.id] && <span> {progress[c.id]}</span>}
                     {chapterRow(c.id) && (
-                      <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>이 장 다시 생성</button>
+                      <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>
+                        {["stale", "held"].includes(chapterRow(c.id)!.candidate_status) ? "현재 입력으로 다시 생성" : "이 장 다시 생성"}</button>
                     )}
                     {["stale", "held"].includes(chapterRow(c.id)?.candidate_status ?? "") && (<>
                       {candidateText(chapterRow(c.id)!) && (

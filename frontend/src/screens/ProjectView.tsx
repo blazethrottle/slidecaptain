@@ -41,14 +41,23 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 서비스 전체의 진행 중 AI 작업 (D2b-5a, 계획서 5.9). 확인 전에는 생성 중과 같이 잠근다(새로고침 직후 잠금 공백 방지)
   const [jobChecked, setJobChecked] = useState(false);
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
+  const [ledgerAvailable, setLedgerAvailable] = useState(true);
+  const checkSeq = useRef(0);
+  const checkedOnce = useRef(false);
   const refreshActiveJob = useCallback(async () => {
+    const seq = ++checkSeq.current;
     try {
       const status = await api.getActiveJob();
+      if (seq !== checkSeq.current) return;  // 늦게 온 옛 응답은 버린다 (D2b-5a 리뷰 R18)
       setActiveJob(status.active ?? null);
+      setLedgerAvailable(status.ledger_available);
     } catch {
-      setActiveJob(null);  // 확인하지 못하면 잠그지 않는다. 생성 버튼이 원인을 안내한다
+      if (seq !== checkSeq.current) return;
+      // 첫 확인이 실패하면 잠그지 않는다(생성 버튼이 원인을 안내한다). 진행 중으로 확인한 작업은 놓지 않고
+      // 새 객체로 바꿔 다음 조회를 예약한다 (D2b-5a 리뷰 R4)
+      setActiveJob((previous) => (previous ? { ...previous } : null));
     } finally {
-      setJobChecked(true);
+      if (seq === checkSeq.current) { setJobChecked(true); checkedOnce.current = true; }
     }
   }, []);
   useEffect(() => {
@@ -64,9 +73,20 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     return () => clearTimeout(timer);
   }, [activeJob, jobPollMs, refreshActiveJob]);
   const batchHere = activeJob?.project === project.name && activeJob.kind === "chapters";
-  const elsewhere = activeJob !== null && activeJob.project !== project.name ? activeJob : null;
-  // 이 프로젝트의 장 생성 묶음이 이미 돌고 있으면 진행 표시가 있는 구조안 탭을 연다
-  useEffect(() => { if (batchHere) setTab("structure"); }, [batchHere]);
+  // 이 프로젝트를 열 때 이미 묶음이 돌고 있으면 진행 표시가 있는 구조안 탭을 연다. 그 뒤에 나타난 묶음은
+  // 편집 탭의 저장을 거치지 않고 탭을 바꾸지 않도록 안내만 한다 (D2b-5a 리뷰 R3, R18)
+  const openedWithBatch = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (!jobChecked || openedWithBatch.current !== null) return;
+    openedWithBatch.current = batchHere;
+    if (batchHere) setTab("structure");
+  }, [jobChecked, batchHere]);
+  // 묶음이 끝나면 덱을 한 번 다시 읽는다. 구조안 화면이 따라가지 못했어도 저장 ETag가 옛 값으로 남지 않는다 (리뷰 R5)
+  const wasBatchHere = useRef(false);
+  useEffect(() => {
+    if (wasBatchHere.current && !batchHere) api.getDeck(project.name).then(setDeck).catch(() => {});
+    wasBatchHere.current = batchHere;
+  }, [batchHere, project.name]);
   // 화면 전체를 막는 AI 작업: 구조안 승인의 장 생성, 도식 생성, 진행 중 작업 확인 전, 이 프로젝트의 장 생성 묶음
   const aiBusy = generating || diagramGenerating || !jobChecked || batchHere;
   const aiBusyTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "AI 생성이 끝나면 이동할 수 있습니다";
@@ -283,12 +303,19 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             title={showRecovery ? "복구 화면의 목록으로 버튼을 눌러 닫으면 이력을 열 수 있습니다" : undefined}>검수 이력</button>
         </nav>
       </header>
-      {elsewhere && (
+      {activeJob && (
+        // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
         <p className="notice">
-          다른 프로젝트({elsewhere.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.{" "}
-          <button onClick={() => void api.cancelJob(elsewhere.project, elsewhere.id).then(refreshActiveJob)}
-            disabled={elsewhere.cancel_requested}>그 작업 취소</button>
+          {activeJob.project === project.name
+            ? "이 프로젝트에서 AI 생성이 진행 중입니다."
+            : `다른 프로젝트(${activeJob.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.`}{" "}
+          <button onClick={() => void api.cancelJob(activeJob.project, activeJob.id).then(refreshActiveJob)
+            .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
         </p>
+      )}
+      {!ledgerAvailable && (
+        // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
+        <p className="notice">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>
       )}
       <AISettingsPanel disabled={aiBusy || uploading || leaving || dialogOpen} />
       {dialogOpen && (
