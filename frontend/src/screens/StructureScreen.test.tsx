@@ -716,3 +716,26 @@ it("이전 입력 기준 후보를 버리면 후보 표시가 사라지고 다�
   expect(screen.queryByRole("button", { name: "1번 장 후보 버리기" })).toBeNull();
   expect(screen.getByRole("button", { name: "1번 장 다시 생성" })).toBeInTheDocument();
 });
+
+it("시작하기 전에 끝난 묶음은 작업의 원인을 보이고, 다른 저장이 원인이면 충돌로 알린다 (D2b-4 리뷰 R12)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([
+    chapterView("c1", "interrupted", { error: { error_class: null, status: null, detail: null, code: "base_changed" } })],
+  { state: "failed", outcome: null, started_at: null,
+    error: { error_class: "base_changed", status: 412, detail: "다른 창이나 프로그램에서 먼저 저장되었습니다.", code: "base_changed" } })]);
+  const onConflict = vi.fn();
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    onConflict={onConflict} />);
+  expect(await screen.findByText("내용 생성을 시작하지 못했습니다. 다른 창이나 프로그램에서 먼저 저장되었습니다."))
+    .toBeInTheDocument();
+  expect(onConflict).toHaveBeenCalled();
+});
+
+it("취소 뒤 도착한 결과도 후보로 보고 버릴 수 있다 (D2b-4 리뷰 R6)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([chapterView("c1", "cancelled", {
+    candidate_status: "held", result: chapterResult(COVER), started_at: "2026-10-08T10:00:01+09:00",
+    error: { error_class: "cancelled", status: null, detail: null, code: null } })],
+  { state: "cancelled", outcome: "cancelled" })]);
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  expect(await screen.findByText("후보 보기")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "1번 장 후보 버리기" })).toBeInTheDocument();
+});

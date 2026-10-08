@@ -80,13 +80,14 @@ from slidecaptain.models.jobs import (
     ActiveJob, ActiveJobStatus, CandidateAction, ChapterView, GenerationActiveBody, JobError, JobRequest, JobView,
 )
 from slidecaptain.server.jobs import (
-    FORMAT_ERROR_MESSAGE,
+    FORMAT_ERROR_MESSAGE, LEDGER_WRITE_MESSAGE,
     real_reasons,
     GENERATION_ACTIVE_MESSAGE, SERVICE_STOPPING_MESSAGE, GenerationActive, JobFailed, JobRunner, JobSpec,
     ServiceStopping, http_error_from, new_request_id,
 )
 from slidecaptain.storage.job_ledger import (
-    BATCH_KIND, HELD_STALE_PLAN, parent_outcome, reconcile_chapter,
+    BATCH_KIND, CHAIN_BROKEN, HELD_STALE_PLAN, STALE_STORY_PLAN, UNFINISHED as UNFINISHED_CHAPTER, parent_outcome,
+    reconcile_chapter,
     FixedInputs, JobLedger, JobRow, LedgerError, LedgerUnavailable, RequestIdConflict, TransitionRejected, params_hash,
 )
 from slidecaptain.storage.file_store import (
@@ -430,6 +431,8 @@ def create_app(
             return "input", 409, str(exc), exc.code
         if isinstance(exc, StorageError):
             return "input", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc), None
+        if isinstance(exc, LedgerError):  # 묶음의 장이 원격 호출 시각을 남기지 못했다 (D2b-4 리뷰 R3)
+            return "ledger", 503, LEDGER_WRITE_MESSAGE, "ledger_write_failed"
         _LOG.error("AI 생성 작업의 예기치 않은 오류", exc_info=exc)
         return "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None
 
@@ -438,7 +441,7 @@ def create_app(
 
     runner = JobRunner(ledger=ledger, ledger_error=ledger_error, instance_id=instance_id,
                        acquire=_acquire_service, classify=_classify, on_success=_on_job_success,
-                       batch_reconcile=lambda row, allow_apply: _batch_reconcile(row, allow_apply))
+                       batch_reconcile=lambda row, allow_apply, force=False: _batch_reconcile(row, allow_apply, force))
     app.state.job_runner = runner  # 시험이 실행기의 대기와 종료를 직접 부를 수 있게 둔다
 
     def _fixed_selection() -> tuple[str | None, str | None]:
@@ -639,7 +642,7 @@ def create_app(
         await asyncio.to_thread(runner.mark_delivered, handle.job_id)
         return result
 
-    def _job_views(rows: list[JobRow]) -> list[JobView]:
+    def _job_views(rows: list[JobRow], chapters: dict[str, list] | None = None) -> list[JobView]:
         """작업 행을 응답으로 바꾼다. 프로젝트마다 덱과 자료를 한 번만 읽고(D2b-2 리뷰 R9, D2b-3 리뷰 R12),
         실행 중 판정과 같은 이유 이름을 쓴다(D2b-3 리뷰 R4)."""
         basis: dict[str, tuple] = {}
@@ -678,27 +681,38 @@ def create_app(
                     error=JobError(error_class=c.error_class, status=c.error_status, detail=c.error_detail,
                                    code=c.error_code) if (c.error_class or c.error_status or c.error_code) else None,
                     result=c.result if isinstance(c.result, dict) else None, started_at=c.started_at,
-                    finished_at=c.finished_at) for c in runner.ledger.chapters(row.id)]
+                    finished_at=c.finished_at)
+                    for c in (chapters[row.id] if chapters and row.id in chapters else runner.ledger.chapters(row.id))]
                 if row.kind == BATCH_KIND else []))
         return views
 
     def _job_view(row: JobRow) -> JobView:
         return _job_views([row])[0]
 
-    def _project_jobs(name: str) -> list[JobRow]:
-        """미종결 작업을 앞에, 그다음 화면에 전달되지 않은 후보와 종류마다 가장 최근 작업 (계획서 5.9)."""
+    def _project_jobs(name: str, chapters: dict[str, list] | None = None) -> list[JobRow]:
+        """미종결 작업을 앞에, 그다음 화면에 전달되지 않은 후보와 종류마다 가장 최근 작업 (계획서 5.9).
+
+        chapters를 넘기면 읽은 묶음의 하위 행을 담아 응답 구성이 다시 읽지 않게 한다 (D2b-4 리뷰 R17).
+        """
         if ledger is None:
             return []
+        cache = chapters if chapters is not None else {}
         unfinished, rest, latest = [], [], set()
         for row in ledger.list_jobs(name):
+            if row.kind == BATCH_KIND:
+                cache[row.id] = ledger.chapters(row.id)
             if row.state in ("queued", "running", "validating", "cancel_requested"):
                 unfinished.append(row)
             elif (row.candidate_status in ("held", "stale") or row.kind not in latest
                   or (row.kind == BATCH_KIND and any(c.candidate_status in ("held", "stale")
-                                                     for c in ledger.chapters(row.id)))):
+                                                     for c in cache[row.id]))):
                 rest.append(row)
             latest.add(row.kind)
         return unfinished + rest
+
+    def _project_job_views(name: str) -> list[JobView]:
+        chapters: dict[str, list] = {}
+        return _job_views(_project_jobs(name, chapters), chapters)
 
     # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
@@ -1273,7 +1287,7 @@ def create_app(
         progress = project_progress(deck, sources=sources, sources_error=sources_error, latest_export=item,
                                     reviews=reviews, reviews_error=reviews_error, export_error=export_error)
         try:
-            progress.jobs = _job_views(_project_jobs(name)) if ledger is not None else None
+            progress.jobs = _project_job_views(name) if ledger is not None else None
         except LedgerError:  # 원장 문제는 진행 표시 전체를 막지 않는다 (D2b-2 리뷰 R17)
             progress.jobs = None
         return progress
@@ -1679,22 +1693,27 @@ def create_app(
 
     def _chapters_spec(name: str, chapter_ids: list[str], if_match: str | None, selection_id: str | None,
                        request_id: str) -> JobSpec:
-        """등록 검사: 기준 ETag(428/412), 자료 422, 없는 장 404, 중복 422, 도식 장 422, 구성 계획 낡음 409."""
-        if len(set(chapter_ids)) != len(chapter_ids):
-            raise HTTPException(422, "같은 장을 두 번 생성할 수 없습니다.")
+        """등록 검사 (계획서 D2b-4 정정 ①, D2b-4 리뷰 R16): 기준 ETag 428, 412, 중복 422, 자료 422, 없는 장 404,
+        도식 장 422, 이미 내용이 있는 장 409, 구성 계획 낡음 409, 선택 409. 거절하면 행을 만들지 않는다."""
         if not if_match:
             raise HTTPException(428, "장 생성의 기준 저장본을 확인해야 합니다. 프로젝트를 다시 열어 주세요.")
         with store.locked(name):
             deck, etag = store.load_deck_with_etag(name)
             if if_match.strip('"') != etag:
                 raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+            if len(set(chapter_ids)) != len(chapter_ids):
+                raise HTTPException(422, "같은 장을 두 번 생성할 수 없습니다.")
             sources = _load_sources(name)
         by_id = {ch.id: ch for ch in deck.structure.chapters}
-        for chapter_id in chapter_ids:
-            if chapter_id not in by_id:
-                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-            if by_id[chapter_id].template == "diagram":
-                raise DiagramGenerationUnsupported()
+        missing = next((cid for cid in chapter_ids if cid not in by_id), None)
+        if missing is not None:
+            raise HTTPException(404, f"구조안에 없는 장입니다: {missing}")
+        if any(by_id[cid].template == "diagram" for cid in chapter_ids):
+            raise DiagramGenerationUnsupported()
+        # 이미 슬라이드가 있는 장은 적용 단계의 사슬 검사에서 반드시 거절된다. 호출 비용을 쓰기 전에 막는다 (리뷰 R10)
+        filled = next((cid for cid in chapter_ids if any(sl.chapter_id == cid for sl in deck.slides)), None)
+        if filled is not None:
+            raise HTTPException(409, f"이미 내용이 있는 장입니다: {by_id[filled].topic}. 편집 탭에서 다시 생성해 주세요.")
         require_current_story(deck, sources)
         _require_current_selection(selection_id)
         revision = sources_fingerprint(sources)
@@ -1708,9 +1727,31 @@ def create_app(
                        run=run, recheck=_base_recheck(name, etag, revision), chapter_ids=list(chapter_ids), batch=True)
 
     def _close_chapters(job_id: str, chapter_ids: list[str], new: str, code: str | None = None) -> None:
+        """아직 시작하지 않은 장을 닫는다. 종료 처리가 먼저 닫은 장은 건너뛴다 (D2b-4 리뷰 R13)."""
         with runner.ledger.batch():
+            states = {c.chapter_id: c.state for c in runner.ledger.chapters(job_id)}
             for chapter_id in chapter_ids:
-                runner.ledger.transition_chapter(job_id, chapter_id, expected="queued", new=new, error_code=code)
+                if states.get(chapter_id) == "queued":
+                    runner.ledger.transition_chapter(job_id, chapter_id, expected="queued", new=new, error_code=code)
+
+    def _cancel_chapter(job_id: str, chapter_id: str, rest: list[str], result=None,
+                        failure: BaseException | None = None) -> None:
+        """진행 장을 취소 요청을 거쳐 취소로 닫고 남은 장도 취소로 닫는다. 결과가 왔으면 후보로 남긴다."""
+        fields: dict = {"error_class": "cancelled"}
+        if result is not None:
+            fields.update(result=result.model_dump(mode="json"), candidate_status="held")
+        if failure is not None:
+            _, status, detail, code = _classify(failure)
+            fields.update(error_status=status, error_detail=detail, error_code=code)
+        with runner.ledger.batch():
+            # 취소를 전달할 때 실행기가 그 장을 이미 취소 요청으로 바꿨을 수 있고, 종료 처리가 먼저 닫았을 수 있다
+            state = next(c.state for c in runner.ledger.chapters(job_id) if c.chapter_id == chapter_id)
+            if state == "running":
+                runner.ledger.transition_chapter(job_id, chapter_id, expected="running", new="cancel_requested")
+            if state in ("running", "cancel_requested"):
+                runner.ledger.transition_chapter(job_id, chapter_id, expected="cancel_requested", new="cancelled",
+                                                 **fields)
+            _close_chapters(job_id, rest, "cancelled")
 
     async def _run_chapters(name: str, ctx, chapter_ids: list[str], etag: str, revision: str, svc,
                             provider_id, model) -> None:
@@ -1721,30 +1762,41 @@ def create_app(
             if ctx.cancel_requested:
                 _close_chapters(job_id, chapter_ids[index:], "cancelled")
                 return
+            # 장과 장 사이에 다른 저장이 덱을 바꿨으면 남은 장을 보내지 않는다 (계획서 2.1, D2b-4 리뷰 R11)
+            if index > 0 and await asyncio.to_thread(store.deck_etag, name) != chain:
+                _close_chapters(job_id, chapter_ids[index:], "interrupted", CHAIN_BROKEN)
+                return
             ledger.transition_chapter(job_id, chapter_id, expected="queued", new="running", attempts=1)
             ctx.current_chapter = chapter_id
+            result = failure = None
             try:
                 deck, sources = await asyncio.to_thread(lambda: (store.load_deck(name), _load_sources(name)))
                 result = await svc.generate_chapter(deck, chapter_id, sources, _preset_for(deck), "",
                                                     on_usage=lambda rec: _append_usage(name, rec))
             except asyncio.CancelledError:
                 # 이미 보낸 요청이 취소됐다고 추정하지 않는다. 그 장은 취소 요청을 거쳐 취소로 끝난다
-                ledger.transition_chapter(job_id, chapter_id, expected="running", new="cancel_requested")
-                ledger.transition_chapter(job_id, chapter_id, expected="cancel_requested", new="cancelled",
-                                          error_class="cancelled")
-                _close_chapters(job_id, rest, "cancelled")
+                _cancel_chapter(job_id, chapter_id, rest)
                 return
             except Exception as exc:
-                error_class, status, detail, code = _classify(exc)
-                ledger.transition_chapter(job_id, chapter_id, expected="running", new="failed",
-                                          error_class=error_class, error_status=status, error_detail=detail,
-                                          error_code=code)
-                # 구성 계획 낡음은 남은 장을 보류로, 그 밖의 오류는 같은 연결로 실패할 호출을 보내지 않으려 중단한다
-                _close_chapters(job_id, rest, "interrupted",
-                                HELD_STALE_PLAN if code == "stale_story_plan" else "provider_failed")
-                return
+                failure = exc
             finally:
                 ctx.current_chapter = None
+            if ctx.cancel_requested:
+                # 취소 요청 뒤 값이나 오류로 끝났다. 남기되 적용하지 않는다 (계획서 5.5, D2b-4 리뷰 R6)
+                _cancel_chapter(job_id, chapter_id, rest, result, failure)
+                return
+            if failure is not None:
+                error_class, status, detail, code = _classify(failure)
+                # 구성 계획 낡음은 남은 장을 보류로, 그 밖의 오류는 같은 연결로 실패할 호출을 보내지 않으려 중단한다.
+                # 그 장의 결과와 남은 장의 처리는 한 트랜잭션에 쓴다 (계획서 5.7, D2b-4 리뷰 R8)
+                rest_code = (HELD_STALE_PLAN if code == STALE_STORY_PLAN
+                             else "ledger_failed" if error_class == "ledger" else "provider_failed")
+                with ledger.batch():
+                    ledger.transition_chapter(job_id, chapter_id, expected="running", new="failed",
+                                              error_class=error_class, error_status=status, error_detail=detail,
+                                              error_code=code)
+                    _close_chapters(job_id, rest, "interrupted", rest_code)
+                return
             dumped = result.model_dump(mode="json")
             if result.status != "ok" or result.slots is None:
                 ledger.transition_chapter(job_id, chapter_id, expected="running", new="validating", result=dumped)
@@ -1754,12 +1806,19 @@ def create_app(
                 continue  # 형식 오류인 장은 실패로 두고 다음 장으로 간다 (지금 승인 루프와 같다)
             ledger.transition_chapter(job_id, chapter_id, expected="running", new="validating", result=dumped,
                                       candidate_status="held")
-            applied = await asyncio.to_thread(_apply_chapter, name, job_id, chapter_id, chain, revision, dumped)
+            # 적용 중 취소가 와도 적용은 끝까지 기다린다. 그 뒤 남은 장을 취소로 닫는다 (D2b-4 리뷰 R2)
+            applying = asyncio.ensure_future(
+                asyncio.to_thread(_apply_chapter, name, job_id, chapter_id, chain, revision, dumped))
+            try:
+                applied = await asyncio.shield(applying)
+            except asyncio.CancelledError:
+                applied = await applying
+            if applied is not None:  # 취소가 왔으면 다음 차례의 취소 확인이 남은 장을 닫는다
+                chain = applied
+                _record_success(result, provider_id, model)
             if applied is None:
-                _close_chapters(job_id, rest, "interrupted")
+                _close_chapters(job_id, rest, "cancelled" if ctx.cancel_requested else "interrupted")
                 return
-            chain = applied
-            _record_success(result, provider_id, model)
 
     def _apply_chapter(name: str, job_id: str, chapter_id: str, chain: str, revision: str | None,
                        result: dict) -> str | None:
@@ -1780,13 +1839,15 @@ def create_app(
                                           error_class="base_changed", error_code="base_changed",
                                           candidate_status="stale")
                 return None
-            new_deck = deck.model_copy(update={"slides": [*deck.slides, Slide.model_validate(
-                {"chapter_id": chapter_id, "slots": slots, "eyebrow": "", "subtitle": ""})]})
             try:
+                # 원장의 결과가 지금 슬롯 형식에 맞지 않을 수 있다(앱 업데이트 사이의 재시작, D2b-4 리뷰 R4)
+                new_deck = deck.model_copy(update={"slides": [*deck.slides, Slide.model_validate(
+                    {"chapter_id": chapter_id, "slots": slots, "eyebrow": "", "subtitle": ""})]})
                 target = store.etag_for(new_deck)
                 ledger.update_chapter(job_id, chapter_id, expected="validating", apply_target_etag=target)
                 saved = store.save_deck(name, new_deck, snapshot=False, expected_etag=chain)
-            except (StorageError, OSError, ValueError) as exc:
+            except (StorageError, OSError, ValueError, LedgerError) as exc:
+                # 저장하지 않았다. 결과는 후보로 남는다(held). 원장이 계속 실패하면 이 전이도 실패해 위로 올라간다
                 ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed",
                                           error_class="input", error_detail=str(exc)[:500], error_code="apply_failed")
                 return None
@@ -1794,12 +1855,19 @@ def create_app(
                                       candidate_status="applied")
             return saved
 
-    def _batch_reconcile(row: JobRow, allow_apply: bool) -> bool:
-        """묶음의 재시작 조정과 종료 정리 (계획서 5.6 표). 남은 장은 생성하지 않는다. 바꾼 것이 있으면 참."""
-        ledger, changed, deferred = runner.ledger, False, False
+    def _batch_reconcile(row: JobRow, allow_apply: bool, force: bool = False) -> bool:
+        """묶음의 재시작 조정과 종료 정리 (계획서 5.6 표). 남은 장은 생성하지 않는다. 바꾼 것이 있으면 참.
+
+        force는 실행 중 예외로 끝난 묶음의 마지막 수단이다. 조정으로 끝나지 않은 장을 적용 실패로 닫아 부모를
+        종결한다. 그러지 않으면 실행기는 비었는데 원장에는 미종결 묶음이 남는다 (D2b-4 리뷰 R1).
+        """
+        ledger, changed, deferred, close_code = runner.ledger, False, False, "apply_failed"
         with store.locked(row.project):
             try:
                 deck, current = store.load_deck_with_etag(row.project)
+            except ProjectNotFound:
+                # 삭제나 이름 변경은 다음 시작에도 그대로다. 미루면 영구히 미종결로 남는다 (D2b-4 리뷰 R14)
+                deck, current, force, close_code = None, None, True, "project_missing"
             except (StorageError, OSError):
                 deck, current = None, None
         chain = row.base_etag
@@ -1808,11 +1876,18 @@ def create_app(
                 chain = chapter.applied_etag
                 continue
             slide = None if deck is None else next((s for s in deck.slides if s.chapter_id == chapter.chapter_id), None)
-            action = reconcile_chapter(chapter, chain_etag=chain, current_etag=current,
-                                       deck_slots=slide.slots if slide is not None else None)
+            cid, state = chapter.chapter_id, chapter.state
+            try:
+                action = reconcile_chapter(chapter, chain_etag=chain, current_etag=current,
+                                           deck_slots=slide.slots if slide is not None else None)
+            except (ValueError, TypeError):  # 원장의 결과가 지금 슬롯 형식에 맞지 않는다 (D2b-4 리뷰 R4)
+                ledger.transition_chapter(row.id, cid, expected=state, new="failed", error_class="input",
+                                          error_detail="저장된 결과를 지금 형식으로 읽지 못했습니다.",
+                                          error_code="result_unreadable")
+                changed = True
+                continue
             if action is None:
                 continue
-            cid, state = chapter.chapter_id, chapter.state
             if action == "defer_unknown" or (action == "resume_apply" and not allow_apply):
                 deferred = True  # 덱을 읽을 수 없거나 종료 중이다. 다음 시작에서 다시 본다
                 continue
@@ -1835,8 +1910,23 @@ def create_app(
                 applied = _apply_chapter(row.project, row.id, cid, chain, row.sources_fingerprint, chapter.result)
                 if applied is not None:
                     chain = current = applied
-                    with store.locked(row.project):
-                        deck = store.load_deck(row.project)
+                    try:
+                        with store.locked(row.project):
+                            deck = store.load_deck(row.project)
+                    except (StorageError, OSError):
+                        deck, current = None, None  # 다음 장은 판정을 미룬다
+        if force:
+            with ledger.batch():
+                for c in ledger.chapters(row.id):
+                    if c.state == "queued":
+                        ledger.transition_chapter(row.id, c.chapter_id, expected="queued", new="interrupted",
+                                                  error_code=close_code if close_code == "project_missing" else None)
+                    elif c.state in UNFINISHED_CHAPTER:
+                        new = "failed" if c.state != "cancel_requested" else "cancelled"
+                        ledger.transition_chapter(row.id, c.chapter_id, expected=c.state, new=new,
+                                                  error_class="input" if new == "failed" else "cancelled",
+                                                  error_code=close_code if new == "failed" else None)
+            deferred, changed = False, True
         latest = ledger.get_job(row.id)
         chapters = ledger.chapters(row.id)
         if (not deferred and latest.state in ("running", "validating", "cancel_requested")
@@ -1900,7 +1990,7 @@ def create_app(
     @app.get("/api/projects/{name}/jobs", response_model=list[JobView])
     def list_jobs(name: str):
         runner.require_ledger()  # 원장 없음은 빈 목록이 아니라 503이다 (α 묶음 리뷰 A14)
-        return _job_views(_project_jobs(name))
+        return _project_job_views(name)
 
     def _project_job(name: str, job_id: str) -> JobRow:
         row = runner.require_ledger().get_job(job_id)

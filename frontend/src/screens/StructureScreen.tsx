@@ -237,7 +237,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const malformed = view.chapters.filter((c) => c.error?.error_class === "ai_output" && c.result);
     if (malformed.length) setRawText((malformed[malformed.length - 1].result as { raw_text?: string }).raw_text ?? "");
     if (view.chapters.some((c) => c.error?.code === "stale_story_plan")) setStoryStale(true);
-    if (view.outcome === "chain_broken") {
+    if (view.started_at === null && view.error) {
+      // 시작하기 전에 끝났다(다른 저장, AI 연결 변경 등). 장마다가 아니라 작업의 원인을 보인다 (D2b-4 리뷰 R12)
+      setError(`내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim());
+      if (view.error.error_class === "base_changed") onConflict?.();
+    } else if (view.outcome === "chain_broken") {
       setError("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
       onConflict?.();
     } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
@@ -410,7 +414,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     }
   };
 
-  // 이전 입력 기준 후보를 버린다. 버린 장은 결과 없이 실패한 장과 같이 다시 생성할 수 있다
+  // 이전 입력 기준 후보나 취소 뒤 도착한 결과를 버린다. 버린 장은 결과 없이 실패한 장과 같이 다시 생성할 수 있다
   const dismissCandidate = async (chapterId: string) => {
     if (!job) return;
     try {
@@ -525,7 +529,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                     {chapterRow(c.id) && (
                       <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>이 장 다시 생성</button>
                     )}
-                    {chapterRow(c.id)?.candidate_status === "stale" && (<>
+                    {["stale", "held"].includes(chapterRow(c.id)?.candidate_status ?? "") && (<>
                       {candidateText(chapterRow(c.id)!) && (
                         <details><summary>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
                       )}

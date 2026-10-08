@@ -241,7 +241,7 @@ class JobRunner:
                  acquire: Callable[[str | None, Callable[[], None]], tuple[Any, Callable[[], None]]],
                  classify: Classifier,
                  on_success: Callable[[JobSpec, Any], None],
-                 batch_reconcile: Callable[[JobRow, bool], bool] | None = None):
+                 batch_reconcile: Callable[..., bool] | None = None):
         self.ledger, self.ledger_error = ledger, ledger_error
         self.instance_id = instance_id
         self._acquire, self._classify, self._on_success = acquire, classify, on_success
@@ -333,7 +333,13 @@ class JobRunner:
         if handle.provider_task is None or handle.cancel_sent or handle.provider_task.done():
             return  # 임대 획득이나 재비교 중이면 실행 코루틴이 queued에서 cancelled로 끝낸다
         try:
-            self.ledger.transition(handle.job_id, expected="running", new="cancel_requested")
+            with self.ledger.batch():
+                self.ledger.transition(handle.job_id, expected="running", new="cancel_requested")
+                # 묶음이면 생성 중인 장도 취소 요청으로 보인다. 제공자 정리가 길어도 "생성 중"으로 보이지 않게 한다
+                chapter = handle.current_chapter if handle.spec.batch else None
+                if chapter is not None and any(c.chapter_id == chapter and c.state == "running"
+                                               for c in self.ledger.chapters(handle.job_id)):
+                    self.ledger.transition_chapter(handle.job_id, chapter, expected="running", new="cancel_requested")
         except (TransitionRejected, LedgerError):
             return
         handle.cancel_sent = True
@@ -498,11 +504,14 @@ class JobRunner:
     def _end_before_run(self, handle: JobHandle, exc: BaseException | None, cancelled: bool) -> JobRow:
         """실행 전에 끝난 작업. 묶음이면 시작하지 않은 장도 같은 이유로 닫는다."""
         if handle.spec.batch:
+            # 장에는 부모와 같은 사유 코드를 남긴다. 화면이 장 단위로 원인을 보일 수 있다 (D2b-4 리뷰 R12)
+            code = None if exc is None or cancelled else self._classify(exc)[3]
             with self.ledger.batch():
                 for chapter in self.ledger.chapters(handle.job_id):
                     if chapter.state == "queued":
                         self.ledger.transition_chapter(handle.job_id, chapter.chapter_id, expected="queued",
-                                                       new="cancelled" if cancelled else "interrupted")
+                                                       new="cancelled" if cancelled else "interrupted",
+                                                       error_code=code)
                 return self._end(handle.job_id, "queued", exc, cancelled=cancelled)
         return self._end(handle.job_id, "queued", exc, cancelled=cancelled)
 
@@ -510,10 +519,22 @@ class JobRunner:
         """묶음 실행이 끝났다. 하위 행이 모두 종결이면 parent_outcome으로 부모를 끝낸다 (계획서 5.3, 5.7)."""
         task, job_id = handle.provider_task, handle.job_id
         if task.cancelled() or task.exception() is not None:
-            if not task.cancelled():
+            if isinstance(task.exception(), TransitionRejected):
+                # 종료 처리가 먼저 닫은 장을 늦게 끝난 실행이 다시 바꾸려 했다. 정상 경합이다 (D2b-4 리뷰 R13)
+                _LOG.info("이미 정리된 묶음의 늦은 전이를 무시했습니다: %s", job_id)
+            elif not task.cancelled():
                 _LOG.error("장 생성 묶음 실행 중 예기치 않은 오류: %s", job_id, exc_info=task.exception())
+            # 종료 중이 아니면 적용을 재개하고, 그래도 끝나지 않은 장은 적용 실패로 닫는다 (D2b-4 리뷰 R1)
             if self._batch_reconcile is not None:
-                self._batch_reconcile(self.ledger.get_job(job_id), False)
+                for force in (False, True):
+                    if force and self._stopping:
+                        break
+                    try:
+                        self._batch_reconcile(self.ledger.get_job(job_id), not self._stopping, force=force)
+                    except Exception:
+                        _LOG.exception("장 생성 묶음을 정리하지 못했습니다: %s", job_id)
+                    if self.ledger.get_job(job_id).state not in UNFINISHED_PARENT:
+                        break
         row = self.ledger.get_job(job_id)
         chapters = self.ledger.chapters(job_id)
         if row.state in UNFINISHED_PARENT and not any(c.state in UNFINISHED_CHILD for c in chapters):
@@ -560,7 +581,7 @@ class JobRunner:
                 return False
             try:
                 return self._batch_reconcile(row, allow_apply)
-            except (TransitionRejected, LedgerError):
+            except Exception:  # 행 하나의 문제가 서비스 시작을 막지 않는다 (D2b-4 리뷰 R4)
                 _LOG.exception("묶음 작업을 조정하지 못했습니다: %s", row.id)
                 return False
         action = reconcile_job(row)

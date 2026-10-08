@@ -19,7 +19,10 @@ from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.pipeline.rewrite import sources_fingerprint
 from slidecaptain.pipeline.story import StaleStoryPlan
 from slidecaptain.server.app import create_app
-from slidecaptain.storage.job_ledger import BATCH_KIND, FixedInputs, JobLedger, TransitionRejected, parent_outcome
+from tests.test_jobs_api import manager  # noqa: F401 (픽스처)
+from slidecaptain.storage.job_ledger import (
+    BATCH_KIND, FixedInputs, JobLedger, LedgerError, TransitionRejected, parent_outcome,
+)
 
 HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
 SOURCES = {"리서치.md": "시장 규모는 500억 원이다"}
@@ -83,14 +86,18 @@ def _states(view):
 
 def test_batch_applies_chapters_in_order_like_the_old_loop(store):
     _project(store)
+    snapshots_before = store.list_snapshots("p1")
     provider = ChapterProvider([slots("하나 100억"), slots("둘"), slots("셋")])
     with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
         job = _register(client, store, ["c1", "c2", "c3"])
         assert job.status_code == 202
         view = _wait(client, job.json()["id"])
         rows = client.app.state.job_runner.ledger.chapters(job.json()["id"])
+        assert client.get("/api/status").json()["last_generation_at"] is not None  # 리뷰 R9 M5
     # 저장 직전에 남긴 적용 대상 ETag가 실제 저장 결과와 같다(재시작 판정의 근거, 계획서 5.7 ④)
     assert all(r.apply_target_etag and r.apply_target_etag == r.applied_etag for r in rows)
+    # 실행 경로가 장마다 원격 호출 시각을 남긴다. 재시작 분류의 근거다 (D2b-4 리뷰 R9 M1)
+    assert all(r.remote_sent_at for r in rows)
     assert rows[-1].applied_etag == store.deck_etag("p1")
     deck = store.load_deck("p1")
     assert [s.chapter_id for s in deck.slides] == ["c1", "c2", "c3"]
@@ -102,16 +109,35 @@ def test_batch_applies_chapters_in_order_like_the_old_loop(store):
     assert "100" in "".join(view["chapters"][0]["result"]["unverified_numbers"])
     usage = (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()
     assert len(usage) == 3
+    # 지금 승인 루프처럼 장 저장은 스냅샷을 만들지 않는다 (리뷰 R9 M18)
+    assert store.list_snapshots("p1") == snapshots_before
 
 
 @pytest.mark.parametrize("case, status", [
     ("no_if_match", 428), ("stale_if_match", 412), ("missing", 404), ("duplicate", 422), ("no_sources", 422),
+    ("diagram", 422), ("filled", 409), ("stale_plan", 409),
 ])
-def test_registration_checks_create_no_rows(store, case, status):
-    _project(store)
+def test_registration_checks_create_no_rows(store, case, status, monkeypatch):
+    deck = _project(store)
     if case == "no_sources":
         (store.root / "p1" / "sources" / "리서치.md").unlink()
-    ids = {"missing": ["c1", "c9"], "duplicate": ["c1", "c1"]}.get(case, ["c1"])
+    if case == "diagram":  # 도식 장은 묶음으로 생성하지 않는다 (리뷰 R9 M15). 등록 검사가 읽는 덱만 바꾼다
+        load = store.load_deck_with_etag
+
+        def with_diagram(name):
+            loaded, etag = load(name)
+            chapters = [loaded.structure.chapters[0].model_copy(update={"template": "diagram"}),
+                        *loaded.structure.chapters[1:]]
+            return loaded.model_copy(update={"structure": loaded.structure.model_copy(
+                update={"chapters": chapters})}), etag
+        monkeypatch.setattr(store, "load_deck_with_etag", with_diagram)
+    if case == "filled":  # 이미 내용이 있는 장은 호출 비용을 쓰기 전에 거절한다 (리뷰 R10)
+        store.save_deck("p1", deck.model_copy(update={"slides": [Slide.model_validate(
+            {"chapter_id": "c1", "slots": slots("이미 있음")})]}), snapshot=False)
+    if case == "stale_plan":  # 리뷰 R9 M16
+        monkeypatch.setattr("slidecaptain.server.app.require_current_story",
+                            lambda deck, sources: (_ for _ in ()).throw(StaleStoryPlan("보고 계획이 바뀌었습니다.")))
+    ids = {"missing": ["c1", "c9"], "duplicate": ["c1", "c1"], "filled": ["c1", "c2"]}.get(case, ["c1"])
     with TestClient(create_app(store, provider=ChapterProvider([slots("x")])), headers=HEADERS) as client:
         if case == "stale_if_match":
             response = client.post("/api/projects/p1/jobs", json={
@@ -380,3 +406,361 @@ def test_chapter_candidates_are_dismissed_only_on_batches(store):
         response = client.post(f"/api/projects/p1/jobs/{job['id']}/candidate",
                                json={"action": "dismissed", "chapter_id": "c1"})
     assert response.status_code == 422
+
+
+# D2b-4 리뷰 R1: 적용 단계의 예상 밖 예외도 이 실행 안에서 묶음을 끝낸다
+
+def _fail_once(ledger, method, when):
+    """원장 메서드를 한 번만 LedgerError로 실패시킨다. when(kwargs)이 참인 호출에서."""
+    original, fired = getattr(ledger, method), []
+
+    def wrapper(*args, **kwargs):
+        if not fired and when(kwargs):
+            fired.append(True)
+            raise LedgerError("주입한 원장 쓰기 실패")
+        return original(*args, **kwargs)
+    setattr(ledger, method, wrapper)
+    return fired
+
+
+@pytest.mark.parametrize("point", ["target", "success"])
+def test_ledger_failure_while_applying_still_finishes_the_batch(store, point):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        if point == "target":  # ④ 적용 대상 ETag 기록 실패: 저장하지 않고 그 장을 적용 실패로 닫는다
+            fired = _fail_once(runner.ledger, "update_chapter", lambda kw: "apply_target_etag" in kw)
+        else:  # ⑤ 저장 뒤 ⑥ 성공 기록 실패: 실행 안의 조정이 저장을 확인해 적용됨으로 둔다
+            fired = _fail_once(runner.ledger, "transition_chapter", lambda kw: kw.get("new") == "succeeded")
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        view = _wait(client, job["id"])
+        assert fired and not runner.is_busy() and client.get("/api/jobs/active").json()["active"] is None
+        later = _register(client, store, ["c3"], request_id="batch-0002")
+        assert later.status_code == 202
+        _wait(client, later.json()["id"])
+    assert view["state"] not in ("queued", "running", "validating", "cancel_requested")
+    assert all(c["state"] not in ("queued", "running", "validating", "cancel_requested") for c in view["chapters"])
+    if point == "target":
+        assert view["chapters"][0]["state"] == "failed" and view["chapters"][0]["error"]["code"] == "apply_failed"
+        assert view["chapters"][0]["candidate_status"] == "held"  # 결과는 후보로 남는다
+    else:
+        assert _states(view)[0] == ("c1", "succeeded", "applied")
+        assert view["chapters"][1]["state"] == "interrupted"
+
+
+# D2b-4 리뷰 R2: 적용 중 취소가 오면 적용은 끝내고 남은 장은 취소로 닫는다
+
+@pytest.mark.parametrize("save", ["ok", "fails"])
+def test_cancel_during_apply_finishes_the_apply_and_cancels_the_rest(store, monkeypatch, save):
+    _project(store)
+    entered, release = threading.Event(), threading.Event()
+    original = store.save_deck
+
+    def gated_save(*args, **kwargs):
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(10)
+            if save == "fails":  # 적용이 실패해도 남은 장은 취소다
+                raise OSError("디스크 오류")
+        return original(*args, **kwargs)
+    monkeypatch.setattr(store, "save_deck", gated_save)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        assert entered.wait(10)
+        # 취소 응답의 조회는 프로젝트 잠금을 기다리므로 다른 스레드에서 보내고, 취소가 전달된 뒤 저장을 푼다
+        handle = client.app.state.job_runner._handles[job["id"]]
+        canceller = threading.Thread(target=lambda: client.post(f"/api/projects/p1/jobs/{job['id']}/cancel"))
+        canceller.start()
+        for _ in range(500):
+            if handle.cancel_sent:
+                break
+            threading.Event().wait(0.01)
+        assert handle.cancel_sent
+        release.set()
+        canceller.join(10)
+        view = _wait(client, job["id"])
+        status = client.get("/api/status").json()
+    first = ("c1", "succeeded", "applied") if save == "ok" else ("c1", "failed", "held")
+    assert _states(view) == [first, ("c2", "cancelled", "none"), ("c3", "cancelled", "none")]
+    assert view["state"] == "cancelled" and view["outcome"] == "cancelled"
+    assert [s.chapter_id for s in store.load_deck("p1").slides] == (["c1"] if save == "ok" else [])
+    if save == "ok":
+        assert status["last_generation_at"] is not None  # 적용된 장의 성공도 기록한다
+
+
+# D2b-4 리뷰 R3: 원격 호출 시각을 남기지 못하면 호출하지 않고 원장 오류로 기록한다
+
+def test_ledger_failure_before_the_call_is_recorded_as_a_ledger_error(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        _fail_once(client.app.state.job_runner.ledger, "update_chapter", lambda kw: "remote_sent_at" in kw)
+        view = _wait(client, _register(client, store, ["c1", "c2"]).json()["id"])
+    assert provider.calls == 0
+    assert view["chapters"][0]["error"] == {"error_class": "ledger", "status": 503,
+                                            "detail": "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+                                            "code": "ledger_write_failed"}
+    assert view["chapters"][1]["state"] == "interrupted" and view["chapters"][1]["error"]["code"] == "ledger_failed"
+
+
+# D2b-4 리뷰 R6: 취소 요청 뒤 제공자가 오류나 값으로 끝나도 취소로 닫고 적용하지 않는다
+
+class CancelEndingProvider(ChapterProvider):
+    """관문에서 취소를 받으면 CancelledError 대신 정해진 오류나 값으로 끝난다."""
+
+    def __init__(self, answers, gate_at, on_cancel):
+        super().__init__(answers, gate_at)
+        self.on_cancel = on_cancel
+
+    async def complete(self, prompt, schema):
+        try:
+            return await super().complete(prompt, schema)
+        except asyncio.CancelledError:
+            if isinstance(self.on_cancel, BaseException):
+                raise self.on_cancel from None
+            return ProviderResponse(structured=deepcopy(self.on_cancel), raw_text="r")
+
+
+@pytest.mark.parametrize("ending", ["error", "value"])
+def test_cancel_ending_with_an_error_or_a_value_is_still_cancelled(store, ending):
+    _project(store)
+    on_cancel = ProviderCallFailed("연결을 정리하다 실패했습니다.") if ending == "error" else slots("늦은 값")
+    provider = CancelEndingProvider([slots("하나"), slots("둘"), slots("셋")], gate_at=1, on_cancel=on_cancel)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        assert provider.entered.wait(10)
+        client.post(f"/api/projects/p1/jobs/{job['id']}/cancel")
+        view = _wait(client, job["id"])
+    assert [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]  # 취소 뒤 값은 적용하지 않는다
+    expected_candidate = "held" if ending == "value" else "none"
+    assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "cancelled", expected_candidate),
+                             ("c3", "cancelled", "none")]
+    assert view["chapters"][1]["error"]["error_class"] == "cancelled"
+    if ending == "error":
+        assert view["chapters"][1]["error"]["detail"] == "연결을 정리하다 실패했습니다."
+    assert view["state"] == "cancelled" and view["outcome"] == "cancelled"
+
+
+# D2b-4 리뷰 R4: 원장의 결과가 지금 슬롯 형식에 맞지 않아도 앱은 시작하고 그 장을 닫는다
+
+@pytest.mark.parametrize("path", ["resume", "changed"])
+def test_restart_with_an_unreadable_result_still_starts(store, path):
+    deck = _project(store)
+    bad = {"template": "bullet_box", "bullets": "목록이 아님", "conclusion": "", "footnote": ""}
+    extra = {"slots": bad} if path == "resume" else {"slots": bad, "target": "적용 뒤 다른 저장이 덮은 ETag"}
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", extra), ("c2", "queued", {})])
+    if path == "changed":  # 저장본에 그 장의 슬라이드가 있어 결과 슬롯과 비교하는 경로
+        store.save_deck("p1", deck.model_copy(update={"slides": [Slide.model_validate(
+            {"chapter_id": "c1", "slots": slots("다른 내용")})]}), snapshot=False)
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert provider.calls == 0
+    assert view["chapters"][0]["state"] == "failed"
+    assert view["chapters"][0]["error"]["code"] == ("apply_failed" if path == "resume" else "result_unreadable")
+    assert view["state"] not in ("queued", "running", "validating", "cancel_requested")
+
+
+
+# D2b-4 리뷰 R9: 사슬 검사와 실행 전 재비교, 재시작 조정의 남은 경우
+
+def test_sources_changed_during_a_chapter_keeps_its_result_as_a_stale_candidate(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")], gate_at=1)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        assert provider.entered.wait(10)
+        store.write_source("p1", "추가.md", "새 자료")  # 덱은 그대로, 자료만 바뀐다 (M10)
+        provider.release.set()
+        view = _wait(client, job["id"])
+    assert _states(view)[:2] == [("c1", "succeeded", "applied"), ("c2", "failed", "stale")]
+    assert [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]
+
+
+def test_a_save_between_chapters_stops_before_the_next_call(store, monkeypatch):
+    """장과 장 사이에 다른 저장이 끼면 다음 장을 보내지 않는다 (리뷰 R11)."""
+    _project(store)
+    original, saves = store.save_deck, []
+
+    def save_then_edit(*args, **kwargs):
+        saved = original(*args, **kwargs)
+        if not saves:
+            saves.append(True)
+            current = store.load_deck("p1")
+            current.meta.presenter = "다른 창의 편집"
+            return original("p1", current, snapshot=False) and saved
+        return saved
+    monkeypatch.setattr(store, "save_deck", save_then_edit)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        view = _wait(client, _register(client, store, ["c1", "c2", "c3"]).json()["id"])
+    assert provider.calls == 1
+    assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "interrupted", "none"), ("c3", "interrupted", "none")]
+    assert view["chapters"][1]["error"]["code"] == "chain_broken"
+    assert view["state"] == "failed" and view["outcome"] == "chain_broken"
+
+
+def test_a_save_before_the_run_ends_the_batch_without_calls(store):
+    """등록 뒤 실행 전에 다른 저장이 끼면 호출 0회로 끝나고 장에 같은 사유가 남는다 (리뷰 R9 M6, M20, R12)."""
+    _project(store)
+    provider = ChapterProvider([slots("하나")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        acquire = runner._acquire
+
+        def acquire_after_another_save(*args, **kwargs):
+            current = store.load_deck("p1")
+            current.meta.presenter = "다른 창의 편집"
+            store.save_deck("p1", current, snapshot=False)
+            return acquire(*args, **kwargs)
+        runner._acquire = acquire_after_another_save
+        view = _wait(client, _register(client, store, ["c1", "c2"]).json()["id"])
+    assert provider.calls == 0 and store.load_deck("p1").slides == []
+    assert [c["state"] for c in view["chapters"]] == ["interrupted", "interrupted"]
+    assert view["error"]["code"] and all(c["error"]["code"] == view["error"]["code"] for c in view["chapters"])
+
+
+def test_restart_closes_a_batch_that_never_started(store):
+    """부모가 queued인 채 끝난 묶음은 장과 부모를 모두 중단으로 닫는다 (리뷰 R9 M3)."""
+    _project(store)
+    ledger = JobLedger.open(store.root)
+    job, _ = ledger.create_job(project="p1", kind=BATCH_KIND, request_id="queued-0001",
+                               params={"chapter_ids": ["c1", "c2"]}, instance_id="previous",
+                               inputs=FixedInputs(None, None, None, store.deck_etag("p1"),
+                                                  sources_fingerprint(SOURCES), None), chapter_ids=["c1", "c2"])
+    ledger.close()
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job.id}").json()
+    assert provider.calls == 0 and view["state"] == "interrupted"
+    assert [c["state"] for c in view["chapters"]] == ["interrupted", "interrupted"]
+
+
+def test_restart_defers_when_the_deck_is_unreadable_and_resumes_later(store):
+    """덱을 읽을 수 없으면 판정을 미루고, 고친 뒤 시작에서 호출 없이 적용한다 (리뷰 R9 M4)."""
+    deck = _project(store)
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", {"slots": slots("보존")})])
+    deck_file = store.root / "p1" / "deck.json"
+    good = deck_file.read_bytes()
+    deck_file.write_text("{깨진 덱", encoding="utf-8")
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert view["state"] == "running" and _states(view) == [("c1", "validating", "held")]
+    deck_file.write_bytes(good)
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert provider.calls == 0 and _states(view) == [("c1", "succeeded", "applied")]
+    assert [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]
+
+
+def test_restart_marks_a_chapter_applied_even_if_the_deck_changed_after(store):
+    """적용 뒤 다른 저장이 덱을 바꿨어도 그 장의 슬롯이 덱에 있으면 적용됨이다 (리뷰 R9 M9)."""
+    deck = _project(store)
+    extra = {"slots": slots("보존된 결과")}
+    applied = deck.model_copy(update={"slides": [Slide.model_validate({"chapter_id": "c1", "slots": extra["slots"]})]})
+    extra["target"] = store.etag_for(applied)
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", extra)])
+    applied.meta.presenter = "적용 뒤 다른 창의 편집"
+    store.save_deck("p1", applied, snapshot=False)
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert provider.calls == 0 and _states(view) == [("c1", "succeeded", "applied")]
+    assert store.load_deck("p1").meta.presenter == "적용 뒤 다른 창의 편집"
+
+
+def test_shutdown_does_not_resume_an_apply(store):
+    """종료 처리는 적용을 재개하지 않고 다음 시작에 맡긴다 (계획서 5.5 ④, 리뷰 R9 M13)."""
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("x")])), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        etag = store.deck_etag("p1")
+        job, _ = runner.ledger.create_job(project="p1", kind=BATCH_KIND, request_id="mine-0001",
+                                          params={"chapter_ids": ["c1"]}, instance_id=runner.instance_id,
+                                          inputs=FixedInputs(None, None, None, etag, sources_fingerprint(SOURCES), None),
+                                          chapter_ids=["c1"])
+        runner.ledger.transition(job.id, expected="queued", new="running", remote_sent_at="t")
+        runner.ledger.transition_chapter(job.id, "c1", expected="queued", new="running", remote_sent_at="t")
+        runner.ledger.transition_chapter(job.id, "c1", expected="running", new="validating",
+                                         result={"status": "ok", "slots": slots("보존"), "raw_text": ""},
+                                         candidate_status="held")
+        runner.shutdown(wait_seconds=0)
+        assert runner.ledger.chapters(job.id)[0].state == "validating"
+    assert store.load_deck("p1").slides == []
+
+
+def test_a_batch_whose_project_is_gone_is_closed_at_restart(store):
+    """프로젝트 폴더가 없어진 묶음은 미루지 않고 닫는다 (리뷰 R14)."""
+    deck = _project(store)
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", {"slots": slots("보존")}), ("c2", "queued", {})])
+    (store.root / "p1").rename(store.root / "p1-moved")
+    provider, client = _restart(store)
+    with client:
+        row = client.app.state.job_runner.ledger.get_job(job_id)
+        chapters = client.app.state.job_runner.ledger.chapters(job_id)
+    assert row.state == "failed"
+    # 결과가 있는 장은 결과를 남긴 실패로, 시작하지 않은 장은 재시작 규칙대로 중단으로 닫는다
+    assert [(c.state, c.error_code, c.candidate_status) for c in chapters] == [
+        ("failed", "project_missing", "held"), ("interrupted", None, "none")]
+
+
+class SlowCancelProvider(ChapterProvider):
+    """취소를 받아도 release가 올 때까지 정리하다가 취소로 끝난다(Claude 정리 최대 15초를 흉내 낸다)."""
+
+    async def complete(self, prompt, schema):
+        try:
+            return await super().complete(prompt, schema)
+        except asyncio.CancelledError:
+            while not self.release.is_set():
+                await asyncio.sleep(0.01)
+            raise
+
+
+def test_cancel_marks_the_running_chapter_as_cancel_requested_at_once(store):
+    """취소를 전달하면 제공자가 끝나기 전에도 생성 중인 장이 취소 요청으로 보인다 (리뷰 R13)."""
+    _project(store)
+    provider = SlowCancelProvider([slots("하나"), slots("둘")], gate_at=0)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2"]).json()
+        assert provider.entered.wait(10)
+        view = client.post(f"/api/projects/p1/jobs/{job['id']}/cancel").json()
+        assert view["chapters"][0]["state"] == "cancel_requested"  # 제공자는 아직 정리 중이다
+        provider.release.set()
+        view = _wait(client, job["id"])
+    assert _states(view) == [("c1", "cancelled", "none"), ("c2", "cancelled", "none")]
+
+
+def test_registration_rejects_a_changed_selection_without_rows(store, manager):
+    """화면이 본 AI 선택과 지금 선택이 다르면 등록 단계에서 409이고 행을 만들지 않는다 (리뷰 R9 M17)."""
+    _project(store)
+    with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
+        response = client.post("/api/projects/p1/jobs", json={
+            "request_id": "batch-0009", "kind": BATCH_KIND, "params": {"chapter_ids": ["c1"]}},
+            headers={"If-Match": f'"{store.deck_etag("p1")}"', "X-AI-Selection": "other-selection"})
+        assert response.status_code == 409, response.text
+        assert client.app.state.job_runner.ledger.list_jobs("p1") == []
+    assert not any(c.calls for c in manager.connections.values())
+
+
+def test_an_unexpected_error_while_saving_resumes_the_apply_in_process(store, monkeypatch):
+    """저장 중 예상 밖 오류로 실행이 끝나면, 종료 중이 아닌 한 같은 실행 안에서 적용을 재개한다 (리뷰 R1)."""
+    _project(store)
+    original, failed = store.save_deck, []
+
+    def fail_once(*args, **kwargs):
+        if not failed:
+            failed.append(True)
+            raise RuntimeError("주입한 예상 밖 오류")
+        return original(*args, **kwargs)
+    monkeypatch.setattr(store, "save_deck", fail_once)
+    provider = ChapterProvider([slots("하나"), slots("둘")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        view = _wait(client, _register(client, store, ["c1", "c2"]).json()["id"])
+        assert not client.app.state.job_runner.is_busy()
+    assert failed and provider.calls == 1
+    assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "interrupted", "none")]
+    assert [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]

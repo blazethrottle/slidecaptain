@@ -65,6 +65,7 @@ OUTCOMES = ("all_applied", "partial", "chain_broken", "held_stale_plan", "cancel
 # 묶음 하위 행의 중단 사유는 error_code에 둔다 (계획서 5.2)
 HELD_STALE_PLAN = "held_stale_plan"
 STALE_STORY_PLAN = "stale_story_plan"  # 구성 계획 낡음으로 실패한 장 자신의 오류 코드
+CHAIN_BROKEN = "chain_broken"  # 장과 장 사이에 다른 저장이 덱을 바꿔 시작하지 않은 장의 사유 (D2b-4 리뷰 R11)
 
 _SLOTS = TypeAdapter(Slots)
 
@@ -619,6 +620,6 @@ def parent_outcome(chapters: list[ChapterRow], parent_state: str | None = None) 
     # 낡음이 마지막 장에서 나면 남은 장이 없어 보류 사유가 없다. 그 장 자신의 코드도 본다 (D2b-4 리뷰 R7)
     if any(c.error_code in (HELD_STALE_PLAN, STALE_STORY_PLAN) for c in chapters):
         return "failed", "held_stale_plan"
-    if any(c.candidate_status == "stale" for c in chapters):
+    if any(c.candidate_status == "stale" or c.error_code == CHAIN_BROKEN for c in chapters):
         return "failed", "chain_broken"
     return "failed", "partial"  # 형식 오류, 제공자 오류, 완료 여부 불명, 사유 없는 중단
