@@ -682,7 +682,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                   </td>
                   <td>
                     <button aria-label={`${c.topic} 삭제`} disabled={c.template === "diagram"} onClick={() => remove(i)}>삭제</button>
-                    {progress[c.id] && <span> {progress[c.id]}</span>}
+                    {progress[c.id] === "취소 요청됨" ? <> <StatusIndicator kind="cancel_requested" /></>
+                      : progress[c.id] === "완료 여부 확인 필요" ? <> <StatusIndicator kind="completion_unknown" /></>
+                        : progress[c.id] && <span> {progress[c.id]}</span>}
                     {chapterRow(c.id) && (
                       <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>
                         {["stale", "held"].includes(chapterRow(c.id)!.candidate_status) ? "현재 입력으로 다시 생성" : "이 장 다시 생성"}</button>
@@ -716,7 +718,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             const chapters = deck.structure.chapters;
             const missing = chapters.filter((ch) => !deck.slides.some((sl) => sl.chapter_id === ch.id));
             return missing.length > 0
-              ? <p className="notice"><StatusIndicator kind="failed" detail={`${chapters.length}장 중 ${missing.length}장 실패`} />{" "}
+              ? <p className="notice">{job.state === "failed" && <><StatusIndicator kind="failed" detail={`${chapters.length}장 중 ${missing.length}장 실패`} />{" "}</>}
                 {chapters.length}장 중 {missing.length}장을 만들지 못했습니다. 아래 버튼을 누르면 만들지 못한 장만 다시 생성합니다.</p>
               : null;
           })()}

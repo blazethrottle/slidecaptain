@@ -120,7 +120,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       // returnValue도 함께 설정한다: preventDefault만으로는 확인 대화를 띄우지 않는
       // 구형 구현이 있다 (A5b 리뷰 발견 5)
-      if (dirty || uploading || generating || diagramGenerating || batchHere) { e.preventDefault(); e.returnValue = ""; }
+      // 독립 앱에서는 진행 중 AI 작업을 main 프로세스가 "계속 작업 / 취소 후 닫기"로 묻는다. 여기서 또 막으면
+      // 취소한 뒤에도 같은 대화 상자가 한 번 더 뜬다 (D2b-5c 리뷰 R3). 웹 모드는 이 경고가 유일한 안내다
+      const aiRunning = !window.slidecaptain && (generating || diagramGenerating || batchHere);
+      if (dirty || uploading || aiRunning) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
@@ -315,7 +318,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
         </p>
       )}
-      <JobAnnouncer active={activeJob !== null} />
+      <JobAnnouncer active={activeJob} />
       {!ledgerAvailable && (
         // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
         <p className="notice">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>
@@ -328,7 +331,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       {exportResult?.projectName === project.name && <ExportQualitySummary result={exportResult.result} />}
       {showRecovery && (
         <RecoveryScreen project={project} onConflict={onConflict} onOpen={(next) => {
+          // 복구 화면에서 처분한 뒤 옮기므로 덱을 다시 읽는다 (D2b-5c 리뷰 R16)
           setShowRecovery(false);
+          setHasConflict(false);
+          setDeck(null);
+          api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
           setTab(next);
         }} onBack={() => {
           setShowRecovery(false);

@@ -132,7 +132,7 @@ class JobView(BaseModel):
     current_etag: str | None
     # 장 재생성과 축약의 관련 입력 "템플릿|장 정의|구성 계획과 보고 정보"(계획서 5.8). 축약의 슬롯 비교는 화면이 한다
     relevance_hash: str | None
-    # 결과가 있는 종결 작업에만 조회 때 계산한다. 덱이나 자료를 읽을 수 없으면 ["unknown"]
+    # 결과가 있는 종결 작업에만 조회 때 계산한다. 덱이나 자료를 읽을 수 없으면 unknown_deck, unknown_sources
     stale_reasons: list[str]
     # 취소 요청을 받았는지. 임대 획득 중에는 상태가 아직 queued라 이 값으로 접수를 알린다 (D2b-2 리뷰 R4)
     cancel_requested: bool

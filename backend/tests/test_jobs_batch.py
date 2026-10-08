@@ -764,3 +764,13 @@ def test_an_unexpected_error_while_saving_resumes_the_apply_in_process(store, mo
     assert failed and provider.calls == 1
     assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "interrupted", "none")]
     assert [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]
+
+
+def test_an_unfinished_chapter_candidate_cannot_be_dismissed(store):
+    """적용 여부를 판정하지 못한 장의 후보를 버리면 다음 시작의 정리가 그 결과를 덱에 넣을 수 있다 (D2b-5c 리뷰 R6)."""
+    deck = _project(store)
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", {"slots": slots("보존")})])
+    with TestClient(create_app(store, provider=ChapterProvider([slots("x")])), headers=HEADERS) as client:
+        response = client.post(f"/api/projects/p1/jobs/{job_id}/candidate", json={"action": "dismissed", "chapter_id": "c1"})
+        assert response.status_code == 409
+        assert client.app.state.job_runner.ledger.chapters(job_id)[0].candidate_status == "held"

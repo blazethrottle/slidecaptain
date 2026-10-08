@@ -65,14 +65,16 @@ export function SaveAnnouncer({ kind }: { kind: StatusKind }) {
 }
 
 /**
- * 작업 상태의 보조기기 알림 (D2b-5c). 진행 중 작업이 사라질 때(종결 전이)에만 알린다.
- * 조회는 1초마다 반복되므로 진행 중 상태가 바뀔 때마다 알리면 읽기가 끊긴다.
+ * 작업 상태의 보조기기 알림 (D2b-5c). 지켜보던 작업이 사라지거나 다른 작업으로 바뀔 때(종결 전이)에만 알린다.
+ * 조회는 1초마다 반복되므로 진행 중 상태가 바뀔 때마다 알리면 읽기가 끊긴다. 한 조회 간격 안에 다음 작업이
+ * 시작돼도 앞 작업의 끝을 놓치지 않도록 작업 ID로 비교한다 (D2b-5c 리뷰 R13)
  */
-export function JobAnnouncer({ active }: { active: boolean }) {
+export function JobAnnouncer({ active }: { active: { id: string; project: string } | null }) {
   const previous = useRef(active);
   const [message, setMessage] = useState("");
   useEffect(() => {
-    if (previous.current && !active) setMessage("AI 생성 작업이 끝났습니다");
+    const before = previous.current;
+    if (before && before.id !== active?.id) setMessage(`AI 생성 작업이 끝났습니다(${before.project})`);
     else if (active) setMessage("");
     previous.current = active;
   }, [active]);

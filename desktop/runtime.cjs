@@ -413,20 +413,37 @@ async function startService({
 // 창을 닫기 전에 진행 중 AI 작업을 확인한다 (D2b-5c, 계획서 5.5). request는 서비스 요청 함수, ask는 진행 중 작업을
 // 받아 "cancel"(취소 후 닫기) 또는 그 밖의 값(계속 작업)을 돌려준다. 결과는 "close" 또는 "stay"다.
 // 작업을 확인하지 못하면 닫는다: 서비스 종료 처리가 남은 행을 정리한다
-async function settleJobBeforeClose(request, ask) {
+// 서비스가 응답하지 않으면 창 닫기가 막히지 않도록 요청마다 시간 한도를 둔다 (D2b-5c 리뷰 R4).
+// 한도는 서비스의 취소 응답 대기(CANCEL_ACK_SECONDS 5초)와 같다
+const CLOSE_REQUEST_TIMEOUT_MS = 5000;
+function withTimeout(promise, ms) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(Error("서비스 응답 시간 초과")), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+async function settleJobBeforeClose(request, ask, { timeoutMs = CLOSE_REQUEST_TIMEOUT_MS } = {}) {
   const headers = { "X-Requested-With": "SlideCaptain" };
+  const call = (input) => withTimeout(request(input), timeoutMs);
   let active = null;
   try {
-    const response = await request({ path: "/api/jobs/active", method: "GET", headers });
+    const response = await call({ path: "/api/jobs/active", method: "GET", headers });
     if (response.status !== 200) return "close";
     active = JSON.parse(new TextDecoder().decode(response.body)).active ?? null;
   } catch {
     return "close";
   }
   if (!active) return "close";
-  if ((await ask(active)) !== "cancel") return "stay";
+  let answer;
   try {
-    await request({
+    answer = await ask(active);
+  } catch {
+    return "stay";  // 대화 상자를 띄우지 못했으면 닫지 않는다. 다음 닫기에서 다시 묻는다 (리뷰 R5)
+  }
+  if (answer !== "cancel") return "stay";
+  try {
+    await call({
       path: `/api/projects/${encodeURIComponent(active.project)}/jobs/${encodeURIComponent(active.id)}/cancel`,
       method: "POST",
       headers,

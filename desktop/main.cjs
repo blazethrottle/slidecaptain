@@ -270,12 +270,15 @@ async function start() {
           defaultId: 0,
           cancelId: 0,
           title: "SlideCaptain",
-          message: "AI 생성이 진행 중입니다. 작업을 취소하고 닫을까요?",
-          detail: `프로젝트: ${active.project}. 취소 후 닫으면 다시 열 때 그 작업은 취소됨이나 완료 여부 확인 필요로 보입니다.`,
+          message: active.cancel_requested
+            ? "AI 생성 작업에 이미 취소를 요청했고 아직 멈추지 않았습니다. 지금 닫을까요?"
+            : "AI 생성이 진행 중입니다. 작업을 취소하고 닫을까요?",
+          // 결과 없이 끝난 작업은 다시 열 때 구조안 화면(장 내용 생성)이나 스냅샷 복구 화면에서 보인다 (리뷰 R2, R18)
+          detail: `프로젝트: ${active.project}. 취소 후 닫으면 다시 열 때 그 작업은 취소됨, 중단됨 또는 완료 여부 확인 필요로 보입니다. 장 내용 생성은 구조안 화면, 그 밖의 작업은 스냅샷 복구 화면에서 볼 수 있습니다.`,
         });
         return response === 1 ? "cancel" : "continue";
       },
-    ).then((decision) => {
+    ).catch(() => "stay").then((decision) => {
       jobCloseChecking = false;
       if (decision === "stay") {
         closing = false;

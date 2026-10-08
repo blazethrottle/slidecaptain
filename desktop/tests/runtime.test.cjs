@@ -214,3 +214,30 @@ test("작업을 확인하지 못하거나 취소 요청이 실패해도 닫는�
   assert.equal(await settleJobBeforeClose(fakeService(activeJob, { failActive: true }).request, async () => "cancel"), "close");
   assert.equal(await settleJobBeforeClose(fakeService(activeJob, { failCancel: true }).request, async () => "cancel"), "close");
 });
+
+test("서비스가 응답하지 않으면 시간 한도 뒤에 닫는다 (D2b-5c 리뷰 R4)", async () => {
+  const hanging = () => new Promise(() => {});
+  const started = Date.now();
+  assert.equal(await settleJobBeforeClose(hanging, async () => "cancel", { timeoutMs: 50 }), "close");
+  assert.ok(Date.now() - started < 2000);
+});
+
+test("취소 요청이 응답하지 않아도 시간 한도 뒤에 닫는다", async () => {
+  const request = async (input) => (input.path === "/api/jobs/active"
+    ? { status: 200, body: new TextEncoder().encode(JSON.stringify({ active: activeJob })) }
+    : new Promise(() => {}));
+  assert.equal(await settleJobBeforeClose(request, async () => "cancel", { timeoutMs: 50 }), "close");
+});
+
+test("대화 상자를 띄우지 못하면 닫지 않는다 (D2b-5c 리뷰 R5)", async () => {
+  const { request } = fakeService(activeJob);
+  assert.equal(await settleJobBeforeClose(request, async () => { throw Error("창 없음"); }), "stay");
+});
+
+test("200이 아닌 응답이나 cancel 밖의 답은 닫거나 남는다", async () => {
+  const notOk = async () => ({ status: 503, body: new TextEncoder().encode("{}") });
+  assert.equal(await settleJobBeforeClose(notOk, async () => "cancel"), "close");
+  const { request, calls } = fakeService(activeJob);
+  assert.equal(await settleJobBeforeClose(request, async () => undefined), "stay");
+  assert.equal(calls.length, 1);
+});

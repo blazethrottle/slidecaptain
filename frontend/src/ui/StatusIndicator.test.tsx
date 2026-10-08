@@ -66,13 +66,25 @@ it("아이콘 글자는 색 이모지가 아니라 글자 모양으로 그리도
 });
 
 it("작업 알림은 진행 중 작업이 사라질 때만 알린다 (D2b-5c)", () => {
-  const { rerender, container } = render(<JobAnnouncer active={false} />);
+  const a = { id: "job-a", project: "보고 A" };
+  const { rerender, container } = render(<JobAnnouncer active={null} />);
   const status = () => container.querySelector('[role="status"]')!.textContent;
   expect(status()).toBe("");
-  rerender(<JobAnnouncer active />);
+  rerender(<JobAnnouncer active={a} />);
   expect(status()).toBe("");
-  rerender(<JobAnnouncer active />);
+  rerender(<JobAnnouncer active={{ ...a }} />);  // 조회마다 새 객체가 와도 같은 작업이면 알리지 않는다
   expect(status()).toBe("");
-  rerender(<JobAnnouncer active={false} />);
-  expect(status()).toBe("AI 생성 작업이 끝났습니다");
+  rerender(<JobAnnouncer active={null} />);
+  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
+  rerender(<JobAnnouncer active={a} />);
+  rerender(<JobAnnouncer active={{ id: "job-b", project: "보고 B" }} />);  // 한 조회 간격 안에 다음 작업이 시작됐다
+  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
+});
+
+it("작업 상태 2종의 색조와 글자 모양 아이콘 (D2b-5c)", () => {
+  const { container, rerender } = render(<StatusIndicator kind="cancel_requested" />);
+  expect(container.querySelector(".status-neutral")).not.toBeNull();
+  expect(container.querySelector('[role="img"]')!.textContent).toBe("\u23F8\uFE0E");  // 색 이모지가 아닌 글자 모양
+  rerender(<StatusIndicator kind="completion_unknown" />);
+  expect(container.querySelector(".status-warning")).not.toBeNull();
 });

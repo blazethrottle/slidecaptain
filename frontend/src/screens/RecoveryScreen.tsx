@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, messageOf, type DraftInfo, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type DraftInfo, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
+import { StatusIndicator } from "../ui/StatusIndicator";
 
 import { formatSavedAt } from "../api/time";
 
@@ -19,7 +20,7 @@ function describeDraft(d: DraftInfo): string {
 // AI 결과 후보 (D2b-5c, 계획서 5.8). 작업 하나 또는 장 생성 묶음의 장 하나가 한 항목이다
 type Candidate = {
   key: string; job: JobView; chapterId: string | null; result: Record<string, unknown>; reasons: string[];
-  status: string;
+  status: string; state: string;  // state: 묶음이면 그 장의 상태, 아니면 작업의 상태
 };
 const KIND_LABELS: Record<string, string> = {
   structure: "구조안", chapter: "장 다시 생성", condense: "장 축약", diagram: "도식", rewrite: "보고 계획 재작성",
@@ -35,33 +36,59 @@ function candidatesOf(jobs: JobView[]): Candidate[] {
       for (const c of job.chapters) {
         if ((c.candidate_status === "held" || c.candidate_status === "stale") && c.result) {
           list.push({ key: `${job.id}:${c.chapter_id}`, job, chapterId: c.chapter_id, result: c.result,
-            reasons: c.candidate_status === "stale" ? ["deck_changed"] : [], status: c.candidate_status });
+            reasons: [], status: c.candidate_status, state: c.state });
         }
       }
     } else if ((job.candidate_status === "held" || job.candidate_status === "stale") && job.result) {
       list.push({ key: job.id, job, chapterId: job.target, result: job.result, reasons: blockingReasons(job),
-        status: job.candidate_status });
+        status: job.candidate_status, state: job.state });
     }
   }
   return list;
 }
 
+// 결과 없이 끝난 지난 작업 (D2b-5c 리뷰 R2). 장 생성 묶음은 구조안 화면이 장마다 보인다
+const ENDED_WITHOUT_RESULT = new Set(["cancelled", "interrupted", "remote_completion_unknown"]);
+function endedWithoutResult(jobs: JobView[]): JobView[] {
+  return jobs.filter((j) => j.kind !== "chapters" && ENDED_WITHOUT_RESULT.has(j.state) && !j.result);
+}
+
+// 후보가 지금 어떤 상태인지 한 문장으로 알린다 (D2b-5c 리뷰 R7, R8, R9)
+function candidateStatus(c: Candidate): string {
+  if (c.job.kind === "chapters") {
+    if (!TERMINAL_JOB_STATES.has(c.state)) return "아직 적용 여부를 확인하지 못한 결과입니다. 앱을 다시 시작하면 정리합니다.";
+    if (c.state === "cancelled") return "취소한 뒤 도착한 결과입니다. 덱에 넣지 않았습니다.";
+    return c.status === "stale" ? "만드는 동안 다른 저장이 있어 덱에 넣지 못한 결과입니다."
+      : "덱에 넣지 못한 결과입니다.";
+  }
+  const cancelled = c.state === "cancelled" ? "취소한 뒤 도착한 결과입니다. " : "";
+  const basis = `기준 저장본 ${shortEtag(c.job.base_etag)}, 지금 저장본 ${shortEtag(c.job.current_etag)}.`;
+  const unreadable = c.job.current_etag === null || c.reasons.some((r) => r.startsWith("unknown_"));
+  // 장 재생성과 축약은 다른 장만 바뀐 경우 반영을 막지 않는다. 저장본 값이 달라도 그 사실을 밝힌다 (리뷰 R19)
+  const elsewhere = c.job.stale_reasons.includes("deck_changed_elsewhere");
+  return `${cancelled}${basis} ${unreadable ? "저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다."
+    : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons)}).`
+      : elsewhere ? "덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다." : "지금 입력과 같은 기준입니다."}`;
+}
+
 function candidateText(c: Candidate): string {
-  const r = c.result as { slots?: unknown; diagram?: { nodes?: { content: string }[] } | null;
+  const r = c.result as { slots?: unknown; diagram?: { nodes?: { content: string }[] } | null; reason?: string | null;
     structure?: { chapters: { topic: string }[] } | null; deck?: { structure: { chapters: { topic: string }[] } } | null };
   if (r.slots) return slotsText(r.slots);
   if (r.diagram?.nodes) return r.diagram.nodes.map((n) => n.content).join("\n");
   const chapters = r.structure?.chapters ?? r.deck?.structure.chapters;
-  return chapters ? chapters.map((ch, i) => `${i + 1}. ${ch.topic}`).join("\n") : "보일 내용이 없습니다.";
+  if (chapters) return chapters.map((ch, i) => `${i + 1}. ${ch.topic}`).join("\n");
+  return r.reason ? `멈춘 이유: ${r.reason}` : "보일 내용이 없습니다.";  // 중단된 수리 (리뷰 R17)
 }
 
 const shortEtag = (etag: string | null) => (etag ? etag.replace(/"/g, "").slice(0, 8) : "알 수 없음");
 
 function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (tab: "structure" | "editor") => void }) {
   const [items, setItems] = useState<Candidate[] | null>(null);
+  const [ended, setEnded] = useState<JobView[]>([]);
   const [error, setError] = useState("");
   const load = () => api.listJobs(project.name)
-    .then((jobs) => { setItems(candidatesOf(jobs)); setError(""); })
+    .then((jobs) => { setItems(candidatesOf(jobs)); setEnded(endedWithoutResult(jobs)); setError(""); })
     .catch((e) => setError(`AI 결과 후보를 읽지 못했습니다. ${messageOf(e)}`));
   useEffect(() => { void load(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
   const dismiss = async (c: Candidate) => {
@@ -70,7 +97,9 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
       else await api.settleCandidate(project.name, c.job.id, "dismissed");
       await load();
     } catch (e) {
-      setError(messageOf(e));
+      // 다른 화면이 먼저 처분했으면 목록만 다시 읽는다 (리뷰 R11)
+      if (e instanceof ApiError && e.status === 409) await load();
+      else setError(messageOf(e));
     }
   };
   return (
@@ -86,20 +115,33 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
             <li key={c.key}>
               <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{c.chapterId ? ` (장 ${c.chapterId})` : ""},{" "}
                 만든 시각 {formatSavedAt(c.job.created_at)}</p>
-              <p>기준 저장본 {shortEtag(c.job.base_etag)}, 지금 저장본 {shortEtag(c.job.current_etag)}.{" "}
-                {c.job.current_etag === null ? "저장본을 읽지 못해 지금 입력과 비교할 수 없습니다."
-                  : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons)}).` : "지금 입력과 같은 기준입니다."}
-              </p>
+              <p>{candidateStatus(c)}</p>
               <details><summary>보기</summary><pre>{candidateText(c)}</pre></details>
               {!WHOLE_DECK.has(c.job.kind) && <>
-                <button onClick={() => onOpen?.(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
-                  현재 입력으로 다시 생성</button>{" "}
-                <button onClick={() => void dismiss(c)}>버리기</button>
+                {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
+                {onOpen && <button onClick={() => onOpen(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
+                  현재 입력으로 다시 생성</button>}{" "}
+                {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
+                {TERMINAL_JOB_STATES.has(c.state) && <button onClick={() => void dismiss(c)}>버리기</button>}
               </>}
             </li>
           ))}
         </ul>
       )}
+      {ended.length > 0 && <>
+        <h4>결과 없이 끝난 AI 작업</h4>
+        <p>앱을 닫거나 취소해 결과를 받지 못한 작업입니다. 완료 여부를 모르는 작업을 다시 생성하면 AI 사용량이 한 번 더
+          기록될 수 있습니다.</p>
+        <ul>
+          {ended.map((j) => (
+            <li key={j.id}>
+              {j.state === "remote_completion_unknown" ? <StatusIndicator kind="completion_unknown" />
+                : <span>{j.state === "cancelled" ? "취소됨" : "중단됨"}</span>}{" "}
+              {KIND_LABELS[j.kind] ?? j.kind}{j.target ? ` (장 ${j.target})` : ""}, 만든 시각 {formatSavedAt(j.created_at)}
+            </li>
+          ))}
+        </ul>
+      </>}
     </section>
   );
 }

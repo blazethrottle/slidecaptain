@@ -594,3 +594,36 @@ it("작업 기록을 열 수 없으면 AI 생성만 막혔다고 알린다 (D2b-
   expect(await screen.findByText("작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다."))
     .toBeInTheDocument();
 });
+
+it("독립 앱에서는 진행 중 AI 작업만으로 창 닫기를 막지 않는다. main 프로세스가 묻는다 (D2b-5c 리뷰 R3)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob).mockResolvedValue(batchActive(project.name));
+  (window as { slidecaptain?: unknown }).slidecaptain = {};  // 독립 앱의 연결 객체가 있는 것처럼 둔다
+  try {
+    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    await screen.findByText("이 프로젝트에서 AI 생성이 진행 중입니다.", { exact: false });
+    expect(dispatchBeforeUnload()).toBe(false);
+  } finally {
+    delete (window as { slidecaptain?: unknown }).slidecaptain;
+  }
+});
+
+it("복구 화면의 후보에서 다시 생성하면 덱을 다시 읽고 맞는 탭으로 옮긴다. 원장이 정상이면 안내가 없다 (D2b-5c 리뷰 R16)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  vi.mocked(api.listJobs).mockResolvedValue([{ id: "job-s", project: project.name, kind: "structure", state: "succeeded",
+    target: null, params: {}, candidate_status: "held", outcome: null, owner: "this_instance", created_at: "2026-10-08T10:00:00+09:00",
+    started_at: null, finished_at: null, provider: null, model: null, base_etag: null, current_etag: null,
+    relevance_hash: null, stale_reasons: [], cancel_requested: false, error: null,
+    result: { status: "ok", structure: { chapters: [] }, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
+      format_retried: false }, chapters: [] }]);
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+  await userEvent.click(await screen.findByRole("button", { name: "스냅샷 복구" }));
+  const before = vi.mocked(api.getDeck).mock.calls.length;
+  await userEvent.click(await screen.findByRole("button", { name: "현재 입력으로 다시 생성" }));
+  await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBeGreaterThan(before));
+  await waitFor(() => expect(screen.getByRole("button", { name: "구조안" })).toHaveAttribute("aria-pressed", "true"));
+  expect(screen.queryByText(/작업 기록을 열 수 없어/)).toBeNull();
+});

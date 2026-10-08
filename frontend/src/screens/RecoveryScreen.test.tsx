@@ -164,9 +164,73 @@ it("덱 전체 후보는 보기만 하고, 저장본을 읽지 못하면 판정 
     result: { status: "ok", deck: { structure: { chapters: [{ topic: "새 순서의 첫 장" }] } } } })]);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   expect(await screen.findByText(/보고 계획 재작성/)).toBeInTheDocument();
-  expect(screen.getByText(/저장본을 읽지 못해 지금 입력과 비교할 수 없습니다/)).toBeInTheDocument();
+  expect(screen.getByText(/저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "버리기" })).toBeNull();
   expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
   await userEvent.click(screen.getByText("보기"));
   expect(screen.getByText(/1\. 새 순서의 첫 장/)).toBeInTheDocument();
+});
+
+// -- D2b-5c 리뷰 반영 ------------------------------------------------------------------------
+
+it("결과 없이 끝난 지난 작업을 상태와 함께 보인다 (리뷰 R2)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([
+    jobView("structure", { id: "j1", state: "remote_completion_unknown", candidate_status: "none", result: null }),
+    jobView("chapter", { id: "j2", state: "cancelled", candidate_status: "none", result: null, target: "c3" }),
+    jobView("rewrite", { id: "j3", state: "interrupted", candidate_status: "none", result: null }),
+  ]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  expect(await screen.findByText("결과 없이 끝난 AI 작업")).toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "물음표" })).toBeInTheDocument();  // 완료 여부 확인 필요
+  expect(screen.getByText(/취소됨/)).toBeInTheDocument();
+  expect(screen.getByText(/중단됨/)).toBeInTheDocument();
+});
+
+it("묶음 장 후보는 상태별로 설명하고, 끝나지 않은 장은 버리지 못한다 (리뷰 R6, R7, R8)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([
+    chapterView("c1", "validating", { candidate_status: "held", result: { status: "ok", slots } }),
+    chapterView("c2", "failed", { candidate_status: "stale", result: { status: "ok", slots } }),
+    chapterView("c3", "cancelled", { candidate_status: "held", result: { status: "ok", slots } }),
+  ], { id: "job-b", state: "running" })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/아직 적용 여부를 확인하지 못한 결과입니다/)).toBeInTheDocument();
+  expect(screen.getByText(/만드는 동안 다른 저장이 있어 덱에 넣지 못한 결과입니다/)).toBeInTheDocument();
+  expect(screen.getByText(/취소한 뒤 도착한 결과입니다/)).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "버리기" })).toHaveLength(2);  // c1은 버릴 수 없다
+  expect(screen.queryByText(/기준 저장본/)).toBeNull();  // 묶음 장에는 작업 기준을 보이지 않는다
+});
+
+it("자료를 읽지 못한 후보는 이전 입력 기준이 아니라 비교할 수 없다고 알린다 (리뷰 R9)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { target: "c1", base_etag: '"aaaaaaaa"',
+    current_etag: '"aaaaaaaa"', stale_reasons: ["unknown_sources"], result: { status: "ok", slots } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/이전 입력 기준 후보입니다/)).toBeNull();
+});
+
+it("옮길 화면이 없으면 다시 생성 버튼을 숨기고, 이미 처분된 후보는 목록만 다시 읽는다 (리뷰 R10, R11)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([jobView("chapter", { target: "c1", result: { status: "ok", slots } })])
+    .mockResolvedValue([]);
+  vi.mocked(api.settleCandidate).mockRejectedValue(new ApiError(409, "처분할 결과 후보가 없거나 이미 처분했습니다."));
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  await screen.findByRole("button", { name: "버리기" });
+  expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "버리기" }));
+  expect(await screen.findByText("남아 있는 AI 결과 후보가 없습니다.")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("다른 장만 바뀐 후보는 같은 기준이라고 하지 않는다 (리뷰 R19)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { target: "c1", base_etag: '"aaaaaaaa"',
+    current_etag: '"bbbbbbbb"', stale_reasons: ["deck_changed_elsewhere"], result: { status: "ok", slots } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다/)).toBeInTheDocument();
+});
+
+it("멈춘 수리 후보는 멈춘 이유를 보인다 (리뷰 R17)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("repair", { result: { status: "stopped", deck: null,
+    reason: "호출 상한에 닿았습니다." } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByText("보기"));
+  expect(screen.getByText("멈춘 이유: 호출 상한에 닿았습니다.")).toBeInTheDocument();
 });

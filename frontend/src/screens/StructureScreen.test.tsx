@@ -1099,3 +1099,24 @@ it("구조안 생성의 조회가 실패하면 확인하지 못했다고 알린�
   await screen.findByLabelText("1번 장 주제");
   expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
 });
+
+// -- D2b-5c 리뷰 반영 ------------------------------------------------------------------------
+
+it("장 표의 취소 요청됨과 완료 여부 확인 필요는 상태 표시(아이콘과 접근 이름)로 보인다 (리뷰 R1)", async () => {
+  const view = running([chapterView("c1", "cancel_requested"), chapterView("c2", "remote_completion_unknown")]);
+  vi.mocked(api.listJobs).mockResolvedValue([view]);
+  vi.mocked(api.getJob).mockResolvedValueOnce(view).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("tr")!;
+  await waitFor(() => expect(within(row(1)).getByRole("img", { name: "일시 정지" })).toBeInTheDocument());
+  expect(within(row(2)).getByRole("img", { name: "물음표" })).toBeInTheDocument();
+});
+
+it("사용자가 취소한 묶음의 요약은 실행 실패로 보이지 않는다 (리뷰 R12)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c1", "cancelled")],
+    { state: "cancelled", outcome: "cancelled" })]);
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+  await screen.findByText(/1장 중 1장을 만들지 못했습니다/);
+  expect(screen.queryByText("실행 실패")).toBeNull();
+});

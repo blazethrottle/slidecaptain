@@ -2023,6 +2023,9 @@ def create_app(
             chapter = next((c for c in current.chapters(job_id) if c.chapter_id == req.chapter_id), None)
             if chapter is None:
                 raise HTTPException(404, f"이 작업에 없는 장입니다: {req.chapter_id}")
+            if chapter.state in UNFINISHED_CHAPTER:
+                # 끝나지 않은 장은 재시작 조정이 결과를 덱에 넣을 수 있어 버리지 않는다 (D2b-5c 리뷰 R6)
+                raise HTTPException(409, "아직 끝나지 않은 장의 결과는 버릴 수 없습니다. 앱을 다시 시작한 뒤 확인해 주세요.")
             current.settle_chapter_candidate(job_id, req.chapter_id, expected=chapter.candidate_status, new="dismissed")
         except TransitionRejected:
             raise HTTPException(409, "처분할 결과 후보가 없거나 이미 처분했습니다.") from None
