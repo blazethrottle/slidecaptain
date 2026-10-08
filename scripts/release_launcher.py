@@ -108,6 +108,9 @@ def run_release(folder, *, install_only=False, no_browser=False, port=PORT, data
         deadline = time.monotonic() + 60
         while time.monotonic() < deadline:
             if child.poll() is not None:
+                if child.returncode == 3:  # 자료 폴더 단일 서비스 잠금 (backend service_lock.EXIT_DATA_DIR_IN_USE)
+                    raise ValueError("같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. "
+                                     "다른 SlideCaptain 창을 닫은 뒤 다시 실행해 주세요.")
                 raise ValueError("SlideCaptain 서버가 시작 중 종료되었습니다. 위 오류를 확인해 주세요.")
             if matches_release(read_health(port), manifest):
                 # A process that lost a port race must not claim another server.

@@ -118,6 +118,25 @@ function validateReady(data, version, instance) {
     throw Error("앱 서비스의 실행 정보를 확인하지 못했습니다.");
   return "http://127.0.0.1:" + data.port;
 }
+// 서비스가 준비 신호 대신 낼 수 있는 오류 신호의 사용자 문구 (D2a-3)
+const SERVICE_ERRORS = {
+  data_dir_in_use:
+    "같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. 다른 SlideCaptain 창이나 웹 실행 창을 닫은 뒤 다시 실행해 주세요.",
+};
+function serviceError(data, instance) {
+  if (
+    !data ||
+    data.event !== "error" ||
+    data.product !== "slidecaptain" ||
+    data.desktop_instance_id !== instance ||
+    !Object.prototype.hasOwnProperty.call(SERVICE_ERRORS, data.code)
+  )
+    return null;
+  const error = Error(SERVICE_ERRORS[data.code]);
+  error.code = data.code;
+  error.userMessage = SERVICE_ERRORS[data.code];
+  return error;
+}
 function isOfficialLogin(value) {
   try {
     const u = new URL(value);
@@ -288,6 +307,8 @@ async function startService({
           buffer = buffer.slice(line + 1);
           try {
             const data = JSON.parse(value);
+            const failure = serviceError(data, instance);
+            if (failure) return finish(failure);
             if (data.event === "ready") {
               validateReady(data, version, instance);
               finish(null, data);
@@ -305,9 +326,13 @@ async function startService({
       child.once("error", () =>
         finish(Error("앱 서비스를 실행하지 못했습니다.")),
       );
-      child.once("exit", () =>
-        finish(Error("앱 서비스가 준비 중 종료되었습니다.")),
-      );
+      // 종료 직전에 쓴 오류 신호를 놓치지 않도록 표준 출력이 끝날 때까지 기다린다(최대 1초)
+      const exited = () => finish(Error("앱 서비스가 준비 중 종료되었습니다."));
+      child.once("exit", () => {
+        if (child.stdout.readableEnded) return exited();
+        child.stdout.once("end", exited);
+        setTimeout(exited, 1000);
+      });
     });
     child.stdout.resume();
     const origin = validateReady(ready, version, instance);

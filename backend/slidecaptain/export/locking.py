@@ -9,26 +9,7 @@ from pathlib import Path
 
 from slidecaptain.export import history
 
-if os.name == "nt":
-    import msvcrt
-
-    def _try_lock(fd: int) -> None:
-        # Windows locks from the current offset and permits ranges beyond EOF.
-        os.lseek(fd, 0, os.SEEK_SET)
-        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-
-    def _unlock(fd: int) -> None:
-        os.lseek(fd, 0, os.SEEK_SET)
-        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-
-else:
-    import fcntl
-
-    def _try_lock(fd: int) -> None:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-    def _unlock(fd: int) -> None:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+from slidecaptain.file_locks import try_lock as _try_lock, unlock as _unlock
 
 
 class ExportBusyError(TimeoutError):

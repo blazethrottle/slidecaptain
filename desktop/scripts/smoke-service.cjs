@@ -126,6 +126,24 @@ async function main() {
     const history = (await request("/api/projects/desktop-smoke/exports")).value;
     if (history.total !== 1 || history.items[0]?.artifact_status !== "matched" || history.items[0]?.slide_count !== 1)
       throw Error("History missing");
+    // D2a-3: the same data folder cannot get a second service; the first one keeps answering.
+    let secondRefused = false;
+    try {
+      const second = await startService({
+        command,
+        args: [...args, "--data-dir", data],
+        cwd: root,
+        env: { PYTHONPATH: path.join(root, "backend") },
+        version,
+        timeoutMs: 30000,
+      });
+      await second.stop();
+    } catch (error) {
+      secondRefused = error.code === "data_dir_in_use";
+    }
+    if (!secondRefused) throw Error("A second service started on the same data folder");
+    if (!(await request("/api/projects/desktop-smoke/deck")).value.meta)
+      throw Error("The first service stopped answering after the refused second start");
     const stopping = service.stop();
     if (service.stop() !== stopping) throw Error("Concurrent shutdown did not share completion");
     await stopping;
@@ -162,6 +180,7 @@ async function main() {
         native_read_import_save_export_restart: "passed",
         parent_eof_shutdown: "passed",
         unrelated_service_preserved: "passed",
+        same_folder_second_service_refused: "passed",
         ai_calls: 0,
       }),
     );

@@ -14,6 +14,20 @@ let service,
   shutdownComplete = false,
   closing = false;
 const requests = new Map();
+// D2a-3: 앱을 두 번 실행하면 두 번째 실행은 기존 창을 앞으로 가져오고 끝난다.
+// 서비스의 자료 폴더 잠금은 그 아래의 방어선이다(다른 설치본이나 웹 모드와 겹칠 때)
+const primaryInstance = app.requestSingleInstanceLock();
+if (!primaryInstance) {
+  shutdownComplete = true;
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!window || window.isDestroyed()) return;
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+  });
+}
 const root = path.resolve(__dirname, "..");
 function shutdown() {
   if (quitting) return;
@@ -264,11 +278,13 @@ app.on("before-quit", (event) => {
 app.on("window-all-closed", () => {});
 app
   .whenReady()
-  .then(start)
-  .catch(async () => {
+  .then(() => (primaryInstance ? start() : undefined))
+  .catch(async (error) => {
     dialog.showErrorBox(
       "SlideCaptain",
-      "앱을 시작하지 못했습니다. 설치 상태와 자료 폴더 접근 권한을 확인해 주세요.",
+      // 서비스가 알린 원인(예: 같은 자료 폴더 사용 중)이 있으면 그 문구를 보인다 (D2a-3)
+      error?.userMessage ??
+        "앱을 시작하지 못했습니다. 설치 상태와 자료 폴더 접근 권한을 확인해 주세요.",
     );
     if (window && !window.isDestroyed()) window.destroy();
     else shutdown();

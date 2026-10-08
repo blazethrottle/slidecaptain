@@ -25,13 +25,17 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
   const [statusLine, setStatusLine] = useState("AI 연결 상태를 확인하는 중...");
+  const [dataDir, setDataDir] = useState<AppStatus["data_dir"]>(null);
 
   useEffect(() => {
     api.listProjects().then(setProjects).catch((e) => setError(messageOf(e)));
     // 상태 조회 실패는 목록 표시를 막지 않는다 (오류 영역이 아니라 상태 줄에만 남긴다)
     const refresh = () => api.getStatus()
-      .then((s) => setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
-        ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s)))
+      .then((s) => {
+        setDataDir(s.data_dir ?? null);
+        setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
+          ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s));
+      })
       .catch(() => setStatusLine("AI 연결 상태를 불러오지 못했습니다."));
     void refresh();
     window.addEventListener("slidecaptain:ai-selection", refresh);
@@ -90,6 +94,14 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
               </li>
             ))}
           </ul>
+        )}
+        {/* 이 앱이 쓰는 자료 폴더를 보인다 (D2a-3, 기술 설계 3절). 폴더를 바꾸는 화면은 D6이다 */}
+        {dataDir && <p className="data-dir">자료 폴더: {dataDir.path} (프로젝트 {dataDir.project_count}개)</p>}
+        {dataDir?.lock === "unsupported" && (
+          <p role="alert">
+            이 자료 폴더는 파일 잠금을 지원하지 않아 잠금 없이 실행 중입니다. 같은 폴더로 SlideCaptain을 두 개
+            실행하면 변경이 섞일 수 있습니다.
+          </p>
         )}
       </section>
     </main>

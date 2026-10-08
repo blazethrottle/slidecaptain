@@ -192,6 +192,16 @@ class UploadResult(BaseModel):
     notes: list[str]
 
 
+class DataDirStatus(BaseModel):
+    """자료 폴더 표시 (D2a-3, 기술 설계 3절의 "발견한 경로 제시"). 폴더를 바꾸는 화면은 D6이다."""
+
+    path: str
+    project_count: int
+    # held: 이 서비스가 단일 서비스 잠금을 쥐었다. unsupported: 파일 시스템이 잠금을 지원하지 않아
+    # 잠금 없이 실행 중이다. none: 잠금을 쓰지 않는 실행(시험, 내장 호출)
+    lock: Literal["held", "unsupported", "none"]
+
+
 class AppStatus(BaseModel):
     provider: Literal["subscription", "none", "claude", "chatgpt"]
     login: LoginStatus
@@ -199,6 +209,7 @@ class AppStatus(BaseModel):
     selection_id: str | None = None
     last_generation_at: str | None = None  # 프로세스 메모리에만 기록, 재시작 시 초기화
     checked_at: str = Field(description="로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)")
+    data_dir: DataDirStatus | None = None
 
 
 class ExportResult(BaseModel):
@@ -272,6 +283,7 @@ def create_app(
     ai_connections: AIConnections | None = None,
     desktop_session_token: str | None = None,
     desktop_instance_id: str | None = None,
+    data_dir_lock: Literal["held", "unsupported", "none"] = "none",
 ) -> FastAPI:
     if desktop_session_token is not None or desktop_instance_id is not None:
         if (not isinstance(desktop_session_token, str) or len(desktop_session_token) != 64
@@ -1039,13 +1051,24 @@ def create_app(
             health["desktop_instance_id"] = desktop_instance_id
         return health
 
+    def _data_dir_status() -> DataDirStatus | None:
+        root = getattr(store, "root", None)
+        if root is None:
+            return None
+        try:
+            count = len(store.list_projects())
+        except OSError:
+            count = 0
+        return DataDirStatus(path=str(root), project_count=count, lock=data_dir_lock)
+
     @app.get("/api/status", response_model=AppStatus)
     def get_status():
         if ai_connections is not None:
             selection, selection_id, login = ai_connections.selected_status()
             return AppStatus(provider=selection.provider, model=selection.model, login=login,
                              selection_id=selection_id, checked_at=_now_iso(),
-                             last_generation_at=generation_success.get((selection.provider, selection.model)))
+                             last_generation_at=generation_success.get((selection.provider, selection.model)),
+                             data_dir=_data_dir_status())
         # 동기 함수라 스레드풀에서 실행된다: CLI 프로세스 대기가 이벤트 루프를 막지 않는다
         with status_lock:
             now = time.monotonic()
@@ -1062,6 +1085,7 @@ def create_app(
             model=getattr(provider, "model", None),
             last_generation_at=status_state["last_generation_at"],
             checked_at=status_state["checked_at"],
+            data_dir=_data_dir_status(),
         )
 
     def connections():

@@ -773,6 +773,7 @@ export interface components {
              * @description 로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)
              */
             checked_at: string;
+            data_dir?: components["schemas"]["DataDirStatus"] | null;
         };
         /** ApplyStoryRewriteRequest */
         ApplyStoryRewriteRequest: {
@@ -1297,6 +1298,21 @@ export interface components {
              * @default
              */
             title: string;
+        };
+        /**
+         * DataDirStatus
+         * @description 자료 폴더 표시 (D2a-3, 기술 설계 3절의 "발견한 경로 제시"). 폴더를 바꾸는 화면은 D6이다.
+         */
+        DataDirStatus: {
+            /** Path */
+            path: string;
+            /** Project Count */
+            project_count: number;
+            /**
+             * Lock
+             * @enum {string}
+             */
+            lock: "held" | "unsupported" | "none";
         };
         /** Deck */
         Deck: {

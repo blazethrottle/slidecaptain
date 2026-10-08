@@ -20,10 +20,13 @@ from slidecaptain.__main__ import _find_ui_dir
 from slidecaptain.pipeline.connections import AIConnections
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
+from slidecaptain.storage.service_lock import EXIT_DATA_DIR_IN_USE, DataDirInUse, acquire_service_lock
 
 
 async def serve(data_dir: Path):
     fence = ProcessFence()
+    # D2a-3: 설정 파일과 저장소를 만들기 전에 자료 폴더 잠금을 얻는다. 쥔 채로 서버를 실행한다
+    lock = acquire_service_lock(data_dir)
     token = os.environ.pop("SLIDECAPTAIN_DESKTOP_SESSION", None)
     instance = os.environ.pop("SLIDECAPTAIN_DESKTOP_INSTANCE", None)
     ui = _find_ui_dir()
@@ -31,7 +34,7 @@ async def serve(data_dir: Path):
         raise ValueError("Desktop UI is missing; build the frontend before starting.")
     manager = AIConnections(data_dir / "ai-settings.json")
     app = create_app(FileProjectStore(data_dir), ai_connections=manager, static_dir=ui,
-                     desktop_session_token=token, desktop_instance_id=instance)
+                     desktop_session_token=token, desktop_instance_id=instance, data_dir_lock=lock.state)
     if token is None or instance is None:
         raise ValueError("Desktop session configuration is required")
     server = uvicorn.Server(uvicorn.Config(app, log_level="warning", access_log=False,
@@ -75,15 +78,23 @@ async def serve(data_dir: Path):
             server.should_exit = True
             await task
         manager.close()
+        lock.close()
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=Path.home() / "slidecaptain-projects")
     args = parser.parse_args()
+    instance = os.environ.get("SLIDECAPTAIN_DESKTOP_INSTANCE")  # serve가 환경에서 지우기 전에 읽는다
     try:
         asyncio.run(serve(args.data_dir))
         return 0
+    except DataDirInUse as e:
+        # 준비 신호와 같은 형식의 오류 신호. 독립 앱이 실행 식별자를 확인한 뒤 사용자 문구로 바꾼다
+        print(json.dumps({"event": "error", "product": "slidecaptain", "desktop_instance_id": instance,
+                          "code": "data_dir_in_use", "holder_started_at": e.holder.get("started_at")}),
+              flush=True)
+        return EXIT_DATA_DIR_IN_USE
     except (ValueError, OSError):
         print("SlideCaptain desktop service could not start. Check the app installation and data directory.", file=sys.stderr)
         return 1

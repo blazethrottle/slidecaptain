@@ -2875,6 +2875,16 @@
             "type": "string",
             "title": "Checked At",
             "description": "로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)"
+          },
+          "data_dir": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataDirStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -4068,6 +4078,35 @@
           "name"
         ],
         "title": "CreateProjectRequest"
+      },
+      "DataDirStatus": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "project_count": {
+            "type": "integer",
+            "title": "Project Count"
+          },
+          "lock": {
+            "type": "string",
+            "enum": [
+              "held",
+              "unsupported",
+              "none"
+            ],
+            "title": "Lock"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "project_count",
+          "lock"
+        ],
+        "title": "DataDirStatus",
+        "description": "자료 폴더 표시 (D2a-3, 기술 설계 3절의 \"발견한 경로 제시\"). 폴더를 바꾸는 화면은 D6이다."
       },
       "Deck": {
         "properties": {

@@ -141,3 +141,20 @@ it("형식 기록을 읽을 수 없는 프로젝트에는 기록 확인 필요 �
   render(<ProjectList onOpen={() => {}} />);
   expect(await screen.findByText("기록 확인 필요")).toBeInTheDocument();
 });
+
+it("자료 폴더 경로와 프로젝트 수를 보인다 (D2a-3)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([]);
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...LOGGED_IN, data_dir: { path: "/data/slidecaptain-projects", project_count: 3, lock: "held" } });
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("자료 폴더: /data/slidecaptain-projects (프로젝트 3개)")).toBeInTheDocument();
+  expect(screen.queryByText(/파일 잠금을 지원하지 않아/)).toBeNull();
+});
+
+it("자료 폴더가 잠금을 지원하지 않으면 두 개 실행하지 말라고 알린다 (D2a-3)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([]);
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...LOGGED_IN, data_dir: { path: "/Volumes/공유/projects", project_count: 0, lock: "unsupported" } });
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText(/파일 잠금을 지원하지 않아 잠금 없이 실행 중입니다/)).toBeInTheDocument();
+});

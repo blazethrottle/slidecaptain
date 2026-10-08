@@ -45,6 +45,17 @@ while [ "$tries" -lt 30 ]; do
     echo "서버가 종료되었습니다."
     exit 0
   fi
+  # 서버가 시작 중에 끝났으면 30초를 다 기다리지 않는다. 종료 코드 3은 자료 폴더 잠금(D2a-3)이다
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    wait "$SERVER_PID"
+    code=$?
+    if [ "$code" -eq 3 ]; then
+      echo "같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. 다른 SlideCaptain 창을 닫은 뒤 다시 실행해 주세요."
+    else
+      echo "서버가 시작 중에 종료되었습니다. 위에 표시된 오류를 확인해 주세요."
+    fi
+    exit 1
+  fi
   tries=$((tries + 1))
   echo "서버 시작 대기 중... ($tries/30)"
   sleep 1
