@@ -1,0 +1,30 @@
+{
+  "ledger": {
+    "ledger_bytes": 36864,
+    "largest_result_json_chars": 562,
+    "chapters": 5,
+    "ledger_write_calls": 26,
+    "per_write": {
+      "n": 26,
+      "median_ms": 0.19,
+      "max_ms": 0.31
+    },
+    "ledger_ms_per_chapter": 1.03,
+    "batch_total_ms": 18.3
+  },
+  "service": {
+    "poll": {
+      "n": 30,
+      "median_ms": 0.9,
+      "max_ms": 3.71
+    },
+    "cancel_route_ms": 1.8,
+    "cancel_to_terminal_ms": 62.4,
+    "terminal_state": "cancelled",
+    "chapter_states": [
+      "cancelled",
+      "cancelled",
+      "cancelled"
+    ]
+  }
+}
