@@ -16,13 +16,18 @@ let service,
 const requests = new Map();
 // D2a-3: 앱을 두 번 실행하면 두 번째 실행은 기존 창을 앞으로 가져오고 끝난다.
 // 서비스의 자료 폴더 잠금은 그 아래의 방어선이다(다른 설치본이나 웹 모드와 겹칠 때)
+let focusWhenShown = false;
 const primaryInstance = app.requestSingleInstanceLock();
 if (!primaryInstance) {
   shutdownComplete = true;
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!window || window.isDestroyed()) return;
+    // 첫 실행이 아직 창을 만들기 전이면 창이 뜨는 즉시 앞으로 가져온다 (D2a-3 리뷰 R6)
+    if (!window || window.isDestroyed()) {
+      focusWhenShown = true;
+      return;
+    }
     if (window.isMinimized()) window.restore();
     window.show();
     window.focus();
@@ -232,7 +237,10 @@ async function start() {
     event.preventDefault(),
   );
   registerIPC();
-  window.once("ready-to-show", () => window?.show());
+  window.once("ready-to-show", () => {
+    window?.show();
+    if (focusWhenShown) window?.focus();
+  });
   service.child.once("exit", () => {
     if (!service.stopping && !quitting) {
       dialog.showErrorBox(

@@ -56,6 +56,7 @@ test("data directory in use is reported at once with a user message and code", a
       assert.equal(error.code, "data_dir_in_use");
       assert.match(error.message, /다른 SlideCaptain/);
       assert.match(error.userMessage, /자료 폴더/);
+      assert.match(error.userMessage, /시작 시각: 2026-10-08 10:00/);
       return true;
     },
   );

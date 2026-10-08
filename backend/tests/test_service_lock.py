@@ -128,12 +128,15 @@ def test_web_serve_refuses_before_any_setup_when_folder_is_in_use(tmp_path):
     data = tmp_path / "data"
     holder = _start_holder(data)
     try:
-        result = subprocess.run([sys.executable, "-P", "-m", "slidecaptain", "serve", "--data-dir", str(data)],
+        # --port 0: 회귀로 거절이 사라져도 실제 기본 포트에 서버를 띄우지 않는다 (리뷰 R4)
+        result = subprocess.run([sys.executable, "-P", "-m", "slidecaptain", "serve", "--data-dir", str(data),
+                                 "--port", "0"],
                                 capture_output=True, text=True, encoding="utf-8", env=_env(), timeout=60)
         assert result.returncode == service_lock.EXIT_DATA_DIR_IN_USE
         assert "다른 SlideCaptain" in result.stderr
         assert "Errno" not in result.stderr
-        assert "폰트" not in result.stdout + result.stderr  # 폰트 설치 같은 준비보다 먼저 거절한다
+        # 어떤 준비보다 먼저 거절했다: 설정 파일(ai-settings.json)을 만들지 않았다
+        assert not (data / "ai-settings.json").exists()
     finally:
         holder.stdin.close()
         holder.wait(10)
@@ -148,3 +151,38 @@ def test_status_reports_data_folder_project_count_and_lock_state(store):
     client = TestClient(create_app(store, data_dir_lock="unsupported"))
     data_dir = client.get("/api/status").json()["data_dir"]
     assert data_dir == {"path": str(store.root), "project_count": 1, "lock": "unsupported"}
+
+
+
+def test_lock_exit_code_does_not_collide_with_uvicorn_startup_failure():
+    """uvicorn은 포트 충돌 같은 시작 실패에 3으로 끝난다. 실행 스크립트가 원인을 혼동하지 않게 한다 (리뷰 R1)."""
+    from uvicorn.config import STARTUP_FAILURE
+
+    assert service_lock.EXIT_DATA_DIR_IN_USE not in (0, 1, 2, STARTUP_FAILURE)
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                    reason="POSIX 권한 비트로 읽기 전용 폴더를 만든다")
+def test_read_only_folder_runs_without_lock_instead_of_failing(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    data.chmod(0o555)
+    try:
+        lock = acquire_service_lock(data, timeout=0.3)
+        assert lock.unsupported is True
+        lock.close()
+    finally:
+        data.chmod(0o755)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="심볼릭 링크 생성 권한이 계정에 따라 다르다")
+def test_web_serve_explains_an_unusable_lock_file_without_a_traceback(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / service_lock.LOCK_NAME).symlink_to(tmp_path / "elsewhere")
+    result = subprocess.run([sys.executable, "-P", "-m", "slidecaptain", "serve", "--data-dir", str(data),
+                             "--port", "0"],
+                            capture_output=True, text=True, encoding="utf-8", env=_env(), timeout=60)
+    assert result.returncode == 1
+    assert "자료 폴더를 준비하지 못했습니다" in result.stderr
+    assert "Traceback" not in result.stderr

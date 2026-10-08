@@ -140,6 +140,7 @@ async function main() {
       await second.stop();
     } catch (error) {
       secondRefused = error.code === "data_dir_in_use";
+      if (!secondRefused) throw Error("Second service failed for another reason: " + error.message);
     }
     if (!secondRefused) throw Error("A second service started on the same data folder");
     if (!(await request("/api/projects/desktop-smoke/deck")).value.meta)

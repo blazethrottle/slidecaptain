@@ -21,17 +21,23 @@ from slidecaptain.file_locks import try_lock as _os_try_lock
 
 LOCK_NAME = ".slidecaptain-service.lock"  # 점으로 시작해 프로젝트 이름과 겹치지 않는다. 지우지 않는다
 INFO_NAME = ".slidecaptain-service.json"  # Windows 잠금은 잠근 범위를 읽지 못하게 하므로 별도 파일에 둔다
-# 잠금을 얻지 못했을 때 기다리는 시간. 근거: D1 macOS 실측(앱 본체 강제 종료 뒤 서비스가 약 2초 안에
-# 스스로 끝남)과 내보내기 게시 잠금의 재시도 시간(export/locking.py의 5초). Windows가 종료한
-# 프로세스의 잠금을 늦게 푸는 경우도 이 시간이 흡수한다(Microsoft LockFile 문서는 해제 시점을 보장하지 않는다)
-RETRY_SECONDS = 5.0
-EXIT_DATA_DIR_IN_USE = 3
+# 잠금을 얻지 못했을 때 기다리는 시간. 근거: 앱 본체가 끝난 뒤 서비스가 스스로 끝나기까지의 상한이
+# 약 10초다(desktop_service.py의 parent_lifeline이 10초 기다린 뒤 강제 종료. D1 macOS 실측의 보통 경로는
+# 약 2초). 여유 2초를 더했다(D2a-3 리뷰 R5). Windows가 종료한 프로세스의 잠금을 늦게 푸는 경우도 이
+# 시간이 흡수한다(Microsoft LockFile 문서는 해제 시점을 보장하지 않는다)
+RETRY_SECONDS = 12.0
+# 잠금 실패의 종료 코드. uvicorn의 시작 실패(STARTUP_FAILURE = 3, 포트 충돌 등)와 겹치지 않게
+# sysexits의 EX_TEMPFAIL(75)을 쓴다 (D2a-3 리뷰 R1)
+EXIT_DATA_DIR_IN_USE = 75
 _BUSY = {errno.EACCES, errno.EAGAIN}
 _UNSUPPORTED = {errno.ENOLCK, getattr(errno, "ENOTSUP", -1), getattr(errno, "EOPNOTSUPP", -1)}
+# 잠금 파일을 만들 수 없는 폴더(읽기 전용, 권한 없음). 종전처럼 열어 볼 수는 있게 잠금 없이 실행한다 (리뷰 R2)
+_NOT_WRITABLE = {errno.EACCES, errno.EPERM, errno.EROFS}
 
+# 사용자 문구의 원본. 독립 앱(desktop/runtime.cjs)과 실행 스크립트는 같은 뜻으로 쓴다 (리뷰 R7)
 IN_USE_MESSAGE = (
     "같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. 다른 SlideCaptain 창이나 웹 실행 창을 "
-    "닫은 뒤 다시 실행해 주세요."
+    "닫은 뒤 다시 실행해 주세요. 방금 앱을 닫았다면 몇 초 뒤 다시 실행해 주세요."
 )
 
 
@@ -96,7 +102,12 @@ def acquire_service_lock(
     """자료 폴더를 만들고 잠금을 얻는다. 다른 서비스가 쥐고 있으면 DataDirInUse."""
     data_dir.mkdir(parents=True, exist_ok=True)
     flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(data_dir / LOCK_NAME, flags, 0o600)
+    try:
+        fd = os.open(data_dir / LOCK_NAME, flags, 0o600)
+    except OSError as exc:
+        if exc.errno in _NOT_WRITABLE:
+            return ServiceLock(None, unsupported=True)
+        raise
     os.set_inheritable(fd, False)  # 자식 CLI가 잠금을 물려받아 서비스 종료 뒤에도 쥐지 않게 한다
     deadline = time.monotonic() + timeout
     while True:

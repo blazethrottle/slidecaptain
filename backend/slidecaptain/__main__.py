@@ -167,8 +167,11 @@ def _run_serve(args) -> int:
         since = e.holder.get("started_at")
         print(str(e) + (f" (사용 중인 실행의 시작 시각: {since})" if since else ""), file=sys.stderr)
         return EXIT_DATA_DIR_IN_USE
+    except OSError as e:  # 폴더를 만들 수 없거나 잠금 파일이 링크인 경우: 원시 오류 대신 안내한다 (리뷰 R2)
+        print(f"자료 폴더를 준비하지 못했습니다: {args.data_dir} ({e.strerror or e})", file=sys.stderr)
+        return 1
     if lock.unsupported:
-        print("이 자료 폴더는 파일 잠금을 지원하지 않아 잠금 없이 실행합니다. 같은 폴더로 SlideCaptain을 "
+        print("이 자료 폴더에서는 파일 잠금을 쓸 수 없어 잠금 없이 실행합니다. 같은 폴더로 SlideCaptain을 "
               "두 개 실행하지 마세요.", file=sys.stderr)
 
     # 태스크 D2-5: uvicorn은 루트 로거에 핸들러를 추가하지 않아, 이 호출이 없으면

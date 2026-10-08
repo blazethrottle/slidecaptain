@@ -121,7 +121,7 @@ function validateReady(data, version, instance) {
 // 서비스가 준비 신호 대신 낼 수 있는 오류 신호의 사용자 문구 (D2a-3)
 const SERVICE_ERRORS = {
   data_dir_in_use:
-    "같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. 다른 SlideCaptain 창이나 웹 실행 창을 닫은 뒤 다시 실행해 주세요.",
+    "같은 자료 폴더를 다른 SlideCaptain이 사용하고 있습니다. 다른 SlideCaptain 창이나 웹 실행 창을 닫은 뒤 다시 실행해 주세요. 방금 앱을 닫았다면 몇 초 뒤 다시 실행해 주세요.",
 };
 function serviceError(data, instance) {
   if (
@@ -132,9 +132,12 @@ function serviceError(data, instance) {
     !Object.prototype.hasOwnProperty.call(SERVICE_ERRORS, data.code)
   )
     return null;
-  const error = Error(SERVICE_ERRORS[data.code]);
+  // 서비스가 알려 준 사용 중인 실행의 시작 시각을 덧붙인다 (D2a-3 리뷰 R7)
+  const since = typeof data.holder_started_at === "string" ? data.holder_started_at.slice(0, 16).replace("T", " ") : "";
+  const message = SERVICE_ERRORS[data.code] + (since ? " (사용 중인 실행의 시작 시각: " + since + ")" : "");
+  const error = Error(message);
   error.code = data.code;
-  error.userMessage = SERVICE_ERRORS[data.code];
+  error.userMessage = message;
   return error;
 }
 function isOfficialLogin(value) {
