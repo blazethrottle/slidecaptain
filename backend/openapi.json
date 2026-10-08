@@ -3764,6 +3764,17 @@
               "dismissed"
             ],
             "title": "Action"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
           }
         },
         "type": "object",

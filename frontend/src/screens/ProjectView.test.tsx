@@ -12,7 +12,8 @@ vi.mock("../api/client", async (importOriginal) => {
     getDeck: vi.fn(), listSources: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
     getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn(),
-    saveDraft: vi.fn(), listDrafts: vi.fn() } };
+    saveDraft: vi.fn(), listDrafts: vi.fn(), getActiveJob: vi.fn(), listJobs: vi.fn(), prepareAi: vi.fn(),
+    startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn() } };
 });
 
 // D2a-2: 충돌 시 보존 요청은 기본으로 성공한다
@@ -20,7 +21,24 @@ beforeEach(() => {
   vi.mocked(api.saveDraft).mockResolvedValue({ id: "draft-20261008-100000-000001",
     saved_at: "2026-10-08T10:00:00+09:00", reason: "generation_unsaved", source: "structure_approval", base_etag: null });
   vi.mocked(api.listDrafts).mockResolvedValue([]);
+  // D2b-5a: 진행 중 작업이 없고 원장을 쓸 수 있는 상태가 기본이다
+  vi.mocked(api.getActiveJob).mockResolvedValue({ active: null, ledger_available: true });
+  vi.mocked(api.listJobs).mockResolvedValue([]);
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
 });
+
+// 등록은 되었고 조회는 끝나지 않는 장 생성 묶음
+function hangingBatch() {
+  vi.mocked(api.startChapters).mockResolvedValue({
+    id: "job-1", project: project.name, kind: "chapters", state: "running", target: null, params: {},
+    candidate_status: "none", outcome: null, owner: "this_instance", created_at: "2026-10-08T10:00:00+09:00",
+    started_at: null, finished_at: null, provider: null, model: null, base_etag: null, current_etag: null,
+    relevance_hash: null, stale_reasons: [], cancel_requested: false, error: null, result: null,
+    chapters: [{ chapter_id: "c1", position: 0, state: "running", candidate_status: "none", error: null, result: null,
+      started_at: null, finished_at: null }],
+  });
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+}
 
 // 업로드 잠금과 beforeunload 테스트가 공용으로 쓰는 XLSX 픽스처와 헬퍼 (계획서 B4)
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -275,7 +293,7 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
   vi.mocked(api.getDeck).mockResolvedValue(deckWithStructure);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockImplementation(() => new Promise(() => {}));  // 절대 응답하지 않는 생성 호출
+  hangingBatch();  // 끝나지 않는 장 생성 묶음
   render(<ProjectView project={project} onBack={() => {}} />);
   await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
   await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
@@ -293,7 +311,7 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
 
 // 충돌 배너 (2026-09-03 A5): 구조안과 복구 화면의 412는 ProjectView 배너의 "서버 내용 다시 읽기"로 회복한다
 // (자료 탭 경로는 ProjectView.flush.test.tsx)
-it("구조안 승인 루프에서 412를 받으면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+it("구조안 승인 반영에서 412를 받으면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
   const deckWithStructure: Deck = {
     schema_version: 1,
     meta: { title: "제목", report_type: "research", audience: "", presenter: "", preset_overrides: {} },
@@ -304,14 +322,9 @@ it("구조안 승인 루프에서 412를 받으면 배너가 뜨고, 다시 읽�
   const serverDeck: Deck = { ...deckWithStructure, meta: { ...deckWithStructure.meta, title: "서버본" } };
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWithStructure).mockResolvedValue(serverDeck);
   vi.mocked(api.listSources).mockResolvedValue([]);
+  // 장 결과는 서버 묶음이 저장하므로 화면의 PUT은 승인 반영 1회다. 그 PUT이 412를 받는다
   vi.mocked(api.putDeck)
-    .mockResolvedValueOnce({ ok: true })  // 승인 반영 (snapshot true)
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  vi.mocked(api.generateChapter).mockResolvedValue({
-    status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
-    format_retried: false, condensed: false,
-    slots: { template: "cover", title: "제목", subtitle: "", date: "" },
-  });
   render(<ProjectView project={project} onBack={() => {}} />);
   await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
   await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
@@ -445,7 +458,7 @@ it("장별 순차 생성이 진행 중이면 beforeunload가 막힌다", async (
   vi.mocked(api.getDeck).mockResolvedValue(deckWithStructure);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockImplementation(() => new Promise(() => {}));  // 절대 응답하지 않는 생성 호출
+  hangingBatch();  // 끝나지 않는 장 생성 묶음
   render(<ProjectView project={project} onBack={() => {}} />);
   expect(dispatchBeforeUnload()).toBe(false);
   await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
@@ -468,4 +481,48 @@ it("형식 기록을 읽을 수 없는 프로젝트는 열지 않고 보관 방�
   expect(await screen.findByText(/형식 기록 파일\(manifest.json\)을 읽지 못했습니다/)).toBeInTheDocument();
   expect(api.getDeck).not.toHaveBeenCalled();
   expect(api.listSnapshots).not.toHaveBeenCalled();
+});
+
+// D2b-5a: 새로고침이나 다른 창에서 돌던 장 생성 묶음도 서비스의 진행 중 작업으로 잠근다
+it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 구조안 탭을 열고 다른 탭과 창 닫기를 막는다 (D2b-5a)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob).mockResolvedValue({ ledger_available: true, active: {
+    id: "job-1", project: project.name, kind: "chapters", target: null, stage: "running",
+    created_at: "2026-10-08T10:00:00+09:00", cancel_requested: false } });
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+  await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
+  expect(screen.getByRole("button", { name: "편집" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
+  expect(dispatchBeforeUnload()).toBe(true);
+});
+
+it("다른 프로젝트의 AI 작업이 진행 중이면 안내하고 그 작업을 취소할 수 있다 (D2b-5a)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getActiveJob)
+    .mockResolvedValueOnce({ ledger_available: true, active: {
+      id: "job-9", project: "다른프로젝트", kind: "chapters", target: null, stage: "running",
+      created_at: "2026-10-08T10:00:00+09:00", cancel_requested: false } })
+    .mockResolvedValue({ active: null, ledger_available: true });
+  vi.mocked(api.cancelJob).mockResolvedValue({} as Awaited<ReturnType<typeof api.cancelJob>>);
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+  await userEvent.click(await screen.findByRole("button", { name: "그 작업 취소" }));
+  expect(api.cancelJob).toHaveBeenCalledWith("다른프로젝트", "job-9");
+  await waitFor(() => expect(screen.queryByRole("button", { name: "그 작업 취소" })).toBeNull());
+  // 다른 프로젝트의 작업은 이 프로젝트의 탭을 잠그지 않는다
+  expect(screen.getByRole("button", { name: "편집" })).not.toBeDisabled();
+});
+
+it("진행 중 작업을 확인하기 전에는 탭을 잠그고 확인 중이라고 알린다 (D2b-5a)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  const status = deferred<Awaited<ReturnType<typeof api.getActiveJob>>>();
+  vi.mocked(api.getActiveJob).mockReturnValue(status.promise);
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const editorBtn = await screen.findByRole("button", { name: "편집" });
+  expect(editorBtn).toBeDisabled();
+  expect(editorBtn).toHaveAttribute("title", "작업 상태를 확인하는 중입니다");
+  status.resolve({ active: null, ledger_available: true });
+  await waitFor(() => expect(editorBtn).not.toBeDisabled());
 });

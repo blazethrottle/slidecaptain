@@ -167,3 +167,5 @@ class ActiveJobStatus(BaseModel):
 
 class CandidateAction(BaseModel):
     action: Literal["applied", "dismissed"]
+    # 묶음의 장 후보를 처분할 때 그 장 (D2b-4 리뷰 R5). 장 후보는 버리기만 한다
+    chapter_id: str | None = None

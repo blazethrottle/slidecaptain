@@ -1920,11 +1920,21 @@ def create_app(
     @app.post("/api/projects/{name}/jobs/{job_id}/candidate", response_model=JobView)
     def settle_candidate(name: str, job_id: str, req: CandidateAction):
         row = _project_job(name, job_id)
+        current = runner.require_ledger()
         try:
-            settled = runner.require_ledger().settle_candidate(job_id, expected=row.candidate_status, new=req.action)
+            if req.chapter_id is None:
+                settled = current.settle_candidate(job_id, expected=row.candidate_status, new=req.action)
+                return _job_view(settled)
+            # 장 후보는 화면이 반영하지 않으므로(다시 생성은 새 묶음) 버리기만 받는다
+            if row.kind != BATCH_KIND or req.action != "dismissed":
+                raise HTTPException(422, "장 후보는 묶음 작업에서만 버릴 수 있습니다.")
+            chapter = next((c for c in current.chapters(job_id) if c.chapter_id == req.chapter_id), None)
+            if chapter is None:
+                raise HTTPException(404, f"이 작업에 없는 장입니다: {req.chapter_id}")
+            current.settle_chapter_candidate(job_id, req.chapter_id, expected=chapter.candidate_status, new="dismissed")
         except TransitionRejected:
             raise HTTPException(409, "처분할 결과 후보가 없거나 이미 처분했습니다.") from None
-        return _job_view(settled)
+        return _job_view(_project_job(name, job_id))
 
     @app.get("/api/jobs/active", response_model=ActiveJobStatus)
     def get_active_job():

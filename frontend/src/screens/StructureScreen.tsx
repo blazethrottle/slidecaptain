@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AiConsentDeclined, api, ApiError, isStaleStoryPlan, messageOf,
-  type Chapter, type ChapterResult, type Deck, type GenerationUsage, type ProjectInfo, type StoryPlan, type TemplateName,
+  AiConsentDeclined, api, ApiError, followJob, isStaleStoryPlan, messageOf, newRequestId, TERMINAL_JOB_STATES,
+  type Chapter, type ChapterView, type Deck, type GenerationUsage, type JobView, type ProjectInfo, type StoryPlan,
+  type TemplateName,
 } from "../api/client";
 import { formatUsage, sumUsage } from "../api/usage";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
@@ -22,7 +23,44 @@ const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 
 const UNSAVED_RESULT_CONFIRM =
   "저장하지 못한 생성 결과가 있습니다. 복사하지 않고 계속하면 그 결과는 사라집니다. 계속할까요?";
 
-type Progress = Record<string, "대기" | "생성 중" | "완료" | "실패" | "취소" | "보류">;
+type ProgressLabel = "대기" | "생성 중" | "완료" | "실패" | "취소" | "보류" | "중단" | "취소 요청됨"
+  | "완료 여부 확인 필요" | "이전 입력 기준";
+type Progress = Record<string, ProgressLabel>;
+
+const UNKNOWN_REGENERATE_CONFIRM =
+  "완료 여부를 확인하지 못한 장이 있습니다. 다시 생성하면 AI 사용량이 한 번 더 기록될 수 있습니다. 계속할까요?";
+const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
+
+// 원장의 장 상태를 화면 표시로 바꾼다 (계획서 D2b-5a 하위 상태 표). 그 뒤 슬라이드가 생긴 장은 완료로 보인다
+function chapterLabel(chapter: ChapterView, hasSlide: boolean): ProgressLabel {
+  if (hasSlide) return "완료";
+  switch (chapter.state) {
+    case "queued": return "대기";
+    case "running": case "validating": return "생성 중";
+    case "cancel_requested": return "취소 요청됨";
+    case "succeeded": return "완료";
+    case "cancelled": return "취소";
+    case "remote_completion_unknown": return "완료 여부 확인 필요";
+    case "interrupted": return chapter.error?.code === "held_stale_plan" ? "보류" : "중단";
+    default: return chapter.candidate_status === "stale" ? "이전 입력 기준" : "실패";
+  }
+}
+
+// 다시 생성할 수 있는 장 상태. 보류(구성 계획 낡음)는 복구 안내를 따른다
+const RETRYABLE_STATES = new Set(["failed", "interrupted", "cancelled", "remote_completion_unknown"]);
+
+// 후보 슬롯의 글자만 모아 보인다. 사용자가 반영 여부를 판단하는 데는 구조보다 내용이 필요하다
+function candidateText(chapter: ChapterView): string {
+  const slots = (chapter.result as { slots?: unknown } | null)?.slots;
+  const texts: string[] = [];
+  const walk = (value: unknown, key = "") => {
+    if (typeof value === "string") { if (value && key !== "template" && key !== "tone") texts.push(value); }
+    else if (Array.isArray(value)) value.forEach((v) => walk(v));
+    else if (value && typeof value === "object") Object.entries(value).forEach(([k, v]) => walk(v, k));
+  };
+  walk(slots);
+  return texts.join("\n");
+}
 
 function nextChapterId(chapters: Chapter[]): string {
   const max = chapters
@@ -31,7 +69,7 @@ function nextChapterId(chapters: Chapter[]): string {
   return `c${max + 1}`;
 }
 
-export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange }: {
+export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -40,6 +78,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onConflict?: () => void;  // 승인 루프의 putDeck이 412를 받으면 부모가 배너를 띄운다
   onScreenReady?: (flush: () => Promise<boolean>) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  pollIntervalMs?: number;  // 작업 조회 간격. 시험에서 실제 1초 대기를 쓰지 않게 한다 (계획서 5.9)
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
   const [storyPlan, setStoryPlan] = useState<StoryPlan | null>(deck.structure.story_plan ?? null);
@@ -79,7 +118,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [preservedNotice, setPreservedNotice] = useState("");
   const [unsavedBackup, setUnsavedBackup] = useState<string | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
-  const [progress, setProgress] = useState<Progress>({});
+  // 가장 최근 장 생성 묶음 (D2b-5a). 장별 진행 표시와 실패 요약은 원장의 이 작업에서 계산한다
+  const [job, setJob] = useState<JobView | null>(null);
+  const [showJob, setShowJob] = useState(true);  // 새 승인이나 재작성 적용 뒤에는 이전 요약을 숨긴다
+  const [followError, setFollowError] = useState("");
+  const [startFailure, setStartFailure] = useState("");
+  const followAbort = useRef<AbortController | null>(null);
+  const appliedSeen = useRef<Set<string>>(new Set());
+  const progress: Progress = job && showJob ? Object.fromEntries(job.chapters.map((c) =>
+    [c.chapter_id, chapterLabel(c, deck.slides.some((s) => s.chapter_id === c.chapter_id))])) : {};
+  const setProgress = (_: Progress) => setShowJob(false);
   const [structureUsage, setStructureUsage] = useState<GenerationUsage | null>(null);
   const [chapterUsageSummary, setChapterUsageSummary] = useState<GenerationUsage | null>(null);
   const [chapterUsageCount, setChapterUsageCount] = useState(0);  // 합계에 실제로 실린 장 수
@@ -174,8 +222,92 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     }]);
   };
 
+  // 장별 결과에서 사용량 합계, 결과 없는 실패, 미검증 숫자, 형식 오류 원문, 구성 계획 낡음을 계산한다
+  const summarize = (view: JobView) => {
+    const results = view.chapters.filter((c) => c.result);
+    const usages = results.map((c) => (c.result as { usage?: GenerationUsage }).usage).filter(Boolean) as GenerationUsage[];
+    setChapterUsageSummary(usages.length > 0 ? sumUsage(usages) : null);
+    setChapterUsageCount(usages.length);
+    // 시작 전에 취소된 장은 AI에 보내지 않았으므로 사용량 누락의 단서가 아니다
+    setChapterUsageHadUnaccountedFailure(view.chapters.some((c) => !c.result
+      && (["failed", "interrupted", "remote_completion_unknown"].includes(c.state)
+        || (c.state === "cancelled" && c.started_at !== null))));
+    const found = results.flatMap((c) => (c.result as { unverified_numbers?: string[] }).unverified_numbers ?? []);
+    setNumbers((n) => [...new Set([...n, ...found])]);
+    const malformed = view.chapters.filter((c) => c.error?.error_class === "ai_output" && c.result);
+    if (malformed.length) setRawText((malformed[malformed.length - 1].result as { raw_text?: string }).raw_text ?? "");
+    if (view.chapters.some((c) => c.error?.code === "stale_story_plan")) setStoryStale(true);
+    if (view.outcome === "chain_broken") {
+      setError("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
+      onConflict?.();
+    } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
+      const malformedOnly = view.chapters.every((c) => c.state === "succeeded" || c.error?.error_class === "ai_output");
+      const detail = view.chapters.find((c) => c.state === "failed" && c.error?.detail)?.error?.detail;
+      setError(malformedOnly ? "일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요."
+        : `일부 장을 만들지 못했습니다${detail ? `(${detail})` : ""}. 실패한 장만 다시 생성해 주세요.`);
+    }
+  };
+
+  // 묶음을 끝까지 조회한다. 장이 적용될 때마다 덱과 저장 ETag를 다시 읽는다 (D2b-5a, 계획서 F1)
+  const follow = async (jobId: string, registeredHere: boolean) => {
+    setBusy(true);
+    onBusyChange?.(true);
+    setShowJob(true);
+    const controller = new AbortController();
+    followAbort.current = controller;
+    let latest: Deck | null = null;
+    try {
+      const final = await followJob(() => api.getJob(project.name, jobId), async (view) => {
+        setJob(view);
+        setFollowError("");
+        const newly = view.chapters.filter((c) => c.state === "succeeded" && !appliedSeen.current.has(c.chapter_id));
+        if (newly.length > 0 || TERMINAL_JOB_STATES.has(view.state)) {
+          newly.forEach((c) => appliedSeen.current.add(c.chapter_id));
+          latest = await api.getDeck(project.name);
+          onDeckChange(latest);
+        }
+      }, { intervalMs: pollIntervalMs, signal: controller.signal,
+        onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });
+      summarize(final);
+      // 장 하나만 다시 만든 경우에도 다른 장이 비어 있으면 편집 탭으로 옮기지 않는다
+      const complete = latest === null || (latest as Deck).structure.chapters
+        .every((ch) => (latest as Deck).slides.some((sl) => sl.chapter_id === ch.id));
+      if (registeredHere && final.state === "succeeded" && complete) onDone();
+    } catch (e) {
+      if (!controller.signal.aborted) showFailure(e);
+    } finally {
+      if (followAbort.current === controller) followAbort.current = null;
+      setBusy(false);
+      onBusyChange?.(false);
+    }
+  };
+
+  // 화면을 다시 열면 진행 중인 묶음을 이어서 조회하고, 끝난 묶음은 결과를 보인다 (D2b-5a)
+  useEffect(() => {
+    let live = true;
+    api.listJobs(project.name).then((jobs) => {
+      const latest = jobs.find((j) => j.kind === "chapters");
+      if (!live || !latest) return;
+      latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
+      if (!TERMINAL_JOB_STATES.has(latest.state) && latest.owner === "this_instance") void follow(latest.id, false);
+      else { setJob(latest); summarize(latest); }
+    }).catch(() => { /* 원장 문제는 생성 버튼을 누를 때 안내한다 */ });
+    return () => { live = false; followAbort.current?.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.name]);
+
+  const cancelGeneration = async () => {
+    if (!job) return;
+    try {
+      await api.cancelJob(project.name, job.id);
+      setCancelNotice(CANCEL_REQUESTED_NOTICE);
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  };
+
   const approve = async () => {
-    // 다시 승인하면 복사 상자가 지워지고 실패한 장을 다시 생성한다(AI 비용). 먼저 확인한다 (리뷰 R1)
+    // 다시 승인하면 복사 상자가 지워진다. 먼저 확인한다 (리뷰 R1)
     if (unsavedBackup !== null && !window.confirm(UNSAVED_RESULT_CONFIRM)) return;
     // AI 재생성 초안은 장 id가 재부여되어 옛 슬라이드와의 대응이 보장되지 않으므로 전면 교체한다 (결정 15).
     // 기존 구조안을 손으로 고친 경우에만 id와 템플릿이 일치하는 슬라이드를 계승한다
@@ -193,110 +325,117 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       );
       if (!ok) return;
     }
+    const targets = draft.filter((c) => !kept.some((s) => s.chapter_id === c.id)).map((c) => c.id);
+    const unknown = job?.chapters.some((c) => c.state === "remote_completion_unknown" && targets.includes(c.chapter_id));
+    if (unknown && !window.confirm(UNKNOWN_REGENERATE_CONFIRM)) return;
     setBusy(true);
     onBusyChange?.(true);
     setError("");
     setStoryStale(false);
     setCancelNotice("");
     setPreservedNotice("");
+    setStartFailure("");
     setUnsavedBackup(null);
-    // 이번 승인 루프에서 실제로 결과를 받은 장의 usage만 모은다(가정 7): 결과 자체가 없는
-    // 실패(hadUnaccountedFailure)는 usage가 없어 합계에서 자연히 빠지고, 화면이 그 사실을 밝힌다
-    const chapterUsages: GenerationUsage[] = [];
-    let hadUnaccountedFailure = false;
+    setChapterUsageSummary(null);
+    setChapterUsageCount(0);
+    setChapterUsageHadUnaccountedFailure(false);
+    let started: JobView | null = null;
     try {
-      let current: Deck = {
+      // ① 로그인과 동의 확인 ② 승인 반영 ③ 묶음 등록 순서다. 동의를 거절하면 덱을 바꾸지 않는다 (D2b-5a).
+      // 생성할 장이 없으면 AI에 보내지 않으므로 동의도 묻지 않는다
+      let headers: Record<string, string> = {};
+      try {
+        if (targets.length > 0) headers = await api.prepareAi();
+      } catch (e) {
+        if (e instanceof AiConsentDeclined) { setCancelNotice(AI_CONSENT_CANCELLED_NOTICE); return; }
+        throw e;
+      }
+      const current: Deck = {
         ...deck, structure: { ...deck.structure, chapters: draft, story_plan: storyPlan }, slides: kept,
       };
       try {
         await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
       } catch (e) {
-        if (e instanceof ApiError && e.status === 412) await preserveUnsaved(current, "conflict");
+        if (e instanceof ApiError && e.status === 412) { await preserveUnsaved(current, "conflict"); onConflict?.(); }
         throw e;
       }
       onDeckChange(current);
       setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
-      const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
-      setProgress(Object.fromEntries(targets.map((c) => [c.id, "대기"])));
-      let failed = false;
-      // 승인 루프에서 한 번 취소하면 이 지역 플래그로 남은 장은 관문(ensureConsent)을 다시 묻지
-      // 않고 즉시 취소로 표시한다: generateChapter 자체를 부르지 않아야 대화 상자가 장마다
-      // 반복되지 않는다 (계획서 B3, 1차 리뷰)
-      let cancelledLoop = false;
-      for (const chapter of targets) {
-        if (cancelledLoop) {
-          setProgress((p) => ({ ...p, [chapter.id]: "취소" }));
-          continue;
-        }
-        setProgress((p) => ({ ...p, [chapter.id]: "생성 중" }));
-        let result: ChapterResult;
-        try {
-          result = await api.generateChapter(project.name, chapter.id);
-        } catch (e) {
-          if (e instanceof AiConsentDeclined) {
-            cancelledLoop = true;
-            setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
-            setProgress((p) => ({ ...p, [chapter.id]: "취소" }));
-            failed = true;
-            continue;
-          }
-          showFailure(e);
-          setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
-          failed = true;
-          hadUnaccountedFailure = true;  // 결과 자체가 없어 usage를 얻지 못했다
-          if (isStaleStoryPlan(e)) {
-            setProgress(p => Object.fromEntries(Object.entries(p).map(([id, state]) =>
-              [id, state === "대기" ? "보류" : state])));
-            break;  // 같은 계획을 쓰는 다음 장도 진행할 수 없다.
-          }
-          continue;
-        }
-        chapterUsages.push(result.usage);  // format_error도 결과가 있으므로 usage를 얻는다
-        if (result.status !== "ok" || !result.slots) {
-          setError("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 시도해 주세요.");
-          setRawText(result.raw_text);
-          setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
-          failed = true;
-          continue;
-        }
-        current = { ...current, slides: [...current.slides,
-          // 공통 슬롯은 생성이 채우지 않는다. 값은 사용자가 속성 패널에서 넣는다 (DA-4)
-          { chapter_id: chapter.id, slots: result.slots, eyebrow: "", subtitle: "" }] };
-        try {
-          await api.putDeck(project.name, current, false);
-        } catch (e) {
-          // 이미 AI 비용을 쓴 결과다. 저장하지 못하면 버리지 않고 보존한다 (D2a-2)
-          await preserveUnsaved(current, "generation_unsaved");
-          if (e instanceof ApiError && e.status === 412) {
-            setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
-            onConflict?.();
-            return;  // 낡은 덱 위에 더 쌓지 않는다: 나머지 장은 시도하지 않는다 (바깥 finally가 busy를 해제한다)
-          }
-          throw e;  // 그 외 오류는 기존처럼 바깥 catch가 처리한다
-        }
-        onDeckChange(current);
-        setNumbers((n) => [...new Set([...n, ...result.unverified_numbers])]);
-        setProgress((p) => ({ ...p, [chapter.id]: "완료" }));
+      setShowJob(false);
+      if (targets.length === 0) { onDone(); return; }
+      try {
+        started = await api.startChapters(project.name, targets, headers, newRequestId());
+      } catch (e) {
+        setStartFailure(`장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`);
+        return;
       }
-      if (!failed) onDone();
     } catch (e) {
-      // 최초 승인 반영(line 101)의 412도 여기로 떨어진다: 아직 어떤 장도 시도하지 않았으므로
-      // 별도 장 표시 없이 onConflict만 알린다 (A5b 리뷰 발견 1)
-      if (e instanceof ApiError && e.status === 412) onConflict?.();
       showFailure(e);
     } finally {
-      setChapterUsageSummary(chapterUsages.length > 0 ? sumUsage(chapterUsages) : null);
-      setChapterUsageCount(chapterUsages.length);
-      setChapterUsageHadUnaccountedFailure(hadUnaccountedFailure);
-      setBusy(false);
-      onBusyChange?.(false);
+      if (!started) { setBusy(false); onBusyChange?.(false); }
+    }
+    if (started) {
+      appliedSeen.current = new Set();
+      setJob(started);
+      await follow(started.id, true);
     }
   };
 
+  // 장 하나를 새 묶음으로 다시 생성한다. 장 구성은 이미 저장했으므로 덱을 저장하지 않는다 (D2b-5a)
+  const regenerateChapter = async (chapterId: string) => {
+    const row = job?.chapters.find((c) => c.chapter_id === chapterId);
+    if (row?.state === "remote_completion_unknown" && !window.confirm(UNKNOWN_REGENERATE_CONFIRM)) return;
+    setBusy(true);
+    onBusyChange?.(true);
+    setError("");
+    setStoryStale(false);
+    setCancelNotice("");
+    setStartFailure("");
+    let started: JobView | null = null;
+    try {
+      const headers = await api.prepareAi();
+      started = await api.startChapters(project.name, [chapterId], headers, newRequestId());
+    } catch (e) {
+      if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
+      else {
+        showFailure(e);
+        if (e instanceof ApiError && e.status === 412) onConflict?.();
+      }
+    } finally {
+      if (!started) { setBusy(false); onBusyChange?.(false); }
+    }
+    if (started) {
+      setJob(started);
+      await follow(started.id, true);
+    }
+  };
+
+  // 이전 입력 기준 후보를 버린다. 버린 장은 결과 없이 실패한 장과 같이 다시 생성할 수 있다
+  const dismissCandidate = async (chapterId: string) => {
+    if (!job) return;
+    try {
+      setJob(await api.dismissChapterCandidate(project.name, job.id, chapterId));
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  };
+
+  // 장별 행동: 결과가 없는 장은 다시 생성할 수 있고, 이전 입력 기준 후보는 내용을 볼 수 있다
+  const chapterRow = (chapterId: string) => job && showJob && !busy && !draftDirty
+    ? job.chapters.find((c) => c.chapter_id === chapterId && RETRYABLE_STATES.has(c.state)
+      && c.error?.code !== "held_stale_plan" && !deck.slides.some((sl) => sl.chapter_id === chapterId))
+    : undefined;
+
   return (
     <div className="structure-screen">
+      {/* 생성 중에는 아래 입력 영역이 잠기므로 중단 버튼은 그 밖에 둔다 */}
+      {busy && job && !TERMINAL_JOB_STATES.has(job.state) && (
+        <p><button onClick={cancelGeneration} disabled={job.state === "cancel_requested"}>생성 중단</button></p>
+      )}
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
       {error && <p role="alert">{error}</p>}
+      {followError && <p role="status">{followError}</p>}
+      {startFailure && <p role="alert">{startFailure} <button onClick={approve}>내용 생성 다시 시작</button></p>}
       {preservedNotice && <p role="status">{preservedNotice}</p>}
       {unsavedBackup && (
         <div role="alert">
@@ -383,6 +522,15 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                   <td>
                     <button aria-label={`${c.topic} 삭제`} disabled={c.template === "diagram"} onClick={() => remove(i)}>삭제</button>
                     {progress[c.id] && <span> {progress[c.id]}</span>}
+                    {chapterRow(c.id) && (
+                      <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>이 장 다시 생성</button>
+                    )}
+                    {chapterRow(c.id)?.candidate_status === "stale" && (<>
+                      {candidateText(chapterRow(c.id)!) && (
+                        <details><summary>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
+                      )}
+                      <button aria-label={`${i + 1}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</button>
+                    </>)}
                   </td>
                 </tr>
               ))}
@@ -401,6 +549,14 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               ].filter(Boolean).join(" ")}
             </p>
           )}
+          {job && showJob && !busy && (() => {
+            // 가장 최근 묶음이 장 하나만 다시 만들었더라도 요약은 덱 전체의 빈 장을 센다
+            const chapters = deck.structure.chapters;
+            const missing = chapters.filter((ch) => !deck.slides.some((sl) => sl.chapter_id === ch.id));
+            return missing.length > 0
+              ? <p className="notice">{chapters.length}장 중 {missing.length}장을 만들지 못했습니다. 아래 버튼을 누르면 만들지 못한 장만 다시 생성합니다.</p>
+              : null;
+          })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}
           <button onClick={approve} disabled={busy || draft.length === 0 || questionChanged}>승인하고 내용 생성</button>
         </section>

@@ -1,6 +1,6 @@
 import { emptyUsage } from "../test/usage";
 import * as aiGate from "./aiGate";
-import { AiConsentDeclined, api, resetEtags } from "./client";
+import { AiConsentDeclined, api, followJob, resetEtags } from "./client";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 beforeEach(() => {
@@ -305,4 +305,54 @@ it("재작성 적용은 최신 캐시 대신 후보의 ETag를 보내고 저장 
   expect(new Headers(fetchMock.mock.calls[1][1].headers).has("X-AI-Consent")).toBe(false);
   await api.putDeck("p1",{} as never,false);
   expect(new Headers(fetchMock.mock.calls[2][1].headers).get("If-Match")).toBe('"saved"');
+});
+
+// D2b-5a: 장 생성 묶음은 승인 반영의 ETag를 기준으로 등록하고, 서버가 장을 저장한 뒤에는 덱을 다시 읽어야
+// 다음 자동 저장이 412를 받지 않는다
+it("묶음 등록은 저장 ETag를 바꾸지 않고, 묶음 뒤 덱을 다시 읽으면 다음 저장이 새 ETag를 보낸다", async () => {
+  const json = (body: unknown, etag?: string) => new Response(JSON.stringify(body),
+    { status: 200, headers: etag ? { ETag: etag } : {} });
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(json({ schema_version: 1 }, '"etag-1"'))   // getDeck
+    .mockResolvedValueOnce(json({ ok: true }, '"etag-2"'))            // 승인 반영
+    .mockResolvedValueOnce(json({ id: "job-1" }, '"etag-other"'))     // 묶음 등록
+    .mockResolvedValueOnce(json({ ok: false }))                       // 등록 직후 저장 (기준 ETag 확인용)
+    .mockResolvedValueOnce(json({ schema_version: 1 }, '"etag-3"'))   // 묶음 뒤 다시 읽기
+    .mockResolvedValueOnce(json({ ok: true }));                       // 첫 자동 저장
+  vi.stubGlobal("fetch", fetchMock);
+  await api.getDeck("p1");
+  await api.putDeck("p1", { schema_version: 1 } as never, true);
+  await api.startChapters("p1", ["c1", "c2"], { "X-AI-Consent": "SlideCaptain" }, "req1");
+  const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
+  expect(url).toBe("/api/projects/p1/jobs");
+  const headers = new Headers(init.headers ?? {});
+  expect(headers.get("If-Match")).toBe('"etag-2"');
+  expect(headers.get("X-AI-Consent")).toBe("SlideCaptain");
+  expect(JSON.parse(init.body as string)).toEqual({ request_id: "req1", kind: "chapters", params: { chapter_ids: ["c1", "c2"] } });
+  // 등록 응답의 ETag는 저장 기준을 바꾸지 않는다
+  await api.putDeck("p1", { schema_version: 1 } as never, false);
+  expect(new Headers((fetchMock.mock.calls[3][1] as RequestInit).headers ?? {}).get("If-Match")).toBe('"etag-2"');
+  await api.getDeck("p1");
+  await api.putDeck("p1", { schema_version: 1 } as never, false);
+  expect(new Headers((fetchMock.mock.calls[5][1] as RequestInit).headers ?? {}).get("If-Match")).toBe('"etag-3"');
+});
+
+it("작업 조회는 실패해도 알리고 계속 조회하며, 끝난 상태를 돌려준다", async () => {
+  const fetchJob = vi.fn()
+    .mockRejectedValueOnce(new Error("일시 오류"))
+    .mockResolvedValueOnce({ state: "running" })
+    .mockResolvedValueOnce({ state: "succeeded" });
+  const onUpdate = vi.fn();
+  const onError = vi.fn();
+  const final = await followJob(fetchJob as never, onUpdate, { intervalMs: 0, onError });
+  expect(final).toEqual({ state: "succeeded" });
+  expect(onError).toHaveBeenCalledTimes(1);
+  expect(onUpdate.mock.calls.map(([v]) => v.state)).toEqual(["running", "succeeded"]);
+});
+
+it("작업 조회는 중단 신호를 받으면 더 조회하지 않는다", async () => {
+  const controller = new AbortController();
+  const fetchJob = vi.fn().mockImplementation(async () => { controller.abort(); return { state: "running" }; });
+  await expect(followJob(fetchJob as never, () => {}, { intervalMs: 0, signal: controller.signal })).rejects.toThrow();
+  expect(fetchJob).toHaveBeenCalledTimes(1);
 });

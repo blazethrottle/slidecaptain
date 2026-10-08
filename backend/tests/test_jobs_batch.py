@@ -326,3 +326,57 @@ def test_finish_parent_refuses_unfinished_chapters_and_other_kinds(tmp_path):
     with pytest.raises(TransitionRejected):
         ledger.finish_parent(other.id, expected="running", new="failed", outcome="partial")
     ledger.close()
+
+
+# D2b-4 리뷰 R7: 낡음이 마지막 장에서 나면 남은 장이 없어도 보류로 끝난다
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_stale_story_plan_on_the_last_chapter_is_still_held(store, count):
+    _project(store, count)
+    provider = ChapterProvider([slots("하나")] * (count - 1) + [StaleStoryPlan("보고 계획이 바뀌었습니다.")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        view = _wait(client, _register(client, store, [f"c{i}" for i in range(1, count + 1)]).json()["id"])
+    assert view["chapters"][-1]["error"]["code"] == "stale_story_plan"
+    assert view["state"] == "failed" and view["outcome"] == "held_stale_plan"
+
+
+# D2b-4 리뷰 R5: 장 후보를 버리면 그 묶음이 후보 때문에 목록에 남지 않는다
+
+def test_a_stale_chapter_candidate_can_be_dismissed(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")], gate_at=1)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        assert provider.entered.wait(10)
+        current = store.load_deck("p1")
+        current.meta.presenter = "다른 창의 편집"
+        store.save_deck("p1", current, snapshot=False)
+        provider.release.set()
+        _wait(client, job["id"])
+        url = f"/api/projects/p1/jobs/{job['id']}/candidate"
+        # 장 후보는 버리기만 하고, 없는 장과 후보 없는 장은 거절한다
+        assert client.post(url, json={"action": "applied", "chapter_id": "c2"}).status_code == 422
+        assert client.post(url, json={"action": "dismissed", "chapter_id": "c9"}).status_code == 404
+        assert client.post(url, json={"action": "dismissed", "chapter_id": "c3"}).status_code == 409
+        later = _register(client, store, ["c3"], request_id="batch-0002").json()
+        _wait(client, later["id"])
+        ids = [j["id"] for j in client.get("/api/projects/p1/jobs").json()]
+        assert job["id"] in ids  # 버리기 전에는 stale 장 후보 때문에 지난 묶음도 목록에 남는다
+        response = client.post(url, json={"action": "dismissed", "chapter_id": "c2"})
+        assert response.status_code == 200
+        assert _states(response.json())[1] == ("c2", "failed", "dismissed")
+        assert client.post(url, json={"action": "dismissed", "chapter_id": "c2"}).status_code == 409
+        ids = [j["id"] for j in client.get("/api/projects/p1/jobs").json()]
+    assert job["id"] not in ids and later["id"] in ids
+
+
+def test_chapter_candidates_are_dismissed_only_on_batches(store):
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("하나")])), headers=HEADERS) as client:
+        job = client.post("/api/projects/p1/jobs", json={"request_id": "chapter-0001", "kind": "chapter",
+                                                         "params": {"chapter_id": "c1"}},
+                          headers={"If-Match": f'"{store.deck_etag("p1")}"'}).json()
+        _wait(client, job["id"])
+        response = client.post(f"/api/projects/p1/jobs/{job['id']}/candidate",
+                               json={"action": "dismissed", "chapter_id": "c1"})
+    assert response.status_code == 422

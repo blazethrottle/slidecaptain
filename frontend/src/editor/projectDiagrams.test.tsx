@@ -9,17 +9,23 @@ import { applyTextEdit, reorderChapters } from "./slotOps";
 import { editorReducer } from "../state/deckStore";
 import { StructureScreen } from "../screens/StructureScreen";
 import { EditorScreen } from "../screens/EditorScreen";
+import { batchView, chapterView } from "../test/jobs";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), generateChapter: vi.fn(),
-    condenseChapter: vi.fn(), putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn() } };
+    condenseChapter: vi.fn(), putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn(),
+    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
 });
 
 const project = { name: "diagram", title: "합성 도식 보고", updated_at: "", status: "ok" as const };
 const chapterId = "synthetic-flow";
 const freshDeck = () => structuredClone(fixture.deck) as Deck;
-beforeEach(() => { vi.mocked(api.getPreset).mockResolvedValue(fixture.preset as Preset); });
+beforeEach(() => {
+  vi.mocked(api.getPreset).mockResolvedValue(fixture.preset as Preset);
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.listJobs).mockResolvedValue([]);
+});
 
 it("저장된 도식의 주제와 템플릿을 읽기 전용으로 보여 준다", () => {
   render(<PropertyPanel deck={freshDeck()} chapterId={chapterId} onApply={vi.fn()} />);
@@ -72,7 +78,7 @@ it("구조안 재생성과 도식 수정은 막고 기존 도식을 유지해 �
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   expect(api.putDeck).toHaveBeenCalledWith(project.name, deck, true);
   expect(api.generateStructure).not.toHaveBeenCalled();
-  expect(api.generateChapter).not.toHaveBeenCalled();
+  expect(api.startChapters).not.toHaveBeenCalled();
 });
 
 it("구조안 화면은 도식 편집의 진입점과 재계획 제한의 복구 방법을 안내한다", async () => {
@@ -109,13 +115,21 @@ it("구조안 승인 후 낡은 계획을 알게 되면 복구 안내를 하고 
   deck.slides = deck.slides.filter(s => s.chapter_id !== "cover");
   deck.structure.chapters.push({ ...deck.structure.chapters[0], id: "another", topic: "다음 장" });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockRejectedValue(Object.assign(new ApiError(409, "구조안을 다시 생성해 주세요."),
-    { code: "stale_story_plan" }));
+  // 서버 묶음은 첫 장에서 낡은 계획을 알게 되면 남은 장을 보내지 않고 멈춘다 (D2b-4 held_stale_plan)
+  const held = batchView([
+    chapterView("cover", "failed", { error: { error_class: null, status: 409, detail: "구조안을 다시 생성해 주세요.",
+      code: "stale_story_plan" } }),
+    chapterView("another", "interrupted", { error: { error_class: null, status: null, detail: null,
+      code: "held_stale_plan" } }),
+  ], { project: project.name, state: "failed", outcome: "held_stale_plan" });
+  vi.mocked(api.startChapters).mockResolvedValueOnce({ ...held, state: "running", outcome: null });
+  vi.mocked(api.getJob).mockResolvedValueOnce(held);
+  vi.mocked(api.getDeck).mockResolvedValue(deck);
   const onDone = vi.fn();
-  render(<StructureScreen project={project} deck={deck} onDeckChange={vi.fn()} onDone={onDone} />);
+  render(<StructureScreen project={project} deck={deck} onDeckChange={vi.fn()} onDone={onDone} pollIntervalMs={0} />);
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
-  expect(api.generateChapter).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.startChapters).mock.calls[0][1]).toEqual(["cover", "another"]);
   expect(onDone).not.toHaveBeenCalled();
 });
 

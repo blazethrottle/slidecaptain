@@ -36,6 +36,10 @@ export type EvidenceSelection = components["schemas"]["EvidenceSelection"];
 export type EvidenceMigrationRequest = components["schemas"]["EvidenceMigrationRequest"];
 export type EvidenceMigrationApplyRequest = components["schemas"]["EvidenceMigrationApplyRequest"];
 export type ChapterResult = components["schemas"]["ChapterResult"];
+export type JobView = components["schemas"]["JobView"];
+export type ChapterView = components["schemas"]["ChapterView"];
+export type ActiveJob = components["schemas"]["ActiveJob"];
+export type ActiveJobStatus = components["schemas"]["ActiveJobStatus"];
 export type NumericReviewReport = components["schemas"]["NumericReviewReport"];
 export type SemanticSuspectReport = components["schemas"]["SemanticSuspectReport"];
 export type QualityReport = components["schemas"]["QualityReport"];
@@ -152,6 +156,45 @@ async function aiHeaders(): Promise<Record<string, string>> {
   return { "X-AI-Consent": "SlideCaptain", ...(status.selection_id ? { "X-AI-Selection": status.selection_id } : {}) };
 }
 
+// 작업 원장 (개정판 D2b-5a, 계획서 5.9). 종결 상태가 되면 조회를 멈춘다
+export const TERMINAL_JOB_STATES = new Set(["succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown"]);
+
+// 요청 ID는 사용자가 버튼을 누를 때 한 번 만든다. 응답을 받지 못한 재시도에만 같은 ID를 쓴다 (계획서 5.9)
+export function newRequestId(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+    const stop = () => { clearTimeout(timer); reject(signal?.reason); };
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
+// 앞 응답을 받은 뒤 다음 조회를 예약한다. 조회가 실패하면 onError로 알리고 계속 조회한다 (계획서 5.9).
+// 간격은 인자로 받아 시험에서 바꿀 수 있게 한다
+// 조회 함수는 호출하는 쪽이 넘긴다: 화면이 쓰는 api 객체(시험에서는 모의)로 조회하게 하려는 것이다
+export async function followJob(
+  fetchJob: () => Promise<JobView>, onUpdate: (view: JobView) => void | Promise<void>,
+  opts: { intervalMs?: number; signal?: AbortSignal; onError?: (error: unknown) => void } = {},
+): Promise<JobView> {
+  const intervalMs = opts.intervalMs ?? 1000;
+  for (;;) {
+    opts.signal?.throwIfAborted();
+    try {
+      const view = await fetchJob();
+      await onUpdate(view);
+      if (TERMINAL_JOB_STATES.has(view.state)) return view;
+    } catch (error) {
+      if (opts.signal?.aborted) throw error;
+      opts.onError?.(error);
+    }
+    await pause(intervalMs, opts.signal);
+  }
+}
+
 export const api = {
   listProjects: () => request<ProjectInfo[]>("/api/projects"),
   createProject: (name: string, title: string) =>
@@ -238,6 +281,24 @@ export const api = {
     return r.json() as Promise<UploadResult>;
   },
   getStatus: () => request<AppStatus>("/api/status"),
+  // AI 전송 준비(로그인과 동의 확인). 승인 반영보다 먼저 불러, 동의를 거절하면 덱을 바꾸지 않는다 (D2b-5a)
+  prepareAi: () => aiHeaders(),
+  // 장 생성 묶음 등록. If-Match는 승인 반영 PUT이 갱신한 ETag다. 응답은 저장 ETag를 바꾸지 않는다
+  startChapters: (name: string, chapterIds: string[], headers: Record<string, string>, requestId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs`, {
+      method: "POST", body: JSON.stringify({ request_id: requestId, kind: "chapters", params: { chapter_ids: chapterIds } }),
+    }, { etagKey: name, updateEtag: false, headers }),
+  getJob: (name: string, jobId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}`, { cache: "no-store" }),
+  listJobs: (name: string) => request<JobView[]>(`/api/projects/${enc(name)}/jobs`, { cache: "no-store" }),
+  cancelJob: (name: string, jobId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/cancel`, { method: "POST" }),
+  // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
+  dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
+      method: "POST", body: JSON.stringify({ action: "dismissed", chapter_id: chapterId }),
+    }),
+  getActiveJob: () => request<ActiveJobStatus>("/api/jobs/active", { cache: "no-store" }),
   getAISettings: () => request<AISettings>("/api/ai/settings"),
   selectAI: (selection: AISelection) => request<AISelection>("/api/ai/selection", {
     method: "PUT", body: JSON.stringify(selection),

@@ -64,6 +64,7 @@ ERROR_CLASSES = ("input", "ai_output", "connection", "base_changed", "cancelled"
 OUTCOMES = ("all_applied", "partial", "chain_broken", "held_stale_plan", "cancelled")
 # 묶음 하위 행의 중단 사유는 error_code에 둔다 (계획서 5.2)
 HELD_STALE_PLAN = "held_stale_plan"
+STALE_STORY_PLAN = "stale_story_plan"  # 구성 계획 낡음으로 실패한 장 자신의 오류 코드
 
 _SLOTS = TypeAdapter(Slots)
 
@@ -615,7 +616,8 @@ def parent_outcome(chapters: list[ChapterRow], parent_state: str | None = None) 
         return "cancelled", "cancelled"
     if any(c.state == "cancelled" for c in chapters):
         return "cancelled", "cancelled"
-    if any(c.error_code == HELD_STALE_PLAN for c in chapters):
+    # 낡음이 마지막 장에서 나면 남은 장이 없어 보류 사유가 없다. 그 장 자신의 코드도 본다 (D2b-4 리뷰 R7)
+    if any(c.error_code in (HELD_STALE_PLAN, STALE_STORY_PLAN) for c in chapters):
         return "failed", "held_stale_plan"
     if any(c.candidate_status == "stale" for c in chapters):
         return "failed", "chain_broken"

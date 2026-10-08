@@ -1047,6 +1047,8 @@ export interface components {
              * @enum {string}
              */
             action: "applied" | "dismissed";
+            /** Chapter Id */
+            chapter_id?: string | null;
         };
         /** CapacityWarning */
         CapacityWarning: {

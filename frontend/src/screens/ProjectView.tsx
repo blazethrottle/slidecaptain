@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, messageOf, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
+import { api, messageOf, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
@@ -12,7 +12,9 @@ import { StructureScreen } from "./StructureScreen";
 
 export type Tab = "sources" | "structure" | "editor" | "history";
 
-export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack: () => void }) {
+export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
+  project: ProjectInfo; onBack: () => void; jobPollMs?: number;
+}) {
   const [deck, setDeck] = useState<Deck | null>(null);
   const [tab, setTab] = useState<Tab>("sources");
   const [error, setError] = useState("");
@@ -36,6 +38,38 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   // leaveScreen이 flush 실패의 일반 배너를 띄우기 전에 확인한다: onConflict가 이미 그 실패를
   // 설명했으면(플러시 도중 412) 중복 배너를 생략한다 (A5b 리뷰 발견 3)
   const justConflicted = useRef(false);
+  // 서비스 전체의 진행 중 AI 작업 (D2b-5a, 계획서 5.9). 확인 전에는 생성 중과 같이 잠근다(새로고침 직후 잠금 공백 방지)
+  const [jobChecked, setJobChecked] = useState(false);
+  const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
+  const refreshActiveJob = useCallback(async () => {
+    try {
+      const status = await api.getActiveJob();
+      setActiveJob(status.active ?? null);
+    } catch {
+      setActiveJob(null);  // 확인하지 못하면 잠그지 않는다. 생성 버튼이 원인을 안내한다
+    } finally {
+      setJobChecked(true);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshActiveJob();
+    const onFocus = () => void refreshActiveJob();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refreshActiveJob]);
+  // 진행 중 작업이 있는 동안만 다시 확인한다
+  useEffect(() => {
+    if (!activeJob) return;
+    const timer = setTimeout(() => void refreshActiveJob(), jobPollMs);
+    return () => clearTimeout(timer);
+  }, [activeJob, jobPollMs, refreshActiveJob]);
+  const batchHere = activeJob?.project === project.name && activeJob.kind === "chapters";
+  const elsewhere = activeJob !== null && activeJob.project !== project.name ? activeJob : null;
+  // 이 프로젝트의 장 생성 묶음이 이미 돌고 있으면 진행 표시가 있는 구조안 탭을 연다
+  useEffect(() => { if (batchHere) setTab("structure"); }, [batchHere]);
+  // 화면 전체를 막는 AI 작업: 구조안 승인의 장 생성, 도식 생성, 진행 중 작업 확인 전, 이 프로젝트의 장 생성 묶음
+  const aiBusy = generating || diagramGenerating || !jobChecked || batchHere;
+  const aiBusyTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "AI 생성이 끝나면 이동할 수 있습니다";
 
   useEffect(() => {
     if (project.status === "ok") {
@@ -65,11 +99,11 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       // returnValue도 함께 설정한다: preventDefault만으로는 확인 대화를 띄우지 않는
       // 구형 구현이 있다 (A5b 리뷰 발견 5)
-      if (dirty || uploading || generating || diagramGenerating) { e.preventDefault(); e.returnValue = ""; }
+      if (dirty || uploading || generating || diagramGenerating || batchHere) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty, uploading, generating, diagramGenerating]);
+  }, [dirty, uploading, generating, diagramGenerating, batchHere]);
 
   if (project.status === "newer_format") {
     // 이 앱이 모르는 형식이다. 모르는 필드를 버린 채 열거나 내보내지 않도록 아무 것도 읽지 않는다 (D2a-1)
@@ -209,20 +243,20 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
           {/* 다른 헤더 버튼과 같은 조건으로 잠근다: 업로드 진행 중 눌러 자료 화면이 통째로
               언마운트되면, 나중에 응답한 업로드 결과가 화면에 영구히 반영되지 않는다(B 묶음
               최종 리뷰 major F-1) */}
-          <button onClick={reloadDeck} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
-            title={generating || diagramGenerating ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
+          <button onClick={reloadDeck} disabled={aiBusy || uploading || leaving || dialogOpen}
+            title={aiBusy ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 다시 읽을 수 있습니다" : undefined}>서버 내용 다시 읽기</button>
         </p>
       )}
       <header>
-        <button onClick={goBack} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
-          title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+        <button onClick={goBack} disabled={aiBusy || uploading || leaving || dialogOpen}
+          title={aiBusy ? aiBusyTitle
             : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>목록으로</button>
         <h1>{deck.meta.title}</h1>
         <nav>
-          <button aria-pressed={tab === "sources"} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
+          <button aria-pressed={tab === "sources"} disabled={aiBusy || uploading || leaving || dialogOpen}
             onClick={() => switchTab("sources")}
-            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+            title={aiBusy ? aiBusyTitle
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>자료</button>
           {/* 구조안 탭은 generating으로는 잠그지 않는 예외지만(진행 표시가 그 화면에 있다), 업로드는
               자료 탭 안의 일이라 여기까지 잠가야 FC-17이 막힌다(계획서 B4 가정 7) */}
@@ -231,25 +265,32 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
             title={diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>구조안</button>
           <button aria-pressed={tab === "editor"}
-            disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
+            disabled={aiBusy || uploading || leaving || dialogOpen}
             onClick={() => switchTab("editor")}
-            title={generating || diagramGenerating
-              ? "AI 생성이 끝나면 이동할 수 있습니다"
+            title={aiBusy
+              ? aiBusyTitle
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
               : hasSlides ? undefined : "도식을 직접 작성할 수 있습니다"}>편집</button>
           <button onClick={doExport}
-            disabled={!hasSlides || exporting || generating || diagramGenerating || uploading || leaving || dialogOpen}
-            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+            disabled={!hasSlides || exporting || aiBusy || uploading || leaving || dialogOpen}
+            title={aiBusy ? aiBusyTitle
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : "내용과 시각 품질을 검수하지 않은 초안으로 내보냅니다"}>초안 PPTX 내보내기</button>
-          <button onClick={openRecovery} disabled={generating || diagramGenerating || uploading || leaving || dialogOpen}
-            title={generating || diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다"
+          <button onClick={openRecovery} disabled={aiBusy || uploading || leaving || dialogOpen}
+            title={aiBusy ? aiBusyTitle
               : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined}>스냅샷 복구</button>
           <button aria-pressed={!showRecovery && tab === "history"} onClick={() => switchTab("history")}
-            disabled={showRecovery || exporting || generating || diagramGenerating || uploading || leaving || dialogOpen}
+            disabled={showRecovery || exporting || aiBusy || uploading || leaving || dialogOpen}
             title={showRecovery ? "복구 화면의 목록으로 버튼을 눌러 닫으면 이력을 열 수 있습니다" : undefined}>검수 이력</button>
         </nav>
       </header>
-      <AISettingsPanel disabled={generating || diagramGenerating || uploading || leaving || dialogOpen} />
+      {elsewhere && (
+        <p className="notice">
+          다른 프로젝트({elsewhere.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.{" "}
+          <button onClick={() => void api.cancelJob(elsewhere.project, elsewhere.id).then(refreshActiveJob)}
+            disabled={elsewhere.cancel_requested}>그 작업 취소</button>
+        </p>
+      )}
+      <AISettingsPanel disabled={aiBusy || uploading || leaving || dialogOpen} />
       {dialogOpen && (
         <AiConsentDialog statusSnapshot={consentStatus} onConfirm={() => closeConsentDialog(true)} onCancel={() => closeConsentDialog(false)} />
       )}

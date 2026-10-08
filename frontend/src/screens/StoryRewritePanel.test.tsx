@@ -2,12 +2,14 @@ import { useState } from "react";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, AiConsentDeclined, type Deck, type StoryRewriteResult } from "../api/client";
+import { batchView, chapterView } from "../test/jobs";
 import { storyDeck } from "../test/story";
 import { emptyUsage } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, rewriteStory: vi.fn(), applyStoryRewrite: vi.fn(), putDeck: vi.fn(), generateChapter: vi.fn() } };
+  return { ...mod, api: { ...mod.api, rewriteStory: vi.fn(), applyStoryRewrite: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
+    startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
 });
 const project = { name: "synthetic", title: "합성", updated_at: "", status: "ok" as const };
 function candidate(): StoryRewriteResult {
@@ -24,6 +26,8 @@ function Harness({ onConflict = vi.fn(), onBusy = vi.fn(), onReady = vi.fn(), on
 beforeEach(() => {
   vi.mocked(api.rewriteStory).mockResolvedValue(candidate());
   vi.mocked(api.applyStoryRewrite).mockResolvedValue(candidate().deck!);
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.listJobs).mockResolvedValue([]);
 });
 async function showCandidate() {
   await userEvent.click(screen.getByRole("button", { name: "재작성 미리보기" }));
@@ -40,7 +44,7 @@ it("명시적으로 적용할 때만 저장하며 기존 본문을 생성하지 
   expect(api.putDeck).not.toHaveBeenCalled();
   await applyCandidate();
   await waitFor(() => expect(api.applyStoryRewrite).toHaveBeenCalledWith("synthetic", candidate()));
-  expect(api.generateChapter).not.toHaveBeenCalled();
+  expect(api.startChapters).not.toHaveBeenCalled();
   expect(screen.queryByRole("region", { name: "재작성 후보" })).not.toBeInTheDocument();
   expect(screen.getByLabelText("보고 질문")).toHaveValue("새 질문");
   expect(screen.getByText(/기존 본문을 보존한 재작성/)).toBeInTheDocument();
@@ -95,12 +99,17 @@ it("동의 취소는 실패로 표시하지 않는다",async()=>{
 });
 
 it("기존 장 생성 중 저장본이 바뀌어도 재작성 패널이 부모 잠금을 해제하지 않는다", async () => {
-  let finish!: (result: Awaited<ReturnType<typeof api.generateChapter>>) => void;
+  // 장 생성 묶음이 끝나기 전까지 조회 응답을 붙잡아 둔다
+  let finish!: (view: ReturnType<typeof batchView>) => void;
   vi.mocked(api.putDeck).mockResolvedValue({ok:true});
-  vi.mocked(api.generateChapter).mockReturnValue(new Promise(r=>{finish=r;}));
+  vi.mocked(api.startChapters).mockResolvedValue(batchView([chapterView("c1", "running")],
+    { project: project.name, state: "running", outcome: null }));
+  vi.mocked(api.getJob).mockReturnValue(new Promise(r=>{finish=r;}));
+  vi.mocked(api.getDeck).mockResolvedValue(storyDeck());
   const busy=vi.fn(); render(<Harness onBusy={busy}/>);
   await userEvent.click(screen.getByRole("button", {name:"승인하고 내용 생성"}));
-  await waitFor(()=>expect(api.generateChapter).toHaveBeenCalled());
+  await waitFor(()=>expect(api.getJob).toHaveBeenCalled());
   expect(busy).toHaveBeenLastCalledWith(true);
-  await act(async()=>finish({status:"format_error",raw_text:"",usage:emptyUsage(),warnings:[],unverified_numbers:[],format_retried:false,condensed:false}));
+  await act(async()=>finish(batchView([chapterView("c1", "failed")], { project: project.name, state: "failed", outcome: "partial" })));
+  await waitFor(()=>expect(busy).toHaveBeenLastCalledWith(false));
 });
