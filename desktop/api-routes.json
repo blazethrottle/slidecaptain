@@ -150,6 +150,25 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/drafts",
+    "methods": [
+      "POST",
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/drafts/{draft_id}/restore",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/drafts/{draft_id}",
+    "methods": [
+      "DELETE"
+    ]
+  },
+  {
     "path": "/api/projects/{name}/sources",
     "methods": [
       "GET"

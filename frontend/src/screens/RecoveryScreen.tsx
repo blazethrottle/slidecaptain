@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, messageOf, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, type DraftInfo, type ProjectInfo, type SnapshotInfo } from "../api/client";
+
+const DRAFT_REASON: Record<DraftInfo["reason"], string> = {
+  conflict: "다른 곳의 저장과 충돌한 편집",
+  generation_unsaved: "저장하지 못한 생성 결과",
+};
+const DRAFT_SOURCE: Record<DraftInfo["source"], string> = { editor: "편집 화면", structure_approval: "구조안 승인" };
 
 export function RecoveryScreen({ project, onBack, onConflict }: {
   project: ProjectInfo;
@@ -8,6 +14,37 @@ export function RecoveryScreen({ project, onBack, onConflict }: {
 }) {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [error, setError] = useState("");
+  // 충돌이나 저장 실패로 보존한 변경 (D2a-2). 스냅샷과 섞지 않는다. 목록 실패가 스냅샷 복구를 막지 않는다
+  const [drafts, setDrafts] = useState<DraftInfo[] | null>(null);
+  const [draftError, setDraftError] = useState("");
+  const loadDrafts = () => api.listDrafts(project.name)
+    .then((list) => { setDrafts([...list].reverse()); setDraftError(""); })
+    .catch((e) => setDraftError(`보존한 변경 목록을 읽지 못했습니다. ${messageOf(e)}`));
+  useEffect(() => { void loadDrafts(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const restoreDraft = async (id: string) => {
+    const ok = window.confirm(
+      "이 보존본으로 복원합니다. 복원하면 지금 저장본(다른 곳의 변경 포함)은 복원 직전 시점의 스냅샷으로 남습니다. 계속할까요?",
+    );
+    if (!ok) return;
+    try {
+      await api.restoreDraft(project.name, id);
+      onBack();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 412) onConflict?.();
+      else setDraftError(messageOf(e));
+    }
+  };
+
+  const deleteDraft = async (id: string) => {
+    if (!window.confirm("이 보존본을 지웁니다. 지운 보존본은 되살릴 수 없습니다. 계속할까요?")) return;
+    try {
+      await api.deleteDraft(project.name, id);
+      await loadDrafts();
+    } catch (e) {
+      setDraftError(messageOf(e));
+    }
+  };
 
   useEffect(() => {
     api.listSnapshots(project.name)
@@ -52,6 +89,24 @@ export function RecoveryScreen({ project, onBack, onConflict }: {
           ))}
         </ul>
       )}
+      <section className="draft-list">
+        <h3>충돌로 보존한 변경</h3>
+        <p>다른 곳의 저장과 충돌했거나 저장하지 못한 내용입니다. 자동으로 지우지 않습니다.</p>
+        {draftError && <p role="alert">{draftError}</p>}
+        {drafts === null ? (draftError ? null : <p>불러오는 중...</p>) : drafts.length === 0 ? (
+          <p>보존한 변경이 없습니다.</p>
+        ) : (
+          <ul>
+            {drafts.map((d) => (
+              <li key={d.id}>
+                {d.saved_at} {DRAFT_REASON[d.reason]} ({DRAFT_SOURCE[d.source]}){" "}
+                <button onClick={() => void restoreDraft(d.id)}>이 변경으로 복원</button>{" "}
+                <button onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <button onClick={onBack}>목록으로</button>
     </div>
   );

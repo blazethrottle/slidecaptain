@@ -190,6 +190,8 @@ export function ProjectView({ project, onBack }: { project: ProjectInfo; onBack:
   const dialogOpen = consentResolve !== null;
   const reloadDeck = async () => {
     if (tab === "history" && !(await leaveScreen("다시 읽기를"))) return;
+    // 자료와 구조안 화면의 폼 입력은 덱이 아니어서 보존하지 않는다. 버리기 전에 확인한다 (D2a-2)
+    if (dirty && !window.confirm("저장하지 않은 입력이 사라집니다. 필요한 내용은 먼저 복사해 두세요. 서버 내용을 다시 읽을까요?")) return;
     setHasConflict(false);
     setDirty(false);  // 서버 내용으로 자식 화면을 다시 마운트하므로 미저장 변경이 없다
     setDeck(null);

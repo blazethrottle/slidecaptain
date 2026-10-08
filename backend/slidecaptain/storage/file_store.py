@@ -12,6 +12,7 @@ projects/<프로젝트명>/
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -33,6 +34,9 @@ from slidecaptain.storage import project_format
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 _SNAPSHOT_RE = re.compile(r"^deck-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
+_DRAFT_RE = re.compile(r"^draft-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
+# 보존본 한 건의 덱 크기 상한. 독립 앱 브리지의 요청 본문 상한(desktop/runtime.cjs MAX_FILE)과 같다
+DRAFT_MAX_BYTES = 20 * 1024 * 1024
 # save_deck과 restore_snapshot이 같은 문구를 축자 중복으로 썼다 (A1 리뷰 minor, A2에서 상수로 묶는다)
 _DECK_CONFLICT_MESSAGE = (
     "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
@@ -62,6 +66,14 @@ class DeckConflict(StorageError):
 
 class SnapshotNotFound(StorageError):
     pass
+
+
+class DraftNotFound(StorageError):
+    pass
+
+
+class DraftTooLarge(StorageError):
+    """보존본이 상한(DRAFT_MAX_BYTES)을 넘는다 (D2a-2. A가 413으로 매핑한다)."""
 
 
 class ProjectFormatTooNew(StorageError):
@@ -103,6 +115,16 @@ class SnapshotInfo(BaseModel):
     saved_at: str
     # pre_migration: 형식 1 덱을 형식 2로 처음 바꾸기 직전의 복사본 (0.2.0으로 되돌릴 지점)
     kind: Literal["snapshot", "pre_migration"] = "snapshot"
+
+
+class DraftInfo(BaseModel):
+    """충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."""
+
+    id: str  # draft-<시각>[-n]
+    saved_at: str
+    reason: Literal["conflict", "generation_unsaved"]
+    source: Literal["editor", "structure_approval"]
+    base_etag: str | None = None  # 이 편집이 기준으로 삼은 저장본. 서버 쪽 변경과 비교할 때 쓴다
 
 
 _NEWER_FORMAT_MESSAGE = (
@@ -223,6 +245,14 @@ class ProjectStore(Protocol):
     def restore_snapshot(
         self, name: str, snapshot_id: str, expected_etag: str | None = None
     ) -> tuple[Deck, str]: ...
+    def save_draft(
+        self, name: str, *, deck: object, reason: str, source: str, base_etag: str | None
+    ) -> DraftInfo: ...
+    def list_drafts(self, name: str) -> list[DraftInfo]: ...
+    def restore_draft(
+        self, name: str, draft_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]: ...
+    def delete_draft(self, name: str, draft_id: str) -> None: ...
     def list_sources(self, name: str) -> list[str]: ...
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
@@ -551,6 +581,119 @@ class FileProjectStore:
             # 복원 직전 상태도 스냅샷으로 남긴다. 형식이 바뀌면 형식 기록도 함께 쓴다 (D2a-1)
             etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
+
+    # -- 미저장본 보존 (D2a-2) ---------------------------------------------------
+
+    def _draft_path(self, project_dir: Path, draft_id: str) -> Path:
+        if not _DRAFT_RE.match(draft_id):
+            raise InvalidName(f"보존한 변경의 식별자가 올바르지 않습니다: {draft_id!r}")
+        return project_dir / "drafts" / f"{draft_id}.json"
+
+    @staticmethod
+    def _draft_info(envelope: dict) -> DraftInfo:
+        return DraftInfo.model_validate({k: envelope.get(k) for k in DraftInfo.model_fields})
+
+    def save_draft(
+        self, name: str, *, deck: object, reason: str, source: str, base_etag: str | None
+    ) -> DraftInfo:
+        """덱 원문을 검증하지 않고 보존한다. 검증에 실패한 덱도 사용자 내용이라 버리지 않는다.
+        같은 내용은 새로 만들지 않는다. 개수 상한과 자동 삭제는 없다."""
+        name = _nfc(name)
+        deck_bytes = json.dumps(deck, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        if len(deck_bytes) > DRAFT_MAX_BYTES:
+            raise DraftTooLarge(
+                "보존할 변경이 너무 커서 저장하지 못했습니다. 변경 내용을 복사해 따로 보관해 주세요."
+            )
+        content_sha256 = hashlib.sha256(deck_bytes).hexdigest()
+        with self.locked(name):
+            d = self._project_dir(name)
+            drafts_dir = d / "drafts"
+            drafts_dir.mkdir(exist_ok=True)
+            for existing in self._read_draft_envelopes(drafts_dir):
+                if existing.get("content_sha256") == content_sha256:
+                    return self._draft_info(existing)
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            stem = f"draft-{ts}"
+            n = 1
+            while (drafts_dir / f"{stem}.json").exists():  # 같은 마이크로초 충돌 백스톱
+                stem = f"draft-{ts}-{n}"
+                n += 1
+            envelope = {
+                "id": stem,
+                "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "reason": reason,
+                "source": source,
+                "base_etag": base_etag,
+                "content_sha256": content_sha256,
+                "deck": deck,
+            }
+            info = self._draft_info(envelope)  # 사유와 출처의 값 검증을 쓰기 전에 한다
+            data = json.dumps(envelope, ensure_ascii=False, indent=2).encode("utf-8")
+            self._atomic_write(drafts_dir, f"{stem}.json", data, prefix=".draft-", suffix=".tmp")
+            return info
+
+    @staticmethod
+    def _read_draft_envelopes(drafts_dir: Path) -> list[dict]:
+        envelopes = []
+        if not drafts_dir.is_dir():
+            return envelopes
+        for path in sorted(drafts_dir.glob("draft-*.json")):
+            if not _DRAFT_RE.match(path.stem):
+                continue
+            try:
+                envelope = json.loads(path.read_bytes())
+            except (OSError, ValueError):
+                continue  # 읽을 수 없는 보존본은 목록에서 빼되 지우지 않는다
+            if isinstance(envelope, dict) and envelope.get("id") == path.stem:
+                envelopes.append(envelope)
+        return envelopes
+
+    def list_drafts(self, name: str) -> list[DraftInfo]:
+        name = _nfc(name)
+        d = self._project_dir_any(name)
+        infos = []
+        for envelope in self._read_draft_envelopes(d / "drafts"):
+            try:
+                infos.append(self._draft_info(envelope))
+            except ValidationError:
+                continue
+        return infos
+
+    def restore_draft(
+        self, name: str, draft_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]:
+        """보존본의 덱을 검증해 저장본으로 쓴다. 복원 직전 덱은 스냅샷으로 남고 보존본은 그대로 둔다."""
+        name = _nfc(name)
+        with self.locked(name):
+            d = self._project_dir_any(name)
+            if expected_etag is not None:
+                deck_path = d / "deck.json"
+                current = hashlib.sha256(deck_path.read_bytes()).hexdigest() if deck_path.exists() else None
+                if current != expected_etag:
+                    raise DeckConflict(_DECK_CONFLICT_MESSAGE)
+            path = self._draft_path(d, draft_id)
+            if not path.is_file():
+                raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+            try:
+                envelope = json.loads(path.read_bytes())
+                deck = Deck.model_validate(_evidence_input(Deck.model_validate(envelope["deck"])))
+            except (OSError, ValueError, KeyError, TypeError, ValidationError) as e:
+                raise StorageError(
+                    "보존한 변경을 덱으로 읽지 못해 복원하지 않았습니다. 현재 저장본은 바뀌지 않았습니다. "
+                    f"원인: {e}"
+                ) from e
+            etag = self._write_deck_recorded(d, deck, snapshot=True)
+            return deck, etag
+
+    def delete_draft(self, name: str, draft_id: str) -> None:
+        """사용자가 고른 보존본 하나만 지운다."""
+        name = _nfc(name)
+        with self.locked(name):
+            d = self._project_dir_any(name)
+            path = self._draft_path(d, draft_id)
+            if not path.is_file():
+                raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+            path.unlink()
 
     # -- 입력 자료 ----------------------------------------------------------
 

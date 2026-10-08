@@ -14,6 +14,9 @@ export type Bullet = components["schemas"]["Bullet"];  // level이 필수 필드
 export type Preset = components["schemas"]["Preset"];
 export type ProjectInfo = components["schemas"]["ProjectInfo"];
 export type SnapshotInfo = components["schemas"]["SnapshotInfo"];
+export type DraftInfo = components["schemas"]["DraftInfo"];
+export type DraftReason = DraftInfo["reason"];
+export type DraftSource = DraftInfo["source"];
 export type RenderPlan = components["schemas"]["RenderPlan"];
 export type SlidePlan = components["schemas"]["SlidePlan"];
 export type Frame = components["schemas"]["Frame"];
@@ -242,6 +245,17 @@ export const api = {
   getAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`),
   cancelAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`, { method: "DELETE" }),
   listSnapshots: (name: string) => request<SnapshotInfo[]>(`/api/projects/${enc(name)}/snapshots`),
+  // 충돌이나 저장 실패로 반영하지 못한 덱의 보존 (D2a-2). 기준 저장본은 마지막으로 본 ETag다.
+  // 보존은 저장본을 바꾸지 않으므로 ETag를 진전시키지 않는다
+  saveDraft: (name: string, req: { reason: DraftReason; source: DraftSource; deck: Deck }) =>
+    request<DraftInfo>(`/api/projects/${enc(name)}/drafts`, {
+      method: "POST", body: JSON.stringify({ ...req, base_etag: etags.get(name) ?? null }),
+    }),
+  listDrafts: (name: string) => request<DraftInfo[]>(`/api/projects/${enc(name)}/drafts`),
+  restoreDraft: (name: string, id: string) =>
+    request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
+  deleteDraft: (name: string, id: string) =>
+    request<{ ok: boolean }>(`/api/projects/${enc(name)}/drafts/${enc(id)}`, { method: "DELETE" }),
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),
   restoreSnapshot: (name: string, id: string) =>

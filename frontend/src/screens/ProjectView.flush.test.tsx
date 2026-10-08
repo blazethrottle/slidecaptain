@@ -203,6 +203,7 @@ it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최
   await userEvent.click(screen.getByText("보고 정보 저장"));
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
+  vi.spyOn(window, "confirm").mockReturnValueOnce(true);  // D2a-2: 미저장 입력이 있으면 확인을 받는다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
@@ -241,6 +242,7 @@ it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 
   await userEvent.click(screen.getByText("보고 정보 저장"));  // 412: leaveScreen 을 거치지 않는 경로
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
+  vi.spyOn(window, "confirm").mockReturnValueOnce(true);  // D2a-2: 미저장 입력이 있으면 확인을 받는다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   const title2 = await screen.findByLabelText("보고서 제목");
@@ -261,4 +263,23 @@ it("편집 탭이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 
   // 편집기의 정답은 재시도가 아니라 되돌리기이므로 "다시 시도" 를 권하는 일반 배너는 생략한다
   expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
   expect(document.querySelector(".editor-screen")).not.toBeNull();
+});
+
+
+it("미저장 입력이 있으면 다시 읽기 전에 확인을 받고, 취소하면 입력을 유지한다 (D2a-2)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<ProjectView project={project} onBack={() => {}} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await userEvent.click(screen.getByText("보고 정보 저장"));
+  await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(confirm.mock.calls[0][0]).toContain("저장하지 않은 입력이 사라집니다");
+  expect(api.getDeck).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText("보고서 제목")).toHaveValue("새 제목");
 });

@@ -15,7 +15,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
-from typing import Literal
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import anyio
@@ -75,6 +75,9 @@ from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.storage.file_store import (
     DeckConflict,
+    DraftInfo,
+    DraftNotFound,
+    DraftTooLarge,
     InvalidName,
     InvalidSourceEncoding,
     ProjectExists,
@@ -98,6 +101,8 @@ _STATUS_BY_ERROR = [
     (InvalidSourceEncoding, 422),
     (ProjectNotFound, 404),
     (SnapshotNotFound, 404),
+    (DraftNotFound, 404),
+    (DraftTooLarge, 413),
     (SourceNotFound, 404),
     (ProjectExists, 409),
     (ProjectFormatTooNew, 409),  # 전용 처리기가 code를 붙인다. 목록에도 StorageError보다 앞에 둔다
@@ -159,6 +164,16 @@ class CreateProjectRequest(BaseModel):
 
 class SourceText(BaseModel):
     text: str
+
+
+class SaveDraftRequest(BaseModel):
+    """충돌이나 저장 실패로 반영하지 못한 덱의 보존 요청 (D2a-2). 덱은 원문 그대로 보존하고
+    복원할 때 검증한다."""
+
+    reason: Literal["conflict", "generation_unsaved"]
+    source: Literal["editor", "structure_approval"]
+    base_etag: str | None = None
+    deck: dict[str, Any]
 
 
 class OkResponse(BaseModel):
@@ -877,6 +892,32 @@ def create_app(
         deck, etag = store.restore_snapshot(name, snapshot_id, expected_etag=expected_etag)
         response.headers["ETag"] = f'"{etag}"'
         return deck
+
+    @app.post("/api/projects/{name}/drafts", response_model=DraftInfo, status_code=201)
+    def save_draft(name: str, req: SaveDraftRequest):
+        base = req.base_etag.strip('"') if req.base_etag is not None else None
+        return store.save_draft(name, deck=req.deck, reason=req.reason, source=req.source, base_etag=base)
+
+    @app.get("/api/projects/{name}/drafts", response_model=list[DraftInfo])
+    def list_drafts(name: str):
+        return store.list_drafts(name)
+
+    @app.post("/api/projects/{name}/drafts/{draft_id}/restore", response_model=Deck)
+    def restore_draft(
+        name: str,
+        draft_id: str,
+        response: Response,
+        if_match: str | None = Header(default=None),
+    ):
+        expected_etag = if_match.strip('"') if if_match is not None else None
+        deck, etag = store.restore_draft(name, draft_id, expected_etag=expected_etag)
+        response.headers["ETag"] = f'"{etag}"'
+        return deck
+
+    @app.delete("/api/projects/{name}/drafts/{draft_id}", response_model=OkResponse)
+    def delete_draft(name: str, draft_id: str):
+        store.delete_draft(name, draft_id)
+        return OkResponse()
 
     @app.get("/api/projects/{name}/sources", response_model=list[str])
     def list_sources(name: str):

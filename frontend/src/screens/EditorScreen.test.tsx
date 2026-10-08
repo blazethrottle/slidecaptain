@@ -8,7 +8,7 @@ vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return {
     ...mod,
-    api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(), getDeck: vi.fn() },
+    api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(), getDeck: vi.fn(), saveDraft: vi.fn() },
   };
 });
 
@@ -24,6 +24,11 @@ const preset = {
 } as unknown as Preset;
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
+
+const draftInfo = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
+  reason: "conflict" as const, source: "editor" as const, base_etag: null };
+// D2a-2: 되돌리기는 교체 직전에 미저장 덱을 보존한다. 기본은 보존 성공이다
+beforeEach(() => { vi.mocked(api.saveDraft).mockResolvedValue(draftInfo); });
 
 const deck: Deck = {
   schema_version: 1,
@@ -242,4 +247,45 @@ it('전환 대기 중 중복 요청과 늦은 응답은 새 편집을 덮지 않
  await waitFor(()=>expect(document.querySelector('.editor-screen')).not.toHaveAttribute('inert'));
  expect(screen.getByLabelText('템플릿')).toHaveValue('bullet_box');expect(screen.getByLabelText('아이브로우')).toHaveValue('나중');
  expect(vi.mocked(api.putDeck).mock.calls.every(c=>c[1].slides[0].slots.template==='bullet_box')).toBe(true);confirm.mockRestore();
+});
+
+
+it("되돌린 뒤 보존 위치와 할 수 있는 일을 안내한다 (D2a-2)", async () => {
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  expect(await screen.findByText(/되돌리기 전의 변경은 보존했습니다/)).toBeInTheDocument();
+  expect(screen.getByText(/충돌로 보존한 변경/)).toBeInTheDocument();
+  expect(vi.mocked(api.saveDraft).mock.calls[0][1].deck.slides[0].slots).toMatchObject({ bullets: [{ text: "고침" }] });
+});
+
+it("보존이 실패하면 변경 복사와 확인 뒤 되돌리기를 제시한다 (D2a-2)", async () => {
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  const onDeckChange = vi.fn();
+  render(<EditorScreen project={project} deck={deck} onDeckChange={onDeckChange} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  expect(await screen.findByText(/변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "변경 내용 복사" })).toBeInTheDocument();
+  expect(onDeckChange).not.toHaveBeenCalledWith(serverDeck);
+  vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  await userEvent.click(screen.getByRole("button", { name: "그래도 서버 내용으로 되돌리기" }));
+  expect(onDeckChange).not.toHaveBeenCalledWith(serverDeck);
+  vi.spyOn(window, "confirm").mockReturnValueOnce(true);
+  await userEvent.click(screen.getByRole("button", { name: "그래도 서버 내용으로 되돌리기" }));
+  await waitFor(() => expect(onDeckChange).toHaveBeenCalledWith(serverDeck));
 });

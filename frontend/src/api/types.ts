@@ -424,6 +424,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Drafts */
+        get: operations["list_drafts_api_projects__name__drafts_get"];
+        put?: never;
+        /** Save Draft */
+        post: operations["save_draft_api_projects__name__drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts/{draft_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Draft */
+        post: operations["restore_draft_api_projects__name__drafts__draft_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Draft */
+        delete: operations["delete_draft_api_projects__name__drafts__draft_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/sources": {
         parameters: {
             query?: never;
@@ -1736,6 +1788,28 @@ export interface components {
              * @constant
              */
             requires_independent_review: true;
+        };
+        /**
+         * DraftInfo
+         * @description 충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2).
+         */
+        DraftInfo: {
+            /** Id */
+            id: string;
+            /** Saved At */
+            saved_at: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "conflict" | "generation_unsaved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "editor" | "structure_approval";
+            /** Base Etag */
+            base_etag?: string | null;
         };
         /** Evidence */
         Evidence: {
@@ -3055,6 +3129,29 @@ export interface components {
              * @default
              */
             instructions: string;
+        };
+        /**
+         * SaveDraftRequest
+         * @description 충돌이나 저장 실패로 반영하지 못한 덱의 보존 요청 (D2a-2). 덱은 원문 그대로 보존하고
+         *     복원할 때 검증한다.
+         */
+        SaveDraftRequest: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "conflict" | "generation_unsaved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "editor" | "structure_approval";
+            /** Base Etag */
+            base_etag?: string | null;
+            /** Deck */
+            deck: {
+                [key: string]: unknown;
+            };
         };
         /** SemanticRelatedText */
         SemanticRelatedText: {
@@ -4798,6 +4895,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_drafts_api_projects__name__drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_draft_api_projects__name__drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_draft_api_projects__name__drafts__draft_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_draft_api_projects__name__drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
             /** @description Validation Error */

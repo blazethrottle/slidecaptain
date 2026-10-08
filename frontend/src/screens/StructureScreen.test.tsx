@@ -23,7 +23,7 @@ function measuredUsage(overrides: Partial<GenerationUsage> = {}): GenerationUsag
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api,
-    generateStructure: vi.fn(), generateChapter: vi.fn(), putDeck: vi.fn() } };
+    generateStructure: vi.fn(), generateChapter: vi.fn(), putDeck: vi.fn(), saveDraft: vi.fn() } };
 });
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -441,4 +441,85 @@ it("주안점을 생성에 전달하고 실패해도 입력을 보존한다", as
     instructions: "이번 주 진행과 다음 주 계획",
   }));
   expect(field).toHaveValue("이번 주 진행과 다음 주 계획");
+});
+
+
+// -- D2a-2: 저장하지 못한 생성 결과의 보존 ------------------------------------------------
+
+const draftInfo = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
+  reason: "generation_unsaved" as const, source: "structure_approval" as const, base_etag: null };
+const coverResult = {
+  status: "ok" as const, usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [],
+  format_retried: false, condensed: false,
+  slots: { template: "cover" as const, title: "표지 결과", subtitle: "", date: "" },
+};
+
+async function approveWithChapterSaveFailure(error: unknown) {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(error);
+  vi.mocked(api.generateChapter).mockResolvedValue(coverResult);
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onConflict={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+}
+
+it("장 결과 저장이 412면 이미 받은 생성 결과를 보존하고 알린다 (D2a-2)", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  await approveWithChapterSaveFailure(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  await waitFor(() => expect(api.saveDraft).toHaveBeenCalledOnce());
+  const [, req] = vi.mocked(api.saveDraft).mock.calls[0];
+  expect(req).toMatchObject({ reason: "generation_unsaved", source: "structure_approval" });
+  expect(req.deck.slides.some((s) => s.chapter_id === CH1.id)).toBe(true);
+  expect(await screen.findByText(/생성 결과를 보존했습니다/)).toBeInTheDocument();
+});
+
+it("장 결과 저장이 412가 아닌 오류로 끝나도 생성 결과를 보존한다 (D2a-2)", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  await approveWithChapterSaveFailure(new ApiError(500, "디스크 오류"));
+  await waitFor(() => expect(api.saveDraft).toHaveBeenCalledOnce());
+  expect(vi.mocked(api.saveDraft).mock.calls[0][1].reason).toBe("generation_unsaved");
+});
+
+it("생성 결과의 보존마저 실패하면 복사할 수 있게 남긴다 (D2a-2)", async () => {
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  await approveWithChapterSaveFailure(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  expect(await screen.findByText(/생성 결과를 저장하지 못했고 보존도 하지 못했습니다/)).toBeInTheDocument();
+  const box = screen.getByLabelText("보관용 변경 내용") as HTMLTextAreaElement;
+  expect(box.value).toContain("표지 결과");
+});
+
+it("최초 승인 반영이 412면 승인하려던 구성을 보존한다 (D2a-2)", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue({ ...draftInfo, reason: "conflict" });
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onConflict={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(api.saveDraft).toHaveBeenCalledOnce());
+  const [, req] = vi.mocked(api.saveDraft).mock.calls[0];
+  expect(req.reason).toBe("conflict");
+  expect(req.deck.structure.chapters.map((c) => c.id)).toEqual([CH1.id, CH2.id]);
+});
+
+it("장 구성 초안을 고치면 창 닫기 경고를 위해 미저장을 알린다 (D2a-2)", async () => {
+  vi.mocked(api.generateStructure).mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  const onDirtyChange = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onDirtyChange={onDirtyChange} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
 });

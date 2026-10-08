@@ -9,6 +9,7 @@ import { StoryPlanView } from "./StoryPlanView";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { StoryRewritePanel } from "./StoryRewritePanel";
 import { DocumentChangePanel } from "./DocumentChangePanel";
+import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
@@ -49,10 +50,14 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [documentOpen,setDocumentOpen] = useState(false);
   const rewriteLeave = useRef<()=>Promise<boolean>>(async()=>true);
   const documentLeave = useRef<()=>Promise<boolean>>(async()=>true);
-  const dirtyParts = useRef({rewrite:false,document:false});
+  const dirtyParts = useRef({rewrite:false,document:false,draft:false});
   const parentDirty = useRef(onDirtyChange);parentDirty.current=onDirtyChange;
-  const setRewriteDirty = useCallback((dirty:boolean)=>{dirtyParts.current.rewrite=dirty;parentDirty.current?.(dirtyParts.current.rewrite||dirtyParts.current.document);},[]);
-  const setDocumentDirty = useCallback((dirty:boolean)=>{dirtyParts.current.document=dirty;parentDirty.current?.(dirtyParts.current.rewrite||dirtyParts.current.document);},[]);
+  const reportDirty = useCallback(()=>{const d=dirtyParts.current;parentDirty.current?.(d.rewrite||d.document||d.draft);},[]);
+  const setRewriteDirty = useCallback((dirty:boolean)=>{dirtyParts.current.rewrite=dirty;reportDirty();},[reportDirty]);
+  const setDocumentDirty = useCallback((dirty:boolean)=>{dirtyParts.current.document=dirty;reportDirty();},[reportDirty]);
+  // 장 구성 초안이 저장본과 다르면 창 닫기 경고에 포함한다 (D2a-2: 종전에는 경고 없이 사라졌다)
+  const draftDirty = JSON.stringify(draft) !== JSON.stringify(deck.structure.chapters);
+  useEffect(()=>{dirtyParts.current.draft=draftDirty;reportDirty();},[draftDirty,reportDirty]);
   const registerRewrite = useCallback((guard:()=>Promise<boolean>)=>{rewriteLeave.current=guard;},[]);
   const registerDocument = useCallback((guard:()=>Promise<boolean>)=>{documentLeave.current=guard;},[]);
   useEffect(()=>{onScreenReady?.(async()=>await documentLeave.current() && await rewriteLeave.current());},[onScreenReady]);
@@ -60,6 +65,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   const [rawText, setRawText] = useState("");
+  // 저장하지 못한 생성 결과의 보존 (D2a-2): 보존 안내 또는 보존마저 실패했을 때 복사할 내용
+  const [preservedNotice, setPreservedNotice] = useState("");
+  const [unsavedBackup, setUnsavedBackup] = useState<string | null>(null);
   const [numbers, setNumbers] = useState<string[]>([]);
   const [progress, setProgress] = useState<Progress>({});
   const [structureUsage, setStructureUsage] = useState<GenerationUsage | null>(null);
@@ -68,6 +76,18 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [chapterUsageHadUnaccountedFailure, setChapterUsageHadUnaccountedFailure] = useState(false);
   const questionChanged = decisionQuestion.trim() !== (storyPlan?.brief.decision_question ?? "");
   const hasDiagrams = deck.structure.chapters.some(c => c.template === "diagram");
+  const preserveUnsaved = async (target: Deck, reason: "conflict" | "generation_unsaved") => {
+    try {
+      const info = await api.saveDraft(project.name, { reason, source: "structure_approval", deck: target });
+      setUnsavedBackup(null);
+      setPreservedNotice(reason === "generation_unsaved"
+        ? `저장하지 못한 생성 결과를 보존했습니다(${info.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`
+        : `승인하려던 장 구성을 보존했습니다(${info.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
+    } catch {
+      setPreservedNotice("");
+      setUnsavedBackup(JSON.stringify(target, null, 2));
+    }
+  };
   const showFailure = (error: unknown) => {
     const stale = isStaleStoryPlan(error);
     setStoryStale(stale);
@@ -160,6 +180,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setError("");
     setStoryStale(false);
     setCancelNotice("");
+    setPreservedNotice("");
+    setUnsavedBackup(null);
     // 이번 승인 루프에서 실제로 결과를 받은 장의 usage만 모은다(가정 7): 결과 자체가 없는
     // 실패(hadUnaccountedFailure)는 usage가 없어 합계에서 자연히 빠지고, 화면이 그 사실을 밝힌다
     const chapterUsages: GenerationUsage[] = [];
@@ -168,7 +190,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       let current: Deck = {
         ...deck, structure: { ...deck.structure, chapters: draft, story_plan: storyPlan }, slides: kept,
       };
-      await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
+      try {
+        await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 412) await preserveUnsaved(current, "conflict");
+        throw e;
+      }
       onDeckChange(current);
       setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       const targets = draft.filter((c) => !current.slides.some((s) => s.chapter_id === c.id));
@@ -220,6 +247,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         try {
           await api.putDeck(project.name, current, false);
         } catch (e) {
+          // 이미 AI 비용을 쓴 결과다. 저장하지 못하면 버리지 않고 보존한다 (D2a-2)
+          await preserveUnsaved(current, "generation_unsaved");
           if (e instanceof ApiError && e.status === 412) {
             setProgress((p) => ({ ...p, [chapter.id]: "실패" }));
             onConflict?.();
@@ -250,6 +279,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     <div className="structure-screen">
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
       {error && <p role="alert">{error}</p>}
+      {preservedNotice && <p role="status">{preservedNotice}</p>}
+      {unsavedBackup && (
+        <div role="alert">
+          <p>생성 결과를 저장하지 못했고 보존도 하지 못했습니다. 이 화면을 떠나기 전에 아래 내용을 복사해 보관해 주세요.</p>
+          <UnsavedChangeBackup text={unsavedBackup} label="저장하지 못한 생성 결과" />
+        </div>
+      )}
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance hasDiagrams={hasDiagrams} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}

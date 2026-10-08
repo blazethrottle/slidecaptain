@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api, ApiError, messageOf, type Deck, type RenderPlan } from "../api/client";
+import { api, ApiError, messageOf, type Deck, type DraftInfo, type RenderPlan } from "../api/client";
 import { editorReducer } from "./deckStore";
 import { pruneChangedSpans } from "../editor/expressionEditing";
 
@@ -32,6 +32,11 @@ export function useDeckEditor(
   conflictRef.current = conflict;
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
+  // 충돌 해소의 미저장본 보존 (D2a-2): 진행 중 표시, 보존 결과, 보존 실패 시 복사할 내용
+  const [reloading, setReloading] = useState(false);
+  const [preservedDraft, setPreservedDraft] = useState<DraftInfo | null>(null);
+  const [preserveFailure, setPreserveFailure] = useState<{ deckJson: string; message: string } | null>(null);
+  const reloadInFlight = useRef<Promise<void> | null>(null);
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
@@ -177,33 +182,60 @@ export function useDeckEditor(
   const redo = useCallback(() => dispatch({ type: "redo" }), []);
 
   // 충돌 복구: 서버 덱을 다시 읽어 되돌리기 이력을 비우고, 다음 저장은 스냅샷을 남기며(새 편집 세션),
-  // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다)
-  const reloadFromServer = useCallback(async (): Promise<void> => {
-    try {
-      await saveChain.current;
-      const serverDeck = await api.getDeck(projectName);
-      dispatch({ type: "reset", deck: serverDeck });
-      savedDeck.current = serverDeck;
-      firstSave.current = true;
-      snapshotNext.current = 0;
-      snapshotSaved.current = 0;
-      setSaveError("");
-      conflictRef.current = false;
-      setConflict(false);
-      setSaveState("저장됨");
-      onDeckChangeRef.current(serverDeck);
-    } catch (e) {
-      setSaveError(messageOf(e));
-    }
+  // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다).
+  // D2a-2: 교체 직전 화면의 미저장 덱(충돌 뒤 편집 포함)을 서버 drafts/에 보존한다. 보존이 실패하면
+  // 교체하지 않는다. discardUnsaved는 사용자가 "보존하지 못해도 되돌린다"를 확인한 경우에만 쓴다
+  const reloadFromServer = useCallback((options?: { discardUnsaved?: boolean }): Promise<void> => {
+    if (reloadInFlight.current) return reloadInFlight.current;  // 연속 클릭은 한 번의 보존으로 병합한다
+    const run = (async () => {
+      setReloading(true);
+      try {
+        await saveChain.current;
+        const unsaved = deckRef.current !== savedDeck.current ? deckRef.current : null;
+        let preserved: DraftInfo | null = null;
+        if (unsaved && !options?.discardUnsaved) {
+          try {
+            preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
+          } catch (e) {
+            setPreserveFailure({ deckJson: JSON.stringify(unsaved, null, 2), message: messageOf(e) });
+            return;
+          }
+        }
+        const serverDeck = await api.getDeck(projectName);
+        dispatch({ type: "reset", deck: serverDeck });
+        savedDeck.current = serverDeck;
+        deckRef.current = serverDeck;
+        firstSave.current = true;
+        snapshotNext.current = 0;
+        snapshotSaved.current = 0;
+        setSaveError("");
+        setPreserveFailure(null);
+        setPreservedDraft(preserved);
+        conflictRef.current = false;
+        setConflict(false);
+        setSaveState("저장됨");
+        onDeckChangeRef.current(serverDeck);
+      } catch (e) {
+        setSaveError(messageOf(e));
+      } finally {
+        setReloading(false);
+        reloadInFlight.current = null;
+      }
+    })();
+    reloadInFlight.current = run;
+    return run;
   }, [projectName]);
+
+  const dismissPreservedDraft = useCallback(() => setPreservedDraft(null), []);
 
   const retrySave = flushSave;  // 저장 실패 뒤 재시도 버튼의 별칭
 
   return {
-    deck, plan, saveState, saveError, measureError, conflict,
+    deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
     apply, replace, acceptSaved, undo, redo, flushSave, remeasure, reloadFromServer, retrySave, reportConflict,
+    dismissPreservedDraft,
   };
 }

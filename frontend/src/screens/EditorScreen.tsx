@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import type { Deck, ProjectInfo, TemplateName } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
@@ -112,7 +113,8 @@ export function EditorScreen({
     <>
     {diagramBusy && !diagramDraft && <p role="status">도식 AI 응답을 기다리고 있습니다. 작성창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
     {templateBusy && <p role="status">전환 전 내용을 저장하고 있습니다.</p>}
-    <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy}>
+    {editor.reloading && <p role="status">변경을 보존하고 서버 내용을 다시 읽고 있습니다.</p>}
+    <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
           onSelect={(id) => { setChapterId(id); setSelected(null); }}
@@ -124,12 +126,34 @@ export function EditorScreen({
           <p role="alert">
             {editor.saveError}{" "}
             {editor.conflict ? (
-              <button onClick={() => void editor.reloadFromServer()}>서버 내용으로 되돌리기</button>
+              <button disabled={editor.reloading} onClick={() => void editor.reloadFromServer()}>서버 내용으로 되돌리기</button>
             ) : (
               editor.saveState === "저장 실패" && (
                 <button onClick={() => void editor.retrySave()}>다시 저장</button>
               )
             )}
+          </p>
+        )}
+        {editor.preserveFailure && (
+          <div role="alert">
+            <p>
+              변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다. ({editor.preserveFailure.message}){" "}
+              아래 내용을 복사해 두거나, 그래도 되돌리면 이 화면의 변경은 사라집니다.
+            </p>
+            <UnsavedChangeBackup text={editor.preserveFailure.deckJson} label="보존하지 못한 변경" />
+            <button disabled={editor.reloading} onClick={() => {
+              if (window.confirm("보존하지 못한 변경은 사라집니다. 서버 내용으로 되돌릴까요?")) {
+                void editor.reloadFromServer({ discardUnsaved: true });
+              }
+            }}>그래도 서버 내용으로 되돌리기</button>
+          </div>
+        )}
+        {editor.preservedDraft && (
+          <p role="status">
+            다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
+            ({editor.preservedDraft.saved_at.slice(0, 16).replace("T", " ")}). 스냅샷 복구 화면의
+            "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
+            <button onClick={editor.dismissPreservedDraft}>닫기</button>
           </p>
         )}
         {editor.measureError && (

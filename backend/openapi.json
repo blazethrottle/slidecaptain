@@ -1687,6 +1687,208 @@
         }
       }
     },
+    "/api/projects/{name}/drafts": {
+      "post": {
+        "summary": "Save Draft",
+        "operationId": "save_draft_api_projects__name__drafts_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Drafts",
+        "operationId": "list_drafts_api_projects__name__drafts_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DraftInfo"
+                  },
+                  "title": "Response List Drafts Api Projects  Name  Drafts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts/{draft_id}/restore": {
+      "post": {
+        "summary": "Restore Draft",
+        "operationId": "restore_draft_api_projects__name__drafts__draft_id__restore_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts/{draft_id}": {
+      "delete": {
+        "summary": "Delete Draft",
+        "operationId": "delete_draft_api_projects__name__drafts__draft_id__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{name}/sources": {
       "get": {
         "summary": "List Sources",
@@ -4999,6 +5201,54 @@
           "changed_paths"
         ],
         "title": "DocumentChangeReview"
+      },
+      "DraftInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "saved_at": {
+            "type": "string",
+            "title": "Saved At"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "conflict",
+              "generation_unsaved"
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "structure_approval"
+            ],
+            "title": "Source"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "saved_at",
+          "reason",
+          "source"
+        ],
+        "title": "DraftInfo",
+        "description": "충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."
       },
       "Evidence": {
         "properties": {
@@ -8406,6 +8656,50 @@
           "brief"
         ],
         "title": "RewriteStoryRequest"
+      },
+      "SaveDraftRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "conflict",
+              "generation_unsaved"
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "structure_approval"
+            ],
+            "title": "Source"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          },
+          "deck": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Deck"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason",
+          "source",
+          "deck"
+        ],
+        "title": "SaveDraftRequest",
+        "description": "충돌이나 저장 실패로 반영하지 못한 덱의 보존 요청 (D2a-2). 덱은 원문 그대로 보존하고\n복원할 때 검증한다."
       },
       "SemanticRelatedText": {
         "properties": {
