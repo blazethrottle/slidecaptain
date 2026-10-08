@@ -1,7 +1,7 @@
 // 작업 API 연결의 계약 (개정판 D2b-5b, 계획서 5.8, 5.9)
 import { jobView } from "../test/jobs";
 import { api, ApiError, resetEtags } from "./client";
-import { blockingReasons, jobResult, pendingCandidate, runningJob, sameSlots, startJob } from "./jobs";
+import { blockingReasons, jobResult, JobCancelled, pendingCandidate, runningJob, sameSlots, startJob } from "./jobs";
 
 afterEach(() => { vi.restoreAllMocks(); resetEtags(); });
 
@@ -84,4 +84,15 @@ it("슬롯 비교는 키 순서와 서버가 채운 빈 기본값을 무시하�
     footnote: "" };
   expect(sameSlots(server, screen)).toBe(true);
   expect(sameSlots(server, { ...screen, cards: [{ ...screen.cards[0], heading: "나" }] })).toBe(false);
+});
+
+// -- D2b-β 리뷰 R16: 변형 F12 ---------------------------------------------------------------
+
+it("취소로 끝난 작업은 값이 남아 있어도 결과로 돌려주지 않고 그 작업을 싣는다 (계획서 5.5, β 리뷰 R16)", () => {
+  const view = jobView("chapter", { id: "job-c", state: "cancelled", candidate_status: "held",
+    result: { status: "ok" } as unknown as Record<string, unknown> });
+  let caught: unknown = null;
+  try { jobResult(view); } catch (e) { caught = e; }
+  expect(caught).toBeInstanceOf(JobCancelled);
+  expect((caught as JobCancelled).job?.id).toBe("job-c");
 });

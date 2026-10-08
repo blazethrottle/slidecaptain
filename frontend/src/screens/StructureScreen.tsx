@@ -6,7 +6,7 @@ import {
   type TemplateName,
 } from "../api/client";
 import {
-  blockingReasons, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
+  blockingReasons, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { ActiveJobNotice } from "../ui/ActiveJobNotice";
@@ -33,6 +33,8 @@ type ProgressLabel = "대기" | "생성 중" | "완료" | "실패" | "취소" | 
   | "완료 여부 확인 필요" | "이전 입력 기준";
 type Progress = Record<string, ProgressLabel>;
 
+const LEDGER_UNAVAILABLE_BEFORE_APPROVAL = "작업 기록을 열 수 없어 내용 생성을 시작할 수 없습니다. 장 구성은 바꾸지 않았습니다. 앱을 다시 시작한 뒤 승인해 주세요.";
+const ACTIVE_JOB_BEFORE_APPROVAL = "다른 AI 작업이 진행 중이라 승인하지 않았습니다. 장 구성은 바꾸지 않았습니다. 그 작업이 끝난 뒤 다시 승인해 주세요.";
 const UNKNOWN_REGENERATE_CONFIRM =
   "완료 여부를 확인하지 못한 장이 있습니다. 다시 생성하면 AI 사용량이 한 번 더 기록될 수 있습니다. 계속할까요?";
 const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
@@ -133,7 +135,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const followAbort = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const startEpoch = useRef(0);  // 승인이나 장 다시 생성을 시작할 때마다 늘린다 (늦은 목록 응답 무시)
-  const pendingStart = useRef<{ targets: string[]; headers: Record<string, string>; requestId: string } | null>(null);
+  const pendingStart = useRef<{ targets: string[]; headers: Record<string, string>; requestId: string; approval: boolean } | null>(null);
+  const [canRestart, setCanRestart] = useState(false);  // 등록 실패 안내의 "내용 생성 다시 시작" (D2b-β 리뷰 R2, R7)
   const dismissing = useRef(false);
   const appliedSeen = useRef<Set<string>>(new Set());
   const progress: Progress = job && showJob ? Object.fromEntries(job.chapters.map((c) =>
@@ -219,7 +222,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           constraints: storyPlan?.brief.constraints ?? [],
         } } : {}),
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
-        onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다."),  // 리뷰 R11
+        onError: () => setFollowError(JOB_FOLLOW_ERROR),  // 리뷰 R11
         onStarted: () => {
           previous.forEach((id) => void settle(project.name, id, "dismissed"));
           structureJob.current = null;
@@ -284,8 +287,14 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       show(`내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim());
       if (live && view.error.error_class === "base_changed") onConflict?.();
     } else if (view.outcome === "chain_broken") {
-      show("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
-      if (live) onConflict?.();
+      // 자료만 바뀐 경우는 저장본이 그대로라 충돌 안내를 띄우지 않는다 (D2b-4 리뷰 R18, β 리뷰 R5)
+      const deckChanged = view.chapters.some((c) => c.error?.code === "chain_broken" || c.error?.code === "base_changed");
+      if (deckChanged) {
+        show("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
+        if (live) onConflict?.();
+      } else {
+        show("만드는 동안 자료가 바뀌어 일부 장을 반영하지 않았습니다. 현재 자료로 남은 장을 다시 생성해 주세요.");
+      }
     } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
       const malformedOnly = view.chapters.every((c) => c.state === "succeeded" || c.error?.error_class === "ai_output");
       const detail = view.chapters.find((c) => c.state === "failed" && c.error?.detail)?.error?.detail;
@@ -320,7 +329,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           }
         }
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
-        onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });
+        onError: () => setFollowError(JOB_FOLLOW_ERROR) });
       summarize(final, true, latest ?? deck);
       if (deckUnread) {
         setError("AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다. 서버 내용을 다시 읽어 주세요.");
@@ -358,7 +367,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         followAbort.current = controller;
         try {
           showStructure(await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
-            onError: () => setFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") }));
+            onError: () => setFollowError(JOB_FOLLOW_ERROR) }));
           setFollowError("");
         } catch (e) {
           if (!controller.signal.aborted) showFailure(e);
@@ -412,27 +421,40 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   };
 
   // 묶음 등록. 응답을 받지 못한 등록은 같은 요청 ID로만 다시 보낸다 (계획서 5.9, D2b-5a 리뷰 R9).
-  // 같은 장의 지난 후보는 새 묶음이 대신하므로 버린다 (리뷰 R17)
-  const register = async (targets: string[], headers: Record<string, string>, requestId: string) => {
+  // approval: 승인 흐름의 등록인지, 장 하나 다시 생성인지. 실패 안내와 다시 시작이 다르다 (D2b-β 리뷰 R7)
+  const register = async (targets: string[], headers: Record<string, string>, requestId: string, approval: boolean) => {
     startEpoch.current += 1;
-    for (const c of job?.chapters ?? []) {
-      if (targets.includes(c.chapter_id) && (c.candidate_status === "held" || c.candidate_status === "stale")) {
-        void api.dismissChapterCandidate(project.name, job!.id, c.chapter_id).catch(() => {});
-      }
-    }
+    const previous = job;
     try {
       const started = await api.startChapters(project.name, targets, headers, requestId);
       pendingStart.current = null;
+      // 같은 장의 지난 후보는 새 묶음이 대신하므로 등록에 성공한 뒤 버린다 (리뷰 R17, D2b-β 리뷰 R6)
+      for (const c of previous?.chapters ?? []) {
+        if (targets.includes(c.chapter_id) && (c.candidate_status === "held" || c.candidate_status === "stale")) {
+          void api.dismissChapterCandidate(project.name, previous!.id, c.chapter_id).catch(() => {});
+        }
+      }
       return started;
     } catch (e) {
-      pendingStart.current = e instanceof ApiError ? null : { targets, headers, requestId };
+      pendingStart.current = e instanceof ApiError ? null : { targets, headers, requestId, approval };
+      if (isStaleStoryPlan(e)) {
+        // 등록 검사에서 구성 계획이 낡았다. 다시 시작해도 같은 거절이므로 복구 안내만 보인다 (D2b-β 리뷰 R2)
+        setCanRestart(false);
+        showFailure(e);
+        return null;
+      }
       setStartError(e);
+      const what = approval ? "장 구성은 저장했지만" : "이 장의 다시 생성은";
       if (e instanceof ApiError && e.status === 412) {
         // 등록 기준 저장본이 바뀌었다. 다시 시작 대신 서버 내용을 다시 읽게 한다 (리뷰 R10)
-        setStartFailure("장 구성은 저장했지만 다른 곳에서 먼저 저장되어 내용 생성을 시작하지 못했습니다. 서버 내용을 다시 읽어 주세요.");
+        setCanRestart(false);
+        setStartFailure(`${what} 다른 곳에서 먼저 저장되어 내용 생성을 시작하지 못했습니다. 서버 내용을 다시 읽어 주세요.`);
         onConflict?.();
       } else {
-        setStartFailure(`장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`);
+        // 장 하나 다시 생성은 그 장의 버튼으로 다시 시작한다. 응답을 받지 못한 등록만 같은 요청으로 다시 보낸다
+        setCanRestart(approval || pendingStart.current !== null);
+        setStartFailure(approval ? `장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`
+          : `이 장의 다시 생성을 시작하지 못했습니다. ${messageOf(e)}`);
       }
       return null;
     }
@@ -446,7 +468,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     onBusyChange?.(true);
     setStartFailure("");
     setStartError(null);
-    const started = await register(pending.targets, pending.headers, pending.requestId);
+    const started = await register(pending.targets, pending.headers, pending.requestId, pending.approval);
     if (!started || !mounted.current) { setBusy(false); onBusyChange?.(false); return; }
     appliedSeen.current = new Set();
     setJob(started);
@@ -494,6 +516,17 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       // ① 로그인과 동의 확인 ② 승인 반영 ③ 묶음 등록 순서다. 동의를 거절하면 덱을 바꾸지 않는다 (D2b-5a).
       // 생성할 장이 없으면 AI에 보내지 않으므로 동의도 묻지 않는다
       let headers: Record<string, string> = {};
+      // 원장을 쓸 수 없거나 다른 작업이 돌면 등록이 거절된다. 장 구성을 저장하기 전에 알린다 (D2b-β 리뷰 R11).
+      // 확인 자체가 실패하면 등록 단계의 안내에 맡긴다
+      if (targets.length > 0) {
+        const status = await api.getActiveJob().catch(() => null);
+        if (status && !status.ledger_available) { setError(LEDGER_UNAVAILABLE_BEFORE_APPROVAL); return; }
+        if (status?.active) {
+          setStartError(new ApiError(409, "", "generation_active", status.active));
+          setError(ACTIVE_JOB_BEFORE_APPROVAL);
+          return;
+        }
+      }
       try {
         if (targets.length > 0) headers = await api.prepareAi();
       } catch (e) {
@@ -510,12 +543,17 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         throw e;
       }
       onDeckChange(current);
-      if (structureJob.current) { void settle(project.name, structureJob.current, "applied"); structureJob.current = null; }
+      if (structureJob.current) {
+        // 만드는 동안 입력이 바뀐 구조안은 서버가 반영 처분을 거절한다. 그때는 버려서 낡은 후보로 되살아나지 않게 한다 (D2b-β 리뷰 R4)
+        const id = structureJob.current;
+        void api.settleCandidate(project.name, id, "applied").catch(() => settle(project.name, id, "dismissed"));
+        structureJob.current = null;
+      }
       setEarlierNotice("");
       setDraftGenerated(false);  // 승인이 반영된 순간부터는 재승인이 성공분을 계승한다 (실패한 장만 재생성)
       setShowJob(false);
       if (targets.length === 0) { onDone(); return; }
-      started = await register(targets, headers, newRequestId());
+      started = await register(targets, headers, newRequestId(), true);
     } catch (e) {
       showFailure(e);
     } finally {
@@ -543,7 +581,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     let started: JobView | null = null;
     try {
       const headers = await api.prepareAi();
-      started = await register([chapterId], headers, newRequestId());
+      started = await register([chapterId], headers, newRequestId(), false);
     } catch (e) {
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
       else showFailure(e);
@@ -587,7 +625,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
       {startFailure && <p role="alert">{startFailure}
-        {!(startError instanceof ApiError && startError.status === 412) && <> <button onClick={() => void restart()}>내용 생성 다시 시작</button></>}
+        {canRestart && <> <button onClick={() => void restart()}>내용 생성 다시 시작</button></>}
       </p>}
       <ActiveJobNotice error={startError} />
       {pastNotice && <p className="notice">{pastNotice}</p>}

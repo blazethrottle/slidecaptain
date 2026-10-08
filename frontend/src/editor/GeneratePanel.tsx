@@ -15,6 +15,7 @@ import { ActiveJobNotice } from "../ui/ActiveJobNotice";
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
 
 const KINDS = ["chapter", "condense"] as const;
+const APPLY_CHECK_ERROR = "후보의 현재 상태를 확인하지 못해 반영하지 않았습니다. 잠시 뒤 다시 반영해 주세요.";
 
 export function GeneratePanel({ project, deck, chapterId, onReplace, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
@@ -143,9 +144,25 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     setEarlier(false);
   };
 
-  const applyResult = () => {
-    if (!result || result.status !== "ok" || !result.slots) return;
+  // 반영 직전에 작업을 다시 조회해 그사이 바뀐 입력을 확인한다. 지난 후보는 며칠 뒤에 반영할 수도 있다
+  // (계획서 「다르게 정하는 것」 7항, D2b-β 리뷰 R9). 확인하지 못하면 반영하지 않는다
+  const applyResult = async () => {
+    if (!result || result.status !== "ok" || !result.slots || busy) return;
     const slots = result.slots;
+    if (job) {
+      const requestedChapterId = chapterId;
+      setBusy(true);
+      let fresh: JobView;
+      try {
+        fresh = await api.getJob(project.name, job.id);
+      } catch {
+        if (chapterIdRef.current === requestedChapterId) { setBusy(false); setError(APPLY_CHECK_ERROR); }
+        return;
+      }
+      if (chapterIdRef.current !== requestedChapterId) return;
+      setBusy(false);
+      if (blockingReasons(fresh).length > 0) { setJob(fresh); return; }  // 이전 입력 기준 후보로 보인다
+    }
     const next: Deck = {
       ...deck,
       slides: deck.slides.some((s) => s.chapter_id === chapterId)
@@ -211,7 +228,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
               자료에서 찾지 못한 수치: {result.unverified_numbers.join(", ")}. 반영 전에 확인해 주세요.
             </p>
           )}
-          <button onClick={applyResult}>반영</button>
+          <button onClick={() => void applyResult()} disabled={busy}>반영</button>
           <button onClick={dismiss}>버리기</button>
         </div>
       )}

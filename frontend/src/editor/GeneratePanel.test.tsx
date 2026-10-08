@@ -30,6 +30,9 @@ beforeEach(() => {
   vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
   vi.mocked(api.listJobs).mockResolvedValue([]);
   vi.mocked(api.settleCandidate).mockResolvedValue(jobView("chapter"));
+  // 반영 직전 재조회의 기본 응답: 입력이 바뀌지 않은 후보 (D2b-β 리뷰 R9)
+  vi.mocked(api.getJob).mockImplementation(async (_name, id) => jobView("chapter", { id, target: "c1",
+    result: okResult as unknown as Record<string, unknown> }));
 });
 
 // 등록 응답이 곧 끝난 작업인 경우(조회 없이 결과)
@@ -328,4 +331,32 @@ it("앞 작업의 취소 안내가 다음 작업의 취소 버튼을 가리지 �
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   await userEvent.click(await screen.findByText("그 작업 취소"));
   expect(api.cancelJob).toHaveBeenLastCalledWith("다른보고", "job-10");
+});
+
+// -- D2b-β 리뷰 R9: 반영 직전 재조회 ---------------------------------------------------------
+
+it("반영 직전 조회에서 입력이 바뀌었으면 반영하지 않고 이전 입력 기준 후보로 보인다 (β 리뷰 R9)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-e", target: "c1",
+    result: okResult as unknown as Record<string, unknown> })]);
+  vi.mocked(api.getJob).mockResolvedValue(jobView("chapter", { id: "job-e", target: "c1", stale_reasons: ["sources_changed"],
+    result: okResult as unknown as Record<string, unknown> }));
+  const onReplace = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={onReplace} />);
+  await userEvent.click(await screen.findByText("반영"));
+  expect(await screen.findByText(/이전 입력 기준 후보입니다\(자료가 바뀌었습니다\)/)).toBeInTheDocument();
+  expect(api.getJob).toHaveBeenCalledWith("p1", "job-e");
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(api.settleCandidate).not.toHaveBeenCalledWith("p1", "job-e", "applied");
+});
+
+it("반영 직전 조회가 실패하면 반영하지 않고 알린다 (β 리뷰 R9)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-e", target: "c1",
+    result: okResult as unknown as Record<string, unknown> })]);
+  vi.mocked(api.getJob).mockRejectedValue(new ApiError(503, "작업 기록을 읽지 못했습니다."));
+  const onReplace = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={onReplace} />);
+  await userEvent.click(await screen.findByText("반영"));
+  expect(await screen.findByText(/후보의 현재 상태를 확인하지 못해 반영하지 않았습니다/)).toBeInTheDocument();
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(screen.getByText("반영")).toBeEnabled();  // 다시 반영할 수 있다
 });

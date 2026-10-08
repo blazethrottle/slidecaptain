@@ -1765,7 +1765,12 @@ def create_app(
                 _close_chapters(job_id, chapter_ids[index:], "cancelled")
                 return
             # 장과 장 사이에 다른 저장이 덱을 바꿨으면 남은 장을 보내지 않는다 (계획서 2.1, D2b-4 리뷰 R11)
-            if index > 0 and await asyncio.to_thread(store.deck_etag, name) != chain:
+            try:
+                changed = index > 0 and await asyncio.to_thread(store.deck_etag, name) != chain
+            except asyncio.CancelledError:
+                _close_chapters(job_id, chapter_ids[index:], "cancelled")  # 사슬 확인 중의 취소 (β 리뷰 R14)
+                return
+            if changed:
                 _close_chapters(job_id, chapter_ids[index:], "interrupted", CHAIN_BROKEN)
                 return
             ledger.transition_chapter(job_id, chapter_id, expected="queued", new="running", attempts=1)
@@ -1829,12 +1834,29 @@ def create_app(
         with store.locked(name):
             try:
                 deck, current = store.load_deck_with_etag(name)
+            except ProjectNotFound:
+                deck, current, unreadable = None, None, "project_missing"
             except (StorageError, OSError):
-                deck, current = None, None
-            chapter = None if deck is None else next((c for c in deck.structure.chapters if c.id == chapter_id), None)
+                deck, current, unreadable = None, None, "apply_failed"
+            else:
+                unreadable = None
+            revision_now = None if deck is None else _sources_revision(name)
+            if deck is not None and revision_now is None:
+                unreadable = "apply_failed"
+            if unreadable:
+                # 읽지 못한 것은 판정 불가다. 낡음으로 굳히지 않고 결과를 후보로 남긴다 (계획서 5.4, D2b-4 리뷰 R18)
+                ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed", error_class="input",
+                                          error_detail="적용할 때 덱이나 자료를 읽지 못했습니다.", error_code=unreadable)
+                return None
+            chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
             slots = result["slots"]
-            fresh = (deck is not None and current == chain and _sources_revision(name) == revision
-                     and chapter is not None and chapter.template == slots["template"]
+            if revision_now != revision and current == chain:
+                # 자료만 바뀌었다. 덱이 바뀐 사슬 끊김과 나눠 화면이 원인을 바르게 보이게 한다 (R18)
+                ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed",
+                                          error_class="base_changed", error_code="sources_changed",
+                                          candidate_status="stale")
+                return None
+            fresh = (current == chain and chapter is not None and chapter.template == slots["template"]
                      and all(s.chapter_id != chapter_id for s in deck.slides))
             if not fresh:
                 ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed",

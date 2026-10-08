@@ -180,6 +180,8 @@ it("수리 실행 중단은 취소를 요청하고, 작업이 취소로 끝난 �
   expect(screen.queryByText(/수정 요청을 취소했습니다/)).toBeNull();
   await act(async () => finish(jobView("repair", { id: "job-r", state: "cancelled", candidate_status: "held" })));
   expect(await screen.findByText("수정 요청을 취소했습니다. 입력과 기존 저장본은 유지됩니다.")).toBeInTheDocument();
+  // 취소 뒤 남은 값은 처분할 화면이 없으므로 버린다 (D2b-β 리뷰 R3)
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-r", "dismissed");
 });
 
 it("패널을 닫으면 조회만 멈추고 작업은 취소하지 않는다", async () => {

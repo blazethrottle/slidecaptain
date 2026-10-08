@@ -13,7 +13,7 @@ vi.mock("../api/client", async (importOriginal) => {
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
     getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn(),
     saveDraft: vi.fn(), listDrafts: vi.fn(), getActiveJob: vi.fn(), listJobs: vi.fn(), prepareAi: vi.fn(),
-    startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn() } };
+    startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn(), getDocumentChangeBasis: vi.fn() } };
 });
 
 // D2a-2: 충돌 시 보존 요청은 기본으로 성공한다
@@ -571,8 +571,29 @@ it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", a
   vi.mocked(api.getActiveJob)
     .mockResolvedValueOnce(batchActive(project.name))
     .mockResolvedValue({ active: null, ledger_available: true });
+  vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: '"서버의 새 저장본"', sources_fingerprint: "s", evidence_fingerprints: {} });
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
-  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));  // 구조안 탭이라 덱을 다시 읽는다
+});
+
+it("편집 탭에 있던 탭은 다른 탭의 묶음이 끝나도 덱을 덮지 않고 충돌 안내로 다시 읽기를 맡긴다 (β 리뷰 R1)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
+  vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: '"서버의 새 저장본"', sources_fingerprint: "s", evidence_fingerprints: {} });
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
+  const editTab = await screen.findByRole("button", { name: "편집" });
+  await waitFor(() => expect(editTab).toBeEnabled());
+  await userEvent.click(editTab);
+  const reads = vi.mocked(api.getDeck).mock.calls.length;
+  // 다른 탭이 이 프로젝트의 묶음을 시작했다가 끝낸다
+  vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive(project.name))
+    .mockImplementation(async () => ({ active: null, ledger_available: true }));
+  window.dispatchEvent(new Event("focus"));
+  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeInTheDocument();
+  expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads);  // 저장 ETag를 몰래 새로 읽지 않는다
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
 });
 
 it("같은 프로젝트의 다른 종류 작업도 안내하고, 취소가 실패하면 원인을 보인다 (리뷰 R14, R15)", async () => {

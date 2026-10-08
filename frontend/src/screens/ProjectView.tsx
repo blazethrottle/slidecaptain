@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, messageOf, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
+import { api, messageOf, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
@@ -82,10 +82,20 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     openedWithBatch.current = batchHere;
     if (batchHere) setTab("structure");
   }, [jobChecked, batchHere]);
-  // 묶음이 끝나면 덱을 한 번 다시 읽는다. 구조안 화면이 따라가지 못했어도 저장 ETag가 옛 값으로 남지 않는다 (리뷰 R5)
+  // 묶음이 끝났는데 이 탭이 본 저장본이 서버와 다르면(구조안 화면이 따라가지 못했거나 다른 탭의 묶음):
+  // 구조안 탭이면 덱을 다시 읽고, 편집 탭이면 덮어쓰지 않도록 충돌 안내로 다시 읽기를 맡긴다.
+  // 편집기는 덱을 마운트 때만 받으므로 저장 ETag만 새로 읽으면 옛 내용으로 묶음의 장을 덮는다 (D2b-5a 리뷰 R5, β 리뷰 R1)
   const wasBatchHere = useRef(false);
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   useEffect(() => {
-    if (wasBatchHere.current && !batchHere) api.getDeck(project.name).then(setDeck).catch(() => {});
+    if (wasBatchHere.current && !batchHere) {
+      api.getDocumentChangeBasis(project.name).then((basis) => {
+        if (basis.base_etag === savedEtag(project.name)) return;  // 이 탭이 이미 따라갔다
+        if (tabRef.current === "structure") api.getDeck(project.name).then(setDeck).catch(() => {});
+        else setHasConflict(true);
+      }).catch(() => {});
+    }
     wasBatchHere.current = batchHere;
   }, [batchHere, project.name]);
   // 화면 전체를 막는 AI 작업: 구조안 승인의 장 생성, 도식 생성, 진행 중 작업 확인 전, 이 프로젝트의 장 생성 묶음

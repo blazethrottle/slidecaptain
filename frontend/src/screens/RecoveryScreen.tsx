@@ -26,7 +26,7 @@ const KIND_LABELS: Record<string, string> = {
   structure: "구조안", chapter: "장 다시 생성", condense: "장 축약", diagram: "도식", rewrite: "보고 계획 재작성",
   repair: "제한된 수정", chapters: "장 내용 생성",
 };
-// 덱 전체 후보는 이 단위에서 보기만 한다 (계획서 D2b-5c)
+// 덱 전체 후보는 다시 생성 화면으로 옮기지 않고 보기와 버리기만 한다 (계획서 D2b-5c, D2b-β 리뷰 R3)
 const WHOLE_DECK = new Set(["rewrite", "repair"]);
 
 function candidatesOf(jobs: JobView[]): Candidate[] {
@@ -117,13 +117,11 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
                 만든 시각 {formatSavedAt(c.job.created_at)}</p>
               <p>{candidateStatus(c)}</p>
               <details><summary>보기</summary><pre>{candidateText(c)}</pre></details>
-              {!WHOLE_DECK.has(c.job.kind) && <>
-                {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
-                {onOpen && <button onClick={() => onOpen(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
-                  현재 입력으로 다시 생성</button>}{" "}
-                {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
-                {TERMINAL_JOB_STATES.has(c.state) && <button onClick={() => void dismiss(c)}>버리기</button>}
-              </>}
+              {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
+              {!WHOLE_DECK.has(c.job.kind) && onOpen && <><button onClick={() => onOpen(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
+                현재 입력으로 다시 생성</button>{" "}</>}
+              {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
+              {TERMINAL_JOB_STATES.has(c.state) && <button onClick={() => void dismiss(c)}>버리기</button>}
             </li>
           ))}
         </ul>

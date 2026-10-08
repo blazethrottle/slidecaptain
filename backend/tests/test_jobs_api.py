@@ -424,6 +424,9 @@ def test_cancel_during_lease_acquisition_ends_without_a_call(store, manager):
         assert entered.wait(5)
         accepted = client.post(f"/api/projects/p1/jobs/{job['id']}/cancel").json()
         assert accepted["state"] == "queued" and accepted["cancel_requested"] is True
+        # 진행 중 작업 요약도 취소 요청을 단계로 보인다 (D2b-β 리뷰 R16, 변형 B8)
+        active = client.get("/api/jobs/active").json()["active"]
+        assert active["cancel_requested"] is True and active["stage"] == "cancel_requested"
         resume.set()
         view = _wait(client, job["id"])
     assert view["state"] == "cancelled" and view["started_at"] is None

@@ -143,7 +143,12 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
   };
   const showError = (e: unknown) => {
     if (e instanceof AiConsentDeclined) { setNotice("재작성을 취소했습니다. 기존 계획은 유지됩니다."); return; }
-    if (e instanceof JobCancelled) { setNotice(REPAIR_CANCELLED_NOTICE); return; }
+    if (e instanceof JobCancelled) {
+      // 멈춘 작업의 값은 사용자가 보지 않았다. 처분할 화면이 없으므로 남기지 않는다 (D2b-β 리뷰 R3)
+      if (e.job?.candidate_status === "held") void settle(projectName, e.job.id, "dismissed");
+      setNotice(REPAIR_CANCELLED_NOTICE);
+      return;
+    }
     setError(messageOf(e));
     setFailure(e);
     if (e instanceof ApiError && (e.status === 409 || e.status === 412)) setBlocked(true);

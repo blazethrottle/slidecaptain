@@ -159,16 +159,20 @@ it("후보를 버리면 처분하고 목록을 다시 읽는다. 묶음의 장 �
   expect(await screen.findByText("남아 있는 AI 결과 후보가 없습니다.")).toBeInTheDocument();
 });
 
-it("덱 전체 후보는 보기만 하고, 저장본을 읽지 못하면 판정 불가로 보인다 (D2b-5c)", async () => {
+it("덱 전체 후보는 다시 생성으로 옮기지 않고 버릴 수만 있으며, 저장본을 읽지 못하면 판정 불가로 보인다 (D2b-5c, β 리뷰 R3)", async () => {
   vi.mocked(api.listJobs).mockResolvedValue([jobView("rewrite", { id: "job-r", current_etag: null,
     result: { status: "ok", deck: { structure: { chapters: [{ topic: "새 순서의 첫 장" }] } } } })]);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   expect(await screen.findByText(/보고 계획 재작성/)).toBeInTheDocument();
   expect(screen.getByText(/저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "버리기" })).toBeNull();
   expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
   await userEvent.click(screen.getByText("보기"));
   expect(screen.getByText(/1\. 새 순서의 첫 장/)).toBeInTheDocument();
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("rewrite"));
+  vi.mocked(api.listJobs).mockResolvedValue([]);
+  await userEvent.click(screen.getByRole("button", { name: "버리기" }));
+  expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-r", "dismissed");
+  await waitFor(() => expect(screen.queryByText(/보고 계획 재작성/)).toBeNull());
 });
 
 // -- D2b-5c 리뷰 반영 ------------------------------------------------------------------------
@@ -233,4 +237,19 @@ it("멈춘 수리 후보는 멈춘 이유를 보인다 (리뷰 R17)", async () =
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   await userEvent.click(await screen.findByText("보기"));
   expect(screen.getByText("멈춘 이유: 호출 상한에 닿았습니다.")).toBeInTheDocument();
+});
+
+// -- D2b-β 리뷰 R16: 변형 F13 ---------------------------------------------------------------
+
+it("화면에 전달한 후보(delivered)는 복구 목록에 넣지 않는다 (β 리뷰 R16)", async () => {
+  const slots = { status: "ok", slots: { template: "bullet_box" } } as unknown as Record<string, unknown>;
+  vi.mocked(api.listJobs).mockResolvedValue([
+    jobView("chapter", { id: "j-d", target: "c1", candidate_status: "delivered", result: slots }),
+    batchView([chapterView("c2", "succeeded", { candidate_status: "delivered", result: slots })], { id: "j-b" }),
+    jobView("chapter", { id: "j-h", target: "c3", candidate_status: "held", result: slots }),  // 대조군
+  ]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  expect(await screen.findByText(/\(장 c3\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/\(장 c1\)/)).toBeNull();
+  expect(screen.queryByText(/\(장 c2\)/)).toBeNull();
 });

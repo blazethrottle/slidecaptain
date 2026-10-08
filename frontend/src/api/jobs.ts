@@ -13,7 +13,8 @@ const BASE_KINDS = new Set<JobKind>(["diagram", "rewrite", "repair"]);
 
 // 취소로 끝난 작업. 화면은 실패가 아니라 취소 안내로 보인다
 export class JobCancelled extends ApiError {
-  constructor() {
+  // 취소로 끝난 작업. 취소 뒤 도착한 값을 화면이 처분할 수 있게 같이 싣는다 (D2b-β 리뷰 R3)
+  constructor(readonly job: JobView | null = null) {
     super(409, JOB_CANCELLED_MESSAGE, "job_cancelled");
   }
 }
@@ -32,7 +33,7 @@ export async function startJob(name: string, kind: JobKind, params: unknown, req
 // 종결된 작업을 종전 동기 라우트의 응답처럼 바꾼다. 서버 래퍼(_run_wrapped, http_error_from)와 같은 규칙이다:
 // 결과가 있으면 돌려주고(형식 오류 결과 포함), 취소는 409, 중단과 완료 여부 불명은 503, 나머지는 기록된 오류다
 export function jobResult<T>(view: JobView): T {
-  if (view.state === "cancelled") throw new JobCancelled();
+  if (view.state === "cancelled") throw new JobCancelled(view);
   if (view.result) return view.result as T;
   if (view.state === "interrupted" || view.state === "remote_completion_unknown") {
     throw new ApiError(503, JOB_INTERRUPTED_MESSAGE, "job_interrupted");

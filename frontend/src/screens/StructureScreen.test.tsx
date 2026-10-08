@@ -26,13 +26,14 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     startJob: vi.fn(), settleCandidate: vi.fn(), generateChapter: vi.fn(), putDeck: vi.fn(), saveDraft: vi.fn(),
     prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn(),
-    cancelJob: vi.fn(), dismissChapterCandidate: vi.fn() } };
+    cancelJob: vi.fn(), dismissChapterCandidate: vi.fn(), getActiveJob: vi.fn() } };
 });
 
 // D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
 const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
 beforeEach(() => {
   vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.getActiveJob).mockResolvedValue({ active: null, ledger_available: true });
   vi.mocked(api.startJob).mockImplementation(async (name, body) => {
     const result = await generateStructure(name, body.params as Record<string, unknown>);
     const failed = result.status !== "ok";
@@ -1119,4 +1120,112 @@ it("사용자가 취소한 묶음의 요약은 실행 실패로 보이지 않는
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
   await screen.findByText(/1장 중 1장을 만들지 못했습니다/);
   expect(screen.queryByText("실행 실패")).toBeNull();
+});
+
+// -- D2b-β 묶음 리뷰 반영 ------------------------------------------------------------------
+
+it("등록 검사에서 구성 계획이 낡았으면 복구 안내를 보이고 승인을 되풀이하는 다시 시작을 두지 않는다 (β 리뷰 R2)", async () => {
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(409, "구조안을 다시 생성해 주세요.", "stale_story_plan"));
+  await approveTwoChapters(null);
+  expect(await screen.findByLabelText("보고 계획 복구 안내")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "내용 생성 다시 시작" })).toBeNull();
+  expect(screen.queryByText(/내용 생성은 시작하지 못했습니다/)).toBeNull();
+  expect(vi.mocked(api.putDeck).mock.calls).toHaveLength(1);
+});
+
+it("만드는 동안 입력이 바뀐 구조안을 승인하면 거절된 반영 처분 대신 버림으로 처분한다 (β 리뷰 R4)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("structure", { id: "job-s", candidate_status: "stale",
+    stale_reasons: ["sources_changed"], result: structureResult([CH1, CH2]) as unknown as Record<string, unknown> }));
+  vi.mocked(api.settleCandidate).mockImplementation(async (_n, _id, action) => {
+    if (action === "applied") throw new ApiError(409, "처분할 결과 후보가 없거나 이미 처분했습니다.");
+    return jobView("structure");
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(503, "중단"));
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={0} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  expect(await screen.findByText(/구조안을 만드는 동안 입력이 바뀌었습니다/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-s", "dismissed"));
+  expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-s", "applied");
+});
+
+it("장 다시 생성의 등록이 실패하면 그 장의 지난 후보를 버리지 않는다 (β 리뷰 R6)", async () => {
+  const stale = chapterView("c1", "failed", { candidate_status: "stale", result: chapterResult(COVER) });
+  vi.mocked(api.listJobs).mockResolvedValue([batchView([stale], { id: "job-old", state: "failed", outcome: "chain_broken" })]);
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active"));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
+  await waitFor(() => expect(api.startChapters).toHaveBeenCalled());
+  await screen.findByText(/이 장의 다시 생성을 시작하지 못했습니다/);
+  expect(api.dismissChapterCandidate).not.toHaveBeenCalled();
+});
+
+it("장 다시 생성의 등록 실패는 승인 문구와 승인 다시 시작을 쓰지 않고 그 장의 버튼을 남긴다 (β 리뷰 R7)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([chapterView("c1", "failed", { error: FAILED_503 })],
+    { state: "failed", outcome: "partial" })]);
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(503, "작업 기록을 열 수 없습니다."));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
+  expect(await screen.findByText(/이 장의 다시 생성을 시작하지 못했습니다.*작업 기록을 열 수 없습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/장 구성은 저장했/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "내용 생성 다시 시작" })).toBeNull();
+  expect(await screen.findByRole("button", { name: "1번 장 다시 생성" })).toBeEnabled();
+  expect(api.putDeck).not.toHaveBeenCalled();
+});
+
+it("응답을 받지 못한 장 다시 생성은 같은 요청으로만 다시 보내고 승인을 거치지 않는다 (β 리뷰 R7)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([chapterView("c1", "failed", { error: FAILED_503 })],
+    { state: "failed", outcome: "partial" })]);
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new TypeError("Failed to fetch"))
+    .mockResolvedValueOnce(running([chapterView("c1", "running")], { id: "job-new" }));
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+  render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
+    pollIntervalMs={0} />);
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "내용 생성 다시 시작" }));
+  await waitFor(() => expect(api.startChapters).toHaveBeenCalledTimes(2));
+  const [first, second] = vi.mocked(api.startChapters).mock.calls;
+  expect(second[1]).toEqual(["c1"]);
+  expect(second[3]).toBe(first[3]);  // 같은 요청 ID
+  expect(api.putDeck).not.toHaveBeenCalled();
+});
+
+it("원장을 쓸 수 없으면 승인이 장 구성을 저장하기 전에 알리고 멈춘다 (β 리뷰 R11)", async () => {
+  vi.mocked(api.getActiveJob).mockResolvedValue({ active: null, ledger_available: false });
+  await approveTwoChapters(null);
+  expect(await screen.findByText(/작업 기록을 열 수 없어 내용 생성을 시작할 수 없습니다/)).toBeInTheDocument();
+  expect(api.putDeck).not.toHaveBeenCalled();
+  expect(api.prepareAi).toHaveBeenCalledTimes(1);  // 구조안 생성 때 한 번뿐, 승인에서는 묻지 않는다
+  expect(api.startChapters).not.toHaveBeenCalled();
+});
+
+it("다른 작업이 진행 중이면 승인이 장 구성을 저장하기 전에 알리고 그 작업 취소를 보인다 (β 리뷰 R11)", async () => {
+  vi.mocked(api.getActiveJob).mockResolvedValue({ ledger_available: true, active: { id: "job-x", project: "다른 보고",
+    kind: "structure", target: null, stage: "running", created_at: "2026-10-08T10:00:00+09:00", cancel_requested: false } });
+  await approveTwoChapters(null);
+  expect(await screen.findByText(/다른 AI 작업이 진행 중이라 승인하지 않았습니다/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "그 작업 취소" })).toBeInTheDocument();
+  expect(api.putDeck).not.toHaveBeenCalled();
+});
+
+it("자료만 바뀌어 반영하지 않은 장은 덱 충돌로 알리지 않는다 (D2b-4 리뷰 R18, β 리뷰 R5)", async () => {
+  generateStructure.mockResolvedValue({
+    status: "ok", structure: { chapters: [CH1, CH2] },
+    usage: emptyUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
+  });
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  mockBatch(batchView([chapterView("c1", "succeeded"), chapterView("c2", "failed", { candidate_status: "stale",
+    result: chapterResult(BODY), error: { error_class: "base_changed", status: null, detail: null, code: "sources_changed" } })],
+  { state: "failed", outcome: "chain_broken" }), deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]));
+  const onConflict = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onConflict={onConflict} pollIntervalMs={0} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await screen.findByDisplayValue("본문");
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  expect(await screen.findByText(/만드는 동안 자료가 바뀌어 일부 장을 반영하지 않았습니다/)).toBeInTheDocument();
+  expect(onConflict).not.toHaveBeenCalled();
 });

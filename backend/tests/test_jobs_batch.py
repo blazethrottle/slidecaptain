@@ -774,3 +774,71 @@ def test_an_unfinished_chapter_candidate_cannot_be_dismissed(store):
         response = client.post(f"/api/projects/p1/jobs/{job_id}/candidate", json={"action": "dismissed", "chapter_id": "c1"})
         assert response.status_code == 409
         assert client.app.state.job_runner.ledger.chapters(job_id)[0].candidate_status == "held"
+
+
+# β 묶음 리뷰 R5 (D2b-4 리뷰 R18): 적용 때 덱을 읽지 못한 것은 판정 불가라 결과를 후보로 남기고,
+# 자료만 바뀐 것은 덱이 바뀐 사슬 끊김과 다른 코드로 남긴다
+
+def test_an_unreadable_deck_at_apply_keeps_the_result_as_a_candidate(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘")], gate_at=0)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2"]).json()
+        assert provider.entered.wait(10)
+        deck_file = store.root / "p1" / "deck.json"
+        good = deck_file.read_bytes()
+        deck_file.write_text("{깨진 덱", encoding="utf-8")
+        provider.release.set()
+        view = _wait(client, job["id"])
+        deck_file.write_bytes(good)
+    assert view["chapters"][0]["state"] == "failed" and view["chapters"][0]["candidate_status"] == "held"
+    assert view["chapters"][0]["error"]["code"] == "apply_failed"
+    assert view["outcome"] == "partial"
+
+
+def test_sources_changed_at_apply_is_told_apart_from_a_deck_change(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘")], gate_at=0)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2"]).json()
+        assert provider.entered.wait(10)
+        store.write_source("p1", "추가.md", "새 자료")
+        provider.release.set()
+        view = _wait(client, job["id"])
+    assert view["chapters"][0]["candidate_status"] == "stale"
+    assert view["chapters"][0]["error"]["code"] == "sources_changed"
+
+
+# β 묶음 리뷰 R14: 장 사이 사슬 확인 중에 들어온 취소는 남은 장을 사유 없는 중단이 아니라 취소로 닫는다
+
+def test_cancel_during_the_chain_check_between_chapters_cancels_the_rest(store, monkeypatch):
+    _project(store)
+    entered, release = threading.Event(), threading.Event()
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")])
+    original = store.deck_etag
+
+    def gated_etag(name):
+        # 작업 루프의 to_thread 호출만 멈춘다. 첫 장을 보낸 뒤의 첫 확인이 장 사이 사슬 확인이다
+        if (provider.calls >= 1 and not entered.is_set()
+                and threading.current_thread().name.startswith("asyncio")):
+            entered.set()
+            assert release.wait(10)
+        return original(name)
+    monkeypatch.setattr(store, "deck_etag", gated_etag)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client, store, ["c1", "c2", "c3"]).json()
+        assert entered.wait(10)
+        handle = client.app.state.job_runner._handles[job["id"]]
+        canceller = threading.Thread(target=lambda: client.post(f"/api/projects/p1/jobs/{job['id']}/cancel"))
+        canceller.start()
+        for _ in range(500):
+            if handle.cancel_sent:
+                break
+            threading.Event().wait(0.01)
+        assert handle.cancel_sent
+        release.set()
+        canceller.join(10)
+        view = _wait(client, job["id"])
+    assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "cancelled", "none"), ("c3", "cancelled", "none")]
+    assert all(c["error"] is None or c["error"]["code"] != "chain_broken" for c in view["chapters"])
+    assert view["state"] == "cancelled" and view["outcome"] == "cancelled" and provider.calls == 1
