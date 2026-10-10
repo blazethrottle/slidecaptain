@@ -8027,7 +8027,9 @@
                   "connection",
                   "base_changed",
                   "cancelled",
-                  "ledger"
+                  "ledger",
+                  "storage",
+                  "internal"
                 ]
               },
               {
@@ -8068,6 +8070,17 @@
               }
             ],
             "title": "Code"
+          },
+          "raw_error_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Error Class"
           }
         },
         "type": "object",

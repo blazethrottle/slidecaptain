@@ -501,7 +501,8 @@ def test_ledger_failure_before_the_call_is_recorded_as_a_ledger_error(store):
     assert provider.calls == 0
     assert view["chapters"][0]["error"] == {"error_class": "ledger", "status": 503,
                                             "detail": "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
-                                            "code": "ledger_write_failed"}
+                                            "code": "ledger_write_failed",
+                                            "raw_error_class": None}  # 다시 씀(D3a-4): 읽기 관대화의 원래 값 칸
     assert view["chapters"][1]["state"] == "interrupted" and view["chapters"][1]["error"]["code"] == "ledger_failed"
 
 

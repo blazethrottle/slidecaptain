@@ -1,8 +1,8 @@
 """작업 API의 요청과 응답 모델 (개정판 D2b-2, 계획서 5.9)."""
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal, Union, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from slidecaptain.models.deck import Slots
 from slidecaptain.models.story import ReportBrief
@@ -12,7 +12,10 @@ from slidecaptain.pipeline.story_repair import StoryRepairRequest
 JobState = Literal["queued", "running", "validating", "succeeded", "failed", "cancel_requested", "cancelled",
                    "interrupted", "remote_completion_unknown"]
 CandidateStatus = Literal["none", "held", "delivered", "applied", "stale", "dismissed"]
-ErrorClass = Literal["input", "ai_output", "connection", "base_changed", "cancelled", "ledger"]
+# 원인 분류 (D2b-1, D3a-4). storage(저장과 적용 실패)와 internal(예기치 않은 오류)은 D3a-4가 더했다.
+# 원장 쓰기 검사(storage/job_ledger.py의 ERROR_CLASSES)와 같은 집합이어야 한다(시험이 확인한다)
+ErrorClass = Literal["input", "ai_output", "connection", "base_changed", "cancelled", "ledger", "storage", "internal"]
+_ERROR_CLASSES = frozenset(get_args(ErrorClass))
 # 요청 ID는 화면이 버튼을 누를 때 한 번 만든다. 사용자 입력이 아니므로 형식을 좁힌다
 REQUEST_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
 
@@ -97,6 +100,18 @@ class JobError(BaseModel):
     status: int | None
     detail: str | None
     code: str | None
+    # 원장 행의 원인 분류가 이 빌드가 모르는 값이면(다른 빌드가 같은 자료 폴더에 쓴 값) internal로 읽고 원래 값을
+    # 여기 남긴다. 모르는 값 한 행이 작업 조회, 작업 목록, 진행 API 전체를 500으로 만들지 않게 한다 (D3a-4, 사실 17)
+    raw_error_class: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerate_unknown_class(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            value = data.get("error_class")
+            if value is not None and value not in _ERROR_CLASSES:
+                return {**data, "error_class": "internal", "raw_error_class": str(value)}
+        return data
 
 
 class ChapterView(BaseModel):

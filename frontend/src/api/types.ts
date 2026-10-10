@@ -2696,13 +2696,15 @@ export interface components {
         /** JobError */
         JobError: {
             /** Error Class */
-            error_class: ("input" | "ai_output" | "connection" | "base_changed" | "cancelled" | "ledger") | null;
+            error_class: ("input" | "ai_output" | "connection" | "base_changed" | "cancelled" | "ledger" | "storage" | "internal") | null;
             /** Status */
             status: number | null;
             /** Detail */
             detail: string | null;
             /** Code */
             code: string | null;
+            /** Raw Error Class */
+            raw_error_class?: string | null;
         };
         /** JobView */
         JobView: {
