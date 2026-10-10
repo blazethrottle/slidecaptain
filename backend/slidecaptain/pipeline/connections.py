@@ -284,7 +284,7 @@ class AIConnections:
                 raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="identity_changed")
             # 로그인 안 됨과 확인하지 못함을 가른다. 확인하지 못함은 상태 확인이 가른 원인 코드를 싣는다 (D3a-4 리뷰 R2)
             if status.logged_in is False:
-                raise ProviderNotAvailable(status.error or "AI 연결 화면에서 먼저 로그인해 주세요.", code="login_required")
+                raise ProviderNotAvailable(status.error or "AI 연결에 로그인되어 있지 않습니다.", code="login_required")
             if status.logged_in is not True and status.error_code == "provider_missing":
                 raise ProviderNotAvailable(status.error or "AI 도구를 찾지 못했습니다.", code="provider_missing")
             if status.logged_in is not True and status.error_code == "provider_timeout":

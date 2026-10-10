@@ -178,3 +178,13 @@ it("저장 상태를 보이지 않는 때(null)를 거친 저장됨은 알리지
   act(() => { rerender(<SaveAnnouncer kind="saved" />); });
   expect(screen.getByRole("status")).toHaveTextContent("저장됨");
 });
+
+it("같은 결과의 작업이 연달아 끝나도 작업 종류가 글에 들어가 두 번째도 알린다 (D3a 묶음 리뷰 A1)", () => {
+  // 지금 코드의 틀린 동작: 구조안 생성 성공 뒤 내용 생성 성공은 글이 같아 화면 낭독기가 다시 읽지 않는다
+  const { container } = render(<JobAnnouncer active={null} />);
+  const status = () => container.querySelector('[role="status"]')!.textContent;
+  act(() => notifyProject({ kind: "job_ended", project: "보고 E", jobId: "job-s", state: "succeeded", jobKind: "structure" }));
+  expect(status()).toBe("구조안 생성이 끝났습니다(보고 E)");
+  act(() => notifyProject({ kind: "job_ended", project: "보고 E", jobId: "job-c", state: "succeeded", jobKind: "chapters" }));
+  expect(status()).toBe("내용 생성이 끝났습니다(보고 E)");
+});

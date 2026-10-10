@@ -537,7 +537,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onDone={() => { setError(""); setSaveStatus(null); setFocusChapter(null); setStage("editor"); }}
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
-            onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter} />
+            onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
+            limitations={progressFailed ? [] : stageLimitations(progress, "structure")} />
         )}
         {!showRecovery && stage === "editor" && (
           <EditorScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}

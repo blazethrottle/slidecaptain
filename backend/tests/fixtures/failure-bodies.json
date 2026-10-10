@@ -136,7 +136,7 @@
   "login_required": {
    "body": {
     "code": "login_required",
-    "detail": "AI 연결 화면에서 먼저 로그인해 주세요."
+    "detail": "AI 연결에 로그인되어 있지 않습니다."
    },
    "status": 503
   },

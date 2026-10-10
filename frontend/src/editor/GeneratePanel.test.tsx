@@ -260,7 +260,7 @@ it("형식 오류면 원인별 안내를 보이고 사용량과 응답 원문은
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   const alert = (await screen.findByText(/형식에 맞게 읽지 못했습니다/)).closest("[role=alert]")!;
-  expect(alert).toHaveTextContent(/입력은 그대로입니다.*지금 할 수 있는 일: 같은 입력으로 다시 생성/);
+  expect(alert).toHaveTextContent(/입력은 그대로입니다.*지금 할 수 있는 일: 위의 '이 장 다시 생성'/);
   expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
   expectUsageCollapsed();
   expect(screen.getByText("이상한 원문")).not.toBeVisible();
@@ -368,41 +368,18 @@ it("반영 직전 조회가 실패하면 반영하지 않고 알린다 (β 리�
   expect(screen.getByText("반영")).toBeEnabled();  // 다시 반영할 수 있다
 });
 
-// D3a-4 리뷰 R25, R8: 실패 안내의 "같은 입력으로 다시 생성"은 같은 종류, 같은 장으로 다시 부른다
+// D3a-4 리뷰 R25, R8과 묶음 리뷰 A8: 실패 안내는 같은 일을 하는 버튼을 하나 더 두지 않고 위쪽 버튼을 가리킨다
 const formatError: ChapterResult = {
   status: "format_error", slots: null, usage: emptyUsage(), raw_text: "이상한 원문",
   warnings: [], unverified_numbers: [], format_retried: true, condensed: false,
 };
 
-it("형식 오류 안내의 다시 생성 버튼은 같은 종류(축약)로 다시 부른다 (리뷰 R25)", async () => {
+it("실패 안내는 위쪽의 다시 생성과 축약 버튼을 가리키고 안내 안에 버튼을 두지 않는다 (묶음 리뷰 A8)", async () => {
   answer(formatError, "condense");
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
   await userEvent.click(screen.getByText("이 장 축약"));
   const alert = (await screen.findByText(/형식에 맞게 읽지 못했습니다/)).closest("[role=alert]") as HTMLElement;
-  await userEvent.click(within(alert).getByRole("button", { name: "같은 입력으로 다시 생성" }));
-  await waitFor(() => expect(api.startJob).toHaveBeenCalledTimes(2));
-  const second = vi.mocked(api.startJob).mock.calls[1][1] as { kind: string; params: { chapter_id: string } };
-  expect([second.kind, second.params.chapter_id]).toEqual(["condense", "c1"]);
-});
-
-it("장을 바꾼 뒤 그 장의 진행 작업이 형식 오류로 끝나면 다시 생성은 앞 장이 아니라 그 장을 부른다 (리뷰 R8)", async () => {
-  const two: Deck = { ...deck, structure: { chapters: [...deck.structure.chapters,
-    { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] } };
-  answer(formatError, "condense");
-  const view = render(<GeneratePanel project={project} deck={two} chapterId="c1" onReplace={() => {}} pollIntervalMs={0} />);
-  await userEvent.click(screen.getByText("이 장 축약"));
-  await screen.findByText(/형식에 맞게 읽지 못했습니다/);
-  // 둘째 장에는 진행 중인 재생성이 있고, 조회하면 형식 오류로 끝난다
-  const running = jobView("chapter", { id: "job-c2", target: "c2", state: "running" });
-  vi.mocked(api.listJobs).mockResolvedValueOnce([running]);
-  vi.mocked(api.getJob).mockResolvedValueOnce(jobView("chapter", { id: "job-c2", target: "c2", state: "failed",
-    result: formatError as unknown as Record<string, unknown>,
-    error: { error_class: "ai_output", status: null, detail: "형식 오류", code: "format_error" } }));
-  view.rerender(<GeneratePanel project={project} deck={two} chapterId="c2" onReplace={() => {}} pollIntervalMs={0} />);
-  const alert = (await screen.findByText(/형식에 맞게 읽지 못했습니다/)).closest("[role=alert]") as HTMLElement;
-  answer(okResult);
-  await userEvent.click(within(alert).getByRole("button", { name: "같은 입력으로 다시 생성" }));
-  await waitFor(() => expect(api.startJob).toHaveBeenCalledTimes(2));
-  const second = vi.mocked(api.startJob).mock.calls[1][1] as { kind: string; params: { chapter_id: string } };
-  expect([second.kind, second.params.chapter_id]).toEqual(["chapter", "c2"]);
+  expect(alert).toHaveTextContent("지금 할 수 있는 일: 위의 '이 장 다시 생성'이나 '이 장 축약'을 다시 눌러 주세요.");
+  expect(within(alert).queryAllByRole("button")).toHaveLength(0);
+  expect(screen.getAllByRole("button", { name: "이 장 축약" })).toHaveLength(1);
 });

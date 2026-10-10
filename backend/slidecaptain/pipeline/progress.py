@@ -75,8 +75,11 @@ def _sources(sources: dict[str, str] | None, sources_error: str | None) -> Stage
         return StageProgress(stage="sources", state="not_started", reasons=["sources_missing"])
     if sum(len(text) for text in sources.values()) > SOURCES_TOTAL_MAX_CHARS:
         return StageProgress(stage="sources", state="needs_review", reasons=["sources_over_limit"])
-    # 부분 추출 경고와 이번 생성에 넣을 자료의 선택은 저장되지 않는다(D5)
-    return StageProgress(stage="sources", state="ready", reasons=["extraction_review_unavailable"])
+    # 부분 추출 경고와 이번 생성에 넣을 자료의 선택은 저장되지 않는다(D5). 이 한계는 엑셀 추출본(<원본>.xlsx.md)이
+    # 있을 때만 붙인다. 텍스트 자료뿐인 사용자에게 무관한 경고를 보이지 않는다 (D3a 묶음 리뷰 A15)
+    if any(name.lower().endswith(".xlsx.md") for name in sources):
+        return StageProgress(stage="sources", state="ready", reasons=["extraction_review_unavailable"])
+    return StageProgress(stage="sources", state="ready")
 
 
 def _structure(deck, sources: dict[str, str] | None) -> StageProgress:
@@ -85,7 +88,9 @@ def _structure(deck, sources: dict[str, str] | None) -> StageProgress:
         return StageProgress(stage="structure", state="not_started", reasons=["chapters_missing"])
     plan = deck.structure.story_plan
     if plan is None:
-        return StageProgress(stage="structure", state="needs_review", reasons=["plan_missing"])
+        # 보고 질문은 화면에서 선택 입력이다. 보고 계획 없이 만든 구성은 준비됨이고, 계획이 없다는 사실은 한계로
+        # 단계 화면에만 보인다 (D3a 묶음 리뷰 A3)
+        return StageProgress(stage="structure", state="ready", reasons=["plan_missing"])
     if sources is None:
         return StageProgress(stage="structure", state="needs_review", reasons=["sources_unreadable"])
     # 생성 관문(require_current_story)과 같은 계약이다. 제목, 피보고자, 보고 유형, 장 제목과 결론,

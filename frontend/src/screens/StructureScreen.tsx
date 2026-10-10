@@ -15,6 +15,7 @@ import { FailureNotice } from "../ui/FailureNotice";
 import { StatusIndicator } from "../ui/StatusIndicator";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
+import { batchSummary } from "./stageStatus";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { StoryRewritePanel } from "./StoryRewritePanel";
 import { DocumentChangePanel } from "./DocumentChangePanel";
@@ -90,7 +91,7 @@ export type StructureBrief = { instructions: string; targetChapters: string };
 export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "" };
 
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
-  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, pollIntervalMs = 1000 }: {
+  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -102,6 +103,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
   focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
+  limitations?: string[];  // 준비됨에 붙은 사유의 문구(보고 계획 없음 등). 이 화면의 한계 안내로 보인다 (A3)
   // 주안점과 목표 장수. 저장하지 않는 값이라 부모(프로젝트 화면)가 들고 있어 단계 이동과 다시 마운트 사이에
   // 남는다(계획 4.4, 사실 13, D3a-2 리뷰 R6). 넘기지 않으면 이 화면 안에서만 든다
   brief?: StructureBrief;
@@ -365,7 +367,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     };
     if (view.started_at === null && view.error) {
       // 시작하기 전에 끝났다(다른 저장, AI 연결 변경 등). 장마다가 아니라 작업의 원인을 보인다 (D2b-4 리뷰 R12)
-      const conflict = view.error.error_class === "base_changed";
+      // 자료만 바뀐 경우(sources_changed)는 저장본이 그대로라 충돌 배너를 띄우지 않는다 (D3a 묶음 리뷰 A14)
+      const conflict = view.error.error_class === "base_changed" && view.error.code !== "sources_changed";
       report(live ? "내용 생성을 시작하지 못했습니다." : `내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim(),
         describeJobFailure(view), conflict);
       if (live && conflict) onConflict?.();
@@ -718,9 +721,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
       {/* 저장 충돌은 위쪽 충돌 배너가 이미 경고로 알린다 (리뷰 R15) */}
-      <FailureNotice failure={failure} role={failure?.cause === "deck_conflict" ? "status" : "alert"} />
+      <FailureNotice failure={failure} role={failure?.cause === "deck_conflict" ? "status" : undefined} />
       {batchFailure && <FailureNotice failure={batchFailure.failure} lead={batchFailure.lead}
-        role={batchFailure.quiet ? "status" : "alert"} />}
+        role={batchFailure.quiet ? "status" : undefined} />}
       {formatWhat && <FailureNotice failure={describeAiOutput(formatJob.current, formatWhat)} actions={busy ? {} : { regenerate: () => void generate() }}>
         {rawText && <><p>AI 응답 원문</p><pre>{rawText}</pre></>}
         {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
@@ -728,7 +731,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {startFailure && (startError
         ? <FailureNotice failure={canRestart ? restartable(describeFailure(startError)) : describeFailure(startError)}
           lead={startFailure} actions={canRestart ? { restart_generation: () => void restart() } : {}}
-          role={startError instanceof ApiError && startError.status === 412 ? "status" : "alert"} />
+          role={startError instanceof ApiError && startError.status === 412 ? "status" : undefined} />
         : <p role="alert">{startFailure}</p>)}
       {pastNotice && <p className="notice">{pastNotice}</p>}
       {preservedNotice && <p role="status">{preservedNotice}</p>}
@@ -755,6 +758,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {numbers.length > 0 && (
         <p className="number-warning">자료에서 찾지 못한 수치가 있습니다: {numbers.join(", ")}. 반영 전에 확인해 주세요.</p>
       )}
+      {limitations.map((text) => <p key={text} className="hint">{text}</p>)}
       <section>
         <h2>구조안</h2>
         <div className="field">
@@ -859,8 +863,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             const chapters = deck.structure.chapters;
             const missing = chapters.filter((ch) => !deck.slides.some((sl) => sl.chapter_id === ch.id));
             return missing.length > 0
-              ? <p className="notice">{job.state === "failed" && <><StatusIndicator kind="failed" detail={`${chapters.length}장 중 ${missing.length}장 실패`} />{" "}</>}
-                {chapters.length}장 중 {missing.length}장을 만들지 못했습니다. 아래 버튼을 누르면 만들지 못한 장만 다시 생성합니다.</p>
+              // 실패 표시는 단계 목록과 같은 요약 함수를 쓴다. 아래 문장은 덱의 장 구성 기준으로 남은 일을 센다 (A4)
+              ? <p className="notice">{job.state === "failed" && <><StatusIndicator kind="failed" detail={batchSummary([job]) ?? undefined} />{" "}</>}
+                장 구성 {chapters.length}장 가운데 {missing.length}장에 아직 내용이 없습니다. 아래 버튼을 누르면 내용이 없는 장만 다시 생성합니다.</p>
               : null;
           })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}

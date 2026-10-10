@@ -131,7 +131,7 @@ export function resetEtags(): void {
 // (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
 // job_ended는 종결 상태를 싣는다: 작업 종결 알림이 성공, 실패, 취소, 중단을 다르게 알린다 (D3a-4, C23)
 export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string;
-  state?: JobView["state"] };
+  state?: JobView["state"]; jobKind?: string };
 const projectListeners = new Set<(event: ProjectEvent) => void>();
 
 export function onProjectEvent(listener: (event: ProjectEvent) => void): () => void {
@@ -187,7 +187,7 @@ async function aiHeaders(): Promise<Record<string, string>> {
     throw new ApiError(503, "AI 연결이 설정되어 있지 않습니다.", "provider_missing");
   }
   if (status.login.logged_in === false) {
-    throw new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요.", "login_required");
+    throw new ApiError(503, "AI 연결에 로그인되어 있지 않습니다.", "login_required");
   }
   if (status.login.logged_in !== true) {
     throw new ApiError(503, status.login.error ?? "AI 연결 상태를 확인하지 못했습니다.",
@@ -231,7 +231,7 @@ export async function followJob(
       const view = await fetchJob();
       await onUpdate(view);
       if (TERMINAL_JOB_STATES.has(view.state)) {
-        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state });
+        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind });
         return view;
       }
     } catch (error) {

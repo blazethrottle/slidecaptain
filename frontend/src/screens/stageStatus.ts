@@ -3,6 +3,7 @@
 import { TERMINAL_JOB_STATES, type ActiveJob, type JobView, type ProjectProgress } from "../api/client";
 import type { components } from "../api/types";
 import type { StatusKind } from "../ui/StatusIndicator";
+import { STOPPED_CODES } from "../ui/failure";
 
 export type Stage = "purpose" | "sources" | "structure" | "editor" | "review";
 export type StageProgress = components["schemas"]["StageProgress"];
@@ -18,7 +19,8 @@ export const REASON_TEXT = {
   sources_over_limit: "자료 합계가 10만 자 한도를 넘습니다",
   extraction_review_unavailable: "자료의 부분 추출 경고는 아직 기록하지 않아, 엑셀 추출본의 빠진 부분을 이 화면이 알려 주지 못합니다",
   chapters_missing: "장 구성이 없습니다",
-  plan_missing: "보고 계획이 없습니다",
+  // 보고 질문은 선택 입력이라 준비됨에 붙는 한계다 (D3a 묶음 리뷰 A3)
+  plan_missing: "보고 질문을 넣지 않아 주장별 근거와 보고 흐름의 계획 없이 구성했습니다",
   stale_story_plan: "자료, 보고 정보, 장 구성(편집 단계의 장 순서와 템플릿 포함)이 바뀌어 구성을 다시 확인해야 합니다",
   chapters_unwritten: "내용이 없는 장이 있습니다",
   no_export: "아직 내보낸 파일이 없습니다",
@@ -49,13 +51,15 @@ export const UNKNOWN_REASON_TEXT = "이 화면이 알지 못하는 상태입니�
 
 // 준비됨에 붙는 사유. 단계 목록에는 보이지 않고 그 단계 화면의 한계 안내로 보인다 (계획 4.2)
 export const READY_LIMITATIONS: ReadonlySet<string> = new Set<ProgressReason>(
-  ["extraction_review_unavailable", "draft_checks_only", "manual_pass_not_final"]);
+  ["extraction_review_unavailable", "draft_checks_only", "manual_pass_not_final", "plan_missing"]);
 
 const SERVER_STAGE: Record<Stage, StageProgress["stage"]> = {
   purpose: "purpose", sources: "sources", structure: "structure", editor: "editing", review: "review",
 };
 
 // 작업 종류와 그 작업을 띄우는 단계. 구조안, 장 생성 묶음, 재작성, 수리는 구성 단계, 장 재생성, 축약, 도식은 편집 단계다
+export const LEFTOVER_JOB_TEXT = "다른 실행이 남긴 생성 작업이 끝나지 않았습니다. 앱을 다시 시작하면 상태를 확인합니다";
+
 export const JOB_STAGE: Record<string, Stage> = {
   structure: "structure", chapters: "structure", rewrite: "structure", repair: "structure",
   chapter: "editor", condense: "editor", diagram: "editor",
@@ -91,10 +95,13 @@ export function stageStatus(stage: Stage, input: {
   if (job && job.project === input.projectName && JOB_STAGE[job.kind] === stage) {
     return { kind: job.cancel_requested ? "cancel_requested" : "running" };
   }
-  const running = (input.progress?.jobs ?? []).find((j) => JOB_STAGE[j.kind] === stage && !TERMINAL_JOB_STATES.has(j.state));
+  // 다른 실행이 남긴 미종결 행은 지금 도는 작업이 아니다. 구성 화면과 같은 사실 문구로 보인다 (D3a 묶음 리뷰 A13)
+  const unfinished = (input.progress?.jobs ?? []).filter((j) => JOB_STAGE[j.kind] === stage && !TERMINAL_JOB_STATES.has(j.state));
+  const running = unfinished.find((j) => j.owner === "this_instance");
   if (running) return { kind: running.cancel_requested || running.state === "cancel_requested" ? "cancel_requested" : "running" };
   if (input.current && input.dirty) return { kind: "in_progress" };
   if (input.failed) return { kind: "unknown" };
+  if (unfinished.length > 0) return { kind: "needs_review", detail: LEFTOVER_JOB_TEXT };
   if (input.progress === undefined) return null;
   const sp = stageProgress(input.progress, stage);
   if (!sp) return { kind: "unknown" };
@@ -123,6 +130,8 @@ export function stageLimitations(progress: ProjectProgress | undefined, stage: S
 export function batchSummary(jobs: JobView[] | null | undefined): string | null {
   const batch = (jobs ?? []).find((j) => j.kind === "chapters");  // 진행 API의 작업은 최신 순이다
   if (!batch || !TERMINAL_JOB_STATES.has(batch.state)) return null;
+  // 시작 전에 끝난 묶음은 앞 장이 돌지 않았으므로 장별로 세지 않는다 (D3a 묶음 리뷰 A5)
+  if (batch.started_at === null && batch.error) return "내용 생성을 시작하지 못했습니다";
   const total = batch.chapters.length;
   const counts = { failed: 0, stopped: 0, held: 0, stale: 0, cancelled: 0, unknown: 0 };
   for (const c of batch.chapters) {
@@ -134,10 +143,12 @@ export function batchSummary(jobs: JobView[] | null | undefined): string | null 
     else if (c.state === "failed") counts.failed += 1;
     else if (c.state === "cancelled") counts.cancelled += 1;
     else if (c.state === "remote_completion_unknown") counts.unknown += 1;
+    else if (code && !STOPPED_CODES.has(code)) counts.failed += 1;  // 앞 장이 아니라 그 원인으로 멈췄다 (A5)
     else counts.stopped += 1;
   }
   const parts = [counts.failed && `${counts.failed}장 실패`, counts.stopped && `${counts.stopped}장 중단`,
     counts.held && `${counts.held}장 보류`, counts.stale && `${counts.stale}장은 이전 입력 기준 후보`,
     counts.cancelled && `${counts.cancelled}장 취소`, counts.unknown && `${counts.unknown}장 완료 여부 확인 필요`].filter(Boolean);
-  return parts.length ? `${total}장 중 ${parts.join(", ")}` : null;
+  // 분모는 이번 생성에 넣은 장 수다. 구성 화면의 요약도 이 함수를 쓴다 (A4)
+  return parts.length ? `이번 생성 ${total}장 중 ${parts.join(", ")}` : null;
 }

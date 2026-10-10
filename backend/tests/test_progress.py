@@ -37,7 +37,10 @@ def test_sources_states_and_unavailable_review_reason():
     deck, sources = _fixture("q3b-project.json")
     ready = _stage(project_progress(deck, sources=sources), "sources")
     assert ready.state == "ready"
-    assert "extraction_review_unavailable" in ready.reasons  # 부분 추출 경고는 저장되지 않는다(D5)
+    # 다시 씀(D3a 묶음 리뷰 A15): 부분 추출 경고가 저장되지 않는다는 한계(D5)는 엑셀 추출본이 있을 때만 붙는다
+    assert "extraction_review_unavailable" not in ready.reasons
+    with_xlsx = _stage(project_progress(deck, sources={**sources, "매출.xlsx.md": "표"}), "sources")
+    assert (with_xlsx.state, with_xlsx.reasons) == ("ready", ["extraction_review_unavailable"])
     assert _stage(project_progress(deck, sources={}), "sources").state == "not_started"
     big = {"a.md": "가" * 100_001}
     over = _stage(project_progress(deck, sources=big), "sources")
@@ -54,7 +57,8 @@ def test_structure_current_stale_missing_and_empty():
     assert (stale.state, stale.reasons) == ("needs_review", ["stale_story_plan"])
     deck.structure.story_plan = None
     missing = _stage(project_progress(deck, sources=sources), "structure")
-    assert (missing.state, missing.reasons) == ("needs_review", ["plan_missing"])
+    # 다시 씀(D3a 묶음 리뷰 A3): 보고 질문은 선택 입력이라 보고 계획 없음은 준비됨에 붙는 한계다
+    assert (missing.state, missing.reasons) == ("ready", ["plan_missing"])
     deck.structure.chapters = []
     assert _stage(project_progress(deck, sources=sources), "structure").state == "not_started"
 
@@ -259,6 +263,7 @@ def _every_reason_produced():
     take(project_progress(deck, sources={"a.md": "가" * 100_001}))
     take(project_progress(deck, sources=None, sources_error="읽기 실패"))
     take(project_progress(deck, sources={**sources, "새 자료.md": "추가"}))
+    take(project_progress(deck, sources={**sources, "매출.xlsx.md": "표"}))  # 엑셀 추출본의 한계 (A15)
     take(project_progress(deck, sources=sources, export_error="이력 읽기 실패"))
     take(project_progress(deck, sources=sources, reviews_error="읽기 실패",
                           latest_export=ExportHistoryItem(id="x", file_modified_at=None, record_status="readable",

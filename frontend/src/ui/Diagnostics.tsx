@@ -23,7 +23,7 @@ export function Diagnostics({ fields, children }: { fields?: FailureDescription[
   if (fields?.status) rows.push(["HTTP 상태", String(fields.status)]);
   if (fields?.jobKind) rows.push(["작업 종류", named(fields.jobKind, KIND_NAMES)]);
   if (fields?.jobId) rows.push(["작업 ID", fields.jobId]);
-  if (fields?.at) rows.push(["시각", fields.at.slice(0, 19).replace("T", " ")]);  // 서버 로그와 대조하도록 초까지
+  if (fields?.at) rows.push(["시각", fields.at.slice(0, 19).replace("T", " ")]);  // 작업 기록과 대조하도록 초까지. 서버 로그의 실패 줄에는 작업 ID가 없다(묶음 리뷰 A16)
   if (fields?.serverText) rows.push(["서버 문구", fields.serverText]);
   if (rows.length === 0 && !children) return null;
   return (

@@ -8,7 +8,10 @@ import { actionLabel, type FailureAction, type FailureDescription } from "./fail
 // 지금 할 수 있는 일을 차례로 보이고 진단 상세는 접어 둔다. 화면이 처리기를 준 행동만 버튼으로 그리고,
 // 나머지는 누를 곳이 화면 어디인지 밝힌 문장으로 안내한다(리뷰 R10). 판정은 화면이 describeFailure로 해서
 // 넘긴다(화면이 아는 문구로 "무슨 일"을 바꿀 수 있다)
-export function FailureNotice({ failure, lead, actions = {}, role = "alert", children }: {
+// 기다리거나 사용자가 고른 결과는 오류가 아니다. 주의색과 상태 알림으로 보인다 (D3a 묶음 리뷰 A17)
+const WAITING = new Set(["generation_active", "login_pending", "cancelled"]);
+
+export function FailureNotice({ failure, lead, actions = {}, role, children }: {
   failure: FailureDescription | null;
   lead?: string;  // 화면이 아는 앞 문장(묶음 요약 등)
   actions?: Partial<Record<FailureAction, () => void>>;
@@ -22,7 +25,8 @@ export function FailureNotice({ failure, lead, actions = {}, role = "alert", chi
   const diagnostics = { ...failure.diagnostics };
   if (diagnostics.serverText === failure.what) delete diagnostics.serverText;  // 같은 문장을 두 번 보이지 않는다
   return (
-    <div role={role} className="failure-notice">
+    <div role={role ?? (WAITING.has(failure.cause) ? "status" : "alert")}
+      className={WAITING.has(failure.cause) ? "failure-notice is-waiting" : "failure-notice"}>
       {lead && <p>{lead}</p>}
       <p className="failure-what">{failure.what}</p>
       <p>{failure.preserved}</p>

@@ -123,7 +123,7 @@ def _snapshot(directory: Path, export_id: str, inputs: ReviewInputs, reader) -> 
     records, storage_status, signatures, names, storage_error = _read_records(directory, export_id, reader)
     item, quality, artifact_hash = history._inspect(directory, export_id, inputs.fingerprint, reader=reader)
     if not names and storage_status == "empty" and item.record_status == "missing" and item.artifact_status == "missing":
-        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. 목록을 새로고침해 주세요.")
+        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. '이력 새로고침'을 눌러 목록을 다시 읽어 주세요.")
     try:
         if (_review_names(reader, export_id) != names or any(
             not history._still_same(directory / name, signature, reader)
@@ -202,7 +202,7 @@ def read_export_reviews(directory: Path, export_id: str, inputs: ReviewInputs) -
     history.validate_export_id(export_id)
     identity = history._directory_identity(directory)
     if identity is None:
-        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. 목록을 새로고침해 주세요.")
+        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. '이력 새로고침'을 눌러 목록을 다시 읽어 주세요.")
     with _pin_review_directory(directory, identity) as reader:
         result = _snapshot(directory, export_id, inputs, reader)
     if history._directory_identity(directory) != identity:
@@ -340,7 +340,7 @@ def append_export_review(
     history.validate_export_id(export_id)
     identity = history._directory_identity(directory)
     if identity is None:
-        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. 목록을 새로고침해 주세요.")
+        raise history.HistoryNotFound("내보내기 이력을 찾지 못했습니다. '이력 새로고침'을 눌러 목록을 다시 읽어 주세요.")
     with _pin_review_directory(directory, identity) as reader, _write_errors():
         with _review_lock(directory, reader) as lock_signature:
             snapshot = _snapshot(directory, export_id, get_inputs(), reader)

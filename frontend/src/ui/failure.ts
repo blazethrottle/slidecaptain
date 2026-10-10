@@ -11,7 +11,7 @@ export type FailureAction =
   | "check_login_and_limit" | "check_limit" | "choose_model" | "check_target" | "finish_login"
   | "view_candidate_or_regenerate" | "regenerate_or_discard" | "open_recovery" | "back_to_list" | "restart_app"
   | "retry" | "none" | "regenerate_chapter" | "regenerate_with_confirm" | "recheck_structure"
-  | "follow_failed_chapter" | "cancel_active_job" | "reload_server" | "restart_generation";
+  | "follow_failed_chapter" | "cancel_active_job" | "reload_server" | "restart_generation" | "regenerate_current";
 
 export type FailureCause =
   | "input_known" | "input_unknown" | "ai_output" | "provider_missing" | "login_required" | "connection_retry"
@@ -62,6 +62,7 @@ const ACTIONS: Record<FailureAction, [label: string, guidance: string]> = {
   cancel_active_job: ["그 작업 취소", "그 작업이 끝나기를 기다리거나, 아래에서 그 작업을 취소해 주세요."],
   reload_server: ["서버 내용 다시 읽기", "위쪽 충돌 안내의 '서버 내용 다시 읽기'를 눌러 주세요."],
   restart_generation: ["내용 생성 다시 시작", "내용 생성을 다시 시작해 주세요."],
+  regenerate_current: ["현재 입력으로 다시 생성", "현재 입력으로 다시 생성해 주세요."],
 };
 
 // 화면이 아는 입력 코드와 이동할 곳. 모르는 코드는 이동할 단계를 추측하지 않는다
@@ -71,7 +72,7 @@ const KNOWN_INPUT: Record<string, string> = {
 };
 
 // 앞 장 때문에 멈춘 장의 코드 (계획 4.3 표 "앞 장 때문에 중단"). 그 밖의 코드는 그 원인으로 판정한다 (리뷰 R12)
-const STOPPED_CODES = new Set(["stopped_after_error", "ledger_failed", "chain_broken", "provider_failed"]);
+export const STOPPED_CODES: ReadonlySet<string> = new Set(["stopped_after_error", "ledger_failed", "chain_broken", "provider_failed"]);
 
 const CONNECTION_CODES = new Set(["provider_missing", "login_required", "provider_timeout", "provider_disconnected",
   "provider_unsupported", "provider_limit", "provider_cancelled", "model_unavailable", "provider_call_failed",
@@ -134,7 +135,13 @@ function fromClass(errorClass: string | null | undefined, code: string | null | 
     case "ai_output": return make("ai_output", "AI 응답이 형식에 맞지 않았습니다.", PRESERVED.aiOutput, "regenerate", d);
     case "connection": return connection(code, what, diagnostics);
     case "base_changed":
-      if (!hasResult) return make("base_changed", "만드는 동안 입력이 바뀌었습니다.", PRESERVED.input, "regenerate", d);
+      // 결과가 없으면 "만드는 동안"이 아닐 수 있다(시작 전 재비교, 등록 단계). 서버 문구가 사실을 말한다.
+      // 저장본이 바뀌었으면 다시 읽기가 먼저이고, 자료만 바뀌었으면 현재 입력으로 다시 생성한다 (D3a 묶음 리뷰 A6)
+      if (!hasResult) {
+        return code === "base_changed"
+          ? make("base_changed", what, PRESERVED.input, "reload_server", d)
+          : make("base_changed", what, PRESERVED.input, "regenerate_current", d);
+      }
       return make("base_changed", "만드는 동안 입력이 바뀌었습니다.", PRESERVED.candidate,
         jobKind === "structure" ? "regenerate_or_discard" : "view_candidate_or_regenerate", d);
     case "storage": {

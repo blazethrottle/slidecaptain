@@ -1,7 +1,7 @@
 // 단계 상태 계산의 계약 시험 (개정판 D3a-3, 계획 4.2)
 import type { ActiveJob, ProjectProgress } from "../api/client";
 import { batchView, chapterView } from "../test/jobs";
-import { REASON_TEXT, batchSummary, reasonText, stageLimitations, stageStatus, UNKNOWN_REASON_TEXT,
+import { LEFTOVER_JOB_TEXT, REASON_TEXT, batchSummary, reasonText, stageLimitations, stageStatus, UNKNOWN_REASON_TEXT,
   type Stage, type StageProgress } from "./stageStatus";
 
 const progress = (stages: Partial<StageProgress>[], jobs: ProjectProgress["jobs"] = null): ProjectProgress => ({
@@ -85,7 +85,7 @@ it("가장 최근 장 생성 묶음의 장 요약은 원장의 실제 행 모양
   ], { state: "failed", outcome: "partial" });
   const older = batchView([chapterView("c1", "failed")], { id: "old" });
   expect(batchSummary([latest, older])).toBe(
-    "9장 중 1장 실패, 1장 중단, 2장 보류, 1장은 이전 입력 기준 후보, 1장 취소, 1장 완료 여부 확인 필요");
+    "이번 생성 9장 중 1장 실패, 1장 중단, 2장 보류, 1장은 이전 입력 기준 후보, 1장 취소, 1장 완료 여부 확인 필요");
   expect(batchSummary([batchView([chapterView("c1", "succeeded")])])).toBeNull();  // 모두 반영
   expect(batchSummary([batchView([chapterView("c1", "succeeded"),
     chapterView("c2", "failed", { candidate_status: "dismissed" })])])).toBeNull();  // 버린 후보만 남음
@@ -113,4 +113,31 @@ it("그 단계의 작업이 진행 중이면 미저장 변경이 있어도 생�
 it("확인 필요 단계에 한계 사유가 함께 와도 단계 목록은 한계 사유가 아닌 첫 사유를 보인다", () => {
   const p = progress([{ stage: "sources", state: "needs_review", reasons: ["extraction_review_unavailable", "sources_over_limit"] }]);
   expect(status("sources", p)).toEqual({ kind: "needs_review", detail: REASON_TEXT.sources_over_limit });
+});
+
+// -- D3a 묶음 리뷰 반영 ------------------------------------------------------------------------
+
+it("다른 실행이 남긴 미종결 작업은 생성 중이 아니라 확인 필요다 (묶음 리뷰 A13)", () => {
+  // 지금 코드의 틀린 동작: owner를 보지 않아 아무 작업도 돌지 않는데 "생성 중"이다
+  const leftover = batchView([chapterView("c1", "running")], { state: "running", owner: "other_instance" });
+  const p = progress([{ stage: "structure", state: "ready", reasons: [] }], [leftover]);
+  expect(status("structure", p)).toEqual({ kind: "needs_review", detail: LEFTOVER_JOB_TEXT });
+  const mine = batchView([chapterView("c1", "running")], { state: "running", owner: "this_instance" });
+  expect(status("structure", progress([{ stage: "structure", state: "ready", reasons: [] }], [mine]))?.kind).toBe("running");
+});
+
+it("시작 전에 끝난 묶음은 장별로 세지 않고, 앞 장 아닌 원인으로 멈춘 장은 중단이 아니다 (묶음 리뷰 A5)", () => {
+  const login = { error_class: "connection" as const, status: 503, detail: "로그인", code: "login_required" };
+  const stopped = { error_class: null, status: null, detail: null, code: "provider_missing" };
+  expect(batchSummary([batchView([chapterView("c1", "interrupted", { error: stopped })],
+    { state: "failed", started_at: null, error: login })])).toBe("내용 생성을 시작하지 못했습니다");
+  expect(batchSummary([batchView([chapterView("c1", "interrupted", { error: stopped }),
+    chapterView("c2", "interrupted", { error: { ...stopped, code: "stopped_after_error" } })],
+  { state: "failed", started_at: "2026-10-10T10:00:00+09:00" })])).toBe("이번 생성 2장 중 1장 실패, 1장 중단");
+});
+
+it("보고 계획 없음은 준비됨에 붙는 한계라 단계 목록은 준비됨이고 구성 화면의 한계 안내로 보인다 (묶음 리뷰 A3)", () => {
+  const p = progress([{ stage: "structure", state: "ready", reasons: ["plan_missing"] }]);
+  expect(status("structure", p)).toEqual({ kind: "ready" });
+  expect(stageLimitations(p, "structure")).toEqual([REASON_TEXT.plan_missing]);
 });

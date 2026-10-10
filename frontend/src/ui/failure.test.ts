@@ -126,7 +126,7 @@ test("구조안 후보의 기준 변경은 후보 보기가 아니라 다시 생
 test("보존 문구는 남은 결과로 정한다. 결과가 없으면 후보가 남았다고 말하지 않는다 (리뷰 R5)", () => {
   const changed = bodies.chapters.sources_changed.error;
   expect(describeJobFailure(job({ kind: "chapter", error: changed })).preserved).toBe("입력은 그대로입니다.");
-  expect(describeJobFailure(job({ kind: "chapter", error: changed })).action).toBe("regenerate");
+  expect(describeJobFailure(job({ kind: "chapter", error: changed })).action).toBe("regenerate_current");
   expect(describeJobFailure(job({ kind: "chapter", error: changed, candidate_status: "stale", result: {} })).preserved)
     .toBe("결과는 이전 입력 기준 후보로 남았습니다.");
   const stored = { ...bodies.jobs.storage, code: "apply_failed" };
@@ -181,8 +181,11 @@ test.each([
   expect([describeFailure(error).cause, describeFailure(error).action]).toEqual([cause, action]);
 });
 
-test("도식 창이 만드는 기준 변경 오류: 자료 변경은 결과가 없어 다시 생성, 저장본 변경은 다시 읽기", () => {
-  expect(describeFailure(staleError(["sources_changed"])).action).toBe("regenerate");
+test("도식 창이 만드는 기준 변경 오류: 자료 변경은 결과가 없어 현재 입력으로 다시 생성, 저장본 변경은 다시 읽기", () => {
+  // 다시 씀(D3a 묶음 리뷰 A6): "같은 입력으로"가 아니라 "현재 입력으로"이고, 무슨 일 칸은 화면이 만든 사실 문구다
+  const described = describeFailure(staleError(["sources_changed"]));
+  expect([described.action, described.guidance]).toEqual(["regenerate_current", "현재 입력으로 다시 생성해 주세요."]);
+  expect(described.what).toBe("도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.");
   expect(describeFailure(staleError(["unknown_sources"])).cause).toBe("base_changed");
   expect(describeFailure(staleError(["deck_changed"])).action).toBe("reload_server");
 });

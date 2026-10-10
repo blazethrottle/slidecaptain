@@ -467,8 +467,10 @@ describe("D3a-2 리뷰 반영", () => {
 
   it("단계를 옮기면 초점이 새 현재 단계 버튼에 있다 (R12)", async () => {
     await openProject();
-    stageButton("자료").focus();
-    await userEvent.keyboard("{Enter}");
+    // 초점을 단계 목록 밖(본문)에 두고 누른다. jsdom은 잠긴 버튼에서 초점을 빼지 않으므로, 초점을 미리 그 버튼에
+    // 두면 반영이 없어도 통과했다 (D3a 묶음 리뷰 A18)
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(stageButton("자료"));
     await waitFor(() => expect(document.activeElement).toBe(stageButton("자료")));
     await userEvent.click(screen.getByRole("button", { name: "스냅샷 복구" }));
     await waitFor(() => expect(document.querySelector(".recovery-screen")).not.toBeNull());

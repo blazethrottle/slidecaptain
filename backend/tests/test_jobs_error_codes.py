@@ -98,7 +98,7 @@ RAISE_SITES = [
     ("pipeline/connections.py", "AI 서비스 또는 모델이 변경되었습니다.", "ConnectionConflict", "selection_changed"),
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),
     ("pipeline/connections.py", "AI 연결 상태가 변경되었습니다.", "ConnectionConflict", "identity_changed"),
-    ("pipeline/connections.py", "AI 연결 화면에서 먼저 로그인해 주세요.", "ProviderNotAvailable", "login_required"),
+    ("pipeline/connections.py", "AI 연결에 로그인되어 있지 않습니다.", "ProviderNotAvailable", "login_required"),
     ("pipeline/connections.py", "AI 도구를 찾지 못했습니다.", "ProviderNotAvailable", "provider_missing"),
     ("pipeline/connections.py", "AI 연결 상태 확인이 시간 안에 끝나지 않았습니다.", "ProviderNotAvailable", "provider_timeout"),
     ("pipeline/connections.py", "구독 로그인을 확인해 주세요.", "ProviderNotAvailable", "login_required"),

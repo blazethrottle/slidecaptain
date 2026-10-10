@@ -213,7 +213,7 @@ it("확인한 연결 식별값을 생성 요청에 고정해서 보낸다", asyn
 it("로그인 확인 실패와 식별값 없는 새 연결에서는 문서를 보내지 않는다", async () => {
   const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
   vi.mocked(api.getStatus).mockResolvedValue({ provider: "chatgpt", model: "gpt-test", checked_at: "", login: { logged_in: false } });
-  await expect(startJob("p", "structure", {})).rejects.toThrow("로그인 상태");
+  await expect(startJob("p", "structure", {})).rejects.toThrow("로그인되어 있지 않습니다");
   vi.mocked(api.getStatus).mockResolvedValue({ provider: "chatgpt", model: "gpt-test", checked_at: "", login: { logged_in: true } });
   await expect(startJob("p", "structure", {})).rejects.toThrow("AI 설정");
   expect(fetchMock).not.toHaveBeenCalled();

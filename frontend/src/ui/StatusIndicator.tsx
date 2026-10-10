@@ -83,30 +83,39 @@ export function SaveAnnouncer({ kind }: { kind: StatusKind | null }) {
  * 조회는 1초마다 반복되므로 진행 중 상태가 바뀔 때마다 알리면 읽기가 끊긴다. 한 조회 간격 안에 다음 작업이
  * 시작돼도 앞 작업의 끝을 놓치지 않도록 작업 ID로 비교한다 (D2b-5c 리뷰 R13)
  */
-const ENDED_TEXT: Partial<Record<JobView["state"], string>> = {
-  succeeded: "AI 생성 작업이 끝났습니다",
-  failed: "AI 생성 작업이 실패했습니다",
-  cancelled: "AI 생성 작업을 취소했습니다",
-  interrupted: "AI 생성 작업이 중단되었습니다",
-  remote_completion_unknown: "AI 생성 작업이 끝났는지 확인하지 못했습니다",
+// 문구에 작업 종류를 넣는다. 같은 프로젝트에서 같은 결과의 작업이 연달아 끝나도(구조안 생성 뒤 내용 생성) 글이
+// 달라 화면 낭독기가 다시 읽는다 (D3a 묶음 리뷰 A1). 주어는 모두 받침으로 끝나 조사를 고정한다
+const KIND_SUBJECT: Record<string, string> = {
+  structure: "구조안 생성", chapters: "내용 생성", chapter: "장 다시 생성", condense: "장 축약", diagram: "도식 생성",
+  rewrite: "구성 재작성", repair: "제한된 수정",
+};
+const ENDED_TEXT: Partial<Record<JobView["state"], (subject: string) => string>> = {
+  succeeded: (s) => `${s}이 끝났습니다`,
+  failed: (s) => `${s}이 실패했습니다`,
+  cancelled: (s) => `${s}을 취소했습니다`,
+  interrupted: (s) => `${s}이 중단되었습니다`,
+  remote_completion_unknown: (s) => `${s}이 끝났는지 확인하지 못했습니다`,
 };
 
 // 결과는 이 탭이 따라간 작업의 종결 알림(job_ended)에서 얻는다. 같은 탭의 작업은 진행 작업 조회가 모를 수 있어
 // 종결 알림만으로도 알린다(리뷰 R11). 다른 탭의 작업처럼 결과를 모르면 끝났다고만 알리고, 사라짐을 먼저 알린 뒤
 // 결과가 오면 결과 문구로 고친다. 한 작업은 한 번만 알린다 (D3a-4, C23)
-export function JobAnnouncer({ active }: { active: { id: string; project: string } | null }) {
+export function JobAnnouncer({ active }: { active: { id: string; project: string; kind?: string } | null }) {
   const previous = useRef(active);
   const ended = useRef(new Map<string, JobView["state"]>());
+  const kinds = useRef(new Map<string, string>());
   const announced = useRef<{ id: string; project: string } | null>(null);  // 마지막으로 알린 작업
   const seen = useRef(new Set<string>());  // 이미 알린 작업 ID
   const [message, setMessage] = useState("");
   const text = (job: { id: string; project: string }) => {
     const state = ended.current.get(job.id);
-    return `${(state && ENDED_TEXT[state]) ?? "AI 생성 작업이 끝났습니다"}(${job.project})`;
+    const subject = KIND_SUBJECT[kinds.current.get(job.id) ?? ""] ?? "AI 생성 작업";
+    return `${((state && ENDED_TEXT[state]) ?? ENDED_TEXT.succeeded!)(subject)}(${job.project})`;
   };
   useEffect(() => onProjectEvent((event) => {
     if (event.kind !== "job_ended" || !event.jobId || !event.state) return;
     ended.current.set(event.jobId, event.state);
+    if (event.jobKind) kinds.current.set(event.jobId, event.jobKind);
     if (announced.current?.id === event.jobId) setMessage(text(announced.current));
     else if (!seen.current.has(event.jobId)) {
       announced.current = { id: event.jobId, project: event.project };
@@ -116,6 +125,7 @@ export function JobAnnouncer({ active }: { active: { id: string; project: string
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
   useEffect(() => {
+    if (active?.kind) kinds.current.set(active.id, active.kind);
     const before = previous.current;
     if (before && before.id !== active?.id && !seen.current.has(before.id)) {
       announced.current = before;

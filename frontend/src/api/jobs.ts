@@ -48,7 +48,7 @@ export function waitJob(name: string, view: JobView, opts: {
 } = {}): Promise<JobView> {
   if (TERMINAL_JOB_STATES.has(view.state)) {
     // 등록 응답이 이미 종결이면 조회를 거치지 않으므로 여기서 종결을 알린다 (D3a-3 리뷰 R9)
-    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state });
+    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind });
     return Promise.resolve(view);
   }
   return followJob(() => api.getJob(name, view.id), (next) => opts.onUpdate?.(next),

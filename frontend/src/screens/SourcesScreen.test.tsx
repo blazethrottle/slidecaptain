@@ -409,7 +409,7 @@ it("자료를 저장한 뒤 다른 자료를 열면 지난 성공 안내를 지�
   await userEvent.type(await screen.findByLabelText("자료 내용"), " 수정");
   await userEvent.click(screen.getByText("자료 저장"));
   const notice = await screen.findByText("자료를 저장했습니다.");
-  expect(notice).toHaveAttribute("role", "status");
+  expect(notice).not.toHaveAttribute("role", "alert");  // 다시 씀(D3a 묶음 리뷰 A2): 알림은 머리 하나로 모은다
   await userEvent.click(screen.getByText("둘째.md"));
   await waitFor(() => expect(screen.queryByText("자료를 저장했습니다.")).toBeNull());
 });

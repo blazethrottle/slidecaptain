@@ -235,7 +235,8 @@ export function SourcesScreen({
       {notice && (notice.tone === "warning"
         ? <p role="status" className="notice-warning">{notice.text}</p>
         : <p role="alert">{notice.text}</p>)}
-      {success && !notice && <p role="status">{success}</p>}
+      {/* 저장 알림은 상단 머리의 저장 상태 하나로 모은다. 이 글은 보이기만 한다 (D3a 묶음 리뷰 A2) */}
+      {success && !notice && <p className="notice">{success}</p>}
       {info && <p className="info">{info}</p>}
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
       <section>

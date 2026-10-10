@@ -11,7 +11,7 @@ import { formatUsage } from "../api/usage";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
 import { Button } from "../ui/Button";
 import { Diagnostics } from "../ui/Diagnostics";
-import { describeAiOutput, describeFailure } from "../ui/failure";
+import { describeAiOutput, describeFailure, type FailureDescription } from "../ui/failure";
 import { FailureNotice } from "../ui/FailureNotice";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
@@ -41,7 +41,6 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const chapterIdRef = useRef(chapterId);
   chapterIdRef.current = chapterId;
   const follow = useRef<AbortController | null>(null);
-  const lastRun = useRef<(() => void) | null>(null);  // 실패 안내의 "다시 생성"이 같은 종류를 다시 부른다
 
   const show = (view: JobView, fromEarlier: boolean) => {
     setJob(view);
@@ -71,7 +70,6 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     setStoryStale(false);
     setCancelNotice("");
     setBusy(false);
-    lastRun.current = null;  // 다른 장의 다시 생성을 부르지 않는다 (D3a-4 리뷰 R8)
     const controller = new AbortController();
     follow.current = controller;
     api.listJobs(project.name).then(async (jobs) => {
@@ -102,8 +100,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const run = async (kind: "chapter" | "condense", params: object) => {
     const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     const controller = follow.current;
-    const previous = job;
-    lastRun.current = () => void run(kind, params);  // 등록에 성공하면 보이던 후보는 새 생성이 대신한다 (D2b-5b 리뷰 R2)
+    const previous = job;  // 등록에 성공하면 보이던 후보는 새 생성이 대신한다 (D2b-5b 리뷰 R2)
     setBusy(true);
     setError("");
     setFailure(null);
@@ -132,8 +129,12 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
 
   const regenerate = () => run("chapter", { instructions });
   // 이 패널에서 부른 적이 없으면(다시 연 지난 작업) 그 작업의 종류로 다시 부른다
-  const again = () => (lastRun.current ?? (job?.kind === "condense" ? condense : () => void regenerate()))();
-  const retryActions = busy ? {} : { regenerate: again, retry: again, retry_later: again, regenerate_chapter: again };
+  // 다시 생성하라는 안내는 바로 위의 두 버튼을 가리킨다. 같은 일을 하는 버튼을 안내 안에 하나 더 두지 않는다
+  // (D3a 묶음 리뷰 A8). 다른 장의 요청을 다시 부를 일도 없어진다 (D3a-4 리뷰 R8)
+  const POINT_UP = "위의 '이 장 다시 생성'이나 '이 장 축약'을 다시 눌러 주세요.";
+  const relabel = (d: FailureDescription): FailureDescription =>
+    (["regenerate", "retry", "retry_later", "regenerate_chapter", "check_input"].includes(d.action)
+      ? { ...d, guidance: d.action === "retry_later" ? `잠시 뒤 ${POINT_UP}` : POINT_UP } : d);
   const condense = () => {
     if (!slide) return;
     void run("condense", { slots: slide.slots, instructions });
@@ -201,12 +202,12 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
       {followError && <p role="status">{followError}</p>}
       {error && <p role="alert">{error}</p>}
-      <FailureNotice failure={failure ? describeFailure(failure) : null} actions={retryActions} />
+      <FailureNotice failure={failure ? relabel(describeFailure(failure)) : null} />
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance
         hasDiagrams={deck.structure.chapters.some(chapter => chapter.template === "diagram")} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {result && result.status === "format_error" && (
-        <FailureNotice failure={describeAiOutput(job)} actions={retryActions}>
+        <FailureNotice failure={relabel(describeAiOutput(job))}>
           <p>AI 응답 원문</p><pre>{result.raw_text}</pre>
           <p className="usage">{formatUsage(result.usage)}</p>
         </FailureNotice>

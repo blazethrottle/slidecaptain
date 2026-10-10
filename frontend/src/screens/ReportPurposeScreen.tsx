@@ -98,7 +98,8 @@ export function ReportPurposeScreen({
   return (
     <div className="purpose-screen">
       {notice && <p role="alert">{notice}</p>}
-      {success && !notice && <p role="status">{success}</p>}
+      {/* 저장 알림은 상단 머리의 저장 상태 하나로 모은다. 이 글은 보이기만 한다 (D3a 묶음 리뷰 A2) */}
+      {success && !notice && <p className="notice">{success}</p>}
       <section>
         <h2>보고 정보</h2>
         <div className="field">

@@ -118,6 +118,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="c
   padding-inline-start: var(--space-3); margin-block: var(--space-3); }
 .failure-notice > p { margin-block: var(--space-1); }
 .failure-notice > .failure-what { color: var(--color-danger); font-weight: 600; }
+.failure-notice.is-waiting { border-inline-start-color: var(--color-warning); }
+.failure-notice.is-waiting > .failure-what { color: var(--color-warning); }
 .diagnostics { color: var(--color-text-muted); font-size: var(--font-size-small); margin-block: var(--space-2); }
 .diagnostics dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-3);
   margin: var(--space-2) 0; }
