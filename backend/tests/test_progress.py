@@ -233,3 +233,83 @@ def test_human_review_part_states(statuses, state, reasons):
     assert (human.state, human.reasons) == (state, reasons)
     errored = _stage(project_progress(deck, sources=sources, reviews_error="읽기 실패"), "review")
     assert next(p for p in errored.parts if p.name == "human_review").reasons == ["review_records_unreadable"]
+
+
+# -- D3a-3: 사유 고정 목록과 검토 단계 수준 사유 ----------------------------------------------------------
+
+def _every_reason_produced():
+    """모듈의 모든 분기를 지나 낼 수 있는 사유를 실제로 만든다. 조합 사유는 원천 상태 목록을 모두 돈다."""
+    from typing import get_args
+    from types import SimpleNamespace
+
+    from slidecaptain.models.export_history import ExportHistoryItem
+    from slidecaptain.models.export_reviews import ExportReviewCategoryState
+
+    produced = set()
+
+    def take(progress):
+        for stage in progress.stages:
+            produced.update(stage.reasons)
+            for part in stage.parts or []:
+                produced.update(part.reasons)
+
+    deck, sources = _fixture("q3b-project.json")
+    take(project_progress(deck, sources=sources))
+    take(project_progress(deck, sources={}))
+    take(project_progress(deck, sources={"a.md": "가" * 100_001}))
+    take(project_progress(deck, sources=None, sources_error="읽기 실패"))
+    take(project_progress(deck, sources={**sources, "새 자료.md": "추가"}))
+    take(project_progress(deck, sources=sources, export_error="이력 읽기 실패"))
+    take(project_progress(deck, sources=sources, reviews_error="읽기 실패",
+                          latest_export=ExportHistoryItem(id="x", file_modified_at=None, record_status="readable",
+                                                          artifact_status="matched", input_status="current",
+                                                          quality_status="draft", slide_count=2, gate_version=None)))
+    status_values = get_args(ExportReviewCategoryState.model_fields["status"].annotation)
+    for status in status_values:
+        reviews = SimpleNamespace(categories=[SimpleNamespace(status="passed"), SimpleNamespace(status=status)])
+        take(project_progress(deck, sources=sources, reviews=reviews))
+    take(project_progress(deck, sources=sources, reviews=SimpleNamespace(categories=[SimpleNamespace(status="passed")])))
+    artifact_values = get_args(ExportHistoryItem.model_fields["artifact_status"].annotation)
+    input_values = get_args(ExportHistoryItem.model_fields["input_status"].annotation)
+    for artifact in artifact_values:
+        for inp in input_values:
+            for quality in ("draft", "needs_revision", None):
+                item = ExportHistoryItem(id="x", file_modified_at=None, record_status="readable", artifact_status=artifact,
+                                         input_status=inp, quality_status=quality, slide_count=2, gate_version=None)
+                take(project_progress(deck, sources=sources, latest_export=item))
+    deck.slides = deck.slides[:1]
+    take(project_progress(deck, sources=sources))
+    deck.structure.story_plan = None
+    take(project_progress(deck, sources=sources))
+    deck.structure.chapters = []
+    deck.meta.title = ""
+    take(project_progress(deck, sources=sources))
+    return produced
+
+
+def test_progress_reasons_are_a_closed_list_that_every_branch_covers():
+    """사유는 고정 목록이고(OpenAPI와 화면 타입에 나온다), 목록의 값은 모두 실제로 나올 수 있다 (D3a-3, 계획 4.2)."""
+    from typing import get_args
+
+    from slidecaptain.pipeline.progress import ProgressReason
+
+    assert _every_reason_produced() == set(get_args(ProgressReason))
+
+
+def test_review_stage_names_what_remains_when_parts_are_mixed():
+    """검토 단계가 확인 필요이면 준비되지 않은 부분을 단계 수준 사유로 돌려준다 (C20)."""
+    from types import SimpleNamespace
+
+    from slidecaptain.models.export_history import ExportHistoryItem
+
+    deck, sources = _fixture("q3b-project.json")
+    item = ExportHistoryItem(id="x", file_modified_at=None, record_status="readable", artifact_status="matched",
+                             input_status="current", quality_status="draft", slide_count=2, gate_version=None)
+    review = _stage(project_progress(deck, sources=sources, latest_export=item), "review")
+    assert (review.state, review.reasons) == ("needs_review", ["human_review_pending"])  # 자동 검사와 파일은 준비됨
+    done = SimpleNamespace(categories=[SimpleNamespace(status="passed")] * 5)
+    ready = _stage(project_progress(deck, sources=sources, latest_export=item, reviews=done), "review")
+    assert (ready.state, ready.reasons) == ("ready", [])
+    assert _stage(project_progress(deck, sources=sources), "review").reasons == []  # 시작 전에는 사유가 없다
+    unreadable = _stage(project_progress(deck, sources=sources, export_error="읽기 실패"), "review")
+    assert unreadable.reasons == ["export_history_unreadable"]

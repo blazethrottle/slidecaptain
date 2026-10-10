@@ -3477,7 +3477,7 @@ export interface components {
              * Reasons
              * @default []
              */
-            reasons: string[];
+            reasons: ("title_missing" | "report_type_unconfirmed" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
         };
         /** ReviewVerdict */
         ReviewVerdict: {
@@ -3946,7 +3946,7 @@ export interface components {
              * Reasons
              * @default []
              */
-            reasons: string[];
+            reasons: ("title_missing" | "report_type_unconfirmed" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
             /** Written Chapters */
             written_chapters?: number | null;
             /** Total Chapters */

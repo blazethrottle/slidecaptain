@@ -19,17 +19,36 @@ SOURCES_TOTAL_MAX_CHARS = 100_000
 StageName = Literal["purpose", "sources", "structure", "editing", "review"]
 StageState = Literal["not_started", "ready", "needs_review"]
 
+# 사유 코드 (개정판 D3a-3, 계획 4.2). 고정 목록으로 두어 OpenAPI와 화면 타입에 나오게 하고, 화면 문구 표가
+# 빠짐없이 덮는지 타입 검사로 확인한다. 조합 사유(artifact_, input_, review_)는 원천 상태 목록에서
+# 준비됨에 해당하는 값을 뺀 것이다(export_history.py의 artifact_status와 input_status, export_reviews.py의
+# 범주 상태). 원천 값이 늘면 이 목록에 없는 사유를 만들어 응답 검증이 실패하므로 시험이 먼저 깨진다
+ProgressReason = Literal[
+    "title_missing", "report_type_unconfirmed",
+    "sources_unreadable", "sources_missing", "sources_over_limit", "extraction_review_unavailable",
+    "chapters_missing", "plan_missing", "stale_story_plan",
+    "chapters_unwritten",
+    "no_export", "artifact_mismatch", "artifact_missing", "artifact_unreadable", "artifact_unverified",
+    "input_stale", "input_legacy", "input_unavailable",
+    "quality_needs_revision", "draft_checks_only",
+    "review_records_unreadable", "manual_pass_not_final",
+    "review_not_run", "review_needs_revision", "review_stale", "review_unavailable",
+    "export_history_unreadable",
+    # 검토와 내보내기 단계 수준 사유 (C20): 세 부분이 섞인 확인 필요 상태에서 준비되지 않은 부분
+    "auto_checks_pending", "human_review_pending", "file_pending",
+]
+
 
 class ReviewPart(BaseModel):
     name: Literal["auto_checks", "human_review", "file"]
     state: StageState
-    reasons: list[str] = []
+    reasons: list[ProgressReason] = []
 
 
 class StageProgress(BaseModel):
     stage: StageName
     state: StageState
-    reasons: list[str] = []
+    reasons: list[ProgressReason] = []
     written_chapters: int | None = None  # 편집 단계만 쓴다
     total_chapters: int | None = None
     parts: list[ReviewPart] | None = None  # 검토와 내보내기는 한 상태로 합치지 않는다
@@ -130,13 +149,19 @@ def _review(item, reviews, reviews_error, export_error) -> StageProgress:
     else:
         parts = [_auto_part(item), _human_part(reviews, reviews_error), _file_part(item)]
     states = {p.state for p in parts}
+    reasons: list = []
     if states == {"not_started"}:
         state: StageState = "not_started"
     elif states == {"ready"}:
         state = "ready"
     else:
         state = "needs_review"
-    return StageProgress(stage="review", state=state, parts=parts)
+        # 단계 목록은 단계 수준 사유로 무엇이 남았는지 말한다 (C20). 이력을 읽지 못하면 그 사유 하나만 둔다
+        if export_error is not None:
+            reasons = ["export_history_unreadable"]
+        else:
+            reasons = [f"{p.name}_pending" for p in parts if p.state != "ready"]
+    return StageProgress(stage="review", state=state, reasons=reasons, parts=parts)
 
 
 def project_progress(
