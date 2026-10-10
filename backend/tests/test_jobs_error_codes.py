@@ -122,7 +122,7 @@ def _raise_sites():
                            if isinstance(part, ast.Constant) and isinstance(part.value, str))
             code = next((k.value for k in node.exc.keywords if k.arg == "code"), None)
             value = code.value if isinstance(code, ast.Constant) else ("<429이면 provider_limit>" if code else None)
-            found.append((str(path.relative_to(root)), text, node.exc.func.id, value))
+            found.append((path.relative_to(root).as_posix(), text, node.exc.func.id, value))
     return found
 
 

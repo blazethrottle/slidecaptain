@@ -431,7 +431,9 @@ def create_app(
         if isinstance(exc, ProjectFormatTooNew):
             return "input", 409, str(exc), exc.code
         if isinstance(exc, StorageError):
-            return "storage", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc), None
+            # 프로젝트 없음은 복구 화면이 아니라 목록으로 보내야 하므로 묶음 경로와 같은 코드를 붙인다 (D3a-4, 계획 4.3)
+            return ("storage", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc),
+                    "project_missing" if isinstance(exc, ProjectNotFound) else None)
         if isinstance(exc, LedgerError):  # 묶음의 장이 원격 호출 시각을 남기지 못했다 (D2b-4 리뷰 R3)
             return "ledger", 503, LEDGER_WRITE_MESSAGE, "ledger_write_failed"
         _LOG.error("AI 생성 작업의 예기치 않은 오류", exc_info=exc)
@@ -2132,7 +2134,7 @@ def create_app(
             return HTTPException(
                 422,
                 f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
-                "다릅니다. 화면을 새로고침한 뒤 다시 시도해 주세요.",
+                "다릅니다. 서버 내용을 다시 읽은 뒤 다시 시도해 주세요.",
             )
 
         if strict:  # 작업 API는 등록 검사에서 거절하고 행을 만들지 않는다 (D2b-3 리뷰 R6)

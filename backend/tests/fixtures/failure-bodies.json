@@ -1,0 +1,237 @@
+{
+ "chapters": {
+  "ai_output": {
+   "candidate_status": "none",
+   "chapter_id": "c1",
+   "error": {
+    "code": "format_error",
+    "detail": "AI 응답을 형식에 맞게 읽지 못했습니다. 입력은 그대로 두었습니다. 다시 생성해 주세요.",
+    "error_class": "ai_output",
+    "raw_error_class": null,
+    "status": null
+   },
+   "state": "failed"
+  },
+  "held_stale_plan": {
+   "candidate_status": "none",
+   "chapter_id": "c2",
+   "error": {
+    "code": "held_stale_plan",
+    "detail": null,
+    "error_class": null,
+    "raw_error_class": null,
+    "status": null
+   },
+   "state": "interrupted"
+  },
+  "internal": {
+   "candidate_status": "none",
+   "chapter_id": "c2",
+   "error": {
+    "code": null,
+    "detail": "AI 생성 작업을 처리하지 못했습니다.",
+    "error_class": "internal",
+    "raw_error_class": null,
+    "status": 500
+   },
+   "state": "failed"
+  },
+  "provider_failed": {
+   "candidate_status": "none",
+   "chapter_id": "c2",
+   "error": {
+    "code": "provider_failed",
+    "detail": null,
+    "error_class": null,
+    "raw_error_class": null,
+    "status": null
+   },
+   "state": "interrupted"
+  },
+  "provider_timeout": {
+   "candidate_status": "none",
+   "chapter_id": "c1",
+   "error": {
+    "code": "provider_timeout",
+    "detail": "시간 초과",
+    "error_class": "connection",
+    "raw_error_class": null,
+    "status": 503
+   },
+   "state": "failed"
+  },
+  "sources_changed": {
+   "candidate_status": "stale",
+   "chapter_id": "c1",
+   "error": {
+    "code": "sources_changed",
+    "detail": null,
+    "error_class": "base_changed",
+    "raw_error_class": null,
+    "status": null
+   },
+   "state": "failed"
+  },
+  "stale_story_plan": {
+   "candidate_status": "none",
+   "chapter_id": "c1",
+   "error": {
+    "code": "stale_story_plan",
+    "detail": "보고 계획이 바뀌었습니다.",
+    "error_class": "input",
+    "raw_error_class": null,
+    "status": 409
+   },
+   "state": "failed"
+  },
+  "stopped_after_error": {
+   "candidate_status": "none",
+   "chapter_id": "c3",
+   "error": {
+    "code": "stopped_after_error",
+    "detail": null,
+    "error_class": null,
+    "raw_error_class": null,
+    "status": null
+   },
+   "state": "interrupted"
+  }
+ },
+ "http": {
+  "deck_conflict": {
+   "body": {
+    "detail": "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. 서버 내용을 다시 읽은 뒤 이어서 편집해 주세요. 편집 단계의 저장하지 않은 변경은 다시 읽을 때 보존합니다."
+   },
+   "status": 412
+  },
+  "generation_active": {
+   "body": {
+    "active": {
+     "cancel_requested": false,
+     "created_at": "2026-10-10T10:00:00+09:00",
+     "id": "job-1",
+     "kind": "structure",
+     "project": "p1",
+     "stage": "running",
+     "target": null
+    },
+    "code": "generation_active",
+    "detail": "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요."
+   },
+   "status": 409
+  },
+  "job_ledger_unavailable": {
+   "body": {
+    "code": "job_ledger_unavailable",
+    "detail": "작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다."
+   },
+   "status": 503
+  },
+  "login_required": {
+   "body": {
+    "code": "login_required",
+    "detail": "AI 연결 화면에서 먼저 로그인해 주세요."
+   },
+   "status": 503
+  },
+  "selection_changed": {
+   "body": {
+    "code": "selection_changed",
+    "detail": "AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요."
+   },
+   "status": 409
+  },
+  "validation": {
+   "body": {
+    "detail": "structure.request_id: 형식에 맞지 않습니다"
+   },
+   "status": 422
+  }
+ },
+ "jobs": {
+  "internal": {
+   "code": null,
+   "detail": "AI 생성 작업을 처리하지 못했습니다.",
+   "error_class": "internal",
+   "raw_error_class": null,
+   "status": 500
+  },
+  "login_required": {
+   "code": "login_required",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "model_unavailable": {
+   "code": "model_unavailable",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "project_missing": {
+   "code": "project_missing",
+   "detail": "프로젝트를 찾지 못했습니다",
+   "error_class": "storage",
+   "raw_error_class": null,
+   "status": 404
+  },
+  "provider_call_failed": {
+   "code": "provider_call_failed",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_cancelled": {
+   "code": "provider_cancelled",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_disconnected": {
+   "code": "provider_disconnected",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_limit": {
+   "code": "provider_limit",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_missing": {
+   "code": "provider_missing",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_timeout": {
+   "code": "provider_timeout",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "provider_unsupported": {
+   "code": "provider_unsupported",
+   "detail": "제공자 오류",
+   "error_class": "connection",
+   "raw_error_class": null,
+   "status": 503
+  },
+  "storage": {
+   "code": null,
+   "detail": "저장본을 읽지 못했습니다",
+   "error_class": "storage",
+   "raw_error_class": null,
+   "status": 400
+  }
+ }
+}
