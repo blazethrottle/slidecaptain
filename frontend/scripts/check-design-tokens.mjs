@@ -1,7 +1,8 @@
 // 디자인 토큰 검사 (개정판 D2a-4).
 // 화면 시험(vitest, jsdom)은 styles.css를 읽거나 var()를 풀지 못하므로 Node 스크립트로 검사한다.
 // 검사: (1) 대비 계산 자기 검사 (2) 글자 색 대비 4.5:1 (3) 초점선과 컴포넌트 경계 3:1
-// (4) :root 토큰 블록 밖의 hex, rgb(), rgba(), 이름 색 금지. 의존성은 쓰지 않는다.
+// (4) :root 토큰 블록 밖의 hex, rgb(), rgba(), 이름 색 금지 (5) 토큰 블록 밖의 직접 크기 값 금지(D3a-1).
+// 의존성은 쓰지 않는다.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -78,6 +79,24 @@ outside.split("\n").forEach((line, i) => {
     failures.push(`styles.css ${i + 1}행: 토큰 밖의 직접 색 ${code.trim()}`);
   }
 });
+
+// (5) 토큰 블록 밖의 직접 크기 값 금지 (D3a-1, 계획 4.6). px, rem, em 길이는 :root의 크기 토큰으로만 쓴다.
+// 허용 목록과 사유:
+// - 1px: 경계선 굵기와 화면 낭독기 전용 숨김 기법(.visually-hidden)의 최소 단위다. 크기 체계의 값이 아니다
+// - 매체 조건(@media 괄호 안)의 폭: 배치 전환 경계이고 요소의 크기가 아니다
+// 읽기 폭(입력 줄의 최대 폭 등)은 허용 목록에 두지 않고 --width-* 토큰으로 만든다
+const LENGTH = /(?<![-\w.#])(-?\d*\.?\d+)(px|rem|em)\b/g;
+const ALLOWED_LENGTHS = new Set(["1px", "-1px"]);
+let sizeViolations = 0;
+outside.split("\n").forEach((line, i) => {
+  const code = line.replace(/@media[^{]*/g, "");
+  const found = [...code.matchAll(LENGTH)].map((m) => m[0]).filter((v) => !ALLOWED_LENGTHS.has(v));
+  if (found.length) {
+    sizeViolations += found.length;
+    failures.push(`styles.css ${i + 1}행: 토큰 밖의 직접 크기 ${found.join(", ")}`);
+  }
+});
+if (sizeViolations) failures.push(`직접 크기 값 합계 ${sizeViolations}개`);
 
 if (failures.length) {
   console.error(`디자인 토큰 검사 실패 ${failures.length}건`);
