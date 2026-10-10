@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { revokeConsent } from "../api/aiGate";
 import { resetEtags, type Deck } from "../api/client";
-import { deferred, preset, project } from "../test/fixtures";
+import { defaultProgress, deferred, preset, project } from "../test/fixtures";
 import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
@@ -25,6 +25,7 @@ async function open() {
       checked_at: "", login: { logged_in: true } }));
     // D2b-5b: 도식 생성은 작업 API로 등록하고 조회한다. 조회 응답은 시험이 생성 결과로 풀어 준다
     if (url === "/api/jobs/active") return new Response(JSON.stringify({ active: null, ledger_available: true }));
+    if (url.endsWith("/progress")) return new Response(JSON.stringify(defaultProgress()));  // D3a-3 리뷰 R6
     if (url.endsWith("/jobs") && init?.method === "POST") return new Response(JSON.stringify(
       jobView("diagram", { state: "running", candidate_status: "none" })), { status: 202 });
     if (url.endsWith("/jobs")) return new Response("[]");

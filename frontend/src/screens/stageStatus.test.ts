@@ -68,21 +68,47 @@ it("준비됨에 붙는 사유는 단계 목록에 보이지 않고 그 단계 �
   expect(stageLimitations(p, "review")).toEqual([REASON_TEXT.draft_checks_only]);
 });
 
-it("가장 최근 장 생성 묶음의 장 요약은 실패, 중단, 보류, 이전 입력 기준 후보를 나눠 센다", () => {
+it("가장 최근 장 생성 묶음의 장 요약은 원장의 실제 행 모양으로 센다 (D3a-3 리뷰 R2)", () => {
+  // 원장의 행 모양: 이전 입력 기준 후보는 failed+stale, 버린 후보는 failed+dismissed, 구성 낡음은
+  // failed+stale_story_plan과 그 뒤 interrupted+held_stale_plan이다 (server/app.py _apply_chapter, mark_stale)
+  const err = (code: string | null, cls: "input" | "base_changed" = "input") => ({ error_class: cls, status: 409, detail: "x", code });
   const latest = batchView([
     chapterView("c1", "succeeded"),
     chapterView("c2", "failed", { error: { error_class: "connection", status: 503, detail: "x", code: null } }),
-    chapterView("c3", "interrupted", { error: { error_class: "input", status: 409, detail: "x", code: "held_stale_plan" } }),
-    chapterView("c4", "interrupted"),
-    chapterView("c5", "succeeded", { candidate_status: "stale" }),
-    chapterView("c6", "succeeded"),
+    chapterView("c3", "failed", { candidate_status: "stale", error: err("sources_changed", "base_changed") }),
+    chapterView("c4", "failed", { candidate_status: "dismissed", error: err("sources_changed", "base_changed") }),
+    chapterView("c5", "failed", { error: err("stale_story_plan") }),
+    chapterView("c6", "interrupted", { error: err("held_stale_plan") }),
+    chapterView("c7", "interrupted", { error: err("provider_failed") }),
+    chapterView("c8", "cancelled"),
+    chapterView("c9", "remote_completion_unknown"),
   ], { state: "failed", outcome: "partial" });
   const older = batchView([chapterView("c1", "failed")], { id: "old" });
-  expect(batchSummary([latest, older])).toBe("6장 중 1장 실패, 1장 중단, 1장 보류, 1장은 이전 입력 기준 후보");
+  expect(batchSummary([latest, older])).toBe(
+    "9장 중 1장 실패, 1장 중단, 2장 보류, 1장은 이전 입력 기준 후보, 1장 취소, 1장 완료 여부 확인 필요");
   expect(batchSummary([batchView([chapterView("c1", "succeeded")])])).toBeNull();  // 모두 반영
+  expect(batchSummary([batchView([chapterView("c1", "succeeded"),
+    chapterView("c2", "failed", { candidate_status: "dismissed" })])])).toBeNull();  // 버린 후보만 남음
   expect(batchSummary([{ ...latest, state: "running" }])).toBeNull();  // 진행 중은 생성 중 표시가 맡는다
   expect(batchSummary(null)).toBeNull();
 });
+
+it("같은 탭이 등록해 진행 작업 조회가 아직 모르는 작업도 진행 API의 jobs로 생성 중을 보인다 (D3a-3 리뷰 R1)", () => {
+  const p = progress([{ stage: "structure", state: "needs_review", reasons: ["plan_missing"] }, { stage: "editing", state: "ready" }],
+    [batchView([chapterView("c1", "running")], { state: "running", outcome: null })]);
+  expect(status("structure", p)).toEqual({ kind: "running" });
+  expect(status("editor", p)).toEqual({ kind: "ready" });
+  const cancelling = progress([{ stage: "editing", state: "ready" }],
+    [{ ...batchView([]), kind: "diagram", state: "cancel_requested", cancel_requested: true }]);
+  expect(status("editor", cancelling)).toEqual({ kind: "cancel_requested" });
+});
+
+it("그 단계의 작업이 진행 중이면 미저장 변경이 있어도 생성 중을 먼저 보인다 (D3a-3 리뷰 R8)", () => {
+  const p = progress([{ stage: "editing", state: "ready" }],
+    [{ ...batchView([]), kind: "diagram", state: "running", outcome: null }]);
+  expect(status("editor", p, { current: true, dirty: true })).toEqual({ kind: "running" });
+});
+
 
 it("확인 필요 단계에 한계 사유가 함께 와도 단계 목록은 한계 사유가 아닌 첫 사유를 보인다", () => {
   const p = progress([{ stage: "sources", state: "needs_review", reasons: ["extraction_review_unavailable", "sources_over_limit"] }]);

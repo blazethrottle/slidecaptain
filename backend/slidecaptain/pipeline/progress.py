@@ -156,11 +156,19 @@ def _review(item, reviews, reviews_error, export_error) -> StageProgress:
         state = "ready"
     else:
         state = "needs_review"
-        # 단계 목록은 단계 수준 사유로 무엇이 남았는지 말한다 (C20). 이력을 읽지 못하면 그 사유 하나만 둔다
+        # 단계 목록은 단계 수준 사유로 무엇이 남았는지 말한다 (C20). 아직 하지 않은 부분은 "{부분}_pending",
+        # 확인이 필요한 부분은 그 부분의 첫 사유를 그대로 올린다. "남았다"가 사실이 아닌 경우(자동 검사가 고칠
+        # 곳을 찾음, 내보낸 뒤 문서가 바뀜)를 남은 일로 말하지 않기 위해서다 (D3a-3 리뷰 R3). 순서는 파일,
+        # 자동 검사, 사람 검토다: 파일이 낡았으면 다시 내보내는 것이 먼저다. 이력을 읽지 못하면 그 사유 하나만 둔다
         if export_error is not None:
             reasons = ["export_history_unreadable"]
         else:
-            reasons = [f"{p.name}_pending" for p in parts if p.state != "ready"]
+            order = {"file": 0, "auto_checks": 1, "human_review": 2}
+            for p in sorted(parts, key=lambda part: order[part.name]):
+                if p.state == "not_started":
+                    reasons.append(f"{p.name}_pending")
+                elif p.state == "needs_review":
+                    reasons.extend(r for r in p.reasons[:1] if r not in reasons)
     return StageProgress(stage="review", state=state, reasons=reasons, parts=parts)
 
 

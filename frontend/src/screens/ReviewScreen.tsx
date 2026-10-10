@@ -17,7 +17,8 @@ const PART_LABELS: Record<ReviewPart["name"], string> = {
 };
 
 function partStatus(part: ReviewPart): { kind: StatusKind; detail?: string } {
-  if (part.state === "not_started") return { kind: "not_started" };
+  // 시작 전에도 서버 사유(예: 아직 내보낸 파일이 없음)를 설명으로 붙인다 (D3a-3 리뷰 R15)
+  if (part.state === "not_started") return { kind: "not_started", detail: part.reasons?.[0] ? reasonText(part.reasons[0]) : undefined };
   if (part.state === "ready") return { kind: "ready" };
   const shown = (part.reasons ?? []).filter((r) => !READY_LIMITATIONS.has(r));
   return { kind: "needs_review", detail: shown.length > 0 ? reasonText(shown[0]) : undefined };
@@ -40,12 +41,15 @@ export function ReviewScreen({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const parts = review?.parts ?? [];
-  const limitations = [...new Set(parts.flatMap((p) => p.reasons ?? []).filter((r) => READY_LIMITATIONS.has(r)))];
+  // 조회가 실패하면 지난 응답의 한계 안내를 보이지 않는다 (D3a-3 리뷰 R14)
+  const limitations = progressFailed ? []
+    : [...new Set(parts.flatMap((p) => p.reasons ?? []).filter((r) => READY_LIMITATIONS.has(r)))];
   return (
     <div className="review-screen">
       <section aria-labelledby="review-state-heading">
         <h2 id="review-state-heading">검토 상태</h2>
         {progressFailed ? <p><StatusIndicator kind="unknown" /> 검토 상태를 읽지 못했습니다.</p>
+          : !review ? <p>검토 상태를 읽는 중입니다.</p>
           : <ul className="review-parts" aria-label="검토의 세 부분">
             {parts.map((part) => {
               const st = partStatus(part);

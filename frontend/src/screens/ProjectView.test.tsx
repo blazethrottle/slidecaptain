@@ -5,16 +5,20 @@ import qualityFixture from "../../../backend/tests/fixtures/q1b1-quality.json";
 import { deferred } from "../test/fixtures";
 import { emptyUsage } from "../test/usage";
 import { ProjectView } from "./ProjectView";
+import { defaultProgress } from "../test/fixtures";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api,
+  return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(),
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
     getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn(),
     saveDraft: vi.fn(), listDrafts: vi.fn(), getActiveJob: vi.fn(), listJobs: vi.fn(), prepareAi: vi.fn(),
     startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn(), getDocumentChangeBasis: vi.fn() } };
 });
+
+// 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
+beforeEach(() => { vi.mocked(api.getProgress).mockResolvedValue(defaultProgress()); });
 
 // D2a-2: 충돌 시 보존 요청은 기본으로 성공한다
 beforeEach(() => {

@@ -1,6 +1,6 @@
 // 후보형 생성의 작업 API 연결 (개정판 D2b-5b, 계획서 5.8, 5.9).
 // 등록, 조회, 결과 변환을 여기 둔다. client.ts의 api 객체를 가져와 쓰므로 시험의 모의가 그대로 닿는다
-import { api, ApiError, followJob, newRequestId, savedEtag, TERMINAL_JOB_STATES, type JobView } from "./client";
+import { api, ApiError, followJob, newRequestId, notifyProject, savedEtag, TERMINAL_JOB_STATES, type JobView } from "./client";
 
 export const JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다.";
 export const JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요.";
@@ -46,7 +46,11 @@ export function jobResult<T>(view: JobView): T {
 export function waitJob(name: string, view: JobView, opts: {
   intervalMs?: number; signal?: AbortSignal; onUpdate?: (view: JobView) => void; onError?: (error: unknown) => void;
 } = {}): Promise<JobView> {
-  if (TERMINAL_JOB_STATES.has(view.state)) return Promise.resolve(view);
+  if (TERMINAL_JOB_STATES.has(view.state)) {
+    // 등록 응답이 이미 종결이면 조회를 거치지 않으므로 여기서 종결을 알린다 (D3a-3 리뷰 R9)
+    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id });
+    return Promise.resolve(view);
+  }
   return followJob(() => api.getJob(name, view.id), (next) => opts.onUpdate?.(next),
     { intervalMs: opts.intervalMs, signal: opts.signal, onError: opts.onError });
 }

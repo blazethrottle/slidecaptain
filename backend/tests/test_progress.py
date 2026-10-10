@@ -307,6 +307,12 @@ def test_review_stage_names_what_remains_when_parts_are_mixed():
                              input_status="current", quality_status="draft", slide_count=2, gate_version=None)
     review = _stage(project_progress(deck, sources=sources, latest_export=item), "review")
     assert (review.state, review.reasons) == ("needs_review", ["human_review_pending"])  # 자동 검사와 파일은 준비됨
+    # 확인이 필요한 부분은 남은 일이 아니라 그 부분의 사유를 올린다. 파일, 자동 검사, 사람 검토 순서다 (D3a-3 리뷰 R3)
+    found = ExportHistoryItem(id="x", file_modified_at=None, record_status="readable", artifact_status="matched",
+                              input_status="stale", quality_status="needs_revision", slide_count=2, gate_version=None)
+    stale_review = SimpleNamespace(categories=[SimpleNamespace(status="passed"), SimpleNamespace(status="stale")])
+    mixed = _stage(project_progress(deck, sources=sources, latest_export=found, reviews=stale_review), "review")
+    assert mixed.reasons == ["input_stale", "quality_needs_revision", "review_stale"]
     done = SimpleNamespace(categories=[SimpleNamespace(status="passed")] * 5)
     ready = _stage(project_progress(deck, sources=sources, latest_export=item, reviews=done), "review")
     assert (ready.state, ready.reasons) == ("ready", [])

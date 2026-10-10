@@ -5,14 +5,18 @@ import qualityFixture from "../../../backend/tests/fixtures/q1b1-quality.json";
 import { deckWith, deferred, project } from "../test/fixtures";
 import { exportReviews } from "../test/reviews";
 import { ProjectView } from "./ProjectView";
+import { defaultProgress } from "../test/fixtures";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api,
+  return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), listExports: vi.fn(), getExport: vi.fn(),
     getExportReviews: vi.fn(), recordExportReview: vi.fn(), createSnapshot: vi.fn(), exportDeck: vi.fn(), listSnapshots: vi.fn(),
   } };
 });
+
+// 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
+beforeEach(() => { vi.mocked(api.getProgress).mockResolvedValue(defaultProgress()); });
 vi.mock("./AISettingsPanel", () => ({ AISettingsPanel: () => null }));
 
 const item = { id: "report_v001", file_modified_at: "2026-09-29T10:00:00+00:00", record_status: "readable", artifact_status: "matched",

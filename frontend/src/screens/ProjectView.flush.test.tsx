@@ -6,6 +6,7 @@ import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
+import { defaultProgress } from "../test/fixtures";
 
 function dispatchBeforeUnload(): boolean {
   const ev = new Event("beforeunload", { cancelable: true });
@@ -15,10 +16,13 @@ function dispatchBeforeUnload(): boolean {
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api,
+  return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn() } };
 });
+
+// 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
+beforeEach(() => { vi.mocked(api.getProgress).mockResolvedValue(defaultProgress()); });
 
 // App.tsx 와 같은 구조: 목록으로 돌아가면 ProjectView 가 언마운트된다
 function Shell() {

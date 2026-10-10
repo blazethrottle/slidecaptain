@@ -5,6 +5,7 @@ import { StatusIndicator } from "../ui/StatusIndicator";
 
 import { formatSavedAt } from "../api/time";
 import { Button } from "../ui/Button";
+import { JOB_STAGE } from "./stageStatus";
 
 // 사유와 출처는 이후 버전이 값을 늘릴 수 있어 모르는 값도 그대로 보인다 (D2a-2 리뷰 R5)
 function describeDraft(d: DraftInfo): string {
@@ -132,7 +133,8 @@ function JobCandidates({ project, deck, onOpen }: {
               <details><summary>보기</summary><pre>{candidateText(c)}</pre></details>
               {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
               {!WHOLE_DECK.has(c.job.kind) && onOpen && (() => {
-                const stage: OpenStage = ["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor";
+                // 작업 종류와 단계의 대응은 단계 상태와 같은 표를 쓴다 (D3a-3 리뷰 R4)
+                const stage: OpenStage = JOB_STAGE[c.job.kind] === "structure" ? "structure" : "editor";
                 return <><button onClick={() => onOpen(stage, c.chapterId ?? undefined)}>
                   {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}</>;
               })()}

@@ -547,7 +547,7 @@ describe("단계 상태 표시와 공통 알림 지점 (D3a-3, 계획 4.2, 4.5)"
     await waitFor(() => expect(statusOf("sources")).toHaveTextContent("준비됨"));
     expect(nav().textContent).not.toMatch(/부분 추출 경고/);
     await userEvent.click(stageButton("자료"));
-    expect(await screen.findByText(/부분 추출 경고는 아직 기록하지 않습니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/부분 추출 경고는 아직 기록하지 않아/)).toBeInTheDocument();
   });
 
   it("검토 화면은 자동 검사(내보낸 파일 기준), 사람 검토, 파일 저장을 따로 보인다", async () => {
@@ -565,5 +565,62 @@ describe("단계 상태 표시와 공통 알림 지점 (D3a-3, 계획 4.2, 4.5)"
       chapterView("c1", "succeeded"), chapterView("c2", "failed")], { state: "failed", outcome: "partial" })] });
     await openProject();
     await waitFor(() => expect(statusOf("structure")).toHaveTextContent("2장 중 1장 실패"));
+  });
+});
+
+describe("D3a-3 리뷰 반영", () => {
+  it("창 초점을 얻으면 단계 상태를 다시 읽는다 (R5)", async () => {
+    await openProject();
+    await waitFor(() => expect(api.getProgress).toHaveBeenCalled());
+    const before = vi.mocked(api.getProgress).mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBeGreaterThan(before));
+  });
+
+  it("진행 작업이 바뀌면(다른 탭의 작업 시작과 종결) 단계 상태를 다시 읽는다 (R5)", async () => {
+    vi.mocked(api.getActiveJob).mockResolvedValueOnce({ active: null, ledger_available: true })
+      .mockResolvedValueOnce(batchActive("diagram")).mockImplementation(async () => ({ active: null, ledger_available: true }));
+    await openProject();
+    const before = vi.mocked(api.getProgress).mock.calls.length;
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    // 초점 1회 + 진행 작업 시작 1회 + 종결 1회
+    await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBeGreaterThanOrEqual(before + 3));
+  });
+
+  it("잠긴 단계 버튼은 상태와 함께 잠금 사유를 접근 가능한 설명으로 보인다 (R7)", async () => {
+    vi.mocked(api.getActiveJob).mockResolvedValue(batchActive());
+    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    await waitFor(() => expect(stageButton("편집")).toBeDisabled());
+    await waitFor(() => expect(stageButton("편집")).toHaveAccessibleDescription(/AI 생성이 끝나면 이동할 수 있습니다/));
+    expect(stageButton("편집")).toHaveAccessibleDescription(/준비됨/);
+  });
+
+  it("조회가 실패하면 지난 응답의 장 요약과 한계 안내를 보이지 않는다 (R14)", async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ ...PROGRESS, jobs: [batchView([
+      chapterView("c1", "succeeded"), chapterView("c2", "failed")], { state: "failed", outcome: "partial" })] });
+    await openProject();
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("2장 중 1장 실패"));
+    vi.mocked(api.getProgress).mockRejectedValue(new ApiError(503, "진행 상태를 읽지 못했습니다."));
+    await act(async () => notifyProject({ kind: "saved", project: project.name }));
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("확인하지 못함"));
+    expect(statusOf("structure")).not.toHaveTextContent("2장 중 1장 실패");
+    await userEvent.click(stageButton("자료"));
+    await screen.findByLabelText("자료 파일 선택");
+    expect(screen.queryByText(/부분 추출 경고/)).toBeNull();
+  });
+
+  it("검토 화면은 첫 조회 전에 읽는 중이라고 하고, 시작 전 부분에도 서버 사유를 붙인다 (R15)", async () => {
+    const slow = deferred<ProjectProgress>();
+    vi.mocked(api.getProgress).mockReturnValue(slow.promise);
+    await openProject();
+    await userEvent.click(stageButton("검토와 내보내기"));
+    expect(await screen.findByText("검토 상태를 읽는 중입니다.")).toBeInTheDocument();
+    await act(async () => slow.resolve({ ...PROGRESS, stages: PROGRESS.stages!.map((st) => st.stage !== "review" ? st : {
+      ...st, state: "not_started" as const, reasons: [], parts: [
+        { name: "auto_checks", state: "not_started", reasons: [] },
+        { name: "human_review", state: "not_started", reasons: [] },
+        { name: "file", state: "not_started", reasons: ["no_export"] }] }) }));
+    const parts = await screen.findByRole("list", { name: "검토의 세 부분" });
+    expect(within(parts).getAllByRole("listitem")[2]).toHaveTextContent("아직 내보낸 파일이 없습니다");
   });
 });

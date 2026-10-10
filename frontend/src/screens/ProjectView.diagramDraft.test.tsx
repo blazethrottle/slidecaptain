@@ -4,15 +4,19 @@ import { useState } from "react";
 import { api } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
+import { defaultProgress } from "../test/fixtures";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api,
+  return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn(),
     createSnapshot: vi.fn(), exportDeck: vi.fn(),
   } };
 });
+
+// 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
+beforeEach(() => { vi.mocked(api.getProgress).mockResolvedValue(defaultProgress()); });
 vi.mock("./AISettingsPanel", () => ({ AISettingsPanel: () => null }));
 vi.mock("./NumericReviewPanel", () => ({ NumericReviewPanel: () => null }));
 vi.mock("./ExportQualitySummary", () => ({ ExportQualitySummary: () => <p>내보내기 결과</p> }));

@@ -64,3 +64,47 @@ it("듣는 쪽의 오류는 요청을 실패로 만들지 않는다", async () =
   await expect(api.writeSource("p1", "a.md", "본문")).resolves.toEqual({ ok: true });
   off();
 });
+
+// 저장 경로와 알림 표 (D3a-3 리뷰 R5). 앱의 모든 변경 요청을 한 표에 두고, 알리는 것과 알리지 않는 것을 함께 지킨다.
+// 알리지 않는 것: 실측, 미리 보기, 대조, 수치와 의미 검토(저장하지 않음), 보존본 저장과 삭제, 스냅샷 만들기(진행
+// 계산에 들지 않음, 내보내기가 알림), 제출본 자격 기록(진행 API가 읽지 않음)
+const deck = deckWith(["하나"]);
+const ROUTES: [string, () => Promise<unknown>, "saved" | "job_started" | null][] = [
+  ["덱 저장", () => api.putDeck("p1", deck, false), "saved"],
+  ["자료 저장", () => api.writeSource("p1", "a.md", "x"), "saved"],
+  ["문서 변경 적용", () => api.applyDocumentChange("p1", {} as never, '"e"'), "saved"],
+  ["근거 이동 적용", () => api.applyEvidenceMigration("p1", {} as never, '"e"'), "saved"],
+  ["재작성 적용", () => api.applyStoryRewrite("p1", { deck, sources_fingerprint: "s", base_etag: '"e"' } as never), "saved"],
+  ["보존본 복원", () => api.restoreDraft("p1", "d1"), "saved"],
+  ["스냅샷 복원", () => api.restoreSnapshot("p1", "s1"), "saved"],
+  ["내보내기", () => api.exportDeck("p1"), "saved"],
+  ["검수 기록", () => api.recordExportReview("p1", "x", {} as never, '"e"'), "saved"],
+  ["후보 처분", () => api.settleCandidate("p1", "j", "dismissed"), "saved"],
+  ["장 후보 버리기", () => api.dismissChapterCandidate("p1", "j", "c1"), "saved"],
+  ["장 생성 묶음 등록", () => api.startChapters("p1", ["c1"], {}, "req-1"), "job_started"],
+  ["작업 등록", () => api.startJob("p1", { request_id: "req-1", kind: "structure", params: {} }, {}), "job_started"],
+  ["실측", () => api.measure(deck, "p1"), null],
+  ["도식 대조", () => api.reconcileDiagramStory("p1", {} as never), null],
+  ["문서 변경 미리 보기", () => api.previewDocumentChange("p1", {} as never, '"e"'), null],
+  ["근거 이동 미리 보기", () => api.previewEvidenceMigration("p1", {} as never, '"e"'), null],
+  ["수치 검토", () => api.reviewNumbers("p1", deck), null],
+  ["의미 검토", () => api.reviewSemantics("p1", deck), null],
+  ["보존본 저장", () => api.saveDraft("p1", { reason: "conflict", source: "editor", deck }), null],
+  ["보존본 삭제", () => api.deleteDraft("p1", "d1"), null],
+  ["스냅샷 만들기", () => api.createSnapshot("p1"), null],
+  ["작업 취소", () => api.cancelJob("p1", "j"), null],
+];
+
+it.each(ROUTES)("%s의 알림은 표대로다", async (_name, call, kind) => {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ok({ ...batchView([]), id: "job-1" }, '"e1"')));
+  await call();
+  expect(events).toEqual(kind === null ? [] : [kind === "job_started"
+    ? { kind, project: "p1", jobId: "job-1" } : { kind, project: "p1" }]);
+});
+
+it("등록 응답이 이미 종결이면 조회 없이도 작업 종결을 알린다 (D3a-3 리뷰 R9)", async () => {
+  const { waitJob } = await import("./jobs");
+  const done = { ...batchView([]), id: "job-2", state: "failed" } as JobView;
+  await waitJob("p1", done);
+  expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-2" }]);
+});

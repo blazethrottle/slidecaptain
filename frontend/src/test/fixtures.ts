@@ -56,3 +56,17 @@ export function deferred<T>() {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// 진행 API의 기본 응답 (D3a-3 리뷰 R6). 프로젝트 화면 시험이 단계 상태를 정상으로 읽은 상태로 돌게 한다
+export function defaultProgress(): import("../api/client").ProjectProgress {
+  return { project_status: "ok", jobs: [], stages: [
+    { stage: "purpose", state: "needs_review", reasons: ["report_type_unconfirmed"] },
+    { stage: "sources", state: "not_started", reasons: ["sources_missing"] },
+    { stage: "structure", state: "ready", reasons: [] },
+    { stage: "editing", state: "ready", reasons: [] },
+    { stage: "review", state: "not_started", reasons: [], parts: [
+      { name: "auto_checks", state: "not_started", reasons: [] },
+      { name: "human_review", state: "not_started", reasons: [] },
+      { name: "file", state: "not_started", reasons: ["no_export"] }] },
+  ] };
+}

@@ -7,6 +7,7 @@ import { revokeConsent } from "../api/aiGate";
 import type { AppStatus, Deck } from "../api/client";
 import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
+import { defaultProgress } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -43,6 +44,9 @@ function stubFetch(): ReturnType<typeof vi.fn> {
       return new Response(JSON.stringify({ active: null, ledger_available: true }), { status: 200 });
     }
     if (method === "GET" && url.endsWith("/api/projects/p1/jobs")) return new Response("[]", { status: 200 });
+    if (method === "GET" && url.endsWith("/api/projects/p1/progress")) {  // D3a-3 리뷰 R6
+      return new Response(JSON.stringify(defaultProgress()), { status: 200 });
+    }
     if (method === "POST" && url.endsWith("/api/projects/p1/jobs")) {
       return new Response(JSON.stringify(jobView("structure", { result: {
         status: "ok", structure: { chapters: [] }, usage: emptyUsage(),

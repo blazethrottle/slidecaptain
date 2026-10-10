@@ -468,16 +468,23 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
               const current = !showRecovery && stage === s.id;
               const status = stageStatus(s.id, { progress, failed: progressFailed, current, dirty,
                 activeJob, projectName: project.name });
-              const summary = s.id === "structure" ? batchSummary(progress?.jobs) : null;
+              // 조회가 실패하면 지난 응답의 장 요약을 보이지 않는다 (D3a-3 리뷰 R14)
+              const summary = s.id === "structure" && !progressFailed ? batchSummary(progress?.jobs) : null;
               const statusId = `stage-status-${s.id}`;
+              // 잠긴 이유. aria-describedby가 있으면 title은 설명에 쓰이지 않으므로 화면 낭독기 전용 요소로 함께 잇는다
+              // (D3a-3 리뷰 R7)
+              const lockReason = stageDisabled(s.id) ? stageTitle(s.id) : undefined;
+              const lockId = `stage-lock-${s.id}`;
+              const describedBy = [status || summary ? statusId : null, lockReason ? lockId : null].filter(Boolean).join(" ");
               return (
                 <li key={s.id}>
                   <button className="stage-button" aria-current={current ? "step" : undefined}
-                    aria-describedby={status || summary ? statusId : undefined}
+                    aria-describedby={describedBy || undefined}
                     disabled={stageDisabled(s.id)} title={stageTitle(s.id)} onClick={() => void switchStage(s.id)}>
                     <span className="stage-number" aria-hidden="true">{index + 1}</span>
                     <span className="stage-label">{s.label}</span>
                   </button>
+                  {lockReason && <span id={lockId} className="visually-hidden">{lockReason}</span>}
                   {(status || summary) && (
                     <span className="stage-status" id={statusId}>
                       {status && <StatusIndicator kind={status.kind} detail={status.detail} />}
@@ -521,7 +528,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onSaveStatusChange={setSaveStatus} />
         )}
         {!showRecovery && stage === "sources" && (
-          <SourcesScreen key={screenKeyValue} project={project} limitations={stageLimitations(progress, "sources")}
+          <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}
             onScreenReady={(f) => { flushScreen.current = f; }}
             onDirtyChange={setDirty} onBusyChange={setUploading} onSaveStatusChange={setSaveStatus} />
         )}
