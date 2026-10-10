@@ -41,7 +41,11 @@ export function SourcesScreen({
   const [sourceSaving, setSourceSaving] = useState(false);
   const sourceSavePending = useRef(false);
   const [newName, setNewName] = useState("");
-  const [notice, setNotice] = useState("");
+  // 안내의 성격(주의, 오류)은 문구로 가르지 않고 안내를 내는 자리에서 정한다 (D3a-4, R14).
+  // 주의는 놓치면 안 되지만 실패가 아닌 것(저장 먼저, 편집 보존)이고, 오류는 요청이 실패한 것이다
+  const [notice, setNotice] = useState<{ text: string; tone: "warning" | "error" } | null>(null);
+  const warn = (text: string) => setNotice({ text, tone: "warning" });
+  const fail = (text: string) => setNotice({ text, tone: "error" });
   // 저장 성공 안내는 오류 알림(role=alert)과 나눈다: 성공이 빨간 경고로 보이지 않게 (D2a-4)
   const [success, setSuccess] = useState("");
   useEffect(() => { if (notice) setSuccess(""); }, [notice]);
@@ -70,7 +74,7 @@ export function SourcesScreen({
   useEffect(() => {
     onScreenReady?.(async () => {
       if (textRef.current !== savedText.current) {
-        setNotice("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+        warn("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
         return false;
       }
       return true;
@@ -79,13 +83,13 @@ export function SourcesScreen({
   }, [onScreenReady]);
 
   const reload = () => {
-    api.listSources(project.name).then(setFiles).catch((e) => setNotice(messageOf(e)));
+    api.listSources(project.name).then(setFiles).catch((e) => fail(messageOf(e)));
   };
   useEffect(reload, [project.name]);
 
   const open = async (f: string) => {
     if (textRef.current !== savedText.current) {
-      setNotice("다른 자료를 열기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+      warn("다른 자료를 열기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
       return;
     }
     const request = ++sourceRequest.current;
@@ -93,15 +97,15 @@ export function SourcesScreen({
       const s = await api.readSource(project.name, f);
       if (request !== sourceRequest.current || !mountedRef.current) return;
       if (textRef.current !== savedText.current) {
-        setNotice(KEPT_SOURCE_NOTICE);
+        warn(KEPT_SOURCE_NOTICE);
         return;
       }
       setSelected(f);
       setText(s.text);
       savedText.current = s.text;
-      setNotice("");
+      setNotice(null);
     } catch (e) {
-      if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
+      if (request === sourceRequest.current && mountedRef.current) fail(messageOf(e));
     }
   };
 
@@ -116,10 +120,10 @@ export function SourcesScreen({
       savedText.current = text;
       setLastSaveFailed(false);
       onDirtyChange?.(textRef.current !== text);
-      setNotice("");
+      setNotice(null);
       setSuccess("자료를 저장했습니다.");
     } catch (e) {
-      if (request === sourceRequest.current && mountedRef.current) { setNotice(messageOf(e)); setLastSaveFailed(true); }
+      if (request === sourceRequest.current && mountedRef.current) { fail(messageOf(e)); setLastSaveFailed(true); }
     } finally {
       sourceSavePending.current = false;
       if (mountedRef.current) setSourceSaving(false);
@@ -128,7 +132,7 @@ export function SourcesScreen({
 
   const addFile = async () => {
     if (textRef.current !== savedText.current) {
-      setNotice("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
+      warn("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
       return;
     }
     const base = newName.trim();
@@ -139,13 +143,13 @@ export function SourcesScreen({
       reload();
       await open(f);
     } catch (e) {
-      setNotice(messageOf(e));
+      fail(messageOf(e));
     }
   };
 
   const importFiles = async (list: FileList | File[]) => {
     if (textRef.current !== savedText.current) {
-      setNotice("파일을 가져오기 전에 수정한 자료 내용을 저장해 주세요.");
+      warn("파일을 가져오기 전에 수정한 자료 내용을 저장해 주세요.");
       return;
     }
     const items = Array.from(list);
@@ -217,7 +221,7 @@ export function SourcesScreen({
         setTruncationNotice(`일부가 잘렸습니다: ${truncatedResults
           .map((r) => `${r.filename} (${limitReasons(r.notes).join("; ")})`).join(" / ")}`);
       }
-      if (failures.length > 0) setNotice(`올리지 못한 파일: ${failures.join(" / ")}`);
+      if (failures.length > 0) fail(`올리지 못한 파일: ${failures.join(" / ")}`);
     } finally {
       if (mountedRef.current) setUploading(false);
       onBusyChange?.(false);  // 잠금은 언마운트 여부와 무관하게 반드시 풀어야 부모가 영구히 잠기지 않는다
@@ -228,9 +232,9 @@ export function SourcesScreen({
   return (
     <div className="sources-screen">
       {/* 편집 중 보존은 오류가 아니라 놓치면 안 되는 주의 안내다 (D2a 이월 6, D3a-1) */}
-      {notice && (notice === KEPT_SOURCE_NOTICE
-        ? <p role="status" className="notice-warning">{notice}</p>
-        : <p role="alert">{notice}</p>)}
+      {notice && (notice.tone === "warning"
+        ? <p role="status" className="notice-warning">{notice.text}</p>
+        : <p role="alert">{notice.text}</p>)}
       {success && !notice && <p role="status">{success}</p>}
       {info && <p className="info">{info}</p>}
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}

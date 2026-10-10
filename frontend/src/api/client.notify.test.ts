@@ -55,7 +55,7 @@ it("작업 조회가 종결 상태를 보면 작업 종결을 알린다", async 
   const done = { ...running, state: "succeeded" } as JobView;
   const fetchJob = vi.fn().mockResolvedValueOnce(running).mockResolvedValueOnce(done);
   await followJob(fetchJob, () => {}, { intervalMs: 0 });
-  expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-9" }]);
+  expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-9", state: "succeeded" }]);  // 다시 씀(D3a-4): 종결 상태를 싣는다
 });
 
 it("듣는 쪽의 오류는 요청을 실패로 만들지 않는다", async () => {
@@ -106,5 +106,5 @@ it("등록 응답이 이미 종결이면 조회 없이도 작업 종결을 알�
   const { waitJob } = await import("./jobs");
   const done = { ...batchView([]), id: "job-2", state: "failed" } as JobView;
   await waitJob("p1", done);
-  expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-2" }]);
+  expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-2", state: "failed" }]);  // 다시 씀(D3a-4)
 });

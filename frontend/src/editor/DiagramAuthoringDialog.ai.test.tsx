@@ -4,7 +4,7 @@ import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { api, AiConsentDeclined, ApiError, type Deck, type DiagramGenerationResult, type RenderPlan } from "../api/client";
 import { deferred } from "../test/fixtures";
 import { jobView } from "../test/jobs";
-import { emptyUsage } from "../test/usage";
+import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { DiagramAuthoringDialog } from "./DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
@@ -78,6 +78,7 @@ it("AI 후보는 폼과 분리해 근거와 조건을 보이고 불러오기 뒤
   expect(api.putDeck).not.toHaveBeenCalled();
   expect(onApply).not.toHaveBeenCalled();
   expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expectUsageCollapsed();  // 사용량은 접힌 진단 상세에 있다 (D3a-4, R12)
   await userEvent.click(screen.getByRole("button", { name: "작성 폼에 불러오기" }));
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("AI 접수 후보");
   // D2b-5b: 불러온 후보는 반영으로 처분하고, 등록은 동의 전에 고정한 저장 ETag를 If-Match로 보낸다
@@ -112,13 +113,15 @@ it("동의 취소는 오류 대신 안내를 보이고 호출 잠금을 해제�
   expect(onBusyChange.mock.calls).toEqual([[true], [false]]);
 });
 
-it("형식 오류여도 원문과 사용량을 보이고 불러오기를 허용하지 않는다", async () => {
+it("형식 오류면 원인별 안내를 보이고, 원문과 사용량은 그 진단 상세에 두며 불러오기를 허용하지 않는다 (D3a-4)", async () => {
   generateDiagram.mockResolvedValue({ ...response(), status: "format_error", diagram: null, format_retried: true });
   open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("형식에 맞게 읽지 못했습니다");
-  expect(screen.getByText("synthetic response")).toBeInTheDocument();
+  expect(screen.getByRole("alert")).toHaveTextContent(/지금 할 수 있는 일: 같은 입력으로 다시 생성/);
+  expect(within(screen.getByRole("alert")).getByText("synthetic response")).not.toBeVisible();
   expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expectUsageCollapsed();
   expect(screen.queryByRole("button", { name: "작성 폼에 불러오기" })).not.toBeInTheDocument();
 });
 

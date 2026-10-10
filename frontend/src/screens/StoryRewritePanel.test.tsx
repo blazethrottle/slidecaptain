@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { api, ApiError, AiConsentDeclined, type Deck, type StoryRewriteResult } from "../api/client";
 import { batchView, chapterView, jobView } from "../test/jobs";
 import { storyDeck } from "../test/story";
-import { emptyUsage } from "../test/usage";
+import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
@@ -101,7 +101,8 @@ it("형식 오류의 원문을 표시하고 적용하지 않는다",async()=>{
   rewriteStory.mockResolvedValue({...candidate(),status:"format_error",deck:null,raw_text:"합성 오류"});
   render(<Harness/>); await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
   expect(await screen.findByRole("alert")).toHaveTextContent("형식");
-  expect(screen.getByText("합성 오류")).toBeInTheDocument();
+  expect(screen.getByText("합성 오류")).not.toBeVisible();  // 응답 원문과 사용량은 접힌 진단 상세에 있다 (D3a-4)
+  expectUsageCollapsed();
   expect(screen.queryByRole("button",{name:"이 계획 적용"})).not.toBeInTheDocument();
 });
 it("동의 취소는 실패로 표시하지 않는다",async()=>{

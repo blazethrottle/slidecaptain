@@ -5,7 +5,9 @@ import {
   waitJob,
 } from "../api/jobs";
 import { formatUsage } from "../api/usage";
-import { ActiveJobNotice } from "../ui/ActiveJobNotice";
+import { Diagnostics } from "../ui/Diagnostics";
+import { describeFailure } from "../ui/failure";
+import { FailureNotice } from "../ui/FailureNotice";
 
 const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
 const REPAIR_CANCELLED_NOTICE = "수정 요청을 취소했습니다. 입력과 기존 저장본은 유지됩니다.";
@@ -134,7 +136,7 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     epoch.current += 1; setter(value); setResult(null); setAcknowledged(false); setBlocked(false);
     dropCandidate(); setStaleReasons([]); setEarlier(false);
     setBudgetConfirmed(false);
-    setError(""); setNotice("");
+    setError(""); setNotice(""); setFailure(null);
   };
   const setRunning = (value: boolean) => {
     ownsBusy.current = value;
@@ -149,8 +151,7 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
       setNotice(REPAIR_CANCELLED_NOTICE);
       return;
     }
-    setError(messageOf(e));
-    setFailure(e);
+    setFailure(e);  // 원인별 안내로 보인다 (D3a-4)
     if (e instanceof ApiError && (e.status === 409 || e.status === 412)) setBlocked(true);
     if (e instanceof ApiError && e.status === 412) onConflict?.();
   };
@@ -209,7 +210,7 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     if (ownsBusy.current || current.current.busy || blocked || staleReasons.length > 0 || !result?.deck || !candidateReady
       || !acknowledged || disabled) return;
     const id = ++epoch.current;
-    setRunning(true); setError("");
+    setRunning(true); setError(""); setFailure(null);
     try {
       const saved = await api.applyStoryRewrite(projectName, result);
       if (candidateJob.current) {
@@ -256,9 +257,12 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     </details>
     {followError && <p role="status">{followError}</p>}
     {error && <p role="alert">{error}</p>}{notice && <p className="notice">{notice}</p>}
-    <ActiveJobNotice error={failure} />
-    {result && <p className="usage">{formatUsage(result.usage)}</p>}
-    {result && "raw_text" in result && result.raw_text && result.status !== "ok" && <details><summary>재작성 응답 원문</summary><pre>{result.raw_text}</pre></details>}
+    <FailureNotice failure={failure ? describeFailure(failure) : null} />
+    {/* 사용량과 형식 오류의 응답 원문은 접힌 진단 상세에 둔다 (D3a-4, R12) */}
+    {result && <Diagnostics fields={candidateJob.current ? { jobId: candidateJob.current, jobKind: candidateKind } : undefined}>
+      <p className="usage">{formatUsage(result.usage)}</p>
+      {"raw_text" in result && result.raw_text && result.status !== "ok" && <><p>재작성 응답 원문</p><pre>{result.raw_text}</pre></>}
+    </Diagnostics>}
     {result && "submission_approved" in result && <div aria-label="제한된 수정 결과">
       <p>{result.notice}</p><p>사용 호출 {result.calls}회, 재검수 {result.review_calls}회, 수정 {result.rounds}회차</p>
       {result.findings.map((f,i) => <p key={i}>{f.target}: {f.message}</p>)}

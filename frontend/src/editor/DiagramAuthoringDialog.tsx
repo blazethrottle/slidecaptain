@@ -3,7 +3,9 @@ import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, type Dec
   type GenerationUsage, type RenderPlan, type StoryPlan, type DocumentChangePreview, type DocumentChangeBasis } from "../api/client";
 import { runJob, settle, staleError } from "../api/jobs";
 import { formatUsage } from "../api/usage";
-import { ActiveJobNotice } from "../ui/ActiveJobNotice";
+import { Diagnostics } from "../ui/Diagnostics";
+import { describeAiOutput, describeFailure } from "../ui/failure";
+import { FailureNotice } from "../ui/FailureNotice";
 import { Preview } from "./Preview";
 import { DiagramDraftBackup } from "./DiagramDraftBackup";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
@@ -168,7 +170,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     serial.current++;
     setDraft(next); setChecked(null); setErrors([]); setChecking(false);
     setReplacement(null);setLossChecks([]);
-    setGenerationResult(null); setGenerationError(""); setGenerationNotice("");
+    setGenerationResult(null); setGenerationError(""); setGenerationNotice(""); setGenerationFailure(null);
   };
   const nodeEdit = (index: number, patch: Partial<DiagramNode>) =>
     edit({ ...draft, nodes: draft.nodes.map((n, i) => i === index ? { ...n, ...patch } : n) });
@@ -229,7 +231,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       } else if (requestId === serial.current) {
         if (error instanceof AiConsentDeclined) setGenerationNotice("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
         else if (isStaleStoryPlan(error)) setStoryStale(true);
-        else { setGenerationError(messageOf(error)); setGenerationFailure(error); }
+        else setGenerationFailure(error);  // 원인별 안내로 보인다 (D3a-4)
       }
     } finally {
       if (generationLease.current === lease) {
@@ -400,12 +402,12 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
             {generating && <p role="status">AI 후보를 기다리고 있습니다. 입력을 바꾸면 이 후보를 사용하지 않습니다. 창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
             {generationFollowError && generating && <p role="status">{generationFollowError}</p>}
             {generationError && <p role="alert">{generationError}</p>}
-            <ActiveJobNotice error={generationFailure} />
+            <FailureNotice failure={generationFailure ? describeFailure(generationFailure) : null} />
             {generationNotice && <p className="notice">{generationNotice}</p>}
-            {generationResult?.status === "format_error" && <div role="alert">
-              <p>AI 응답을 형식에 맞게 읽지 못했습니다. 작성 입력을 유지했습니다. 원문을 확인하고 다시 시도해 주세요.</p>
-              <details><summary>AI 응답 원문</summary><pre>{generationResult.raw_text}</pre></details>
-            </div>}
+            {generationResult?.status === "format_error" && <FailureNotice failure={describeAiOutput()}>
+              <p>AI 응답 원문</p><pre>{generationResult.raw_text}</pre>
+              {generationUsage && <p className="usage">{formatUsage(generationUsage)}</p>}
+            </FailureNotice>}
             {generationResult && generationResult.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
             {generationResult?.status === "ok" && generationResult.diagram && !stale && !unavailable && <>
               <GeneratedDiagramReview diagram={generationResult.diagram} evidence={evidence} />
@@ -422,7 +424,10 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
                 setGenerationNotice("AI 후보의 항목과 관계를 작성 폼에 불러왔습니다. 내용과 근거를 확인한 뒤 입력과 배치 확인을 눌러 주세요.");
               }}>작성 폼에 불러오기</button>
             </>}
-            {generationUsage && <p className="usage">{formatUsage(generationUsage)}</p>}
+            {/* 사용량은 접힌 진단 상세에 둔다. 형식 오류면 실패 안내의 진단 상세에 있다 (D3a-4, R12) */}
+            {generationUsage && generationResult?.status !== "format_error" && <Diagnostics>
+              <p className="usage">{formatUsage(generationUsage)}</p>
+            </Diagnostics>}
           </section>}
           <h3>항목 {draft.nodes.length}개</h3>
           {draft.nodes.map((node, i) => <fieldset className="diagram-item" key={node.id}>

@@ -36,10 +36,10 @@ export function jobResult<T>(view: JobView): T {
   if (view.state === "cancelled") throw new JobCancelled(view);
   if (view.result) return view.result as T;
   if (view.state === "interrupted" || view.state === "remote_completion_unknown") {
-    throw new ApiError(503, JOB_INTERRUPTED_MESSAGE, "job_interrupted");
+    throw new ApiError(503, JOB_INTERRUPTED_MESSAGE, "job_interrupted", undefined, view);
   }
   throw new ApiError(view.error?.status ?? 500, view.error?.detail ?? "AI 생성 작업을 처리하지 못했습니다.",
-    view.error?.code ?? undefined);
+    view.error?.code ?? undefined, undefined, view);
 }
 
 // 작업이 끝날 때까지 조회한다. signal은 조회만 멈추고 작업을 취소하지 않는다
@@ -48,7 +48,7 @@ export function waitJob(name: string, view: JobView, opts: {
 } = {}): Promise<JobView> {
   if (TERMINAL_JOB_STATES.has(view.state)) {
     // 등록 응답이 이미 종결이면 조회를 거치지 않으므로 여기서 종결을 알린다 (D3a-3 리뷰 R9)
-    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id });
+    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state });
     return Promise.resolve(view);
   }
   return followJob(() => api.getJob(name, view.id), (next) => opts.onUpdate?.(next),

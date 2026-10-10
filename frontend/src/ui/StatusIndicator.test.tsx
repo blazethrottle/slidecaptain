@@ -1,5 +1,6 @@
 // 상태 표시 컴포넌트 (개정판 D2a-5). 색 없이도 문구와 아이콘으로 상태를 구별한다.
 import { act, render, screen } from "@testing-library/react";
+import { notifyProject } from "../api/client";
 import { JobAnnouncer, SaveAnnouncer, STATUS_KINDS, StatusIndicator, saveStatusKind } from "./StatusIndicator";
 
 it("상태 15종(작업 상태 2종, 단계 상태 3종 포함)은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
@@ -114,6 +115,34 @@ it("작업 알림은 진행 중 작업이 사라질 때만 알린다 (D2b-5c)", 
   rerender(<JobAnnouncer active={a} />);
   rerender(<JobAnnouncer active={{ id: "job-b", project: "보고 B" }} />);  // 한 조회 간격 안에 다음 작업이 시작됐다
   expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
+});
+
+it("작업 알림은 성공, 실패, 취소, 중단, 완료 불명을 다른 문구로 알린다 (D3a-4, C23)", () => {
+  const status = (container: HTMLElement) => container.querySelector('[role="status"]')!.textContent;
+  const cases: [string, string][] = [
+    ["succeeded", "AI 생성 작업이 끝났습니다(보고 A)"],
+    ["failed", "AI 생성 작업이 실패했습니다(보고 A)"],
+    ["cancelled", "AI 생성 작업을 취소했습니다(보고 A)"],
+    ["interrupted", "AI 생성 작업이 중단되었습니다(보고 A)"],
+    ["remote_completion_unknown", "AI 생성 작업이 끝났는지 확인하지 못했습니다(보고 A)"],
+  ];
+  for (const [state, text] of cases) {
+    // 종결 알림이 진행 작업의 사라짐보다 먼저 온 경우
+    const a = { id: `job-${state}`, project: "보고 A" };
+    const first = render(<JobAnnouncer active={a} />);
+    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: a.id, state: state as never }));
+    first.rerender(<JobAnnouncer active={null} />);
+    expect(status(first.container)).toBe(text);
+    first.unmount();
+    // 사라짐을 먼저 알리고 종결 알림이 뒤에 온 경우: 결과 문구로 고친다
+    const b = { id: `job-late-${state}`, project: "보고 A" };
+    const second = render(<JobAnnouncer active={b} />);
+    second.rerender(<JobAnnouncer active={null} />);
+    expect(status(second.container)).toBe("AI 생성 작업이 끝났습니다(보고 A)");
+    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: b.id, state: state as never }));
+    expect(status(second.container)).toBe(text);
+    second.unmount();
+  }
 });
 
 it("작업 상태 2종의 색조와 글자 모양 아이콘 (D2b-5c)", () => {

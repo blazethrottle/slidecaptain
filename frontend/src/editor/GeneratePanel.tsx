@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  AiConsentDeclined, api, isStaleStoryPlan, messageOf, type ChapterResult, type Deck, type JobView, type ProjectInfo,
+  AiConsentDeclined, api, isStaleStoryPlan, type ChapterResult, type Deck, type JobView, type ProjectInfo,
   type Slots,
 } from "../api/client";
 import {
@@ -9,8 +9,10 @@ import {
 } from "../api/jobs";
 import { formatUsage } from "../api/usage";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
-import { ActiveJobNotice } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
+import { Diagnostics } from "../ui/Diagnostics";
+import { describeAiOutput, describeFailure } from "../ui/failure";
+import { FailureNotice } from "../ui/FailureNotice";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
@@ -30,8 +32,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const [result, setResult] = useState<ChapterResult | null>(null);
   const [job, setJob] = useState<JobView | null>(null);  // 결과를 만든 작업 (후보 처분과 낡음 판정)
   const [earlier, setEarlier] = useState(false);  // 화면을 다시 열어 찾은 지난 후보
-  const [error, setError] = useState("");
-  const [failure, setFailure] = useState<unknown>(null);
+  const [error, setError] = useState("");  // 화면이 아는 문구(반영 전 확인 실패)
+  const [failure, setFailure] = useState<unknown>(null);  // 생성 실패. 원인별 안내로 보인다 (D3a-4)
   const [followError, setFollowError] = useState("");
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
@@ -39,6 +41,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const chapterIdRef = useRef(chapterId);
   chapterIdRef.current = chapterId;
   const follow = useRef<AbortController | null>(null);
+  const lastRun = useRef<(() => void) | null>(null);  // 실패 안내의 "다시 생성"이 같은 종류를 다시 부른다
 
   const show = (view: JobView, fromEarlier: boolean) => {
     setJob(view);
@@ -53,7 +56,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
     else if (e instanceof JobCancelled) setCancelNotice("생성이 취소되었습니다.");
     else if (isStaleStoryPlan(e)) setStoryStale(true);
-    else { setError(messageOf(e)); setFailure(e); }
+    else setFailure(e);
   };
 
   // 장을 전환하면 이전 장의 결과와 오류를 비운다: 다른 장에 반영되는 오귀속 쓰기 방지 (리뷰 반영).
@@ -98,7 +101,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   const run = async (kind: "chapter" | "condense", params: object) => {
     const requestedChapterId = chapterId;  // 호출 시점의 장을 캡처해 응답 도착 시 대조한다 (리뷰 반영)
     const controller = follow.current;
-    const previous = job;  // 등록에 성공하면 보이던 후보는 새 생성이 대신한다 (D2b-5b 리뷰 R2)
+    const previous = job;
+    lastRun.current = () => void run(kind, params);  // 등록에 성공하면 보이던 후보는 새 생성이 대신한다 (D2b-5b 리뷰 R2)
     setBusy(true);
     setError("");
     setFailure(null);
@@ -126,6 +130,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   };
 
   const regenerate = () => run("chapter", { instructions });
+  const again = () => (lastRun.current ?? (() => void regenerate()))();
+  const retryActions = busy ? {} : { regenerate: again, retry: again, retry_later: again, regenerate_chapter: again };
   const condense = () => {
     if (!slide) return;
     void run("condense", { slots: slide.slots, instructions });
@@ -193,15 +199,15 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
       {followError && <p role="status">{followError}</p>}
       {error && <p role="alert">{error}</p>}
-      <ActiveJobNotice error={failure} />
+      <FailureNotice failure={failure ? describeFailure(failure) : null} actions={retryActions} />
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance
         hasDiagrams={deck.structure.chapters.some(chapter => chapter.template === "diagram")} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {result && result.status === "format_error" && (
-        <div role="alert">
-          <p>AI 응답을 형식에 맞게 읽지 못했습니다. 원문을 확인하고 다시 시도해 주세요.</p>
-          <details><summary>AI 응답 원문</summary><pre>{result.raw_text}</pre></details>
-        </div>
+        <FailureNotice failure={describeAiOutput(job)} actions={retryActions}>
+          <p>AI 응답 원문</p><pre>{result.raw_text}</pre>
+          <p className="usage">{formatUsage(result.usage)}</p>
+        </FailureNotice>
       )}
       {result && result.status === "ok" && reasons.length > 0 && (
         <div className="generate-result">
@@ -233,9 +239,13 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
           <Button variant="danger" onClick={dismiss}>버리기</Button>
         </div>
       )}
-      {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6).
-          형식 오류로 끝나도 최소 1회 호출은 있었으므로 상태 분기 밖에서 항상 보인다 */}
-      {result && <p className="usage">{formatUsage(result.usage)}</p>}
+      {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6). 형식 오류면 실패 안내의
+          진단 상세에, 그 밖에는 따로 접힌 진단 상세에 둔다 (D3a-4, R12) */}
+      {result && result.status !== "format_error" && (
+        <Diagnostics fields={job ? { jobId: job.id, jobKind: job.kind } : undefined}>
+          <p className="usage">{formatUsage(result.usage)}</p>
+        </Diagnostics>
+      )}
     </section>
   );
 }

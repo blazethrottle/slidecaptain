@@ -112,6 +112,18 @@ label.btn-primary:has(input:disabled), label.btn-primary:has(input:disabled):hov
 input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), select {
   min-height: var(--control-height); box-sizing: border-box; }
 [role="alert"] { color: var(--color-danger); }
+/* 원인별 실패 안내 (D3a-4): 위험색은 "무슨 일" 한 줄에만 두고, 보존 사실과 할 일은 본문색으로 읽힌다.
+   진단 상세는 판단에 쓰지 않는 정보라 흐린 작은 글자다 */
+.failure-notice { color: var(--color-text); border-inline-start: var(--border-width-strong) solid var(--color-danger);
+  padding-inline-start: var(--space-3); margin-block: var(--space-3); }
+.failure-notice > p { margin-block: var(--space-1); }
+.failure-notice > .failure-what { color: var(--color-danger); font-weight: 600; }
+.diagnostics { color: var(--color-text-muted); font-size: var(--font-size-small); margin-block: var(--space-2); }
+.diagnostics dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0; }
+.diagnostics dl > div { display: contents; }
+.diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+.diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .preview-holder { width: 100%; overflow: hidden; }
 .frame.selected { outline: var(--border-width-strong) solid var(--color-primary); }

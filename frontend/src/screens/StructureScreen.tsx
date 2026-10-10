@@ -9,7 +9,9 @@ import {
   blockingReasons, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
-import { ActiveJobNotice } from "../ui/ActiveJobNotice";
+import { Diagnostics } from "../ui/Diagnostics";
+import { describeAiOutput, describeFailure, describeJobFailure, type FailureDescription } from "../ui/failure";
+import { FailureNotice } from "../ui/FailureNotice";
 import { StatusIndicator } from "../ui/StatusIndicator";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
@@ -23,7 +25,7 @@ import type { SaveStatus } from "../ui/StatusIndicator";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
-  "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)";
+  "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 사용량 기록 파일에 있습니다.)";
 
 // 취소는 실패가 아니다 (계획서 B3): AI 전송 고지를 취소하면 "취소"로 표시하고 role=alert 배너를
 // 띄우지 않는다. 이 문구는 GeneratePanel의 취소 안내와 같다
@@ -40,6 +42,9 @@ const ACTIVE_JOB_BEFORE_APPROVAL = "다른 AI 작업이 진행 중이라 승인�
 const UNKNOWN_REGENERATE_CONFIRM =
   "완료 여부를 확인하지 못한 장이 있습니다. 다시 생성하면 AI 사용량이 한 번 더 기록될 수 있습니다. 계속할까요?";
 const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
+// 승인 반영이 저장 충돌(412)로 거절됐을 때 실패 안내의 "무슨 일"과 "무엇이 보존됐는가" (D2a 이월 3, D3a-4)
+const APPROVAL_CONFLICT = "다른 창이나 프로그램에서 먼저 저장되어 장 구성을 승인하지 않았습니다.";
+const APPROVAL_NOT_PRESERVED = "승인하려던 장 구성을 보존하지 못했습니다. 아래 상자의 내용을 복사해 보관해 주세요.";
 
 // 원장의 장 상태를 화면 표시로 바꾼다 (계획서 D2b-5a 하위 상태 표). 그 뒤 슬라이드가 생긴 장은 완료로 보인다
 function chapterLabel(chapter: ChapterView, hasSlide: boolean): ProgressLabel {
@@ -141,6 +146,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const cancelNoticeRef = useRef("");
   cancelNoticeRef.current = cancelNotice;
   const [rawText, setRawText] = useState("");
+  // 원인별 실패 안내 (D3a-4, 계획 4.3). failure: 화면이 받은 오류, formatWhat: 구조안 형식 오류의 문구,
+  // batchFailure: 이 화면이 따라간 묶음의 첫 실패 장
+  const [failure, setFailure] = useState<FailureDescription | null>(null);
+  const [formatWhat, setFormatWhat] = useState("");
+  const formatJob = useRef<JobView | null>(null);  // 형식 오류를 낸 구조안 작업 (진단 상세의 작업 ID)
+  const [batchFailure, setBatchFailure] = useState<{ lead: string; failure: FailureDescription } | null>(null);
   // 저장하지 못한 생성 결과의 보존 (D2a-2): 보존 안내 또는 보존마저 실패했을 때 복사할 내용
   const [preservedNotice, setPreservedNotice] = useState("");
   const [unsavedBackup, setUnsavedBackup] = useState<string | null>(null);
@@ -204,27 +215,34 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     try {
       const info = await api.saveDraft(project.name, { reason, source: "structure_approval", deck: target });
       setUnsavedBackup(null);
-      setPreservedNotice(reason === "generation_unsaved"
-        ? `저장하지 못한 생성 결과를 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`
-        : `승인하려던 장 구성을 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
+      // 충돌 보존은 실패 안내의 "무엇이 보존됐는가"에 싣는다. 따로 띄우면 두 안내가 어긋난다 (D2a 이월 3)
+      if (reason === "conflict") {
+        return `승인하려던 장 구성을 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`;
+      }
+      setPreservedNotice(`저장하지 못한 생성 결과를 보존했습니다(${formatSavedAt(info.saved_at)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
+      return null;
     } catch {
       setPreservedNotice("");
       setUnsavedBackup(JSON.stringify(target, null, 2));
+      return null;
     }
   };
   const showFailure = (error: unknown) => {
     const stale = isStaleStoryPlan(error);
     setStoryStale(stale);
-    setError(stale ? "" : messageOf(error));
+    setError("");
+    setFailure(stale ? null : describeFailure(error));
   };
+  const resetError = () => { setError(""); setFailure(null); setFormatWhat(""); setBatchFailure(null); };
 
   // 구조안 작업의 결과를 초안에 올린다. 후보는 항상 AI 재생성 초안으로 보아 승인 때 옛 슬라이드를 계승하지 않는다
   const showStructure = (view: JobView) => {
     const result = jobResult<StructureResult>(view);
     if (result.status === "format_error") {
-      setError(result.format_issue === "answer_not_in_summary"
-        ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요."
-        : "AI 응답을 형식에 맞게 읽지 못했습니다. 입력한 자료와 주안점은 유지했습니다. 다시 생성해 주세요.");
+      formatJob.current = view;
+      setFormatWhat(result.format_issue === "answer_not_in_summary"
+        ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다."
+        : "AI 응답을 형식에 맞게 읽지 못했습니다.");
       setRawText(result.raw_text);
       setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
     } else if (result.structure) {
@@ -242,7 +260,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     if (hasDiagrams) return;
     setBusy(true);
     onBusyChange?.(true);
-    setError("");
+    resetError();
     setStoryStale(false);
     setCancelNotice("");
     setRawText("");
@@ -284,7 +302,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (controller.signal.aborted) return;  // 화면이 내려갔다 (리뷰 R23)
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
       else if (e instanceof JobCancelled) setCancelNotice("구조안 생성이 취소되었습니다.");
-      else { showFailure(e); setStartError(e); }  // 다른 작업이 진행 중이면 그 작업 취소 버튼 (리뷰 R12)
+      else showFailure(e);  // 다른 작업이 진행 중이면 실패 안내가 그 작업 취소 버튼을 보인다 (리뷰 R12)
     } finally {
       if (followAbort.current === controller) followAbort.current = null;
       if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
@@ -343,9 +361,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       }
     } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
       const malformedOnly = view.chapters.every((c) => c.state === "succeeded" || c.error?.error_class === "ai_output");
-      const detail = view.chapters.find((c) => c.state === "failed" && c.error?.detail)?.error?.detail;
-      show(malformedOnly ? "일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요."
-        : `일부 장을 만들지 못했습니다${detail ? `(${detail})` : ""}. 실패한 장만 다시 생성해 주세요.`);
+      const failed = view.chapters.find((c) => c.state === "failed");
+      if (malformedOnly) show("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요.");
+      else if (live && failed) {
+        // 첫 실패 장의 원인으로 안내한다. 남은 장은 "앞 장 때문에 중단"이라 따로 안내하지 않는다 (D3a-4, 계획 4.3)
+        setBatchFailure({ lead: "일부 장을 만들지 못했습니다. 아래 원인을 확인한 뒤 실패한 장만 다시 생성해 주세요.",
+          failure: describeJobFailure(view, failed) });
+      } else {
+        const detail = failed?.error?.detail;
+        show(`일부 장을 만들지 못했습니다${detail ? `(${detail})` : ""}. 실패한 장만 다시 생성해 주세요.`);
+      }
     }
   };
 
@@ -490,7 +515,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         showFailure(e);
         return null;
       }
-      setStartError(e);
+      setStartError(e);  // 원인별 안내로 보인다 (D3a-4)
       const what = approval ? "장 구성은 저장했지만" : "이 장의 다시 생성은";
       if (e instanceof ApiError && e.status === 412) {
         // 등록 기준 저장본이 바뀌었다. 다시 시작 대신 서버 내용을 다시 읽게 한다 (리뷰 R10)
@@ -500,8 +525,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       } else {
         // 장 하나 다시 생성은 그 장의 버튼으로 다시 시작한다. 응답을 받지 못한 등록만 같은 요청으로 다시 보낸다
         setCanRestart(approval || pendingStart.current !== null);
-        setStartFailure(approval ? `장 구성은 저장했고 내용 생성은 시작하지 못했습니다. ${messageOf(e)}`
-          : `이 장의 다시 생성을 시작하지 못했습니다. ${messageOf(e)}`);
+        setStartFailure(approval ? "장 구성은 저장했고 내용 생성은 시작하지 못했습니다."
+          : "이 장의 다시 생성을 시작하지 못했습니다.");
       }
       return null;
     }
@@ -542,7 +567,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     if (unknown && !window.confirm(UNKNOWN_REGENERATE_CONFIRM)) return;
     setBusy(true);
     onBusyChange?.(true);
-    setError("");
+    resetError();
     setStoryStale(false);
     setCancelNotice("");
     setPreservedNotice("");
@@ -565,8 +590,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         const status = await api.getActiveJob().catch(() => null);
         if (status && !status.ledger_available) { setError(LEDGER_UNAVAILABLE_BEFORE_APPROVAL); return; }
         if (status?.active) {
-          setStartError(new ApiError(409, "", "generation_active", status.active));
-          setError(ACTIVE_JOB_BEFORE_APPROVAL);
+          setFailure(describeFailure(new ApiError(409, ACTIVE_JOB_BEFORE_APPROVAL, "generation_active", status.active)));
           return;
         }
       }
@@ -582,8 +606,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       try {
         await api.putDeck(project.name, current, true);  // 승인 반영: 직전 상태가 스냅샷으로 남는다
       } catch (e) {
-        if (e instanceof ApiError && e.status === 412) { await preserveUnsaved(current, "conflict"); onConflict?.(); }
-        throw e;
+        if (!(e instanceof ApiError && e.status === 412)) throw e;
+        const kept = await preserveUnsaved(current, "conflict");
+        onConflict?.();
+        setFailure({ ...describeFailure(e), what: APPROVAL_CONFLICT, preserved: kept ?? APPROVAL_NOT_PRESERVED });
+        return;
       }
       onDeckChange(current);
       if (structureJob.current) {
@@ -616,7 +643,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     if (row?.state === "remote_completion_unknown" && !window.confirm(UNKNOWN_REGENERATE_CONFIRM)) return;
     setBusy(true);
     onBusyChange?.(true);
-    setError("");
+    resetError();
     setStoryStale(false);
     setCancelNotice("");
     setStartFailure("");
@@ -667,10 +694,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
-      {startFailure && <p role="alert">{startFailure}
-        {canRestart && <> <button onClick={() => void restart()}>내용 생성 다시 시작</button></>}
-      </p>}
-      <ActiveJobNotice error={startError} />
+      <FailureNotice failure={failure} />
+      {batchFailure && <FailureNotice failure={batchFailure.failure} lead={batchFailure.lead} />}
+      {formatWhat && <FailureNotice failure={describeAiOutput(formatJob.current, formatWhat)} actions={busy ? {} : { regenerate: () => void generate() }}>
+        {rawText && <><p>AI 응답 원문</p><pre>{rawText}</pre></>}
+        {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
+      </FailureNotice>}
+      {startFailure && (startError
+        ? <FailureNotice failure={describeFailure(startError)} lead={startFailure} />
+        : <p role="alert">{startFailure}</p>)}
+      {startFailure && canRestart && <p><button onClick={() => void restart()}>내용 생성 다시 시작</button></p>}
       {pastNotice && <p className="notice">{pastNotice}</p>}
       {preservedNotice && <p role="status">{preservedNotice}</p>}
       {unsavedBackup && (
@@ -687,11 +720,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           staleStructure.current = null;
           setEarlierNotice("");
         }}>후보 버리기</Button>}</p>}
-      {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
-      {/* C-1 리뷰 반영: draft 유무와 무관하게 렌더한다(형식 오류 안내 근처).
-          draft가 비어 있으면 "장 구성" 섹션 자체가 없어 그 안에 두면 최초 생성의
-          format_error에서 사용량을 보여줄 자리가 없었다 */}
-      {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
+      {/* C-1 리뷰 반영: draft 유무와 무관하게 렌더한다(형식 오류 안내 근처). 사용량과 응답 원문은 접힌 진단
+          상세에 둔다. 구조안 형식 오류면 위 실패 안내의 진단 상세에 있다 (D3a-4, R12) */}
+      {!formatWhat && (rawText || structureUsage) && <Diagnostics>
+        {rawText && <><p>AI 응답 원문</p><pre>{rawText}</pre></>}
+        {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
+      </Diagnostics>}
       {numbers.length > 0 && (
         <p className="number-warning">자료에서 찾지 못한 수치가 있습니다: {numbers.join(", ")}. 반영 전에 확인해 주세요.</p>
       )}
@@ -785,7 +819,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           <button onClick={add}>장 추가</button>
           {/* F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 실패 단서만은 표시한다.
               chapterUsageSummary만 조건으로 두면 성공분이 0건일 때 이 문단 자체가 사라졌다 */}
-          {(chapterUsageSummary || chapterUsageHadUnaccountedFailure) && (
+          {(chapterUsageSummary || chapterUsageHadUnaccountedFailure) && <Diagnostics>
             <p className="usage">
               {[
                 chapterUsageSummary
@@ -793,7 +827,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                 chapterUsageHadUnaccountedFailure && FAILED_CHAPTER_USAGE_NOTICE,
               ].filter(Boolean).join(" ")}
             </p>
-          )}
+          </Diagnostics>}
           {job && showJob && !busy && (() => {
             // 가장 최근 묶음이 장 하나만 다시 만들었더라도 요약은 덱 전체의 빈 장을 센다
             const chapters = deck.structure.chapters;
@@ -820,7 +854,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         onApplied={saved => {
           setDraft(saved.structure.chapters); setStoryPlan(saved.structure.story_plan ?? null);
           setDecisionQuestion(saved.structure.story_plan!.brief.decision_question);
-          setDraftGenerated(false); setStoryStale(false); setError("");
+          setDraftGenerated(false); setStoryStale(false); resetError();
           setProgress({}); onDeckChange(saved);
         }} />}
       {/* 문서 전체 변경과 근거 이동은 JSON을 다루는 고급 작업이라 접힌 영역에 두어 단계의 주 행동과 섞지 않는다
@@ -840,7 +874,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         onApplied={saved=>{
           setDraft(saved.structure.chapters);setStoryPlan(saved.structure.story_plan??null);
           setDecisionQuestion(saved.structure.story_plan?.brief.decision_question??"");
-          setDraftGenerated(false);setStoryStale(false);setError("");setProgress({});onDeckChange(saved);
+          setDraftGenerated(false);setStoryStale(false);resetError();setProgress({});onDeckChange(saved);
         }} />}
       </details>
     </div>

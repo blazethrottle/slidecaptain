@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type Deck, type GenerationUsage, type StructureResult } from "../api/client";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
-import { emptyUsage } from "../test/usage";
+import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { StructureScreen } from "./StructureScreen";
 
 // 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
@@ -304,19 +304,23 @@ it("구조안 생성 뒤 사용량 문단이 승인 버튼 위에 보인다", as
   // DOCUMENT_POSITION_PRECEDING(2): usageP가 approveBtn보다 문서상 앞에 있다 (F6 리뷰 반영: 주석 정정)
   // eslint-disable-next-line no-bitwise
   expect(approveBtn.compareDocumentPosition(usageP) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  expectUsageCollapsed();  // 사용량은 접힌 진단 상세에 있다 (D3a-4, R12)
 });
 
 // C 묶음 최종 리뷰 major C-1: 구조안 최초 생성이 format_error로 끝나도 계측된 사용량이
 // 화면에 남아야 한다(draft가 비어 있어 "장 구성" 섹션 자체가 없는 경우)
-it("구조안 최초 생성이 format_error면 사용량이 형식 오류 안내와 함께 보인다", async () => {
+it("구조안 최초 생성이 format_error면 원인별 안내를 보이고 사용량과 원문은 그 진단 상세에 둔다 (D3a-4)", async () => {
   generateStructure.mockResolvedValue({
     status: "format_error", structure: null, usage: measuredUsage(),
     raw_text: "이상한 응답", unverified_numbers: [], format_retried: true,
   });
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
-  await screen.findByText(/형식에 맞게 읽지 못했습니다/);
-  expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  const alert = (await screen.findByText(/형식에 맞게 읽지 못했습니다/)).closest("[role=alert]") as HTMLElement;
+  expect(alert).toHaveTextContent(/지금 할 수 있는 일: 같은 입력으로 다시 생성/);
+  expect(within(alert).getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expect(within(alert).getByText("이상한 응답")).not.toBeVisible();
+  expectUsageCollapsed();
 });
 
 // 같은 결함의 두 번째 경로: 기존 구조안이 있는 상태(장 구성 섹션이 이미 렌더됨)에서
@@ -333,6 +337,7 @@ it("기존 구조안이 있는 상태에서 다시 생성이 format_error면 새
   await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
   await screen.findByText(/형식에 맞게 읽지 못했습니다/);
   expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expectUsageCollapsed();
 });
 
 it("사용량 값이 없으면 미확인이 보인다", async () => {
@@ -384,10 +389,14 @@ it("승인 루프에서 한 장이 503으로 실패하면 합계 줄에 포함�
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await screen.findByText(/AI 서비스가 응답하지 않습니다/);
   expect(onDone).not.toHaveBeenCalled();
-  // 성공한 1개 장(c1)의 usage만 합계에 실리고, 실패한 c2는 결과 자체가 없어 빠졌다는 단서가 보인다
-  expect(screen.getByText(/장 생성 1회.*입력 100 토큰/)).toBeInTheDocument();
+  // 성공한 1개 장(c1)의 usage만 합계에 실리고, 실패한 c2는 결과 자체가 없어 빠졌다는 단서가 보인다.
+  // 사용량은 접힌 진단 상세 안에 있어 기본 상태에서는 보이지 않고, 펼치면 보인다 (D3a-4, R12)
+  const total = screen.getByText(/장 생성 1회.*입력 100 토큰/);
+  expect(total).not.toBeVisible();
+  await userEvent.click(within(total.closest("details")!).getByText("진단 상세"));
+  expect(total).toBeVisible();
   expect(screen.getByText(
-    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)",
+    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 사용량 기록 파일에 있습니다.)",
     { exact: false },
   )).toBeInTheDocument();
 });
@@ -432,7 +441,7 @@ it("승인 루프에서 모든 장이 실패해도 실패 단서가 보인다", 
   expect(onDone).not.toHaveBeenCalled();
   // 성공분이 0건이라 "장 생성 N회" 합계 줄은 없지만, 실패했다는 사실 자체는 화면에 남아야 한다
   expect(screen.getByText(
-    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)",
+    "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 사용량 기록 파일에 있습니다.)",
     { exact: false },
   )).toBeInTheDocument();
 });
@@ -487,8 +496,9 @@ it("묶음 등록이 실패하면 장 구성은 저장했고 생성을 시작하
   vi.mocked(api.startChapters).mockRejectedValueOnce(new ApiError(409, "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요.",
     "generation_active"));
   await approveTwoChapters(null);
-  expect(await screen.findByText(/장 구성은 저장했고 내용 생성은 시작하지 못했습니다.*다른 AI 생성이 진행 중/))
-    .toBeInTheDocument();
+  // 화면이 아는 앞 문장과 서버 문구가 한 실패 안내 안에 있다 (D3a-4)
+  const lead = await screen.findByText("장 구성은 저장했고 내용 생성은 시작하지 못했습니다.");
+  expect(lead.closest("[role=alert]")).toHaveTextContent(/다른 AI 생성이 진행 중.*지금 할 수 있는 일: 그 작업 취소/);
   expect(vi.mocked(api.putDeck).mock.calls).toHaveLength(1);
   mockBatch(batchView([chapterView("c1", "succeeded"), chapterView("c2", "succeeded")]),
     deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]));
@@ -591,6 +601,10 @@ it("최초 승인 반영이 412면 승인하려던 구성을 보존한다 (D2a-2
   const [, req] = vi.mocked(api.saveDraft).mock.calls[0];
   expect(req.reason).toBe("conflict");
   expect(req.deck.structure.chapters.map((c) => c.id)).toEqual([CH1.id, CH2.id]);
+  // 거절 사실과 보존 사실이 한 실패 안내에 있다. 보존 안내를 따로 띄우지 않는다 (D2a 이월 3, D3a-4)
+  const alert = (await screen.findByText(/장 구성을 승인하지 않았습니다/)).closest("[role=alert]");
+  expect(alert).toHaveTextContent(/승인하려던 장 구성을 보존했습니다\(2026-10-08 10:00\).*지금 할 수 있는 일: 서버 내용 다시 읽기/);
+  expect(screen.getAllByText(/승인하려던 장 구성을 보존했습니다/)).toHaveLength(1);
 });
 
 it("장 구성 초안을 고치면 창 닫기 경고를 위해 미저장을 알린다 (D2a-2)", async () => {
@@ -637,7 +651,7 @@ it("결정 질문만 고쳐도 미저장으로 알린다 (리뷰 R16)", async ()
 });
 
 it("시작 전에 취소된 장만 있으면 사용량 누락 단서를 보이지 않고, 시작한 뒤 취소된 장은 보인다 (D2b-5a)", async () => {
-  const clue = "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 ai-usage.jsonl)";
+  const clue = "(실패한 장의 사용량은 이 합계에 포함되지 않았습니다. 정확한 기록은 프로젝트 폴더의 사용량 기록 파일에 있습니다.)";
   const deck = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]);
   vi.mocked(api.listJobs).mockResolvedValueOnce([batchView([
     chapterView("c1", "succeeded", { result: chapterResult(COVER, measuredUsage()) }),
@@ -1169,7 +1183,8 @@ it("장 다시 생성의 등록 실패는 승인 문구와 승인 다시 시작�
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}}
     pollIntervalMs={0} />);
   await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
-  expect(await screen.findByText(/이 장의 다시 생성을 시작하지 못했습니다.*작업 기록을 열 수 없습니다/)).toBeInTheDocument();
+  const lead = await screen.findByText("이 장의 다시 생성을 시작하지 못했습니다.");
+  expect(lead.closest("[role=alert]")).toHaveTextContent(/작업 기록을 열 수 없습니다/);
   expect(screen.queryByText(/장 구성은 저장했/)).toBeNull();
   expect(screen.queryByRole("button", { name: "내용 생성 다시 시작" })).toBeNull();
   expect(await screen.findByRole("button", { name: "1번 장 다시 생성" })).toBeEnabled();

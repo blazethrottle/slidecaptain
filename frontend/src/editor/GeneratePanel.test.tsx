@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type ChapterResult, type Deck } from "../api/client";
 import { jobView } from "../test/jobs";
-import { emptyUsage } from "../test/usage";
+import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { GeneratePanel } from "./GeneratePanel";
 
 // 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
@@ -229,7 +229,7 @@ it("축약에서 AI 전송을 취소해도 알림이 아닌 안내 문구를 보
 });
 
 // 태스크 C4: 결과 안내(축약, 재시도 문구) 옆에 사용량 한 줄을 보인다
-it("재생성 결과 안내 옆에 사용량 한 줄을 보인다", async () => {
+it("재생성 결과의 사용량 한 줄은 접힌 진단 상세에 있다 (D3a-4, R12)", async () => {
   // F8 리뷰 반영: 제목이 실제로 검증하지 않는 "값이 없으면 미확인" 주장을 포함하고 있었다.
   // 그 케이스는 바로 다음 테스트가 담당하므로 제목을 실제 검증 내용에 맞춘다.
   answer({ ...okResult, usage: measuredUsage() });
@@ -237,6 +237,9 @@ it("재생성 결과 안내 옆에 사용량 한 줄을 보인다", async () => 
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
   expect(screen.getByText(/입력 100 토큰/)).toBeInTheDocument();
+  expectUsageCollapsed();
+  await userEvent.click(screen.getByText("진단 상세"));
+  expect(screen.getByText(/입력 100 토큰/)).toBeVisible();
 });
 
 it("사용량 값이 없으면 미확인이 보인다", async () => {
@@ -249,15 +252,19 @@ it("사용량 값이 없으면 미확인이 보인다", async () => {
 
 // F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6). 형식 오류로
 // 끝나도 최소 1회 호출은 있었으므로 그 사용량을 화면에서 감추면 안 된다.
-it("형식 오류에도 사용량 한 줄이 보인다", async () => {
+it("형식 오류면 원인별 안내를 보이고 사용량과 응답 원문은 그 진단 상세에 둔다 (D3a-4)", async () => {
   answer({
     status: "format_error", slots: null, usage: measuredUsage(), raw_text: "이상한 원문",
     warnings: [], unverified_numbers: [], format_retried: true, condensed: false,
   });
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" onReplace={() => {}} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  expect(await screen.findByText(/형식에 맞게 읽지 못했습니다/)).toBeInTheDocument();
+  const alert = (await screen.findByText(/형식에 맞게 읽지 못했습니다/)).closest("[role=alert]")!;
+  expect(alert).toHaveTextContent(/입력은 그대로입니다.*지금 할 수 있는 일: 같은 입력으로 다시 생성/);
   expect(screen.getByText(/AI 사용량: 호출 1회/)).toBeInTheDocument();
+  expectUsageCollapsed();
+  expect(screen.getByText("이상한 원문")).not.toBeVisible();
+  expect(within(alert as HTMLElement).getByText("이상한 원문")).toBeInTheDocument();
 });
 
 it("지시사항 입력이 .field 안에 있고 버튼은 .actions 행에 있다", () => {

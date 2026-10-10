@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { onProjectEvent, type JobView } from "../api/client";
 import type { SaveState } from "../state/useDeckEditor";
 
 // 상태 표시 (개정판 D2a-5, 제품 설계 4절). 색만으로 구별하지 않도록 상태마다 문구와 아이콘을 함께 둔다.
@@ -82,14 +83,39 @@ export function SaveAnnouncer({ kind }: { kind: StatusKind | null }) {
  * 조회는 1초마다 반복되므로 진행 중 상태가 바뀔 때마다 알리면 읽기가 끊긴다. 한 조회 간격 안에 다음 작업이
  * 시작돼도 앞 작업의 끝을 놓치지 않도록 작업 ID로 비교한다 (D2b-5c 리뷰 R13)
  */
+const ENDED_TEXT: Partial<Record<JobView["state"], string>> = {
+  succeeded: "AI 생성 작업이 끝났습니다",
+  failed: "AI 생성 작업이 실패했습니다",
+  cancelled: "AI 생성 작업을 취소했습니다",
+  interrupted: "AI 생성 작업이 중단되었습니다",
+  remote_completion_unknown: "AI 생성 작업이 끝났는지 확인하지 못했습니다",
+};
+
+// 결과는 이 탭이 따라간 작업의 종결 알림(job_ended)에서 얻는다. 다른 탭의 작업처럼 결과를 모르면 끝났다고만
+// 알리고, 사라짐을 먼저 알린 뒤 결과가 오면 결과 문구로 고친다 (D3a-4, C23)
 export function JobAnnouncer({ active }: { active: { id: string; project: string } | null }) {
   const previous = useRef(active);
+  const ended = useRef(new Map<string, JobView["state"]>());
+  const announced = useRef<{ id: string; project: string } | null>(null);
   const [message, setMessage] = useState("");
+  const text = (job: { id: string; project: string }) => {
+    const state = ended.current.get(job.id);
+    return `${(state && ENDED_TEXT[state]) ?? "AI 생성 작업이 끝났습니다"}(${job.project})`;
+  };
+  useEffect(() => onProjectEvent((event) => {
+    if (event.kind !== "job_ended" || !event.jobId || !event.state) return;
+    ended.current.set(event.jobId, event.state);
+    if (announced.current?.id === event.jobId) setMessage(text(announced.current));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []);
   useEffect(() => {
     const before = previous.current;
-    if (before && before.id !== active?.id) setMessage(`AI 생성 작업이 끝났습니다(${before.project})`);
-    else if (active) setMessage("");
+    if (before && before.id !== active?.id) {
+      announced.current = before;
+      setMessage(text(before));
+    } else if (active) setMessage("");
     previous.current = active;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
   return <p className="visually-hidden" role="status">{message}</p>;
 }

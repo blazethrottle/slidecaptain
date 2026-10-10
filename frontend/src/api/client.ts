@@ -69,8 +69,9 @@ export type ProviderId = AISelection["provider"];
 export type LoginAttempt = components["schemas"]["LoginAttempt"];
 
 export class ApiError extends Error {
-  // active: 409 generation_active 응답이 담은 진행 중 작업 (D2b-5b). 화면이 그 작업의 취소 버튼을 보인다
-  constructor(public status: number, detail: string, public code?: string, public active?: ActiveJob) {
+  // active: 409 generation_active 응답이 담은 진행 중 작업 (D2b-5b). 화면이 그 작업의 취소 버튼을 보인다.
+  // job: 작업이 실패로 끝나 던진 오류의 작업 (D3a-4). 실패 안내가 원인 분류와 작업 ID, 시각을 읽는다
+  constructor(public status: number, detail: string, public code?: string, public active?: ActiveJob, public job?: JobView | null) {
     super(detail);
   }
 }
@@ -128,7 +129,9 @@ export function resetEtags(): void {
 // 공통 알림 지점 (개정판 D3a-3, 계획 4.5). 저장 성공, 작업 등록 응답, 작업 종결을 화면 안 이벤트로 낸다.
 // 진행 API 다시 조회(D3a-3)와 진행 작업 갱신(D3a-5), 다른 탭 알림(D3a-6)이 이것을 듣는다. 저장하지 않는 POST
 // (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
-export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string };
+// job_ended는 종결 상태를 싣는다: 작업 종결 알림이 성공, 실패, 취소, 중단을 다르게 알린다 (D3a-4, C23)
+export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string;
+  state?: JobView["state"] };
 const projectListeners = new Set<(event: ProjectEvent) => void>();
 
 export function onProjectEvent(listener: (event: ProjectEvent) => void): () => void {
@@ -219,7 +222,7 @@ export async function followJob(
       const view = await fetchJob();
       await onUpdate(view);
       if (TERMINAL_JOB_STATES.has(view.state)) {
-        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id });
+        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state });
         return view;
       }
     } catch (error) {

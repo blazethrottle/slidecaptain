@@ -425,6 +425,25 @@ it("편집 중에 보존한 자료 안내는 오류가 아니라 주의 안내�
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
+it("저장 먼저 안내는 주의로, 요청 실패는 오류로 보인다. 문구가 아니라 안내를 내는 자리가 정한다 (D3a-4, R14)", async () => {
+  // 지금 코드의 틀린 동작: 보존 안내 하나만 문구로 골라 주의로 그리고, 저장 먼저 안내 네 곳은 오류 알림이다
+  vi.mocked(api.listSources).mockResolvedValue(["first.md", "second.md"]);
+  vi.mocked(api.readSource).mockResolvedValueOnce({ text: "첫 원문" })
+    .mockRejectedValueOnce(new ApiError(404, "자료를 찾지 못했습니다."));
+  render(<SourcesScreen project={project} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));
+  await userEvent.type(await screen.findByLabelText("자료 내용"), " 수정");
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  const warning = screen.getByText(/다른 자료를 열기 전에/);
+  expect(warning).toHaveAttribute("role", "status");
+  expect(warning).toHaveClass("notice-warning");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await userEvent.clear(screen.getByLabelText("자료 내용"));
+  await userEvent.type(screen.getByLabelText("자료 내용"), "첫 원문");
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("자료를 찾지 못했습니다.");
+});
+
 it("자료 단계의 주 행동은 파일 선택 하나다 (D3a-1, 계획 4.6)", async () => {
   // 다시 씀(D3a-2): 보고 정보가 보고 목적 단계로 옮겨 가서 화면 하나에 주 행동이 하나다
   vi.mocked(api.listSources).mockResolvedValue(["first.md"]);
