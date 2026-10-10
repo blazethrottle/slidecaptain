@@ -39,13 +39,15 @@ function beforeUnload() {
 
 async function openReview(onBack = vi.fn()) {
   const view = render(<ProjectView project={project} onBack={onBack} />);
-  await userEvent.click(await screen.findByRole("button", { name: "검수 이력" }));
+  await userEvent.click(await screen.findByRole("button", { name: "검토와 내보내기" }));
   await userEvent.click(await screen.findByRole("button", { name: "report_v001 상세" }));
   await screen.findByLabelText("판단 근거");
   return { ...view, onBack };
 }
 
-it.each(["자료", "구조안", "편집", "목록으로", "스냅샷 복구", "초안 PPTX 내보내기", "검수 이력"])(
+// 다시 씀(D3a-2): 탭 이름을 단계 이름으로 바꿨다. 옛 "검수 이력"(지금 단계 자신)은 같은 단계를 다시 고르면
+// 아무것도 하지 않으므로 다른 단계인 "보고 목적"으로 바꿨다
+it.each(["자료", "구성", "편집", "목록으로", "스냅샷 복구", "초안 PPTX 내보내기", "보고 목적"])(
   "%s 이탈 확인을 취소하면 검수 입력과 beforeunload 보호를 유지한다", async name => {
     const { onBack } = await openReview();
     await userEvent.type(screen.getByLabelText("판단 근거"), "남겨 둘 수동 검수");
@@ -54,7 +56,7 @@ it.each(["자료", "구조안", "편집", "목록으로", "스냅샷 복구", "�
     await userEvent.click(screen.getByRole("button", { name }));
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("판단 근거")).toHaveValue("남겨 둘 수동 검수");
-    expect(screen.getByRole("button", { name: "검수 이력" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "검토와 내보내기" })).toHaveAttribute("aria-current", "step");
     expect(beforeUnload()).toBe(true);
     expect(api.createSnapshot).not.toHaveBeenCalled();
     expect(api.exportDeck).not.toHaveBeenCalled();
@@ -66,7 +68,7 @@ it("검수 입력을 버리는 이탈을 확인하면 이동하고 dirty 상태�
   await openReview();
   await userEvent.type(screen.getByLabelText("판단 근거"), "버리기로 확인한 입력");
   vi.spyOn(window, "confirm").mockReturnValue(true);
-  await userEvent.click(screen.getByRole("button", { name: "자료" }));
+  await userEvent.click(screen.getByRole("button", { name: "보고 목적" }));  // 다시 씀(D3a-2): 보고 정보는 보고 목적 단계에 있다
   expect(await screen.findByLabelText("보고서 제목")).toBeInTheDocument();
   expect(screen.queryByLabelText("판단 근거")).toBeNull();
   expect(beforeUnload()).toBe(false);
@@ -129,7 +131,7 @@ it("내보내기 중 늦게 열린 검수 화면은 내보내기 실패 후에�
   vi.mocked(api.createSnapshot).mockResolvedValue({ ok: true });
   vi.mocked(api.exportDeck).mockReturnValue(exported.promise);
   render(<ProjectView project={project} onBack={vi.fn()} />);
-  await userEvent.click(await screen.findByRole("button", { name: "검수 이력" }));
+  await userEvent.click(await screen.findByRole("button", { name: "검토와 내보내기" }));
   await userEvent.click(await screen.findByRole("button", { name: "report_v001 상세" }));
   await userEvent.click(screen.getByRole("button", { name: "초안 PPTX 내보내기" }));
   await waitFor(() => expect(api.exportDeck).toHaveBeenCalledTimes(1));

@@ -64,7 +64,8 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
   expect(screen.queryByText("목록 화면")).toBeNull();  // 착지 전에는 나가지 않는다
   // 이탈 처리 중에는 다른 이탈 경로도 잠근다: 두 leaveEditor 가 겹치면 먼저 끝난 쪽이 화면을 내린 뒤
   // 나중 쪽의 setTab 이 사라진 컴포넌트에 떨어진다 (브랜치 리뷰 발견 7, 2026-09-03)
-  for (const name of ["자료", "구조안", "편집", "초안 PPTX 내보내기", "스냅샷 복구", "목록으로"]) {
+  // 다시 씀(D3a-2): 탭 대신 다섯 단계 버튼. 내보내기는 검토 단계 화면 안에 있어 그 단계로 가는 버튼으로 본다
+  for (const name of ["보고 목적", "자료", "구성", "편집", "검토와 내보내기", "스냅샷 복구", "목록으로"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   d.resolve({ ok: true });
@@ -74,12 +75,12 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
 it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄운다 (FC-14)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
   // 편집기 자체의 저장 오류 문구도 alert 이므로 둘 중 하나가 이탈 중단 배너다
   await waitFor(() => expect(screen.getAllByRole("alert").map((a) => a.textContent).join("\n"))
     .toContain("저장하지 못해 이동을 중단"));
-  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(document.querySelector(".structure-screen")).toBeNull();
   expect(document.querySelector(".editor-screen")).not.toBeNull();  // 편집기가 남아 있으므로 언마운트 플러시도 없다
 });
@@ -87,9 +88,9 @@ it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄�
 it("검수 이력: 저장 실패 시 이동과 이력 요청을 중단한다", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(api.listExports).not.toHaveBeenCalled();
 });
 
@@ -101,40 +102,41 @@ it("검수 이력: 저장하지 않은 자료 본문을 보존하고 저장 후 
   vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
     checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
   render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "자료" }));  // 다시 씀(D3a-2): 처음 단계는 보고 목적이다
   await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
   const box = await screen.findByLabelText("자료 내용");
   await userEvent.type(box, " 수정 중");
   expect(dispatchBeforeUnload()).toBe(true);
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   expect(screen.getByLabelText("자료 내용")).toHaveValue("원문 수정 중");
   expect(api.listExports).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
   expect(api.writeSource).toHaveBeenCalledWith(project.name, "source.md", "원문 수정 중");
   expect(dispatchBeforeUnload()).toBe(false);
   expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
 });
 
-it("보고 정보 저장 중 본문이 바뀌어도 이동 직전에 다시 확인해 보존한다", async () => {
+it("보고 정보 저장이 착지하기 전에는 다음 단계로 옮기지 않는다", async () => {
+  // 다시 씀(D3a-2): 옛 시험은 보고 정보 저장 중 같은 화면의 자료 본문이 바뀌는 경합을 지켰다. 보고 정보와
+  // 자료가 다른 단계로 나뉘어 그 경합은 생기지 않으므로, 남는 계약(저장 착지 전 이동 금지)을 지킨다
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
-  vi.mocked(api.listSources).mockResolvedValue(["source.md"]);
-  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockReturnValue(pending.promise);
+  vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
+    checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
   render(<ProjectView project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
-  const box = await screen.findByLabelText("자료 내용");
-  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.type(await screen.findByLabelText("보고서 제목"), " 수정");
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  expect(box).toBeDisabled();
-  // A programmatic update must also be caught by the post-save guard.
-  fireEvent.change(box, { target: { value: "저장 중 수정" } });
-  await act(async () => pending.resolve({ ok: true }));
-  expect(screen.getByLabelText("자료 내용")).toHaveValue("저장 중 수정");
+  expect(screen.getByLabelText("보고서 제목")).toBeDisabled();
   expect(api.listExports).not.toHaveBeenCalled();
+  await act(async () => pending.resolve({ ok: true }));
+  expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
 });
+
 
 it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (FC-11)", async () => {
   const d = deferred<{ ok: boolean }>();
@@ -152,7 +154,7 @@ it("편집 탭에서 미저장 상태면 beforeunload를 막고, 플러시가 �
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   await openEditorAndEdit("셋");
   expect(dispatchBeforeUnload()).toBe(true);  // 아직 저장 대기
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
   expect(dispatchBeforeUnload()).toBe(false);
 });
@@ -184,7 +186,7 @@ it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunl
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
   expect(dispatchBeforeUnload()).toBe(true);
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
   expect(dispatchBeforeUnload()).toBe(false);
 });
@@ -219,13 +221,13 @@ it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이�
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 저장 버튼 없이 탭 전환(leaveScreen 경유)
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 저장 버튼 없이 탭 전환(leaveScreen 경유)
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
   // leaveScreen의 일반 이동 중단 문구는 onConflict가 이미 배너를 띄운 경우 생략한다(중복 안내 방지)
   expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
   expect(screen.getAllByRole("alert")).toHaveLength(1);
-  expect(document.querySelector(".sources-screen")).not.toBeNull();  // 탭은 바뀌지 않았다
+  expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 단계는 바뀌지 않았다 (다시 씀(D3a-2): 보고 정보는 보고 목적 단계)
 });
 
 it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
@@ -249,16 +251,16 @@ it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 
   await waitFor(() => expect(title2).toHaveValue("제목"));
   await userEvent.clear(title2);
   await userEvent.type(title2, "다시 고침");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 이번 실패는 412 가 아니다
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 이번 실패는 412 가 아니다
   expect(await screen.findByText("이동을 중단했습니다", { exact: false })).toBeInTheDocument();
-  expect(document.querySelector(".sources-screen")).not.toBeNull();
+  expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 다시 씀(D3a-2): 보고 정보는 보고 목적 단계
 });
 
 it("편집 탭이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 플러시 → 412 → 편집기 충돌
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 플러시 → 412 → 편집기 충돌
   expect(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
   // 편집기의 정답은 재시도가 아니라 되돌리기이므로 "다시 시도" 를 권하는 일반 배너는 생략한다
   expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();

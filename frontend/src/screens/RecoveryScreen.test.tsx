@@ -143,8 +143,25 @@ it("재시작 뒤 복구 화면에 이전 입력 기준 후보가 기준과 지�
   expect(screen.getByText(/이전 입력 기준 후보입니다\(이 장의 템플릿이 바뀌었습니다\)/)).toBeInTheDocument();
   await userEvent.click(screen.getByText("보기"));
   expect(screen.getByText(/후보 내용/)).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "현재 입력으로 다시 생성" }));
-  expect(onOpen).toHaveBeenCalledWith("editor");
+  // 다시 씀(D3a-2, C24): 버튼이 옮길 단계 이름을 밝히고, 옮긴 뒤 그 장을 미리 고르도록 장 ID를 넘긴다
+  await userEvent.click(screen.getByRole("button", { name: "편집 단계로 옮겨 다시 생성" }));
+  expect(onOpen).toHaveBeenCalledWith("editor", "c2");
+});
+
+it("덱이 있으면 후보의 장을 내부 ID가 아니라 순서와 제목으로 보인다 (C24, D3a-2)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-c", target: "c2", candidate_status: "stale",
+    stale_reasons: ["template_changed"], base_etag: '"aaaaaaaa1111"', current_etag: '"bbbbbbbb2222"',
+    result: { status: "ok", slots } })]);
+  const deck = { schema_version: 1,
+    meta: { title: "제목", report_type: "research" as const, audience: "", presenter: "", preset_overrides: {} },
+    structure: { chapters: [
+      { id: "c1", topic: "표지", conclusion: "", template: "cover" as const, source_refs: [] },
+      { id: "c2", topic: "시장 규모", conclusion: "", template: "bullet_box" as const, source_refs: [] }] },
+    slides: [] };
+  render(<RecoveryScreen project={project} deck={deck} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/장 다시 생성 \(2장 시장 규모\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/장 c2/)).toBeNull();
+  expect(screen.getByRole("button", { name: "복구 화면 닫기" })).toBeInTheDocument();
 });
 
 it("후보를 버리면 처분하고 목록을 다시 읽는다. 묶음의 장 후보는 장 단위로 버린다 (D2b-5c)", async () => {

@@ -9,6 +9,8 @@ export const STATUS_KINDS = [
   "ready", "needs_review", "failed", "running", "cancel_requested", "completion_unknown",
 ] as const;
 export type StatusKind = (typeof STATUS_KINDS)[number];
+/** 상단 머리의 저장 상태 (D3a-2, 계획 4.1). 단계 화면이 자기 출처로 정해 올리고, null이면 표시하지 않는다. */
+export type SaveStatus = { kind: StatusKind; detail?: string } | null;
 
 type Tone = "neutral" | "warning" | "success" | "danger" | "primary";
 

@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import { formatSavedAt } from "../api/time";
-import { api } from "../api/client";
-import { SaveAnnouncer, StatusIndicator, saveStatusKind } from "../ui/StatusIndicator";
+import { saveStatusKind, type SaveStatus } from "../ui/StatusIndicator";
 import type { Deck, ProjectInfo, TemplateName } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
@@ -20,6 +19,7 @@ import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, timings,
+  onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -29,10 +29,17 @@ export function EditorScreen({
   onConflictHint?: () => void;  // 412 를 만났음을 부모에 알린다. 배너는 이 화면이 직접 띄우므로 부모는 일반 배너만 생략한다
   onBusyChange?: (busy: boolean) => void;
   timings?: Timings;
+  // 저장 상태는 상단 머리가 보인다 (D3a-2, 계획 4.1). 이 화면은 자동 저장 상태를 올리고, 결과 안내가 없는
+  // 되돌리기 뒤에는 머리의 저장 상태로 초점을 옮겨 달라고 부른다(D2a-5 리뷰 R11)
+  onSaveStatusChange?: (status: SaveStatus) => void;
+  onFocusSaveStatus?: () => void;
+  onDraftsChanged?: () => void;  // 충돌로 변경을 새로 보존했다. 머리의 보존 건수를 다시 센다 (C18)
+  initialChapterId?: string | null;  // 복구 화면에서 옮긴 장을 미리 고른다 (C24)
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint);
   const chapters = editor.deck.structure.chapters;
-  const [chapterId, setChapterId] = useState<string | null>(chapters[0]?.id ?? null);
+  const [chapterId, setChapterId] = useState<string | null>(
+    (initialChapterId && chapters.some((c) => c.id === initialChapterId) ? initialChapterId : chapters[0]?.id) ?? null);
   const [selected, setSelected] = useState<FrameRef | null>(null);
   const [diagramDraft, setDiagramDraft] = useState<DiagramDraft | null>(null);
   const [diagramBusy, setDiagramBusy] = useState(false);
@@ -110,28 +117,25 @@ export function EditorScreen({
     return () => window.removeEventListener("keydown", onKey);
   }, [editor.undo, editor.redo, editor.reloading, diagramDraft, diagramBusy]);
 
-  // 보존한 변경 건수 (D2a-5). 목록을 읽지 못하면 건수를 보이지 않을 뿐 편집은 막지 않는다
-  const [draftCount, setDraftCount] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    api.listDrafts(project.name)
-      .then((list) => { if (!cancelled) setDraftCount(list.length); })
-      .catch(() => { if (!cancelled) setDraftCount(0); });  // 낡은 건수를 남기지 않는다 (리뷰 R12)
-    return () => { cancelled = true; };
-  }, [project.name, editor.preservedDraft?.id]);
+  // 보존한 변경 건수는 상단 머리가 센다 (C18). 새로 보존하면 다시 세 달라고 알린다
+  const preservedId = editor.preservedDraft?.id;
+  useEffect(() => { if (preservedId) onDraftsChanged?.(); }, [preservedId, onDraftsChanged]);
   const saveKind = saveStatusKind(editor.saveState, editor.conflict);
+  useEffect(() => { onSaveStatusChange?.({ kind: saveKind }); }, [saveKind, onSaveStatusChange]);
   // 되돌리기 중에는 버튼이 잠긴 영역 안에 있어 초점이 사라진다. 끝나면 결과 안내로 초점을 옮긴다
   // 두 결과 안내(보존 실패, 보존 성공)는 초점 대상을 따로 갖는다. 하나의 ref를 나눠 가지면 두 문단이 함께
   // 그려질 때 React가 새로 붙은 요소에만 ref를 다시 걸어 초점 대상이 어긋날 수 있다 (D3a-1 리뷰 R4)
   const failureRef = useRef<HTMLParagraphElement | null>(null);
   const successRef = useRef<HTMLParagraphElement | null>(null);
-  const saveStatusRef = useRef<HTMLDivElement | null>(null);
   const wasReloading = useRef(false);
   useEffect(() => {
     // 결과 안내가 없는 경로(보존할 변경 없음, 확인 뒤 되돌리기)는 저장 상태로 초점을 옮긴다 (리뷰 R11)
-    if (wasReloading.current && !editor.reloading) (failureRef.current ?? successRef.current ?? saveStatusRef.current)?.focus();
+    if (wasReloading.current && !editor.reloading) {
+      const outcome = failureRef.current ?? successRef.current;
+      if (outcome) outcome.focus(); else onFocusSaveStatus?.();
+    }
     wasReloading.current = editor.reloading;
-  }, [editor.reloading]);
+  }, [editor.reloading, onFocusSaveStatus]);
 
   const slide = editor.plan?.slides.find((s) => s.chapter_id === chapterId) ?? null;
   const commitText = (ref: TextRef, text: string) =>
@@ -150,12 +154,6 @@ export function EditorScreen({
         <button disabled={editor.conflict || diagramBusy} onClick={() => setDiagramDraft(createDiagramDraft(editor.deck))}>도식 추가</button>
       </aside>
       <section className="editor-center">
-        {/* 저장 상태는 좁은 창에서도 첫 화면에 보이도록 가운데 영역 위에 둔다 (D2a-5). 상단 머리 이동은 D3 */}
-        <div className="editor-save-status" tabIndex={-1} ref={saveStatusRef}>
-          <StatusIndicator kind={saveKind} />
-          <SaveAnnouncer kind={saveKind} />
-          {draftCount > 0 && <span>보존한 변경 {draftCount}건 (스냅샷 복구 화면에서 볼 수 있습니다)</span>}
-        </div>
         {editor.saveError && (
           <p role="alert">
             {editor.saveError}{" "}
@@ -211,9 +209,9 @@ export function EditorScreen({
         ) : editor.deck.slides.some(s => s.chapter_id === chapterId) ? (
           <p>미리보기를 계산하고 있습니다.</p>
         ) : chapters.length === 0 ? (
-          <p>아직 장이 없습니다. 왼쪽의 도식 추가로 시작하거나 구조안 탭에서 내용을 생성해 주세요.</p>
+          <p>아직 장이 없습니다. 왼쪽의 도식 추가로 시작하거나 구성 단계에서 내용을 생성해 주세요.</p>
         ) : (
-          <p>이 장은 아직 내용이 없습니다. 구조안 탭에서 생성해 주세요.</p>
+          <p>이 장은 아직 내용이 없습니다. 구성 단계에서 생성해 주세요.</p>
         )}
       </section>
       <aside className="editor-right">

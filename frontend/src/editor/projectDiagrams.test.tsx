@@ -94,7 +94,7 @@ it("구조안 재생성과 도식 수정은 막고 기존 도식을 유지해 �
 
 it("구조안 화면은 도식 편집의 진입점과 재계획 제한의 복구 방법을 안내한다", async () => {
   render(<StructureScreen project={project} deck={freshDeck()} onDeckChange={vi.fn()} onDone={vi.fn()} />);
-  expect(screen.getByText(/편집 탭에서.*도식 수정/)).toBeInTheDocument();
+  expect(screen.getByText(/편집 단계에서.*도식 수정/)).toBeInTheDocument();
   expect(screen.queryByText(/도식은 읽기 전용이며/)).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("자료나 보고 계획이 달라졌다면"));
   expect(screen.getByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
@@ -149,10 +149,11 @@ it("프로젝트에서 도식 미리보기를 열고 다른 장을 저장해도 
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.measure).mockResolvedValue(fixture.render_plan as RenderPlan);
   const onDeckChange = vi.fn();
+  const kinds: string[] = [];
   render(<EditorScreen project={project} deck={freshDeck()} onDeckChange={onDeckChange}
-    timings={{ measureMs: 1, saveMs: 1 }} />);
-  // D2a-5: 저장 상태는 상태 표시 컴포넌트로 보인다
-  await waitFor(() => expect(document.querySelector(".editor-save-status .status-label")?.textContent).toBe("저장됨"));
+    timings={{ measureMs: 1, saveMs: 1 }} onSaveStatusChange={(st) => { if (st) kinds.push(st.kind); }} />);
+  // D2a-5: 저장 상태는 상태 표시 컴포넌트로 보인다. 다시 씀(D3a-2): 상단 머리로 옮겨 상태 종류로 판정한다
+  await waitFor(() => expect(kinds.at(-1)).toBe("saved"));
   await waitFor(() => expect(api.measure).toHaveBeenCalled());
   // 장 목록은 주제 이름으로 접근할 수 있다.
   await userEvent.click(screen.getByRole("button", { name: /요청 처리 흐름/ }));

@@ -19,6 +19,7 @@ import { DocumentChangePanel } from "./DocumentChangePanel";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import { formatSavedAt } from "../api/time";
 import { Button } from "../ui/Button";
+import type { SaveStatus } from "../ui/StatusIndicator";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
@@ -69,7 +70,8 @@ function nextChapterId(chapters: Chapter[]): string {
   return `c${max + 1}`;
 }
 
-export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange, pollIntervalMs = 1000 }: {
+export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
+  onSaveStatusChange, onJobRegistered, focusChapterId, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -78,6 +80,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onConflict?: () => void;  // 승인 루프의 putDeck이 412를 받으면 부모가 배너를 띄운다
   onScreenReady?: (flush: () => Promise<boolean>) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
+  onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
+  focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
   pollIntervalMs?: number;  // 작업 조회 간격. 시험에서 실제 1초 대기를 쓰지 않게 한다 (계획서 5.9)
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
@@ -164,6 +169,17 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   };
   const replacedCount = deck.slides.length - keptSlides().length;
   // 장 구성 초안, 보고 질문, 저장하지 못한 생성 결과가 남아 있으면 창 닫기 경고에 포함한다 (D2a-2, 리뷰 R1, R16)
+  // 승인 전 초안은 덱이 아니라 저장되지 않는다. 머리의 저장 상태는 그 사실을 문구로 밝힌다 (계획 4.1)
+  useEffect(() => {
+    onSaveStatusChange?.(draftDirty || questionChanged
+      ? { kind: "unsaved", detail: "승인 전 초안은 저장되지 않습니다" } : { kind: "saved" });
+  }, [draftDirty, questionChanged, onSaveStatusChange]);
+  const tableRef = useRef<HTMLTableSectionElement | null>(null);
+  useEffect(() => {
+    if (!focusChapterId) return;
+    const row = [...(tableRef.current?.rows ?? [])].find((r) => r.dataset.chapterId === focusChapterId);
+    row?.querySelector("input")?.focus();
+  }, [focusChapterId]);
   useEffect(()=>{
     dirtyParts.current.draft=draftDirty||questionChanged;
     dirtyParts.current.backup=unsavedBackup!==null;
@@ -443,6 +459,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     try {
       const started = await api.startChapters(project.name, targets, headers, requestId);
       pendingStart.current = null;
+      onJobRegistered?.(started.id);
       // 같은 장의 지난 후보는 새 묶음이 대신하므로 등록에 성공한 뒤 버린다 (리뷰 R17, D2b-β 리뷰 R6)
       for (const c of previous?.chapters ?? []) {
         if (targets.includes(c.chapter_id) && (c.candidate_status === "held" || c.candidate_status === "stale")) {
@@ -693,7 +710,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
         </div>
         {hasDiagrams && <div className="notice">
-          <p>저장된 도식을 보존하기 위해 전체 구조안 다시 생성은 아직 지원하지 않습니다. 편집 탭에서 ‘도식 수정’으로 내용을 고칠 수 있으며 여기서는 장 순서를 바꿀 수 있습니다.</p>
+          <p>저장된 도식을 보존하기 위해 전체 구조안 다시 생성은 아직 지원하지 않습니다. 편집 단계에서 ‘도식 수정’으로 내용을 고칠 수 있으며 여기서는 장 순서를 바꿀 수 있습니다.</p>
           {!storyStale && <details><summary>자료나 보고 계획이 달라졌다면</summary>
             <StoryPlanRecoveryGuidance hasDiagrams confirmed={false} />
           </details>}
@@ -708,9 +725,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             <thead>
               <tr><th>순서</th><th>주제</th><th>결론 한 줄</th><th>템플릿</th><th></th></tr>
             </thead>
-            <tbody>
+            <tbody ref={tableRef}>
               {draft.map((c, i) => (
-                <tr key={c.id}>
+                <tr key={c.id} data-chapter-id={c.id}>
                   <td>
                     <button aria-label={`${c.topic} 위로`} onClick={() => move(i, -1)}>위</button>
                     <button aria-label={`${c.topic} 아래로`} onClick={() => move(i, 1)}>아래</button>
@@ -791,6 +808,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           setDraftGenerated(false); setStoryStale(false); setError("");
           setProgress({}); onDeckChange(saved);
         }} />}
+      {/* 문서 전체 변경과 근거 이동은 JSON을 다루는 고급 작업이라 접힌 영역에 두어 단계의 주 행동과 섞지 않는다
+          (계획 4.1). 패널이 열려 있는 동안에는 접히지 않는다: 접기가 패널 닫기의 이탈 확인(documentLeave)을
+          우회해 입력을 숨기지 않게 하고, 닫기는 아래 버튼으로만 한다 */}
+      <details className="advanced-actions" open={documentOpen ? true : undefined}
+        onToggle={(e) => { if (documentOpen && !e.currentTarget.open) e.currentTarget.open = true; }}>
+      <summary>고급 작업</summary>
       <button aria-expanded={documentOpen} disabled={busy || rewriteActive} onClick={()=>{
         if(!documentOpen){setDocumentOpen(true);return;}
         void documentLeave.current().then(allowed=>{if(allowed){setDocumentOpen(false);documentLeave.current=async()=>true;setDocumentDirty(false);setDocumentActive(false);}});
@@ -804,6 +827,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           setDecisionQuestion(saved.structure.story_plan?.brief.decision_question??"");
           setDraftGenerated(false);setStoryStale(false);setError("");setProgress({});onDeckChange(saved);
         }} />}
+      </details>
     </div>
   );
 }

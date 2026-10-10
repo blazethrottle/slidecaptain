@@ -45,7 +45,9 @@ it("작성 중인 도식 초안이 있으면 화면 이동을 막는다", async 
   expect(screen.queryByText("목록 화면")).not.toBeInTheDocument();
 });
 
-it.each(["목록으로", "자료", "구조안", "검수 이력", "스냅샷 복구", "초안 PPTX 내보내기"])(
+// 다시 씀(D3a-2): 탭 이름을 단계 이름으로 바꿨다. 초안 PPTX 내보내기는 검토 단계 화면 안으로 옮겨 편집 단계에서는
+// 누를 수 없으므로 목록에서 뺐다(내보내기 전 플러시는 ProjectView.test.tsx의 "마지막 편집 저장에 실패하면"이 지킨다)
+it.each(["목록으로", "보고 목적", "자료", "구성", "검토와 내보내기", "스냅샷 복구"])(
   "%s 저장 대기 중 새로 연 도식 초안을 보존한다", async (action) => {
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.putDeck).mockReset().mockReturnValue(pending.promise);
@@ -63,7 +65,7 @@ it.each(["목록으로", "자료", "구조안", "검수 이력", "스냅샷 복�
 
   expect(screen.queryByText("목록 화면")).not.toBeInTheDocument();
   expect(screen.getByLabelText("도식 제목")).toHaveValue("응답 대기 중 새로 작성한 초안");
-  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(api.listSnapshots).not.toHaveBeenCalled();
   expect(api.listExports).not.toHaveBeenCalled();
   expect(api.createSnapshot).not.toHaveBeenCalled();

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type DraftInfo, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
@@ -29,6 +29,16 @@ const KIND_LABELS: Record<string, string> = {
 };
 // 덱 전체 후보는 다시 생성 화면으로 옮기지 않고 보기와 버리기만 한다 (계획서 D2b-5c, D2b-β 리뷰 R3)
 const WHOLE_DECK = new Set(["rewrite", "repair"]);
+
+// 장은 내부 ID가 아니라 순서와 제목으로 보인다 (C24). 덱이 없는 복구 대상 프로젝트와 덱에서 사라진 장은
+// 순서와 제목을 알 수 없어 ID로 보인다
+function chapterLabel(deck: Deck | undefined, id: string): string {
+  const index = deck?.structure.chapters.findIndex((c) => c.id === id) ?? -1;
+  return index >= 0 ? `${index + 1}장 ${deck!.structure.chapters[index].topic}` : `장 ${id}`;
+}
+// 다시 만들 단계. 구조안과 장 생성 묶음의 후보는 구성 단계, 그 밖의 장 후보는 편집 단계에서 다시 만든다
+type OpenStage = "structure" | "editor";
+const STAGE_NAMES: Record<OpenStage, string> = { structure: "구성", editor: "편집" };
 
 function candidatesOf(jobs: JobView[]): Candidate[] {
   const list: Candidate[] = [];
@@ -84,7 +94,9 @@ function candidateText(c: Candidate): string {
 
 const shortEtag = (etag: string | null) => (etag ? etag.replace(/"/g, "").slice(0, 8) : "알 수 없음");
 
-function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (tab: "structure" | "editor") => void }) {
+function JobCandidates({ project, deck, onOpen }: {
+  project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string) => void;
+}) {
   const [items, setItems] = useState<Candidate[] | null>(null);
   const [ended, setEnded] = useState<JobView[]>([]);
   const [error, setError] = useState("");
@@ -114,13 +126,16 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
         <ul>
           {items.map((c) => (
             <li key={c.key}>
-              <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{c.chapterId ? ` (장 ${c.chapterId})` : ""},{" "}
+              <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{c.chapterId ? ` (${chapterLabel(deck, c.chapterId)})` : ""},{" "}
                 만든 시각 {formatSavedAt(c.job.created_at)}</p>
               <p>{candidateStatus(c)}</p>
               <details><summary>보기</summary><pre>{candidateText(c)}</pre></details>
               {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
-              {!WHOLE_DECK.has(c.job.kind) && onOpen && <><button onClick={() => onOpen(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
-                현재 입력으로 다시 생성</button>{" "}</>}
+              {!WHOLE_DECK.has(c.job.kind) && onOpen && (() => {
+                const stage: OpenStage = ["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor";
+                return <><button onClick={() => onOpen(stage, c.chapterId ?? undefined)}>
+                  {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}</>;
+              })()}
               {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
               {TERMINAL_JOB_STATES.has(c.state) && <Button variant="danger" onClick={() => void dismiss(c)}>버리기</Button>}
             </li>
@@ -136,7 +151,7 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
             <li key={j.id}>
               {j.state === "remote_completion_unknown" ? <StatusIndicator kind="completion_unknown" />
                 : <span>{j.state === "cancelled" ? "취소됨" : "중단됨"}</span>}{" "}
-              {KIND_LABELS[j.kind] ?? j.kind}{j.target ? ` (장 ${j.target})` : ""}, 만든 시각 {formatSavedAt(j.created_at)}
+              {KIND_LABELS[j.kind] ?? j.kind}{j.target ? ` (${chapterLabel(deck, j.target)})` : ""}, 만든 시각 {formatSavedAt(j.created_at)}
             </li>
           ))}
         </ul>
@@ -145,11 +160,13 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
   );
 }
 
-export function RecoveryScreen({ project, onBack, onConflict, onOpen }: {
+export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen }: {
   project: ProjectInfo;
+  deck?: Deck;  // 장을 순서와 제목으로 보이는 데 쓴다. 덱을 읽지 못하는 프로젝트에서는 없다
   onBack: () => void;
   onConflict?: () => void;  // 복원이 412를 받으면 부모(ProjectView)가 배너를 띄운다
-  onOpen?: (tab: "structure" | "editor") => void;  // 후보를 다시 만들 화면으로 옮긴다 (D2b-5c)
+  // 후보를 다시 만들 단계로 옮기고 그 장을 미리 고른다 (D2b-5c, C24)
+  onOpen?: (stage: OpenStage, chapterId?: string) => void;
 }) {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [error, setError] = useState("");
@@ -247,8 +264,9 @@ export function RecoveryScreen({ project, onBack, onConflict, onOpen }: {
           </ul>
         )}
       </section>
-      <JobCandidates project={project} onOpen={onOpen} />
-      <button onClick={onBack}>목록으로</button>
+      <JobCandidates project={project} deck={deck} onOpen={onOpen} />
+      {/* 다섯 단계 안에서는 복구 화면만 닫는다. 덱을 열 수 없는 프로젝트에서는 프로젝트 목록으로 간다 */}
+      <button onClick={onBack}>{deck ? "복구 화면 닫기" : "목록으로"}</button>
     </div>
   );
 }

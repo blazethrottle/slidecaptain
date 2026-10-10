@@ -83,7 +83,7 @@ it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델과 �
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "구조안" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "구성" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "목록으로" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeDisabled();
   const deck = fixture.deck as Deck;

@@ -58,7 +58,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 async function openStructureTab() {
   render(<ProjectView project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "구성" }));
   await screen.findByRole("button", { name: "구조안 생성" });
 }
 
@@ -70,7 +70,7 @@ it("첫 구조안 생성 클릭에 대화 상자가 뜨고, 취소하면 요청�
   await screen.findByRole("dialog");
   // 대화 상자가 열린 동안 탭 버튼이 잠긴다 (계획서 B3)
   expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "구조안" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "구성" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "자료" })).not.toBeDisabled();

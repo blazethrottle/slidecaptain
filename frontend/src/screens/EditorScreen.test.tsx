@@ -316,43 +316,58 @@ it("보존 실패 뒤의 편집도 복사 상자에 담긴다 (리뷰 R2)", asyn
 });
 
 
-const statusLabel = () => document.querySelector(".editor-save-status .status-label")?.textContent;
 
-it("저장 상태를 가운데 영역 위에 문구와 아이콘으로 보인다 (D2a-5)", async () => {
+it("자동 저장 상태를 상단 머리로 올린다 (D2a-5, D3a-2)", async () => {
+  // 다시 씀(D3a-2): 저장 상태 표시는 상단 머리가 그린다. 이 화면은 상태 종류를 올린다
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.putDeck).mockImplementation(() => pending.promise);
-  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const kinds: string[] = [];
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onSaveStatusChange={(st) => { if (st) kinds.push(st.kind); }} />);
   const center = document.querySelector(".editor-center") as HTMLElement;
   await within(center).findByText("하나");
-  expect(center.querySelector(".editor-save-status")).not.toBeNull();
-  expect(statusLabel()).toBe("저장됨");
+  expect(center.querySelector(".editor-save-status")).toBeNull();  // 가운데 영역에는 더 그리지 않는다
+  expect(kinds.at(-1)).toBe("saved");
   await editBullet(center, "하나", "고침");
-  await waitFor(() => expect(statusLabel()).toBe("저장 중"));
+  await waitFor(() => expect(kinds.at(-1)).toBe("saving"));
   await act(async () => { pending.resolve({ ok: true }); });
-  await waitFor(() => expect(statusLabel()).toBe("저장됨"));
+  await waitFor(() => expect(kinds.at(-1)).toBe("saved"));
 });
 
 it("충돌은 저장 실패와 다른 문구로 보이고 다시 저장을 권하지 않는다 (D2a-5)", async () => {
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const kinds: string[] = [];
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onSaveStatusChange={(st) => { if (st) kinds.push(st.kind); }} />);
   const center = document.querySelector(".editor-center") as HTMLElement;
   await within(center).findByText("하나");
   await editBullet(center, "하나", "고침");
-  await waitFor(() => expect(statusLabel()).toBe("다른 곳에서 먼저 저장했습니다"));
+  await waitFor(() => expect(kinds.at(-1)).toBe("conflict"));  // 다시 씀(D3a-2): 상태 종류로 판정한다
   expect(screen.queryByRole("button", { name: "다시 저장" })).toBeNull();
 });
 
-it("보존한 변경이 있으면 저장 상태 옆에 건수를 보인다 (D2a-5)", async () => {
+it("충돌로 변경을 새로 보존하면 부모에게 보존 건수를 다시 세 달라고 알린다 (D2a-5, D3a-2)", async () => {
+  // 옮김(D3a-2): 건수 표시는 상단 머리로 옮겼다(ProjectView.test.tsx). 이 화면은 새로 보존했다고 알린다
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
-  vi.mocked(api.listDrafts).mockResolvedValue([draftInfo, { ...draftInfo, id: "draft-20261008-100000-000002" }]);
-  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
-  expect(await screen.findByText(/보존한 변경 2건/)).toBeInTheDocument();
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  const onDraftsChanged = vi.fn();
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onDraftsChanged={onDraftsChanged} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  expect(onDraftsChanged).not.toHaveBeenCalled();
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  await waitFor(() => expect(onDraftsChanged).toHaveBeenCalledTimes(1));
 });
+
 
 it("되돌리기가 끝나면 결과 안내로 키보드 초점을 옮긴다 (D2a-2 이월, D2a-5)", async () => {
   const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
@@ -376,14 +391,17 @@ it("결과 안내가 없는 되돌리기 뒤에는 저장 상태로 초점을 �
   vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
-  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  // 다시 씀(D3a-2): 저장 상태가 상단 머리로 옮겨 가서, 이 화면은 부모에게 그쪽으로 초점을 옮겨 달라고 부른다
+  const onFocusSaveStatus = vi.fn();
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onFocusSaveStatus={onFocusSaveStatus} />);
   const preview = document.querySelector(".editor-center") as HTMLElement;
   await within(preview).findByText("하나");
   await editBullet(preview, "하나", "고침");
   await screen.findByRole("button", { name: "서버 내용으로 되돌리기" });
   await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));  // 보존할 변경이 없어진다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
-  await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".editor-save-status")));
+  await waitFor(() => expect(onFocusSaveStatus).toHaveBeenCalledTimes(1));
   expect(api.saveDraft).not.toHaveBeenCalled();
 });
 
