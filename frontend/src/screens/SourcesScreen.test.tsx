@@ -6,6 +6,12 @@ import { deferred } from "../test/fixtures";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+// 시험이 중간에 실패해 쓰지 않은 한 번짜리 모의 응답이 다음 시험으로 넘어가지 않게 매번 비운다 (D3a-4 리뷰 R20).
+// 시험마다 필요한 응답을 스스로 정하므로 구현까지 비워도 된다
+beforeEach(() => {
+  for (const fn of [api.listSources, api.readSource, api.writeSource, api.putDeck, api.uploadSource]) vi.mocked(fn).mockReset();
+});
+
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api,

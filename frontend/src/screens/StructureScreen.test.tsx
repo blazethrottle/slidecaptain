@@ -292,7 +292,7 @@ it("AI 전송을 취소하면 승인 반영도 하지 않고 안내 문구만 �
 });
 
 // 태스크 C4: 구조안 결과 아래(승인 버튼 위)에 사용량 한 줄을 보인다
-it("구조안 생성 뒤 사용량 문단이 승인 버튼 위에 보인다", async () => {
+it("구조안 생성 뒤 사용량 문단은 승인 버튼 위의 접힌 진단 상세에 있다", async () => {
   generateStructure.mockResolvedValue({
     status: "ok", structure: { chapters: [CH1, CH2] },
     usage: measuredUsage(), raw_text: "", unverified_numbers: [], format_retried: false,
@@ -498,7 +498,7 @@ it("묶음 등록이 실패하면 장 구성은 저장했고 생성을 시작하
   await approveTwoChapters(null);
   // 화면이 아는 앞 문장과 서버 문구가 한 실패 안내 안에 있다 (D3a-4)
   const lead = await screen.findByText("장 구성은 저장했고 내용 생성은 시작하지 못했습니다.");
-  expect(lead.closest("[role=alert]")).toHaveTextContent(/다른 AI 생성이 진행 중.*지금 할 수 있는 일: 그 작업 취소/);
+  expect(lead.closest("[role=alert]")).toHaveTextContent(/다른 AI 생성이 진행 중.*지금 할 수 있는 일: 그 작업이 끝나기를 기다리거나/);
   expect(vi.mocked(api.putDeck).mock.calls).toHaveLength(1);
   mockBatch(batchView([chapterView("c1", "succeeded"), chapterView("c2", "succeeded")]),
     deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]));
@@ -601,9 +601,11 @@ it("최초 승인 반영이 412면 승인하려던 구성을 보존한다 (D2a-2
   const [, req] = vi.mocked(api.saveDraft).mock.calls[0];
   expect(req.reason).toBe("conflict");
   expect(req.deck.structure.chapters.map((c) => c.id)).toEqual([CH1.id, CH2.id]);
-  // 거절 사실과 보존 사실이 한 실패 안내에 있다. 보존 안내를 따로 띄우지 않는다 (D2a 이월 3, D3a-4)
-  const alert = (await screen.findByText(/장 구성을 승인하지 않았습니다/)).closest("[role=alert]");
-  expect(alert).toHaveTextContent(/승인하려던 장 구성을 보존했습니다\(2026-10-08 10:00\).*지금 할 수 있는 일: 서버 내용 다시 읽기/);
+  // 거절 사실과 보존 사실이 한 실패 안내에 있다. 보존 안내를 따로 띄우지 않는다 (D2a 이월 3, D3a-4).
+  // 위쪽 충돌 배너가 경고로 알리므로 이 안내는 상태 알림이다 (리뷰 R15)
+  const notice = (await screen.findByText(/장 구성을 승인하지 않았습니다/)).closest(".failure-notice");
+  expect(notice).toHaveAttribute("role", "status");
+  expect(notice).toHaveTextContent(/승인하려던 장 구성을 보존했습니다\(2026-10-08 10:00\).*서버 내용 다시 읽기/);
   expect(screen.getAllByText(/승인하려던 장 구성을 보존했습니다/)).toHaveLength(1);
 });
 
@@ -729,7 +731,9 @@ it("장 하나 다시 생성의 등록이 412면 충돌로 알린다 (D2b-5a)", 
     onConflict={onConflict} />);
   await userEvent.click(await screen.findByRole("button", { name: "1번 장 다시 생성" }));
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
-  expect(screen.getByRole("alert")).toHaveTextContent("먼저 저장되어 내용 생성을 시작하지 못했습니다");
+  // 다시 씀(D3a-4 리뷰 R15): 충돌 배너가 경고하므로 이 안내는 상태 알림이다
+  expect(screen.getByText(/먼저 저장되어 내용 생성을 시작하지 못했습니다/).closest(".failure-notice"))
+    .toHaveAttribute("role", "status");
   expect(screen.queryByRole("button", { name: "내용 생성 다시 시작" })).toBeNull();  // 다시 읽기가 먼저다 (리뷰 R10)
 });
 
@@ -1299,4 +1303,44 @@ describe("구성 단계의 주 행동은 상태마다 정확히 1개다 (D3a-1, 
     await userEvent.type(await screen.findByLabelText("보고 질문"), "무엇을 판단하나");
     expect(primaries()).toEqual(["다시 생성"]);
   });
+});
+
+// -- D3a-4 리뷰 반영: 묶음의 모든 실패 갈래가 원인별 안내를 쓴다 ------------------------------------------
+
+const LOGIN_ERROR = { error_class: "connection" as const, status: 503, detail: "AI 연결 화면에서 먼저 로그인해 주세요.",
+  code: "login_required" };
+
+it("묶음이 시작 전에 연결 실패로 끝나면 원인별 안내로 AI 연결을 가리킨다 (리뷰 R4)", async () => {
+  // 지금 코드의 틀린 동작: 서버 문구 한 줄만 보이고 주 행동과 진단 상세가 없다
+  const failed = batchView([
+    chapterView("c1", "interrupted", { error: { ...LOGIN_ERROR, error_class: null, status: null, detail: null } }),
+    chapterView("c2", "interrupted", { error: { ...LOGIN_ERROR, error_class: null, status: null, detail: null } })],
+  { state: "failed", outcome: null, error: LOGIN_ERROR, started_at: null });
+  await approveTwoChapters(failed);
+  const notice = (await screen.findByText("내용 생성을 시작하지 못했습니다.")).closest(".failure-notice")!;
+  expect(notice).toHaveAttribute("role", "alert");
+  expect(notice).toHaveTextContent(/AI 연결 화면에서 먼저 로그인해 주세요.*'AI 연결 및 모델'에서 연결과 로그인 상태를 확인/);
+  expect(within(notice as HTMLElement).getByText("진단 상세")).toBeInTheDocument();
+  // 다시 생성을 시작하면 지난 묶음의 실패 안내가 사라진다 (리뷰 R24)
+  await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));
+  await waitFor(() => expect(screen.queryByText("내용 생성을 시작하지 못했습니다.")).toBeNull());
+});
+
+it("형식 오류만 있는 묶음도 원인별 안내를 쓴다 (리뷰 R4)", async () => {
+  const failed = batchView([chapterView("c1", "succeeded"), chapterView("c2", "failed", {
+    error: { error_class: "ai_output", status: null, detail: "형식 오류", code: "format_error" }, started_at: STARTED })],
+  { state: "failed", outcome: "partial", started_at: STARTED });
+  await approveTwoChapters(failed, deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]));
+  const notice = (await screen.findByText(/일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다/)).closest(".failure-notice");
+  expect(notice).toHaveTextContent(/AI 응답 원문은 진단 상세에 있습니다/);
+});
+
+it("응답 없이 실패한 묶음 등록은 실패 안내 안의 버튼으로 다시 시작한다 (리뷰 R7)", async () => {
+  // 지금 코드의 틀린 동작: 안내는 "앱 다시 시작", 안내 밖의 버튼은 "내용 생성 다시 시작"으로 엇갈린다
+  vi.mocked(api.startChapters).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  await approveTwoChapters(null);
+  const notice = (await screen.findByText("장 구성은 저장했고 내용 생성은 시작하지 못했습니다.")).closest(".failure-notice")!;
+  expect(within(notice as HTMLElement).getByRole("button", { name: "내용 생성 다시 시작" })).toBeInTheDocument();
+  expect(notice).toHaveTextContent(/반복되면 앱을 닫았다가 다시 열어 주세요/);
+  expect(screen.getAllByRole("button", { name: "내용 생성 다시 시작" })).toHaveLength(1);
 });

@@ -46,6 +46,17 @@ const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 �
 const APPROVAL_CONFLICT = "다른 창이나 프로그램에서 먼저 저장되어 장 구성을 승인하지 않았습니다.";
 const APPROVAL_NOT_PRESERVED = "승인하려던 장 구성을 보존하지 못했습니다. 아래 상자의 내용을 복사해 보관해 주세요.";
 
+// 등록을 다시 보낼 수 있으면 실패 안내의 주 행동이 "내용 생성 다시 시작"이다. 안내와 버튼이 엇갈리지 않게 한다
+// (리뷰 R7). 다른 작업 진행 중이면 그 작업 취소가 먼저이고 다시 시작은 보조 행동이다
+function restartable(failure: FailureDescription): FailureDescription {
+  if (failure.cause === "generation_active") {
+    return { ...failure, secondary: { action: "restart_generation", text: "그 작업이 끝나면 내용 생성을 다시 시작할 수 있습니다." } };
+  }
+  return { ...failure, action: "restart_generation", actionText: "내용 생성 다시 시작", guidance: "내용 생성을 다시 시작해 주세요.",
+    secondary: failure.cause === "service_unreachable"
+      ? { action: "none", text: "반복되면 앱을 닫았다가 다시 열어 주세요." } : failure.secondary };
+}
+
 // 원장의 장 상태를 화면 표시로 바꾼다 (계획서 D2b-5a 하위 상태 표). 그 뒤 슬라이드가 생긴 장은 완료로 보인다
 function chapterLabel(chapter: ChapterView, hasSlide: boolean): ProgressLabel {
   if (hasSlide) return "완료";
@@ -151,7 +162,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [failure, setFailure] = useState<FailureDescription | null>(null);
   const [formatWhat, setFormatWhat] = useState("");
   const formatJob = useRef<JobView | null>(null);  // 형식 오류를 낸 구조안 작업 (진단 상세의 작업 ID)
-  const [batchFailure, setBatchFailure] = useState<{ lead: string; failure: FailureDescription } | null>(null);
+  // quiet: 같은 사실을 위쪽 충돌 배너가 이미 경고로 알린다. 경고를 두 번 읽지 않게 status로 낮춘다 (리뷰 R15)
+  const [batchFailure, setBatchFailure] = useState<{ lead: string; failure: FailureDescription; quiet?: boolean } | null>(null);
   // 저장하지 못한 생성 결과의 보존 (D2a-2): 보존 안내 또는 보존마저 실패했을 때 복사할 내용
   const [preservedNotice, setPreservedNotice] = useState("");
   const [unsavedBackup, setUnsavedBackup] = useState<string | null>(null);
@@ -346,27 +358,38 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const complete = current.structure.chapters.every((ch) => current.slides.some((sl) => sl.chapter_id === ch.id));
     if (!live && complete) return;
     const show = (message: string) => (live ? setError(message) : setPastNotice(`지난 내용 생성: ${message}`));
+    // 이 화면이 따라간 묶음은 원인별 실패 안내로 보인다(D3a-4, 계획 4.3, 리뷰 R4). 다시 연 지난 묶음은 글 한 줄이다
+    const report = (lead: string, failure: FailureDescription | null, quiet = false) => {
+      if (live && failure) setBatchFailure({ lead, failure, quiet });
+      else show(lead);
+    };
     if (view.started_at === null && view.error) {
       // 시작하기 전에 끝났다(다른 저장, AI 연결 변경 등). 장마다가 아니라 작업의 원인을 보인다 (D2b-4 리뷰 R12)
-      show(`내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim());
-      if (live && view.error.error_class === "base_changed") onConflict?.();
+      const conflict = view.error.error_class === "base_changed";
+      report(live ? "내용 생성을 시작하지 못했습니다." : `내용 생성을 시작하지 못했습니다. ${view.error.detail ?? ""}`.trim(),
+        describeJobFailure(view), conflict);
+      if (live && conflict) onConflict?.();
     } else if (view.outcome === "chain_broken") {
       // 자료만 바뀐 경우는 저장본이 그대로라 충돌 안내를 띄우지 않는다 (D2b-4 리뷰 R18, β 리뷰 R5)
       const deckChanged = view.chapters.some((c) => c.error?.code === "chain_broken" || c.error?.code === "base_changed");
+      const changed = view.chapters.find((c) => c.error?.error_class === "base_changed");
+      const failure = changed ? describeJobFailure(view, changed) : null;
       if (deckChanged) {
-        show("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.");
+        report("다른 창이나 프로그램에서 덱이 바뀌어 일부 장을 반영하지 않았습니다. 서버 내용을 다시 읽은 뒤 남은 장을 다시 생성해 주세요.",
+          failure, true);
         if (live) onConflict?.();
       } else {
-        show("만드는 동안 자료가 바뀌어 일부 장을 반영하지 않았습니다. 현재 자료로 남은 장을 다시 생성해 주세요.");
+        report("만드는 동안 자료가 바뀌어 일부 장을 반영하지 않았습니다. 현재 자료로 남은 장을 다시 생성해 주세요.", failure);
       }
     } else if (view.state === "failed" && view.outcome !== "held_stale_plan") {
       const malformedOnly = view.chapters.every((c) => c.state === "succeeded" || c.error?.error_class === "ai_output");
       const failed = view.chapters.find((c) => c.state === "failed");
-      if (malformedOnly) show("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 실패한 장만 다시 생성해 주세요.");
-      else if (live && failed) {
+      if (malformedOnly) {
+        report("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 장 목록에서 실패한 장만 다시 생성해 주세요.",
+          failed ? describeJobFailure(view, failed) : null);
+      } else if (live && failed) {
         // 첫 실패 장의 원인으로 안내한다. 남은 장은 "앞 장 때문에 중단"이라 따로 안내하지 않는다 (D3a-4, 계획 4.3)
-        setBatchFailure({ lead: "일부 장을 만들지 못했습니다. 아래 원인을 확인한 뒤 실패한 장만 다시 생성해 주세요.",
-          failure: describeJobFailure(view, failed) });
+        report("일부 장을 만들지 못했습니다. 아래 원인을 확인한 뒤 실패한 장만 다시 생성해 주세요.", describeJobFailure(view, failed));
       } else {
         const detail = failed?.error?.detail;
         show(`일부 장을 만들지 못했습니다${detail ? `(${detail})` : ""}. 실패한 장만 다시 생성해 주세요.`);
@@ -694,16 +717,19 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
-      <FailureNotice failure={failure} />
-      {batchFailure && <FailureNotice failure={batchFailure.failure} lead={batchFailure.lead} />}
+      {/* 저장 충돌은 위쪽 충돌 배너가 이미 경고로 알린다 (리뷰 R15) */}
+      <FailureNotice failure={failure} role={failure?.cause === "deck_conflict" ? "status" : "alert"} />
+      {batchFailure && <FailureNotice failure={batchFailure.failure} lead={batchFailure.lead}
+        role={batchFailure.quiet ? "status" : "alert"} />}
       {formatWhat && <FailureNotice failure={describeAiOutput(formatJob.current, formatWhat)} actions={busy ? {} : { regenerate: () => void generate() }}>
         {rawText && <><p>AI 응답 원문</p><pre>{rawText}</pre></>}
         {structureUsage && <p className="usage">{formatUsage(structureUsage)}</p>}
       </FailureNotice>}
       {startFailure && (startError
-        ? <FailureNotice failure={describeFailure(startError)} lead={startFailure} />
+        ? <FailureNotice failure={canRestart ? restartable(describeFailure(startError)) : describeFailure(startError)}
+          lead={startFailure} actions={canRestart ? { restart_generation: () => void restart() } : {}}
+          role={startError instanceof ApiError && startError.status === 412 ? "status" : "alert"} />
         : <p role="alert">{startFailure}</p>)}
-      {startFailure && canRestart && <p><button onClick={() => void restart()}>내용 생성 다시 시작</button></p>}
       {pastNotice && <p className="notice">{pastNotice}</p>}
       {preservedNotice && <p role="status">{preservedNotice}</p>}
       {unsavedBackup && (

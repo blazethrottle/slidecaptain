@@ -181,11 +181,20 @@ export function savedEtag(name: string): string | undefined {
 
 async function aiHeaders(): Promise<Record<string, string>> {
   const status = await api.getStatus();
-  if (status.provider === "none" || status.login.logged_in !== true) {
-    throw new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요.");
+  // 화면이 만드는 오류에도 원인 코드를 붙여 실패 안내가 원인별로 판정한다 (D3a-4 리뷰 R1). 확인하지 못함은
+  // 서버의 상태 확인이 가른 코드(CLI 없음, 시간 초과, 구독 로그인 아님)를 따른다
+  if (status.provider === "none") {
+    throw new ApiError(503, "AI 연결이 설정되어 있지 않습니다.", "provider_missing");
+  }
+  if (status.login.logged_in === false) {
+    throw new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요.", "login_required");
+  }
+  if (status.login.logged_in !== true) {
+    throw new ApiError(503, status.login.error ?? "AI 연결 상태를 확인하지 못했습니다.",
+      status.login.error_code ?? "provider_call_failed");
   }
   if ((status.provider === "claude" || status.provider === "chatgpt") && !status.selection_id) {
-    throw new ApiError(503, "AI 설정을 확인하지 못했습니다. 앱을 다시 실행해 주세요.");
+    throw new ApiError(503, "AI 설정을 확인하지 못했습니다. 앱을 다시 실행해 주세요.", "settings_unreadable");
   }
   if (!(await ensureConsent(status.selection_id ?? "legacy", status))) throw new AiConsentDeclined();
   return { "X-AI-Consent": "SlideCaptain", ...(status.selection_id ? { "X-AI-Selection": status.selection_id } : {}) };

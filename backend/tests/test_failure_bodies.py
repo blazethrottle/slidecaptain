@@ -106,6 +106,12 @@ def _collect(tmp_path_factory) -> dict:
         http["deck_conflict"] = {"status": stale.status_code, "body": stale.json()}
         invalid = client.post("/api/projects/p1/jobs", json={"request_id": "x", "kind": "structure", "params": {}})
         http["validation"] = {"status": invalid.status_code, "body": invalid.json()}
+        # 등록 단계 실제 본문 더하기 (D3a-4 리뷰 R14): 없는 프로젝트, 전송 동의 헤더 누락
+        missing = client.post("/api/projects/nope/jobs",
+                              json={"request_id": "req-00000003", "kind": "structure", "params": {}})
+        http["project_missing"] = {"status": missing.status_code, "body": missing.json()}
+        consent = client.post("/api/projects/p1/generate/structure", json={}, headers={"X-AI-Consent": "no"})
+        http["consent_missing"] = {"status": consent.status_code, "body": consent.json()}
     store = FileProjectStore(tmp_path_factory.mktemp("ledger"))
     _project(store)
     (store.root / LEDGER_NAME).write_bytes(b"broken" * 50)
@@ -125,11 +131,18 @@ def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory,
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
         changed = client.post("/api/projects/p1/generate/structure", json={},
                               headers={"X-AI-Selection": "other-selection"})
+        # 처음 보는 로그아웃, 그 뒤 상태 확인이 CLI를 찾지 못함(실제 check_login 문구와 코드)
         manager.connections["claude"].login = LoginStatus(logged_in=False)
         logout = client.post("/api/projects/p1/generate/structure", json={},
                              headers={"X-AI-Selection": manager.selection_id})
+        manager.connections["claude"].login = LoginStatus(
+            error="Claude CLI를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.", error_code="provider_missing")
+        manager.selected_status()  # 화면은 생성 전에 상태를 읽는다. 상태가 바뀐 것을 먼저 관찰해 선택 ID가 새로 난다
+        no_cli = client.post("/api/projects/p1/generate/structure", json={},
+                             headers={"X-AI-Selection": manager.selection_id})
     collected["http"]["selection_changed"] = {"status": changed.status_code, "body": changed.json()}
     collected["http"]["login_required"] = {"status": logout.status_code, "body": logout.json()}
+    collected["http"]["provider_missing"] = {"status": no_cli.status_code, "body": no_cli.json()}
     text = json.dumps(collected, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
     if os.environ.get("SLIDECAPTAIN_UPDATE_FIXTURES") == "1":
         FIXTURE.write_text(text, encoding="utf-8")

@@ -45,7 +45,8 @@ class ProviderError(Exception):
     def __init__(self, message: str, *, usage: CallUsage | None = None, code: str = "provider_call_failed") -> None:
         super().__init__(message)
         self.usage = usage
-        assert code in PROVIDER_ERROR_CODES, code
+        if code not in PROVIDER_ERROR_CODES:  # 최적화 실행(-O)에서도 검사한다 (D3a-4 리뷰 R19)
+            raise ValueError(f"모르는 제공자 오류 코드: {code}")
         self.code = code
 
 

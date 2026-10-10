@@ -143,18 +143,19 @@ export function slotsText(slots: unknown): string {
 
 // 도식의 낡은 결과는 종전 라우트처럼 오류로 알린다 (서버 _STALE_RESPONSES["diagram"]과 같은 표).
 // 재작성의 낡은 후보는 오류가 아니라 이전 입력 기준 후보로 보인다 (계획서 D2b-5b 정정 ⑦, 리뷰 R14)
-const STALE_RESPONSES: Record<string, [number, string]> = {
-  unknown_deck: [412, "도식 생성 중 기준 저장본을 읽을 수 없게 되었습니다. 프로젝트를 다시 열어 주세요."],
-  deck_changed: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
-  unknown_sources: [409, "도식 생성 중 자료를 읽을 수 없게 되었습니다. 자료를 확인한 뒤 다시 작성해 주세요."],
-  sources_changed: [409, "도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요."],
+// 코드는 실패 안내의 판정에 쓴다 (D3a-4 리뷰 R6). 자료 변경은 결과가 없으므로 "다시 생성"이다
+const STALE_RESPONSES: Record<string, [number, string, string]> = {
+  unknown_deck: [412, "도식 생성 중 기준 저장본을 읽을 수 없게 되었습니다. 프로젝트를 다시 열어 주세요.", "base_changed"],
+  deck_changed: [412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.", "base_changed"],
+  unknown_sources: [409, "도식 생성 중 자료를 읽을 수 없게 되었습니다. 자료를 확인한 뒤 다시 작성해 주세요.", "sources_changed"],
+  sources_changed: [409, "도식 생성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.", "sources_changed"],
 };
 
 export function staleError(reasons: string[]): ApiError | null {
   for (const reason of ["unknown_deck", "deck_changed", "unknown_sources", "sources_changed"]) {
     if (reasons.includes(reason)) {
-      const [status, detail] = STALE_RESPONSES[reason];
-      return new ApiError(status, detail);
+      const [status, detail, code] = STALE_RESPONSES[reason];
+      return new ApiError(status, detail, code);
     }
   }
   return null;

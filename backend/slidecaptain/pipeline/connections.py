@@ -62,7 +62,8 @@ class ConnectionConflict(ValueError):
 
     def __init__(self, message: str, *, code: str) -> None:
         super().__init__(message)
-        assert code in CONNECTION_CONFLICT_CODES, code
+        if code not in CONNECTION_CONFLICT_CODES:  # 최적화 실행(-O)에서도 검사한다 (D3a-4 리뷰 R19)
+            raise ValueError(f"모르는 연결 충돌 코드: {code}")
         self.code = code
 
 
@@ -80,7 +81,8 @@ class ClaudeConnection:
     def status(self):
         status = check_login()
         if status.logged_in and status.auth_method != "claude.ai":
-            return LoginStatus(error="Claude 구독 로그인이 필요합니다. Claude Code의 현재 API 인증 설정을 확인해 주세요.")
+            return LoginStatus(error="Claude 구독 로그인이 필요합니다. Claude Code의 현재 API 인증 설정을 확인해 주세요.",
+                               error_code="login_required")
         return status
 
     def models(self):
@@ -280,8 +282,18 @@ class AIConnections:
             self._observe_identity(self.selection.provider, status)
             if selection_id != self.selection_id:
                 raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="identity_changed")
-            if status.logged_in is not True:
+            # 로그인 안 됨과 확인하지 못함을 가른다. 확인하지 못함은 상태 확인이 가른 원인 코드를 싣는다 (D3a-4 리뷰 R2)
+            if status.logged_in is False:
                 raise ProviderNotAvailable(status.error or "AI 연결 화면에서 먼저 로그인해 주세요.", code="login_required")
+            if status.logged_in is not True and status.error_code == "provider_missing":
+                raise ProviderNotAvailable(status.error or "AI 도구를 찾지 못했습니다.", code="provider_missing")
+            if status.logged_in is not True and status.error_code == "provider_timeout":
+                raise ProviderNotAvailable(status.error or "AI 연결 상태 확인이 시간 안에 끝나지 않았습니다.",
+                                           code="provider_timeout")
+            if status.logged_in is not True and status.error_code == "login_required":
+                raise ProviderNotAvailable(status.error or "구독 로그인을 확인해 주세요.", code="login_required")
+            if status.logged_in is not True:
+                raise ProviderNotAvailable(status.error or "AI 연결 상태를 확인하지 못했습니다.", code="provider_call_failed")
             if self.selection.model not in {m.id for m in connection.models()}:
                 raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.", code="model_unavailable")
             provider = connection.provider(self.selection.model)

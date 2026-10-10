@@ -2792,6 +2792,8 @@ export interface components {
             cli_version?: string | null;
             /** Error */
             error?: string | null;
+            /** Error Code */
+            error_code?: string | null;
         };
         /** LossItem */
         LossItem: {

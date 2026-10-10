@@ -206,13 +206,14 @@ class CodexConnection:
             if account is None:
                 return LoginStatus(logged_in=False)
             if not isinstance(account, dict) or account.get("type") != "chatgpt":
-                return LoginStatus(error="ChatGPT 구독 로그인이 필요합니다. 연결 화면에서 로그인해 주세요.")
+                return LoginStatus(error="ChatGPT 구독 로그인이 필요합니다. 연결 화면에서 로그인해 주세요.",
+                                   error_code="login_required")
             email = account.get("email")
             return LoginStatus(logged_in=True, auth_method="ChatGPT",
                                account=mask_email(email) if isinstance(email, str) and email else None)
         except ProviderNotAvailable as e:
             self.close()
-            return LoginStatus(error=str(e))
+            return LoginStatus(error=str(e), error_code=e.code)
 
     def models(self):
         models, cursor, seen = [], None, set()

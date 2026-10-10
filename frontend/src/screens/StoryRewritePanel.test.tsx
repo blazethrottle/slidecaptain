@@ -100,7 +100,8 @@ it("미승인 장 구성 변경은 재작성을 차단한다", async () => {
 it("형식 오류의 원문을 표시하고 적용하지 않는다",async()=>{
   rewriteStory.mockResolvedValue({...candidate(),status:"format_error",deck:null,raw_text:"합성 오류"});
   render(<Harness/>); await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
-  expect(await screen.findByRole("alert")).toHaveTextContent("형식");
+  // 원인별 안내로 보인다 (D3a-4 리뷰 R9)
+  expect(await screen.findByRole("alert")).toHaveTextContent(/재작성 응답의 형식을 확인하지 못했습니다.*같은 입력으로 다시 생성해 주세요/);
   expect(screen.getByText("합성 오류")).not.toBeVisible();  // 응답 원문과 사용량은 접힌 진단 상세에 있다 (D3a-4)
   expectUsageCollapsed();
   expect(screen.queryByRole("button",{name:"이 계획 적용"})).not.toBeInTheDocument();
@@ -235,6 +236,17 @@ it("다시 연 낡은 후보는 충돌 배너 없이 안내만 하고, 수리 �
   expect(screen.queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
   expect(screen.getByLabelText("재작성 지시사항")).toHaveValue("원래 지시");  // 리뷰 R19
   expect(conflict).not.toHaveBeenCalled();
+  // 호출 횟수 문구도 사용량이라 접힌 진단 상세 안에 있다 (D3a-4 리뷰 R3)
+  expect(screen.getByText(/사용 호출 2회, 재검수 1회, 수정 1회차/)).not.toBeVisible();
+  expectUsageCollapsed();
+});
+
+it("재작성 실패 안내는 입력을 바꾸면 사라진다 (D3a-4 리뷰 R24)", async () => {
+  rewriteStory.mockRejectedValue(new ApiError(503, "AI 연결 상태를 확인하지 못했습니다.", "provider_call_failed"));
+  render(<Harness/>); await userEvent.click(screen.getByRole("button",{name:"재작성 미리보기"}));
+  expect(await screen.findByText(/로그인 상태와 사용 한도를 확인한 뒤/)).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("재작성 지시사항"), " 바꿈");
+  expect(screen.queryByText(/로그인 상태와 사용 한도를 확인한 뒤/)).toBeNull();
 });
 
 it("취소 응답보다 결과가 먼저 끝났으면 취소 예고 문구를 붙이지 않는다 (리뷰 R18)", async () => {

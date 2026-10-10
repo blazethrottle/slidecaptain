@@ -756,6 +756,9 @@ def create_app(
     @app.exception_handler(StorageError)
     async def storage_error_handler(request, exc: StorageError):
         status = next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls))
+        # 프로젝트 없음은 화면이 목록으로 보내야 하므로 작업 행과 같은 코드를 싣는다 (D3a-4 리뷰 R6)
+        if isinstance(exc, ProjectNotFound):
+            return JSONResponse(status_code=status, content={"detail": str(exc), "code": "project_missing"})
         return JSONResponse(status_code=status, content={"detail": str(exc)})
 
     @app.exception_handler(ProjectFormatTooNew)

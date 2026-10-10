@@ -112,9 +112,23 @@ it("작업 알림은 진행 중 작업이 사라질 때만 알린다 (D2b-5c)", 
   expect(status()).toBe("");
   rerender(<JobAnnouncer active={null} />);
   expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
-  rerender(<JobAnnouncer active={a} />);
+  // 다시 씀(D3a-4 리뷰 R11): 한 작업은 한 번만 알리므로 이미 알린 작업 대신 새 작업 c를 쓴다
+  const c = { id: "job-c", project: "보고 C" };
+  rerender(<JobAnnouncer active={c} />);
   rerender(<JobAnnouncer active={{ id: "job-b", project: "보고 B" }} />);  // 한 조회 간격 안에 다음 작업이 시작됐다
-  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
+  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 C)");
+});
+
+it("같은 탭이 시작한 작업은 진행 작업 조회가 몰라도 종결 알림으로 결과를 알리고, 한 번만 알린다 (D3a-4 리뷰 R11)", () => {
+  // 지금 코드의 틀린 동작: 진행 작업 조회에서 사라짐을 보지 못하면 아무것도 알리지 않는다
+  const { rerender, container } = render(<JobAnnouncer active={null} />);
+  const status = () => container.querySelector('[role="status"]')!.textContent;
+  act(() => notifyProject({ kind: "job_ended", project: "보고 D", jobId: "job-d", state: "failed" }));
+  expect(status()).toBe("AI 생성 작업이 실패했습니다(보고 D)");
+  // 늦게 온 진행 작업 조회가 같은 작업의 사라짐을 보아도 다시 알리지 않는다
+  rerender(<JobAnnouncer active={{ id: "job-d", project: "보고 D" }} />);
+  rerender(<JobAnnouncer active={null} />);
+  expect(status()).toBe("AI 생성 작업이 실패했습니다(보고 D)");
 });
 
 it("작업 알림은 성공, 실패, 취소, 중단, 완료 불명을 다른 문구로 알린다 (D3a-4, C23)", () => {

@@ -71,7 +71,7 @@ def test_status_reports_login_provider_and_no_generation_yet(store):
     assert body["provider"] == "subscription"
     assert body["login"] == {
         "logged_in": True, "auth_method": "claude.ai", "account": "co***@example.com",
-        "cli_version": None, "error": None,
+        "cli_version": None, "error": None, "error_code": None,  # 다시 씀(D3a-4 리뷰 R2): 원인 코드 칸
     }
     assert body["model"] is None  # StubProvider에는 model 속성이 없다
     assert body["last_generation_at"] is None

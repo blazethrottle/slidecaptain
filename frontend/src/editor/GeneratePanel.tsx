@@ -71,6 +71,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     setStoryStale(false);
     setCancelNotice("");
     setBusy(false);
+    lastRun.current = null;  // 다른 장의 다시 생성을 부르지 않는다 (D3a-4 리뷰 R8)
     const controller = new AbortController();
     follow.current = controller;
     api.listJobs(project.name).then(async (jobs) => {
@@ -130,7 +131,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
   };
 
   const regenerate = () => run("chapter", { instructions });
-  const again = () => (lastRun.current ?? (() => void regenerate()))();
+  // 이 패널에서 부른 적이 없으면(다시 연 지난 작업) 그 작업의 종류로 다시 부른다
+  const again = () => (lastRun.current ?? (job?.kind === "condense" ? condense : () => void regenerate()))();
   const retryActions = busy ? {} : { regenerate: again, retry: again, retry_later: again, regenerate_chapter: again };
   const condense = () => {
     if (!slide) return;
@@ -225,7 +227,6 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
           {elsewhere && <p className="notice">덱의 다른 부분이 바뀌었지만 이 장의 입력은 그대로입니다.</p>}
           <p>새 초안이 준비되었습니다.
             {result.condensed && " 분량에 맞춰 축약했습니다."}
-            {result.format_retried && " 형식 재시도 1회를 거쳤습니다."}
           </p>
           {result.warnings.length > 0 && (
             <ul>{result.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
@@ -244,6 +245,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
       {result && result.status !== "format_error" && (
         <Diagnostics fields={job ? { jobId: job.id, jobKind: job.kind } : undefined}>
           <p className="usage">{formatUsage(result.usage)}</p>
+          {result.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
         </Diagnostics>
       )}
     </section>

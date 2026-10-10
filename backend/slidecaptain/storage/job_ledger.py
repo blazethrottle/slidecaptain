@@ -61,7 +61,8 @@ CANDIDATE_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 CANDIDATE_STATUSES = tuple(CANDIDATE_TRANSITIONS)
 # 원인 분류. 응답 모델 models/jobs.py의 ErrorClass와 같은 집합이어야 한다(시험이 확인한다). storage와 internal은
-# D3a-4가 더했다. 이 값을 읽는 이전 빌드는 응답 모델이 internal로 읽는다(읽기 관대화, 9cdcd1c)
+# D3a-4가 더했다. 읽기 관대화(9cdcd1c) 이후 빌드는 모르는 값을 internal로 읽는다. 그보다 앞선 빌드(D2b 빌드)가
+# 같은 자료 폴더에서 이 값을 읽으면 작업 목록이 500이다(계획 9절 가정 1)
 ERROR_CLASSES = ("input", "ai_output", "connection", "base_changed", "cancelled", "ledger", "storage", "internal")
 OUTCOMES = ("all_applied", "partial", "chain_broken", "held_stale_plan", "cancelled")
 # 묶음 하위 행의 중단 사유는 error_code에 둔다 (계획서 5.2)

@@ -28,6 +28,9 @@ class LoginStatus(BaseModel):
     account: str | None = None  # 가린 이메일 (co***@example.com)
     cli_version: str | None = None  # 해석 실패 시 사용자가 알아차리도록 함께 보여준다
     error: str | None = None
+    # 확인하지 못한 원인의 코드 (D3a-4 리뷰 R2). 생성 자리가 이것을 그대로 실어 화면이 원인별로 안내한다:
+    # provider_missing(CLI 없음), provider_timeout, login_required(구독 로그인이 아닌 인증), provider_call_failed(그 밖)
+    error_code: str | None = None
 
 
 def mask_email(email: str) -> str:
@@ -86,25 +89,28 @@ def check_login(timeout_sec: float = 10.0, cli: Path | None = None) -> LoginStat
     try:
         return _check_login(timeout_sec, cli)
     except Exception:  # 오류 원문에 자격 증명이 섞일 수 있어 공개하지 않는다
-        return LoginStatus(error="로그인 상태를 확인하는 중 오류가 났습니다. Claude Code 설치를 확인해 주세요.")
+        return LoginStatus(error="로그인 상태를 확인하는 중 오류가 났습니다. Claude Code 설치를 확인해 주세요.",
+                           error_code="provider_call_failed")
 
 
 def _check_login(timeout_sec: float, cli: Path | None) -> LoginStatus:
     override = os.environ.get(ENV_CLI)
     if cli is None and override and not Path(override).is_file():
-        return LoginStatus(error=f"환경 변수 {ENV_CLI}가 가리키는 파일이 없습니다: {override}")
+        return LoginStatus(error=f"환경 변수 {ENV_CLI}가 가리키는 파일이 없습니다: {override}", error_code="provider_missing")
     cli = cli or resolve_cli_path()
     if cli is None:
-        return LoginStatus(error="Claude CLI를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.")
+        return LoginStatus(error="Claude CLI를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.",
+                           error_code="provider_missing")
     try:
         proc = subprocess.run(
             [str(cli), "auth", "status"],
             capture_output=True, stdin=subprocess.DEVNULL, timeout=timeout_sec,
         )
     except subprocess.TimeoutExpired:
-        return LoginStatus(error=f"Claude CLI가 {timeout_sec:g}초 안에 응답하지 않았습니다.")
+        return LoginStatus(error=f"Claude CLI가 {timeout_sec:g}초 안에 응답하지 않았습니다.", error_code="provider_timeout")
     except OSError:
-        return LoginStatus(error="Claude CLI를 실행하지 못했습니다. 설치와 실행 권한을 확인해 주세요.")
+        return LoginStatus(error="Claude CLI를 실행하지 못했습니다. 설치와 실행 권한을 확인해 주세요.",
+                           error_code="provider_call_failed")
     # 종료 코드가 0이 아니어도 JSON이 있으면 해석한다 (로그아웃 상태가 0이 아닌 코드로 끝날 수 있다)
     data = _extract_json(proc.stdout.decode("utf-8", errors="replace"))
     logged_in = data.get("loggedIn") if data is not None else None
@@ -114,6 +120,7 @@ def _check_login(timeout_sec: float, cli: Path | None) -> LoginStatus:
         return LoginStatus(
             cli_version=_cli_version(cli, timeout_sec),
             error=f"Claude CLI의 {why}(종료 코드 {proc.returncode})",
+            error_code="provider_call_failed",
         )
     email = data.get("email")
     method = data.get("authMethod")

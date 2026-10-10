@@ -269,4 +269,7 @@ it("다른 AI 생성이 진행 중이면 그 작업 취소 버튼을 보인다 (
   open();
   await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
   expect(await screen.findByRole("button", { name: "그 작업 취소" })).toBeInTheDocument();
+  // 입력을 바꾸면 실패 안내가 사라진다 (D3a-4 리뷰 R24)
+  await userEvent.type(screen.getByLabelText("AI 도식 지시사항"), "바꿈");
+  expect(screen.queryByRole("button", { name: "그 작업 취소" })).toBeNull();
 });

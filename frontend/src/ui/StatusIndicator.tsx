@@ -91,12 +91,14 @@ const ENDED_TEXT: Partial<Record<JobView["state"], string>> = {
   remote_completion_unknown: "AI 생성 작업이 끝났는지 확인하지 못했습니다",
 };
 
-// 결과는 이 탭이 따라간 작업의 종결 알림(job_ended)에서 얻는다. 다른 탭의 작업처럼 결과를 모르면 끝났다고만
-// 알리고, 사라짐을 먼저 알린 뒤 결과가 오면 결과 문구로 고친다 (D3a-4, C23)
+// 결과는 이 탭이 따라간 작업의 종결 알림(job_ended)에서 얻는다. 같은 탭의 작업은 진행 작업 조회가 모를 수 있어
+// 종결 알림만으로도 알린다(리뷰 R11). 다른 탭의 작업처럼 결과를 모르면 끝났다고만 알리고, 사라짐을 먼저 알린 뒤
+// 결과가 오면 결과 문구로 고친다. 한 작업은 한 번만 알린다 (D3a-4, C23)
 export function JobAnnouncer({ active }: { active: { id: string; project: string } | null }) {
   const previous = useRef(active);
   const ended = useRef(new Map<string, JobView["state"]>());
-  const announced = useRef<{ id: string; project: string } | null>(null);
+  const announced = useRef<{ id: string; project: string } | null>(null);  // 마지막으로 알린 작업
+  const seen = useRef(new Set<string>());  // 이미 알린 작업 ID
   const [message, setMessage] = useState("");
   const text = (job: { id: string; project: string }) => {
     const state = ended.current.get(job.id);
@@ -106,14 +108,20 @@ export function JobAnnouncer({ active }: { active: { id: string; project: string
     if (event.kind !== "job_ended" || !event.jobId || !event.state) return;
     ended.current.set(event.jobId, event.state);
     if (announced.current?.id === event.jobId) setMessage(text(announced.current));
+    else if (!seen.current.has(event.jobId)) {
+      announced.current = { id: event.jobId, project: event.project };
+      seen.current.add(event.jobId);
+      setMessage(text(announced.current));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
   useEffect(() => {
     const before = previous.current;
-    if (before && before.id !== active?.id) {
+    if (before && before.id !== active?.id && !seen.current.has(before.id)) {
       announced.current = before;
+      seen.current.add(before.id);
       setMessage(text(before));
-    } else if (active) setMessage("");
+    } else if (active && active.id !== before?.id && !seen.current.has(active.id)) setMessage("");  // 새 작업이 시작됐다
     previous.current = active;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);

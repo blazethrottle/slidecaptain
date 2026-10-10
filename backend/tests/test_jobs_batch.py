@@ -19,6 +19,7 @@ from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.pipeline.rewrite import sources_fingerprint
 from slidecaptain.pipeline.story import StaleStoryPlan
 from slidecaptain.server.app import create_app
+from slidecaptain.storage.file_store import StorageError
 from tests.test_jobs_api import manager  # noqa: F401 (픽스처)
 from slidecaptain.storage.job_ledger import (
     BATCH_KIND, FixedInputs, JobLedger, LedgerError, TransitionRejected, parent_outcome,
@@ -859,3 +860,29 @@ def test_an_unexpected_error_stops_the_rest_with_its_own_code(store):
     assert view["chapters"][1]["error"]["error_class"] == "internal"
     assert view["chapters"][2]["state"] == "interrupted"
     assert view["chapters"][2]["error"]["code"] == "stopped_after_error"
+
+
+def test_a_batch_force_closed_after_an_unexpected_error_marks_internal(store, monkeypatch):
+    """실행 중 예기치 않은 오류 뒤 조정으로도 끝나지 않은 장은 강제 정리가 internal로 닫는다 (D3a-4 리뷰 R22).
+
+    회귀 RED(계획 5절 D3a-4 행): 고치기 전 코드는 강제 정리의 원인 분류가 input이었다.
+    """
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        original, fired = runner.ledger.transition_chapter, []
+
+        def broken(*args, **kwargs):  # 적용 성공 기록에서 예기치 않은 오류로 실행이 끊긴다
+            if not fired and kwargs.get("new") == "succeeded":
+                fired.append(True)
+                monkeypatch.setattr(store, "load_deck_with_etag",  # 조정은 덱을 읽지 못해 판정을 미룬다
+                                    lambda name: (_ for _ in ()).throw(StorageError("읽지 못함")))
+                raise RuntimeError("주입한 예기치 않은 오류")
+            return original(*args, **kwargs)
+        monkeypatch.setattr(runner.ledger, "transition_chapter", broken)
+        job = _register(client, store, ["c1", "c2"]).json()
+        view = _wait(client, job["id"])
+    assert fired
+    closed = [c for c in view["chapters"] if c["state"] == "failed" and c["error"]]
+    assert closed and {c["error"]["error_class"] for c in closed} == {"internal"}

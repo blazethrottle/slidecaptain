@@ -98,6 +98,12 @@
   }
  },
  "http": {
+  "consent_missing": {
+   "body": {
+    "detail": "AI 전송 확인이 필요합니다. 화면의 안내를 확인한 뒤 다시 시도해 주세요."
+   },
+   "status": 428
+  },
   "deck_conflict": {
    "body": {
     "detail": "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. 서버 내용을 다시 읽은 뒤 이어서 편집해 주세요. 편집 단계의 저장하지 않은 변경은 다시 읽을 때 보존합니다."
@@ -131,6 +137,20 @@
    "body": {
     "code": "login_required",
     "detail": "AI 연결 화면에서 먼저 로그인해 주세요."
+   },
+   "status": 503
+  },
+  "project_missing": {
+   "body": {
+    "code": "project_missing",
+    "detail": "프로젝트를 찾지 못했습니다: nope"
+   },
+   "status": 404
+  },
+  "provider_missing": {
+   "body": {
+    "code": "provider_missing",
+    "detail": "Claude CLI를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요."
    },
    "status": 503
   },

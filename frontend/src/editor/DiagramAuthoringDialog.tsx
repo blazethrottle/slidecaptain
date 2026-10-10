@@ -408,7 +408,6 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               <p>AI 응답 원문</p><pre>{generationResult.raw_text}</pre>
               {generationUsage && <p className="usage">{formatUsage(generationUsage)}</p>}
             </FailureNotice>}
-            {generationResult && generationResult.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
             {generationResult?.status === "ok" && generationResult.diagram && !stale && !unavailable && <>
               <GeneratedDiagramReview diagram={generationResult.diagram} evidence={evidence} />
               {generationResult.unverified_numbers.length > 0 && <p className="number-warning">
@@ -427,6 +426,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
             {/* 사용량은 접힌 진단 상세에 둔다. 형식 오류면 실패 안내의 진단 상세에 있다 (D3a-4, R12) */}
             {generationUsage && generationResult?.status !== "format_error" && <Diagnostics>
               <p className="usage">{formatUsage(generationUsage)}</p>
+              {generationResult?.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
             </Diagnostics>}
           </section>}
           <h3>항목 {draft.nodes.length}개</h3>

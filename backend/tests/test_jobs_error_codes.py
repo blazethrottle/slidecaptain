@@ -99,6 +99,10 @@ RAISE_SITES = [
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),
     ("pipeline/connections.py", "AI 연결 상태가 변경되었습니다.", "ConnectionConflict", "identity_changed"),
     ("pipeline/connections.py", "AI 연결 화면에서 먼저 로그인해 주세요.", "ProviderNotAvailable", "login_required"),
+    ("pipeline/connections.py", "AI 도구를 찾지 못했습니다.", "ProviderNotAvailable", "provider_missing"),
+    ("pipeline/connections.py", "AI 연결 상태 확인이 시간 안에 끝나지 않았습니다.", "ProviderNotAvailable", "provider_timeout"),
+    ("pipeline/connections.py", "구독 로그인을 확인해 주세요.", "ProviderNotAvailable", "login_required"),
+    ("pipeline/connections.py", "AI 연결 상태를 확인하지 못했습니다.", "ProviderNotAvailable", "provider_call_failed"),
     ("pipeline/connections.py", "선택한 모델을 사용할 수 없습니다.", "ProviderNotAvailable", "model_unavailable"),
     ("server/app.py", "AI 서비스 또는 모델이 변경되었습니다.", "ConnectionConflict", "selection_changed"),
 ]
@@ -175,7 +179,8 @@ def test_storage_errors_are_storage(store):
 
 
 # 회귀 RED: 등록 단계의 연결 오류는 응답 본문에 코드가 없었다
-def test_registration_connection_errors_put_the_code_in_the_body(store, manager):
+def test_wrapped_generation_connection_errors_put_the_code_in_the_body(store, manager):
+    """래퍼 라우트는 원장 행을 거쳐 JobFailed로 응답한다(provider_error_handler를 지나지 않는다)."""
     from slidecaptain.pipeline.auth_status import LoginStatus
 
     _project(store)
@@ -192,3 +197,41 @@ def test_registration_selection_change_puts_the_code_in_the_body(store, manager)
         response = client.post("/api/projects/p1/generate/structure", json={},
                                headers={"X-AI-Selection": "other-selection"})
     assert response.status_code == 409 and response.json()["code"] == "selection_changed"
+
+
+def test_provider_error_handler_puts_the_code_in_the_body(store, monkeypatch, tmp_path):
+    """연결 오류 처리기를 직접 지나는 경로: AI 설정의 로그인 시작에서 CLI 없음 (D3a-4 리뷰 R23)."""
+    from slidecaptain.pipeline.connections import AIConnections, ClaudeConnection
+    from tests.test_jobs_api import FakeConnection
+
+    monkeypatch.setenv("SLIDECAPTAIN_CLAUDE_CLI", str(tmp_path / "no-such-cli"))
+    connections = AIConnections(tmp_path / "settings.json", connections={
+        "claude": ClaudeConnection(), "chatgpt": FakeConnection("gpt-test")})
+    _project(store)
+    try:
+        with TestClient(create_app(store, ai_connections=connections), headers=HEADERS) as client:
+            response = client.post("/api/ai/providers/claude/login")
+    finally:
+        connections.close()
+    assert response.status_code == 503 and response.json()["code"] == "provider_missing"
+
+
+def test_generation_with_a_missing_cli_records_provider_missing_not_login_required(store, monkeypatch, tmp_path):
+    """상태 확인이 CLI를 찾지 못하면 로그인 필요가 아니라 설치 없음이다 (D3a-4 리뷰 R2).
+
+    회귀 RED: 고치기 전 코드는 확인하지 못한 모든 원인을 login_required로 기록했다.
+    """
+    from slidecaptain.pipeline.connections import AIConnections, ClaudeConnection
+    from tests.test_jobs_api import FakeConnection
+
+    monkeypatch.setenv("SLIDECAPTAIN_CLAUDE_CLI", str(tmp_path / "no-such-cli"))
+    connections = AIConnections(tmp_path / "settings.json", connections={
+        "claude": ClaudeConnection(), "chatgpt": FakeConnection("gpt-test")})
+    _project(store)
+    try:
+        with TestClient(create_app(store, ai_connections=connections), headers=HEADERS) as client:
+            response = client.post("/api/projects/p1/generate/structure", json={},
+                                   headers={"X-AI-Selection": connections.selection_id})
+    finally:
+        connections.close()
+    assert response.status_code == 503 and response.json()["code"] == "provider_missing"

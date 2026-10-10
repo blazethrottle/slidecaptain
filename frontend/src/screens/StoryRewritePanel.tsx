@@ -6,7 +6,7 @@ import {
 } from "../api/jobs";
 import { formatUsage } from "../api/usage";
 import { Diagnostics } from "../ui/Diagnostics";
-import { describeFailure } from "../ui/failure";
+import { describeAiOutput, describeFailure } from "../ui/failure";
 import { FailureNotice } from "../ui/FailureNotice";
 
 const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
@@ -80,9 +80,7 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     if (reasons.length === 0) {
       if ("submission_approved" in response) {
         if (response.status !== "reviewed_candidate") setNotice(response.reason ?? "해결되지 않은 문제가 있습니다. 후보와 기존 저장본을 보존했습니다.");
-      } else if (response.status !== "ok" || !response.deck) {
-        setError("재작성 응답의 형식을 확인하지 못했습니다. 원문을 확인하고 다시 시도해 주세요.");
-      }
+      }  // 재작성 응답의 형식 오류는 원인별 안내로 보인다(아래 렌더, D3a-4 리뷰 R9)
     }
   };
   useEffect(() => {
@@ -224,6 +222,15 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     } catch (e) { if (id === epoch.current) showError(e); }
     finally { setRunning(false); }
   };
+  // 적용할 수 없는 재작성 응답(형식 오류). 낡은 후보는 형식 오류가 아니라 이전 입력 기준 후보다
+  const malformed = !!result && !("submission_approved" in result) && staleReasons.length === 0
+    && (result.status !== "ok" || !result.deck);
+  const usageDetails = result && <>
+    <p className="usage">{formatUsage(result.usage)}</p>
+    {"submission_approved" in result
+      && <p className="usage">사용 호출 {result.calls}회, 재검수 {result.review_calls}회, 수정 {result.rounds}회차</p>}
+    {"raw_text" in result && result.raw_text && result.status !== "ok" && <><p>재작성 응답 원문</p><pre>{result.raw_text}</pre></>}
+  </>;
   return <section className="story-rewrite" aria-label="보고 계획 재작성">
     <h2>기존 편집을 보존하며 계획 재작성</h2>
     <p>장 수와 제목, 본문과 도식은 유지하고 현재 자료로 보고 질문, 장 순서와 근거 연결을 다시 계획합니다. 도식이 의존하는 원자료가 바뀌었다면 재작성을 중단합니다.</p>
@@ -258,13 +265,15 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
     {followError && <p role="status">{followError}</p>}
     {error && <p role="alert">{error}</p>}{notice && <p className="notice">{notice}</p>}
     <FailureNotice failure={failure ? describeFailure(failure) : null} />
-    {/* 사용량과 형식 오류의 응답 원문은 접힌 진단 상세에 둔다 (D3a-4, R12) */}
-    {result && <Diagnostics fields={candidateJob.current ? { jobId: candidateJob.current, jobKind: candidateKind } : undefined}>
-      <p className="usage">{formatUsage(result.usage)}</p>
-      {"raw_text" in result && result.raw_text && result.status !== "ok" && <><p>재작성 응답 원문</p><pre>{result.raw_text}</pre></>}
-    </Diagnostics>}
+    {/* 사용량, 호출 횟수, 형식 오류의 응답 원문은 접힌 진단 상세에 둔다. 형식 오류면 실패 안내의 진단 상세다
+        (D3a-4, R12, 리뷰 R3, R9) */}
+    {result && (malformed
+      ? <FailureNotice failure={describeAiOutput(null, "재작성 응답의 형식을 확인하지 못했습니다.")}>{usageDetails}</FailureNotice>
+      : <Diagnostics fields={candidateJob.current ? { jobId: candidateJob.current, jobKind: candidateKind } : undefined}>
+        {usageDetails}
+      </Diagnostics>)}
     {result && "submission_approved" in result && <div aria-label="제한된 수정 결과">
-      <p>{result.notice}</p><p>사용 호출 {result.calls}회, 재검수 {result.review_calls}회, 수정 {result.rounds}회차</p>
+      <p>{result.notice}</p>
       {result.findings.map((f,i) => <p key={i}>{f.target}: {f.message}</p>)}
       {result.review_notes.map((note,i) => <p key={i}>{note}</p>)}
     </div>}
