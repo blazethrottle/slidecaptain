@@ -7,7 +7,9 @@ assistant 메시지와 structured_output이 든 result 메시지.
 
 동작은 환경 변수로 정한다.
 - FAKE_CLAUDE_DIR: 기록 폴더. calls.log(생성 호출마다 한 줄), pids.log(프로세스마다 한 줄)를 쓴다
-- FAKE_CLAUDE_MODE: respond(기본), gate(관문 파일이 생길 때까지 기다린 뒤 응답), hang(stdin을 읽지 않고 잔다)
+- FAKE_CLAUDE_MODE: respond(기본), gate(관문 파일이 생길 때까지 기다린 뒤 응답), hang(stdin을 읽지 않고 잔다),
+  error(오류 결과 메시지, D3a-4), exit(결과 없이 0이 아닌 종료 코드로 끝남, D3a-4)
+- FAKE_CLAUDE_API_STATUS: error 모드의 결과에 싣는 api_error_status(정수). 비우면 싣지 않는다
 - FAKE_CLAUDE_GATE: gate 모드의 관문 파일 경로
 - FAKE_CLAUDE_RESPONSES: 응답 JSON 목록 파일. 호출 순서대로 꺼내고, 다 쓰면 마지막 것을 되풀이한다
 - FAKE_CLAUDE_LOGGED_IN: 0이면 로그아웃 상태로 답한다
@@ -98,6 +100,17 @@ def main(argv: list[str]) -> int:
                 gate = Path(os.environ["FAKE_CLAUDE_GATE"])
                 if not _wait_while_parent(parent, gate.exists):
                     return 0
+            if mode == "exit":
+                sys.stderr.write("fake failure\n")
+                return 3  # 결과 없이 끝난 CLI. SDK는 ProcessError로 올린다
+            if mode == "error":
+                status = os.environ.get("FAKE_CLAUDE_API_STATUS")
+                _write({"type": "result", "subtype": "error_during_execution", "duration_ms": 1, "duration_api_ms": 1,
+                        "is_error": True, "num_turns": 1, "session_id": "fake-session", "result": "",
+                        "total_cost_usd": 0.0, "usage": {"input_tokens": 1, "output_tokens": 0},
+                        **({"api_error_status": int(status)} if status else {}),
+                        "errors": ["fake error"]})
+                continue
             structured = _next_response(index)
             text = json.dumps(structured, ensure_ascii=False)
             _write({"type": "assistant", "message": {"model": FAKE_MODEL, "content": [{"type": "text", "text": text}]},

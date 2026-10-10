@@ -417,10 +417,11 @@ def create_app(
             return "input", exc.status_code, str(exc.detail), None
         if isinstance(exc, DeckConflict):
             return "base_changed", 412, str(exc), None
+        # 연결 오류의 원인은 던지는 자리가 붙인 코드로 가른다. 예외 클래스로 정하지 않는다 (D3a-4, 계획 4.3)
         if isinstance(exc, ConnectionConflict):
-            return "connection", 409, str(exc), None
+            return "connection", 409, str(exc), exc.code
         if isinstance(exc, ProviderError):
-            return "connection", 503, str(exc), None
+            return "connection", 503, str(exc), exc.code
         if isinstance(exc, StaleStoryPlan):
             return "input", 409, str(exc), "stale_story_plan"
         if isinstance(exc, ProtectedEvidenceChanged):
@@ -430,11 +431,12 @@ def create_app(
         if isinstance(exc, ProjectFormatTooNew):
             return "input", 409, str(exc), exc.code
         if isinstance(exc, StorageError):
-            return "input", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc), None
+            return "storage", next(code for cls, code in _STATUS_BY_ERROR if isinstance(exc, cls)), str(exc), None
         if isinstance(exc, LedgerError):  # 묶음의 장이 원격 호출 시각을 남기지 못했다 (D2b-4 리뷰 R3)
             return "ledger", 503, LEDGER_WRITE_MESSAGE, "ledger_write_failed"
         _LOG.error("AI 생성 작업의 예기치 않은 오류", exc_info=exc)
-        return "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None
+        # 예기치 않은 오류는 입력 문제가 아니다. 입력을 고치라고 안내하지 않도록 따로 분류한다 (D3a-4, 사실 7)
+        return "internal", 500, "AI 생성 작업을 처리하지 못했습니다.", None
 
     def _on_job_success(spec: JobSpec, result) -> None:
         _record_success(result, spec.inputs.provider, spec.inputs.model)
@@ -454,7 +456,7 @@ def create_app(
         if ai_connections is None:
             _require_service()
         elif selection_id != ai_connections.selection_id:
-            raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+            raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
 
     def _sources_revision(name: str) -> str | None:
         try:
@@ -760,11 +762,12 @@ def create_app(
 
     @app.exception_handler(ProviderError)
     async def provider_error_handler(request, exc: ProviderError):
-        return JSONResponse(status_code=503, content={"detail": str(exc)})
+        # 등록 단계의 오류도 원장 행과 같은 원인 코드를 싣는다 (D3a-4, 계획 4.3)
+        return JSONResponse(status_code=503, content={"detail": str(exc), "code": exc.code})
 
     @app.exception_handler(ConnectionConflict)
-    async def connection_conflict_handler(request, exc):
-        return JSONResponse(status_code=409, content={"detail": str(exc)})
+    async def connection_conflict_handler(request, exc: ConnectionConflict):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": exc.code})
 
     @app.exception_handler(QualityExportBlocked)
     @app.exception_handler(DiagramRenderBlocked)
@@ -1796,8 +1799,11 @@ def create_app(
                 error_class, status, detail, code = _classify(failure)
                 # 구성 계획 낡음은 남은 장을 보류로, 그 밖의 오류는 같은 연결로 실패할 호출을 보내지 않으려 중단한다.
                 # 그 장의 결과와 남은 장의 처리는 한 트랜잭션에 쓴다 (계획서 5.7, D2b-4 리뷰 R8)
+                # 남은 장의 코드는 앞 장의 원인을 따른다. 연결 실패 뒤는 provider_failed, 그 밖의 실패 뒤는
+                # stopped_after_error다(앞 장이 예기치 않은 오류여도 provider_failed로 적던 것을 고쳤다, D3a-4)
                 rest_code = (HELD_STALE_PLAN if code == STALE_STORY_PLAN
-                             else "ledger_failed" if error_class == "ledger" else "provider_failed")
+                             else "ledger_failed" if error_class == "ledger"
+                             else "provider_failed" if error_class == "connection" else "stopped_after_error")
                 with ledger.batch():
                     ledger.transition_chapter(job_id, chapter_id, expected="running", new="failed",
                                               error_class=error_class, error_status=status, error_detail=detail,
@@ -1845,7 +1851,7 @@ def create_app(
                 unreadable = "apply_failed"
             if unreadable:
                 # 읽지 못한 것은 판정 불가다. 낡음으로 굳히지 않고 결과를 후보로 남긴다 (계획서 5.4, D2b-4 리뷰 R18)
-                ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed", error_class="input",
+                ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed", error_class="storage",
                                           error_detail="적용할 때 덱이나 자료를 읽지 못했습니다.", error_code=unreadable)
                 return None
             chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
@@ -1871,9 +1877,11 @@ def create_app(
                 ledger.update_chapter(job_id, chapter_id, expected="validating", apply_target_etag=target)
                 saved = store.save_deck(name, new_deck, snapshot=False, expected_etag=chain)
             except (StorageError, OSError, ValueError, LedgerError) as exc:
-                # 저장하지 않았다. 결과는 후보로 남는다(held). 원장이 계속 실패하면 이 전이도 실패해 위로 올라간다
+                # 저장하지 않았다. 결과는 후보로 남는다(held). 원장이 계속 실패하면 이 전이도 실패해 위로 올라간다.
+                # 원장 쓰기 실패는 ledger, 저장과 형식 실패는 storage로 나눈다 (D3a-4, 계획 4.3)
                 ledger.transition_chapter(job_id, chapter_id, expected="validating", new="failed",
-                                          error_class="input", error_detail=str(exc)[:500], error_code="apply_failed")
+                                          error_class="ledger" if isinstance(exc, LedgerError) else "storage",
+                                          error_detail=str(exc)[:500], error_code="apply_failed")
                 return None
             ledger.transition_chapter(job_id, chapter_id, expected="validating", new="succeeded", applied_etag=saved,
                                       candidate_status="applied")
@@ -1905,7 +1913,7 @@ def create_app(
                 action = reconcile_chapter(chapter, chain_etag=chain, current_etag=current,
                                            deck_slots=slide.slots if slide is not None else None)
             except (ValueError, TypeError):  # 원장의 결과가 지금 슬롯 형식에 맞지 않는다 (D2b-4 리뷰 R4)
-                ledger.transition_chapter(row.id, cid, expected=state, new="failed", error_class="input",
+                ledger.transition_chapter(row.id, cid, expected=state, new="failed", error_class="storage",
                                           error_detail="저장된 결과를 지금 형식으로 읽지 못했습니다.",
                                           error_code="result_unreadable")
                 changed = True
@@ -1947,8 +1955,10 @@ def create_app(
                                                   error_code=close_code if close_code == "project_missing" else None)
                     elif c.state in UNFINISHED_CHAPTER:
                         new = "failed" if c.state != "cancel_requested" else "cancelled"
-                        ledger.transition_chapter(row.id, c.chapter_id, expected=c.state, new=new,
-                                                  error_class="input" if new == "failed" else "cancelled",
+                        # 강제 정리는 예기치 않은 오류 뒤의 마지막 수단이라 internal, 프로젝트 없음은 storage다 (D3a-4)
+                        cls = ("cancelled" if new != "failed" else "storage" if close_code == "project_missing"
+                               else "internal")
+                        ledger.transition_chapter(row.id, c.chapter_id, expected=c.state, new=new, error_class=cls,
                                                   error_code=close_code if new == "failed" else None)
             deferred, changed = False, True
         latest = ledger.get_job(row.id)

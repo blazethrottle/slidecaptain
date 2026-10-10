@@ -174,7 +174,7 @@ class SubscriptionProvider:
     async def complete(self, prompt: str, schema: dict) -> ProviderResponse:
         cli = resolve_cli_path()
         if cli is None:
-            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 네이티브 CLI 설치와 경로 설정을 확인해 주세요.")
+            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 네이티브 CLI 설치와 경로 설정을 확인해 주세요.", code="provider_missing")
         options = ClaudeAgentOptions(
             cli_path=cli,
             tools=[],  # 도구 없이 순수 생성만
@@ -210,23 +210,24 @@ class SubscriptionProvider:
             _LOG.warning("AI 호출 타임아웃: %.0f초", self.timeout_s)
             raise ProviderCallFailed(
                 f"AI 응답이 너무 오래 걸려 중단했습니다({self.timeout_s:.0f}초 한도). "
-                "잠시 후 다시 시도해 주세요."
+                "잠시 후 다시 시도해 주세요.", code="provider_timeout",
             ) from e
         except CLINotFoundError as e:
             raise ProviderNotAvailable(
                 "Claude Code를 찾지 못했습니다. 이 앱의 AI 생성에는 Claude Code 설치와 "
-                "구독 로그인이 필요합니다."
+                "구독 로그인이 필요합니다.", code="provider_missing",
             ) from e
         except (CLIConnectionError, ProcessError, ClaudeSDKError) as e:
             _LOG.warning("AI 호출 실패: %s", e)
+            # 미로그인과 한도 초과가 이 한 자리로 온다. 서버가 가를 수 없으므로 넓은 코드다 (계획 4.3)
             raise ProviderCallFailed(
                 "AI 호출에 실패했습니다. Claude Code 로그인 상태와 구독 사용 한도를 "
-                "확인한 뒤 잠시 후 다시 시도해 주세요."
+                "확인한 뒤 잠시 후 다시 시도해 주세요.", code="provider_call_failed",
             ) from e
         if result is None:
             _LOG.warning("AI 호출 비정상 종료: 응답 없음")
             raise ProviderCallFailed(
-                "AI 호출이 정상적으로 끝나지 않았습니다. 잠시 후 다시 시도해 주세요."
+                "AI 호출이 정상적으로 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.", code="provider_disconnected",
             )
 
         usage = build_call_usage(result, assistant_model)
@@ -235,9 +236,11 @@ class SubscriptionProvider:
             if result.api_error_status is not None:
                 _LOG.warning("AI 호출 오류 상태 코드: %s", result.api_error_status)
             _LOG.warning("AI 호출 비정상 종료: %s", result.errors)
+            # 사용 한도 초과는 HTTP 표준 상태 429(RFC 6585)로 온 경우만 가른다. 구독 한도가 실제로 이 상태로
+            # 오는지는 실제 호출 없이 확인하지 못했다(D3a-4 구현 기록). 그 밖은 넓은 코드다
             raise ProviderCallFailed(
                 "AI 호출이 정상적으로 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
-                usage=usage,
+                usage=usage, code="provider_limit" if result.api_error_status == 429 else "provider_call_failed",
             )
         return ProviderResponse(
             structured=result.structured_output, raw_text=result.result or "", usage=usage

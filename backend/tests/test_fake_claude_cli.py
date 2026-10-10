@@ -104,3 +104,30 @@ def test_hang_mode_process_is_cleaned_up_by_one_cancel(fake, monkeypatch):
     while _alive(pid) and time.monotonic() < deadline:
         time.sleep(0.2)
     assert not _alive(pid)
+
+
+# -- D3a-4: 오류 모드와 Claude 연결의 원인 코드 ---------------------------------------------------
+
+@pytest.mark.parametrize("mode, api_status, code", [
+    ("error", None, "provider_call_failed"),   # 오류 결과: 미로그인과 한도를 가를 수 없다
+    ("error", "429", "provider_limit"),        # HTTP 표준 상태 429만 한도 초과로 가른다
+    ("exit", None, "provider_call_failed"),    # 결과 없이 끝난 CLI(ProcessError): 로그인과 한도가 한 자리로 온다
+])
+def test_claude_failures_carry_the_raise_site_code(fake, monkeypatch, mode, api_status, code):
+    from slidecaptain.pipeline.provider import ProviderCallFailed
+
+    monkeypatch.setenv("FAKE_CLAUDE_MODE", mode)
+    if api_status:
+        monkeypatch.setenv("FAKE_CLAUDE_API_STATUS", api_status)
+    with pytest.raises(ProviderCallFailed) as info:
+        asyncio.run(SubscriptionProvider(model="sonnet", timeout_s=30).complete("x", {}))
+    assert info.value.code == code
+
+
+def test_missing_claude_cli_is_provider_missing(fake, monkeypatch, tmp_path):
+    from slidecaptain.pipeline.provider import ProviderNotAvailable
+
+    monkeypatch.setenv("SLIDECAPTAIN_CLAUDE_CLI", str(tmp_path / "no-such-cli"))
+    with pytest.raises(ProviderNotAvailable) as info:
+        asyncio.run(SubscriptionProvider(model="sonnet", timeout_s=30).complete("x", {}))
+    assert info.value.code == "provider_missing"

@@ -58,7 +58,15 @@ class AISettings(BaseModel):
 
 
 class ConnectionConflict(ValueError):
-    pass
+    """연결 선택이나 신원이 바뀌었거나 로그인 중이다. code는 던지는 자리마다 붙인다 (D3a-4, 계획 4.3)."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        assert code in CONNECTION_CONFLICT_CODES, code
+        self.code = code
+
+
+CONNECTION_CONFLICT_CODES = frozenset({"selection_changed", "login_pending", "identity_changed", "settings_busy"})
 
 
 class ClaudeConnection:
@@ -87,7 +95,7 @@ class ClaudeConnection:
             return self._attempt
         cli = resolve_cli_path()
         if cli is None:
-            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 설치 후 연결 상태를 다시 확인해 주세요.")
+            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 설치 후 연결 상태를 다시 확인해 주세요.", code="provider_missing")
         # The unmodified client opens and completes its own browser flow. No
         # login URL, codes, credentials or terminal output are relayed by us.
         try:
@@ -96,7 +104,7 @@ class ClaudeConnection:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except OSError:
-            raise ProviderNotAvailable("Claude Code 로그인 창을 열지 못했습니다.") from None
+            raise ProviderNotAvailable("Claude Code 로그인 창을 열지 못했습니다.", code="provider_missing") from None
         self._started = time.monotonic()
         self._attempt = LoginAttempt(state="pending", message=(
             "Claude Code가 연 공식 브라우저에서 로그인해 주세요. 창이 열리지 않으면 "
@@ -171,7 +179,7 @@ class AIConnections:
 
     def _idle(self):
         if self._active:
-            raise ConnectionConflict("AI 생성이 진행 중입니다. 완료 후 연결 설정을 변경해 주세요.")
+            raise ConnectionConflict("AI 생성이 진행 중입니다. 완료 후 연결 설정을 변경해 주세요.", code="settings_busy")
 
     def settings(self):
         with self._lock:
@@ -263,19 +271,19 @@ class AIConnections:
     def generation(self, selection_id: str | None):
         with self._lock:
             if selection_id != self.selection_id:
-                raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+                raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
             self._idle()
             connection = self.connections[self.selection.provider]
             if connection.login_status().state == "pending":
-                raise ConnectionConflict("로그인을 완료한 뒤 생성해 주세요.")
+                raise ConnectionConflict("로그인을 완료한 뒤 생성해 주세요.", code="login_pending")
             status = connection.status()
             self._observe_identity(self.selection.provider, status)
             if selection_id != self.selection_id:
-                raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+                raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="identity_changed")
             if status.logged_in is not True:
-                raise ProviderNotAvailable(status.error or "AI 연결 화면에서 먼저 로그인해 주세요.")
+                raise ProviderNotAvailable(status.error or "AI 연결 화면에서 먼저 로그인해 주세요.", code="login_required")
             if self.selection.model not in {m.id for m in connection.models()}:
-                raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.")
+                raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.", code="model_unavailable")
             provider = connection.provider(self.selection.model)
             self._active += 1
         try:

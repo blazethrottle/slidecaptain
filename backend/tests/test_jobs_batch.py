@@ -443,6 +443,7 @@ def test_ledger_failure_while_applying_still_finishes_the_batch(store, point):
     assert all(c["state"] not in ("queued", "running", "validating", "cancel_requested") for c in view["chapters"])
     if point == "target":
         assert view["chapters"][0]["state"] == "failed" and view["chapters"][0]["error"]["code"] == "apply_failed"
+        assert view["chapters"][0]["error"]["error_class"] == "ledger"  # 원장 쓰기 실패는 ledger (D3a-4, 지금: input)
         assert view["chapters"][0]["candidate_status"] == "held"  # 결과는 후보로 남는다
     else:
         assert _states(view)[0] == ("c1", "succeeded", "applied")
@@ -561,6 +562,7 @@ def test_restart_with_an_unreadable_result_still_starts(store, path):
     assert provider.calls == 0
     assert view["chapters"][0]["state"] == "failed"
     assert view["chapters"][0]["error"]["code"] == ("apply_failed" if path == "resume" else "result_unreadable")
+    assert view["chapters"][0]["error"]["error_class"] == "storage"  # 저장과 결과 읽기 실패 (D3a-4, 지금: input)
     assert view["state"] not in ("queued", "running", "validating", "cancel_requested")
 
 
@@ -707,6 +709,7 @@ def test_a_batch_whose_project_is_gone_is_closed_at_restart(store):
     # 결과가 있는 장은 결과를 남긴 실패로, 시작하지 않은 장은 재시작 규칙대로 중단으로 닫는다
     assert [(c.state, c.error_code, c.candidate_status) for c in chapters] == [
         ("failed", "project_missing", "held"), ("interrupted", None, "none")]
+    assert chapters[0].error_class == "storage"  # 프로젝트 없음은 storage (D3a-4, 지금: input)
 
 
 class SlowCancelProvider(ChapterProvider):
@@ -794,6 +797,7 @@ def test_an_unreadable_deck_at_apply_keeps_the_result_as_a_candidate(store):
         deck_file.write_bytes(good)
     assert view["chapters"][0]["state"] == "failed" and view["chapters"][0]["candidate_status"] == "held"
     assert view["chapters"][0]["error"]["code"] == "apply_failed"
+    assert view["chapters"][0]["error"]["error_class"] == "storage"  # 적용 때 덱을 읽지 못함 (D3a-4, 지금: input)
     assert view["outcome"] == "partial"
 
 
@@ -843,3 +847,15 @@ def test_cancel_during_the_chain_check_between_chapters_cancels_the_rest(store, 
     assert _states(view) == [("c1", "succeeded", "applied"), ("c2", "cancelled", "none"), ("c3", "cancelled", "none")]
     assert all(c["error"] is None or c["error"]["code"] != "chain_broken" for c in view["chapters"])
     assert view["state"] == "cancelled" and view["outcome"] == "cancelled" and provider.calls == 1
+
+
+# D3a-4 회귀 RED(사실 8): 앞 장이 예기치 않은 오류로 실패해도 남은 장의 코드가 provider_failed였다(리뷰 탐침)
+
+def test_an_unexpected_error_stops_the_rest_with_its_own_code(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), RuntimeError("예기치 않음"), slots("셋")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        view = _wait(client, _register(client, store, ["c1", "c2", "c3"]).json()["id"])
+    assert view["chapters"][1]["error"]["error_class"] == "internal"
+    assert view["chapters"][2]["state"] == "interrupted"
+    assert view["chapters"][2]["error"]["code"] == "stopped_after_error"

@@ -60,7 +60,9 @@ CANDIDATE_TRANSITIONS: dict[str, frozenset[str]] = {
     "dismissed": frozenset(),
 }
 CANDIDATE_STATUSES = tuple(CANDIDATE_TRANSITIONS)
-ERROR_CLASSES = ("input", "ai_output", "connection", "base_changed", "cancelled", "ledger")
+# 원인 분류. 응답 모델 models/jobs.py의 ErrorClass와 같은 집합이어야 한다(시험이 확인한다). storage와 internal은
+# D3a-4가 더했다. 이 값을 읽는 이전 빌드는 응답 모델이 internal로 읽는다(읽기 관대화, 9cdcd1c)
+ERROR_CLASSES = ("input", "ai_output", "connection", "base_changed", "cancelled", "ledger", "storage", "internal")
 OUTCOMES = ("all_applied", "partial", "chain_broken", "held_stale_plan", "cancelled")
 # 묶음 하위 행의 중단 사유는 error_code에 둔다 (계획서 5.2)
 HELD_STALE_PLAN = "held_stale_plan"

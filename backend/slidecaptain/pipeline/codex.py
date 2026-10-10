@@ -38,7 +38,7 @@ def resolve_codex_path():
 
 def validated_auth_url(value):
     if not isinstance(value, str) or len(value) > 8192:
-        raise ProviderNotAvailable("공식 로그인 주소를 확인하지 못했습니다.")
+        raise ProviderNotAvailable("공식 로그인 주소를 확인하지 못했습니다.", code="provider_call_failed")
     try:
         url = urlsplit(value)
         valid = (url.scheme == "https" and url.hostname in _AUTH_HOSTS
@@ -46,7 +46,7 @@ def validated_auth_url(value):
     except ValueError:
         valid = False
     if not valid:
-        raise ProviderNotAvailable("공식 로그인 주소를 확인하지 못했습니다.")
+        raise ProviderNotAvailable("공식 로그인 주소를 확인하지 못했습니다.", code="provider_call_failed")
     return value
 
 
@@ -77,7 +77,7 @@ class CodexRPC:
     def __init__(self, home: Path, *, timeout=20.0):
         cli = resolve_codex_path()
         if cli is None:
-            raise ProviderNotAvailable("Codex CLI를 찾지 못했습니다. Codex를 설치한 뒤 연결 상태를 다시 확인해 주세요.")
+            raise ProviderNotAvailable("Codex CLI를 찾지 못했습니다. Codex를 설치한 뒤 연결 상태를 다시 확인해 주세요.", code="provider_missing")
         self.timeout = timeout
         self._guard = threading.RLock()
         self._pending = {}
@@ -99,7 +99,7 @@ class CodexRPC:
             )
         except OSError:
             self._cwd.cleanup()
-            raise ProviderNotAvailable("Codex를 실행하지 못했습니다. 설치 상태를 확인해 주세요.") from None
+            raise ProviderNotAvailable("Codex를 실행하지 못했습니다. 설치 상태를 확인해 주세요.", code="provider_missing") from None
         self._reader = threading.Thread(target=self._read, daemon=True)
         self._reader.start()
         try:
@@ -112,12 +112,12 @@ class CodexRPC:
     def _send(self, message):
         with self._guard:
             if self._closed:
-                raise ProviderNotAvailable("Codex 연결이 종료되었습니다. 다시 연결해 주세요.")
+                raise ProviderNotAvailable("Codex 연결이 종료되었습니다. 다시 연결해 주세요.", code="provider_disconnected")
             try:
                 self._process.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode())
                 self._process.stdin.flush()
             except (OSError, ValueError):
-                raise ProviderNotAvailable("Codex 연결이 끊겼습니다. 다시 연결해 주세요.") from None
+                raise ProviderNotAvailable("Codex 연결이 끊겼습니다. 다시 연결해 주세요.", code="provider_disconnected") from None
 
     def _read(self):
         try:
@@ -159,9 +159,9 @@ class CodexRPC:
             try:
                 result = target.get(timeout=self.timeout if timeout is None else timeout)
             except queue.Empty:
-                raise ProviderNotAvailable("Codex 응답 시간이 초과되었습니다. 연결 상태를 다시 확인해 주세요.") from None
+                raise ProviderNotAvailable("Codex 응답 시간이 초과되었습니다. 연결 상태를 다시 확인해 주세요.", code="provider_timeout") from None
             if "error" in result or not isinstance(result.get("result"), dict):
-                raise ProviderNotAvailable("Codex 요청을 완료하지 못했습니다. 로그인과 Codex 버전을 확인해 주세요.")
+                raise ProviderNotAvailable("Codex 요청을 완료하지 못했습니다. 로그인과 Codex 버전을 확인해 주세요.", code="provider_call_failed")
             return result["result"]
         finally:
             with self._guard:
@@ -233,7 +233,7 @@ class CodexConnection:
             if next_cursor == cursor:
                 break
             cursor = next_cursor
-        raise ProviderNotAvailable("모델 목록을 끝까지 읽지 못했습니다. 다시 확인해 주세요.")
+        raise ProviderNotAvailable("모델 목록을 끝까지 읽지 못했습니다. 다시 확인해 주세요.", code="provider_call_failed")
 
     def start_login(self):
         if self.login_status().state == "pending":
@@ -243,7 +243,7 @@ class CodexConnection:
         try:
             url = validated_auth_url(result.get("authUrl"))
             if not isinstance(self._login_id, str) or not self._login_id:
-                raise ProviderNotAvailable("로그인 요청을 확인하지 못했습니다.")
+                raise ProviderNotAvailable("로그인 요청을 확인하지 못했습니다.", code="provider_call_failed")
         except ProviderNotAvailable:
             self.close()
             raise
@@ -310,10 +310,10 @@ def strict_output_schema(schema):
             return
         node.pop("default", None)
         if any(k in node for k in ("allOf", "oneOf", "not", "if", "then", "else", "patternProperties")):
-            raise ProviderNotAvailable("이 응답 스키마는 ChatGPT 연결에서 아직 지원하지 않습니다.")
+            raise ProviderNotAvailable("이 응답 스키마는 ChatGPT 연결에서 아직 지원하지 않습니다.", code="provider_unsupported")
         if node.get("type") == "object":
             if isinstance(node.get("additionalProperties"), dict):
-                raise ProviderNotAvailable("가변 키 응답 스키마는 ChatGPT 연결에서 아직 지원하지 않습니다.")
+                raise ProviderNotAvailable("가변 키 응답 스키마는 ChatGPT 연결에서 아직 지원하지 않습니다.", code="provider_unsupported")
             node.setdefault("properties", {})
             node["required"] = list(node["properties"])
             node["additionalProperties"] = False
@@ -353,7 +353,7 @@ class CodexProvider:
         try:
             account = client.request("account/read", {"refreshToken": False}).get("account")
             if not isinstance(account, dict) or account.get("type") != "chatgpt":
-                raise ProviderNotAvailable("ChatGPT 구독 로그인이 필요합니다.")
+                raise ProviderNotAvailable("ChatGPT 구독 로그인이 필요합니다.", code="login_required")
             thread = client.request("thread/start", {
                 "model": self.model, "modelProvider": "openai", "cwd": client.cwd,
                 "approvalPolicy": "on-request", "sandbox": "read-only", "ephemeral": True,
@@ -370,15 +370,15 @@ class CodexProvider:
             text, tokens = "", None
             while True:
                 if stop.is_set():
-                    raise ProviderCallFailed("ChatGPT 생성을 취소했습니다.")
+                    raise ProviderCallFailed("ChatGPT 생성을 취소했습니다.", code="provider_cancelled")
                 remaining = self.timeout_s - (time.monotonic() - started)
                 if remaining <= 0:
-                    raise ProviderCallFailed("ChatGPT 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.")
+                    raise ProviderCallFailed("ChatGPT 응답 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.", code="provider_timeout")
                 try:
                     event = client.events.get(timeout=min(remaining, 1))
                 except queue.Empty:
                     if getattr(client, "_closed", False):
-                        raise ProviderCallFailed("ChatGPT 연결이 종료되었습니다. 다시 시도해 주세요.")
+                        raise ProviderCallFailed("ChatGPT 연결이 종료되었습니다. 다시 시도해 주세요.", code="provider_disconnected")
                     continue
                 params = event.get("params", {})
                 if params.get("threadId") != thread_id or params.get("turnId", turn_id) != turn_id:
@@ -397,7 +397,7 @@ class CodexProvider:
                     if completed.get("id") != turn_id:
                         continue
                     if completed.get("status") != "completed":
-                        raise ProviderCallFailed("ChatGPT 생성을 완료하지 못했습니다. 로그인, 사용 한도와 연결 상태를 확인해 주세요.")
+                        raise ProviderCallFailed("ChatGPT 생성을 완료하지 못했습니다. 로그인, 사용 한도와 연결 상태를 확인해 주세요.", code="provider_call_failed")
                     break
             try:
                 structured = json.loads(text)
@@ -414,7 +414,7 @@ class CodexProvider:
             )
             return ProviderResponse(structured=structured, raw_text=text, usage=usage)
         except (KeyError, TypeError, ValueError):
-            raise ProviderCallFailed("Codex 응답 형식을 읽지 못했습니다. Codex 버전을 확인해 주세요.") from None
+            raise ProviderCallFailed("Codex 응답 형식을 읽지 못했습니다. Codex 버전을 확인해 주세요.", code="provider_call_failed") from None
         finally:
             # Process termination cancels timed-out turns and closes ephemeral
             # threads. No raw prompt/result logs are persisted by this adapter.

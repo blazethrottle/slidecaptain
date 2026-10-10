@@ -34,11 +34,33 @@ class CallUsage(BaseModel, frozen=True):
 
 
 class ProviderError(Exception):
-    """사용자에게 쉬운 말로 보여줄 AI 호출 오류 (설계서 7.2)."""
+    """사용자에게 쉬운 말로 보여줄 AI 호출 오류 (설계서 7.2).
 
-    def __init__(self, message: str, *, usage: CallUsage | None = None) -> None:
+    code는 던지는 자리마다 붙이는 원인 코드다(개정판 D3a-4, 계획 4.3). 예외 클래스로 원인을 정하지 않는다:
+    ChatGPT 연결은 호출 중 시간 초과도 ProviderNotAvailable로, Claude 연결은 미로그인과 한도 초과를
+    ProviderCallFailed 한 자리로 던지기 때문이다. 한 자리가 둘 이상의 원인을 함께 받으면 넓은 코드
+    provider_call_failed를 쓴다. 코드 목록은 PROVIDER_ERROR_CODES다.
+    """
+
+    def __init__(self, message: str, *, usage: CallUsage | None = None, code: str = "provider_call_failed") -> None:
         super().__init__(message)
         self.usage = usage
+        assert code in PROVIDER_ERROR_CODES, code
+        self.code = code
+
+
+# 제공자 오류 코드 (D3a-4). 화면의 원인별 안내 표(계획 4.3)가 이 목록을 덮는다
+PROVIDER_ERROR_CODES = frozenset({
+    "provider_missing",        # 설치 없음, 실행 파일을 찾거나 실행하지 못함
+    "login_required",          # 연결 상태 확인에서 로그인이 없다고 판정
+    "provider_timeout",        # 응답 시간 초과
+    "provider_disconnected",   # 연결 끊김, 결과 없이 끝남
+    "provider_unsupported",    # 이 연결이 지원하지 않는 응답 스키마
+    "provider_limit",          # 사용 한도 초과(HTTP 429로 온 경우만 가른다)
+    "provider_cancelled",      # 제공자가 생성을 취소로 끝냄
+    "model_unavailable",       # 선택한 모델을 쓸 수 없음
+    "provider_call_failed",    # 그 밖의 호출 실패, 또는 한 자리가 둘 이상의 원인을 함께 받음
+})
 
 
 class ProviderNotAvailable(ProviderError):
