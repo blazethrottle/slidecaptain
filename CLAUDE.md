@@ -4,6 +4,7 @@
 
 ## 진본 문서 (작업 시작 전 필독)
 
+- 2026-10-10 개정판 D3: `docs/plans/2026-10-10-revision-d3-report-flow.md`. D3를 D3a 화면 골격, D3b 보고 목적, D3c 직접 수정으로 나눴고 D3a 상세와 이월 24건의 담당을 확정했다. 구현 착수와 구현 리뷰 규모는 사용자와 상의한 뒤다. 재개 시 2절 이월 표, 4.4 생성 중 이동 표, 5절 시험 세 칸 분류를 먼저 읽는다.
 - 2026-10-08 개정판 D2: `docs/plans/2026-10-08-revision-d2-common-foundation.md`. D2a 6태스크와 D2b 작업 원장을 구현했고 2026-10-08 D2 관문을 통과했다. 「결과」 절의 「D2 관문」과 로드맵의 D2a 이월표를 먼저 읽는다.
 - 2026-10-08 D2b 작업 원장: `docs/plans/2026-10-08-revision-d2b-job-ledger.md`. 생성 작업의 원장, 전용 스레드 실행기와 작업 API, 장 생성 묶음, 화면 이전, 재시작 관통을 구현했다(α `cdd32c7`, β `74165ad`). 재개 시 계획서 「결과 (D2b-β)」 절의 RED 분류, 이월(β R8, R15, α A9), 남은 확인을 먼저 읽는다. 다음 단계(D3) 착수는 사용자와 상의한 뒤다(단계 경계).
 - 2026-10-08 macOS 재개: Mac Mini에서도 `feat/windows-feedback-revision`을 이어간다. D1의 macOS 빌드, 실행, 자식 정리 확인 결과는 `docs/handoffs/2026-10-02-desktop-d1.md`의 macOS 절에 있다. 패키지 앱을 시험할 때는 `SLIDECAPTAIN_DATA_DIR`를 별도 폴더로 지정해 사용자의 `~/slidecaptain-projects`를 건드리지 않는다.
