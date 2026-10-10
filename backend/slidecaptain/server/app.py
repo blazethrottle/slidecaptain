@@ -1715,7 +1715,7 @@ def create_app(
         # 이미 슬라이드가 있는 장은 적용 단계의 사슬 검사에서 반드시 거절된다. 호출 비용을 쓰기 전에 막는다 (리뷰 R10)
         filled = next((cid for cid in chapter_ids if any(sl.chapter_id == cid for sl in deck.slides)), None)
         if filled is not None:
-            raise HTTPException(409, f"이미 내용이 있는 장입니다: {by_id[filled].topic}. 편집 탭에서 다시 생성해 주세요.")
+            raise HTTPException(409, f"이미 내용이 있는 장입니다: {by_id[filled].topic}. 편집 단계에서 다시 생성해 주세요.")
         require_current_story(deck, sources)
         _require_current_selection(selection_id)
         revision = sources_fingerprint(sources)

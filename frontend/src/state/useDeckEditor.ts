@@ -156,7 +156,7 @@ export function useDeckEditor(
     return true;
   }, [saveNow]);
 
-  // 언마운트 플러시: 탭 전환이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
+  // 언마운트 플러시: 단계 이동이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
   useEffect(() => () => {
     if (!conflictRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);

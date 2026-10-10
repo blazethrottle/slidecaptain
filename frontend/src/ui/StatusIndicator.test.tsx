@@ -119,3 +119,15 @@ it("작업 상태 2종의 색조와 글자 모양 아이콘 (D2b-5c)", () => {
   rerender(<StatusIndicator kind="completion_unknown" />);
   expect(container.querySelector(".status-warning")).not.toBeNull();
 });
+
+it("저장 상태를 보이지 않는 때(null)를 거친 저장됨은 알리지 않는다 (D3a-2 리뷰 R2)", () => {
+  // 저장 없이 단계를 떠나면 미저장에서 null로, 다음 단계가 저장됨을 올린다. 이 바뀜은 저장이 아니다
+  const { rerender } = render(<SaveAnnouncer kind="unsaved" />);
+  rerender(<SaveAnnouncer kind={null} />);
+  act(() => { rerender(<SaveAnnouncer kind="saved" />); });
+  expect(screen.getByRole("status")).toHaveTextContent("");
+  // null 다음의 미저장에서 저장으로 바뀌면 알린다
+  rerender(<SaveAnnouncer kind="unsaved" />);
+  act(() => { rerender(<SaveAnnouncer kind="saved" />); });
+  expect(screen.getByRole("status")).toHaveTextContent("저장됨");
+});

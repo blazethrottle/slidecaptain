@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, messageOf, type AISettings, type LoginAttempt, type ProviderId } from "../api/client";
 import { revokeConsent } from "../api/aiGate";
 
@@ -15,6 +15,17 @@ function safeLoginURL(value: string | null | undefined) {
 export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
   const id = useId();
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+  // 프로젝트 화면에서는 상단 머리의 드로어로 겹쳐 뜬다. Esc로 닫고 초점을 여닫기 버튼으로 돌려준다 (D3a-2 리뷰 R7).
+  // 문서 전체에서 받는다: 설정을 읽는 동안 여닫기 버튼이 잠겨 초점이 문서 본문으로 빠지기 때문이다
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setOpen(false); toggleRef.current?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [provider, setProvider] = useState<ProviderId>("claude");
   const [model, setModel] = useState("");
@@ -82,7 +93,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
     !!settings?.providers.find(p => p.id === service)?.models.some(m => m.id === modelId);
 
   return <section className="ai-settings">
-    <button type="button" aria-expanded={open} aria-controls={id} disabled={disabled || working}
+    <button ref={toggleRef} type="button" aria-expanded={open} aria-controls={id} disabled={disabled || working}
       onClick={() => {
         if (!open) void run(() => load(true));
         setOpen(!open);

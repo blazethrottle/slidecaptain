@@ -13,7 +13,7 @@ it("1100px 이하에서 단계 목록을 줄이고, 780px 이하에서 가로 �
 
 it("편집 화면의 쌓임은 뷰포트가 아니라 본문 폭(컨테이너 조건)으로 정한다", () => {
   expect(css).toMatch(/\.stage-body \{[^}]*container: stage \/ inline-size;/);
-  expect(css).toMatch(/@container stage \(max-width: 864px\) \{\s*\.editor-screen/);
+  expect(css).toMatch(/@container stage \(max-width: 1080px\) \{\s*\.editor-screen/);
   expect(css).toMatch(/@container stage \(max-width: 748px\) \{\s*\.editor-screen/);
   expect(css).not.toMatch(/@media \(max-width: 1000px\)/);
 });

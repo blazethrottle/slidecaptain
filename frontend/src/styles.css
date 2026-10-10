@@ -123,10 +123,14 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="c
 .editor-screen { display: grid; grid-template-columns: var(--width-editor-left) minmax(0, 1fr) var(--width-editor-right); gap: var(--space-3); }
 .editor-center { min-width: 0; }
 /* 편집 화면의 쌓임은 뷰포트가 아니라 본문 폭으로 정한다 (D3a-2, 계획 4.1). 단계 목록이 생기면 같은 뷰포트에서
-   본문이 좁아지기 때문이다. 경계값은 시안의 두 뷰포트 경계에서 계산했다.
-   - 864px: 뷰포트 1100px에서 단계 목록 188px와 본문 좌우 여백 24px씩을 뺀 폭. 이하이면 속성 패널을 캔버스 아래로 내린다
-   - 748px: 뷰포트 780px에서 단계 목록이 가로 띠가 되고 본문 좌우 여백 16px씩을 뺀 폭. 이하이면 세 영역을 쌓는다 */
-@container stage (max-width: 864px) {
+   본문이 좁아지기 때문이다.
+   - 1080px: 세 열 배치의 캔버스가 1024x720 두 열 배치에서 잰 캔버스 폭(556px)보다 좁아지지 않는 본문 폭이다
+     (장 목록 220 + 속성 패널 280 + 열 간격 12 x 2 + 556). 이하이면 속성 패널을 캔버스 아래로 내린다.
+     뷰포트로는 1360px 이하(1101px 이상은 단계 목록 216px와 본문 여백 32px씩, 1100px 이하는 늘 1080px보다 좁다)에
+     해당한다. 제품 설계의 기본 창 1280px에서는 두 열이다 (D3a-2 리뷰 R8)
+   - 748px: 뷰포트 780px에서 단계 목록이 가로 띠가 되고 본문 좌우 여백 16px씩을 뺀 폭. 이하이면 세 영역을
+     쌓는다. 뷰포트 781~984px(단계 목록 188px, 본문 여백 24px씩)도 본문 폭이 748px 이하라 한 열이다 */
+@container stage (max-width: 1080px) {
   .editor-screen { grid-template-columns: var(--width-editor-left) minmax(0, 1fr); }
   .editor-right { grid-column: 1 / -1; padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 }
@@ -155,9 +159,10 @@ main.project-shell { padding: 0; }
 .topbar-ai { color: var(--color-text-muted); font-size: var(--font-size-small); }
 /* AI 설정은 상단 머리의 드로어다. 내용(계정, 모델, Effort)은 D4가 바꾸고 D3a는 위치만 옮긴다 (계획 4.1) */
 .project-topbar .ai-settings { margin: 0; max-width: none; }
+/* 폭은 안쪽 여백과 경계선을 포함한다. 좁은 창에서는 양쪽 끝을 뷰포트 안에 붙인다 (D3a-2 리뷰 R7) */
 .project-topbar .ai-settings-body { position: absolute; right: var(--space-6); top: 100%; z-index: 100;
-  width: min(var(--width-reading-wide), calc(100vw - var(--space-6))); max-height: 80vh; overflow: auto;
-  margin-top: 0; background: var(--color-panel); box-shadow: var(--shadow-dialog); }
+  box-sizing: border-box; width: min(var(--width-reading-wide), calc(100vw - 2 * var(--space-6)));
+  max-height: 80vh; overflow: auto; margin-top: 0; background: var(--color-panel); box-shadow: var(--shadow-dialog); }
 .stage-sidebar { grid-area: side; min-width: 0; padding: var(--space-5) var(--space-3);
   background: var(--color-panel); border-right: 1px solid var(--color-border); }
 .stage-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
@@ -186,6 +191,7 @@ main.project-shell { padding: 0; }
   .stage-button { min-width: var(--width-stage-strip-item); }
   .project-topbar { padding: var(--space-3) var(--space-4); }
   .stage-body { padding: var(--space-4); }
+  .project-topbar .ai-settings-body { left: var(--space-2); right: var(--space-2); width: auto; }
 }
 
 /* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다

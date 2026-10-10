@@ -117,3 +117,14 @@ it("생성 중에는 두 모델의 빠른 선택을 잠근다", async () => {
   expect(await screen.findByRole("button", { name: "Codex LUNA" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Claude Sonnet" })).toBeDisabled();
 });
+
+it("열린 설정은 Esc로 닫히고 초점이 여닫기 버튼으로 돌아온다 (D3a-2 리뷰 R7)", async () => {
+  render(<AISettingsPanel />);
+  const toggle = screen.getByRole("button", { name: "AI 연결 및 모델" });
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await screen.findByRole("heading", { name: "AI 연결" });
+  await userEvent.keyboard("{Escape}");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(document.activeElement).toBe(toggle);
+});

@@ -539,7 +539,7 @@ it("화면을 다시 열면 진행 중인 묶음을 이어서 조회하고 끝�
   await waitFor(() => expect(onDeckChange).toHaveBeenLastCalledWith(after));
   expect(onBusyChange.mock.calls[0]).toEqual([true]);
   await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
-  expect(onDone).not.toHaveBeenCalled();  // 이 화면에서 등록한 작업이 아니면 편집 탭으로 옮기지 않는다
+  expect(onDone).not.toHaveBeenCalled();  // 이 화면에서 등록한 작업이 아니면 편집 단계으로 옮기지 않는다
 });
 
 it("끝난 지난 묶음은 실패 요약을 보인다 (D2b-5a)", async () => {
@@ -655,7 +655,7 @@ it("시작 전에 취소된 장만 있으면 사용량 누락 단서를 보이�
 
 const CH3 = { id: "c3", topic: "셋째", conclusion: "", template: "bullet_box" as const, source_refs: [] };
 
-it("실패한 장은 그 장만 새 묶음으로 다시 생성하고, 다른 장이 비어 있으면 편집 탭으로 옮기지 않는다 (D2b-5a)", async () => {
+it("실패한 장은 그 장만 새 묶음으로 다시 생성하고, 다른 장이 비어 있으면 편집 단계으로 옮기지 않는다 (D2b-5a)", async () => {
   function Host({ onDone }: { onDone: () => void }) {
     const [current, setCurrent] = useState(deckWith([CH1, CH2, CH3], [{ chapter_id: "c1", slots: COVER }]));
     return <StructureScreen project={project} deck={current} onDeckChange={setCurrent} onDone={onDone} pollIntervalMs={0} />;
@@ -1002,7 +1002,7 @@ it("이전 입력 기준 장은 현재 입력으로 다시 생성하고 옛 후�
   expect(api.dismissChapterCandidate).toHaveBeenCalledWith("p1", "job-old", "c1");
 });
 
-it("장 하나 다시 생성: 동의 거절은 안내, 완료 여부 확인은 그 장에만, 덱이 완성되면 편집 탭으로", async () => {
+it("장 하나 다시 생성: 동의 거절은 안내, 완료 여부 확인은 그 장에만, 덱이 완성되면 편집 단계으로", async () => {
   vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c1", "remote_completion_unknown"),
     chapterView("c2", "failed", { error: FAILED_503 })], { state: "failed", outcome: "partial" })]);
   vi.mocked(api.prepareAi).mockRejectedValueOnce(new AiConsentDeclined());

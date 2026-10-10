@@ -70,8 +70,11 @@ function nextChapterId(chapters: Chapter[]): string {
   return `c${max + 1}`;
 }
 
+export type StructureBrief = { instructions: string; targetChapters: string };
+export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "" };
+
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
-  onSaveStatusChange, onJobRegistered, focusChapterId, pollIntervalMs = 1000 }: {
+  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -83,14 +86,22 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
   focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
+  // 주안점과 목표 장수. 저장하지 않는 값이라 부모(프로젝트 화면)가 들고 있어 단계 이동과 다시 마운트 사이에
+  // 남는다(계획 4.4, 사실 13, D3a-2 리뷰 R6). 넘기지 않으면 이 화면 안에서만 든다
+  brief?: StructureBrief;
+  onBriefChange?: (brief: StructureBrief) => void;
   pollIntervalMs?: number;  // 작업 조회 간격. 시험에서 실제 1초 대기를 쓰지 않게 한다 (계획서 5.9)
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
   const [storyPlan, setStoryPlan] = useState<StoryPlan | null>(deck.structure.story_plan ?? null);
   const [decisionQuestion, setDecisionQuestion] = useState(deck.structure.story_plan?.brief.decision_question ?? "");
   const [draftGenerated, setDraftGenerated] = useState(false);  // AI 재생성 초안 여부 (결정 15: 승인 시 전면 교체)
-  const [targetChapters, setTargetChapters] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [localBrief, setLocalBrief] = useState<StructureBrief>(EMPTY_BRIEF);
+  const currentBrief = brief ?? localBrief;
+  const changeBrief = (next: StructureBrief) => (brief && onBriefChange ? onBriefChange(next) : setLocalBrief(next));
+  const { targetChapters, instructions } = currentBrief;
+  const setTargetChapters = (v: string) => changeBrief({ ...currentBrief, targetChapters: v });
+  const setInstructions = (v: string) => changeBrief({ ...currentBrief, instructions: v });
   const [busy, setBusy] = useState(false);
   const [rewriteActive, setRewriteActive] = useState(false);
   const [documentActive,setDocumentActive] = useState(false);
@@ -99,7 +110,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const documentLeave = useRef<()=>Promise<boolean>>(async()=>true);
   const dirtyParts = useRef({rewrite:false,document:false,draft:false,backup:false});
   const parentDirty = useRef(onDirtyChange);parentDirty.current=onDirtyChange;
-  const reportDirty = useCallback(()=>{const d=dirtyParts.current;parentDirty.current?.(d.rewrite||d.document||d.draft||d.backup);},[]);
+  // 재작성과 문서 변경 패널의 적용하지 않은 입력, 저장하지 못한 생성 결과도 머리의 저장 상태에 올린다 (D3a-2 리뷰 R3)
+  const [pendingParts, setPendingParts] = useState({ panels: false, backup: false });
+  const reportDirty = useCallback(()=>{const d=dirtyParts.current;parentDirty.current?.(d.rewrite||d.document||d.draft||d.backup);
+    setPendingParts((p) => (p.panels === (d.rewrite||d.document) && p.backup === d.backup ? p : { panels: d.rewrite||d.document, backup: d.backup }));},[]);
   const setRewriteDirty = useCallback((dirty:boolean)=>{dirtyParts.current.rewrite=dirty;reportDirty();},[reportDirty]);
   const setDocumentDirty = useCallback((dirty:boolean)=>{dirtyParts.current.document=dirty;reportDirty();},[reportDirty]);
   // 장 구성 초안이 저장본과 다르면 창 닫기 경고에 포함한다 (D2a-2: 종전에는 경고 없이 사라졌다)
@@ -171,9 +185,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 장 구성 초안, 보고 질문, 저장하지 못한 생성 결과가 남아 있으면 창 닫기 경고에 포함한다 (D2a-2, 리뷰 R1, R16)
   // 승인 전 초안은 덱이 아니라 저장되지 않는다. 머리의 저장 상태는 그 사실을 문구로 밝힌다 (계획 4.1)
   useEffect(() => {
-    onSaveStatusChange?.(draftDirty || questionChanged
-      ? { kind: "unsaved", detail: "승인 전 초안은 저장되지 않습니다" } : { kind: "saved" });
-  }, [draftDirty, questionChanged, onSaveStatusChange]);
+    onSaveStatusChange?.(pendingParts.backup ? { kind: "unsaved", detail: "저장하지 못한 생성 결과가 있습니다" }
+      : draftDirty || questionChanged ? { kind: "unsaved", detail: "승인 전 초안은 저장되지 않습니다" }
+      : pendingParts.panels ? { kind: "unsaved", detail: "적용하지 않은 입력이 있습니다" } : { kind: "saved" });
+  }, [draftDirty, questionChanged, pendingParts, onSaveStatusChange]);
   const tableRef = useRef<HTMLTableSectionElement | null>(null);
   useEffect(() => {
     if (!focusChapterId) return;
@@ -366,7 +381,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         setError("AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다. 서버 내용을 다시 읽어 주세요.");
         onConflict?.();
       }
-      // 장 하나만 다시 만든 경우에도 다른 장이 비어 있으면 편집 탭으로 옮기지 않는다
+      // 장 하나만 다시 만든 경우에도 다른 장이 비어 있으면 편집 단계으로 옮기지 않는다
       const complete = latest === null || (latest as Deck).structure.chapters
         .every((ch) => (latest as Deck).slides.some((sl) => sl.chapter_id === ch.id));
       if (registeredHere && final.state === "succeeded" && complete && !deckUnread) onDone();

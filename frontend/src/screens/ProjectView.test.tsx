@@ -140,7 +140,7 @@ const deckWithEditableSlide: Deck = {
     template: "bullet_box", bullets: [{ text: "하나", level: 0 }], conclusion: "결론", footnote: "" } }],
 };
 
-// 편집 탭에서 DesignPanel이 함께 그려지므로, 그 프리셋 조회 목이 필요하다 (EditorScreen.test.tsx 픽스처 재사용)
+// 편집 단계에서 DesignPanel이 함께 그려지므로, 그 프리셋 조회 목이 필요하다 (EditorScreen.test.tsx 픽스처 재사용)
 const preset = {
   fonts: { korean: "Noto Sans KR", latin: "Noto Sans KR" },
   font_roles: { cover_title_pt: 28, section_title_pt: 24, title_pt: 20, subtitle_pt: 14,
@@ -151,7 +151,7 @@ const preset = {
   page_width_pt: 960, page_height_pt: 540, language: "ko-KR",
 } as unknown as Preset;
 
-// 편집 탭 미리보기(실측 결과)도 EditorScreen.test.tsx 픽스처를 재사용한다
+// 편집 단계 미리보기(실측 결과)도 EditorScreen.test.tsx 픽스처를 재사용한다
 const plan: RenderPlan = {
   page_width_pt: 960, page_height_pt: 540,
   style: {
@@ -259,7 +259,7 @@ it("마지막 편집 저장에 실패하면 검토 단계로 옮기지 않아 �
   expect(api.exportDeck).not.toHaveBeenCalled();
 });
 
-it("탭 전환 전 편집기 플러시를 기다린 뒤 다음 탭을 연다", async () => {
+it("단계 이동 전 편집기 플러시를 기다린 뒤 다음 단계를 연다", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithEditableSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.measure).mockResolvedValue(plan);
@@ -277,7 +277,7 @@ it("탭 전환 전 편집기 플러시를 기다린 뒤 다음 탭을 연다", a
   const box = await screen.findByLabelText("내용 수정");
   await userEvent.clear(box);
   await userEvent.type(box, "고침{Enter}");
-  // 기본 timings(1.2초 디바운스)에서는 자동 저장이 아직 발화하지 않은 상태에서 구조안 탭으로 전환한다:
+  // 기본 timings(1.2초 디바운스)에서는 자동 저장이 아직 발화하지 않은 상태에서 구성 단계으로 전환한다:
   // switchTab의 선행 플러시가 없으면 이 편집은 putDeck 호출 없이 유실된다 (Task 16 플러시 실패 테스트 패턴 재사용)
   await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
@@ -294,7 +294,7 @@ it("탭 전환 전 편집기 플러시를 기다린 뒤 다음 탭을 연다", a
   expect(document.querySelector(".editor-screen")).toBeNull();
 });
 
-it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 없다", async () => {
+it("장별 순차 생성이 진행 중일 때는 편집 단계으로 이동할 수 없다", async () => {
   // 구조안이 이미 있고(승인 전) 슬라이드는 아직 없는 프로젝트: 승인 즉시 순차 생성이 시작된다
   const deckWithStructure: Deck = {
     schema_version: 1,
@@ -320,12 +320,12 @@ it("장별 순차 생성이 진행 중일 때는 편집 탭으로 이동할 수 
   expect(screen.getByRole("button", { name: "검토와 내보내기" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "보고 목적" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
-  // 구조안 탭 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
+  // 구성 단계 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
   expect(screen.getByRole("button", { name: "구성" })).not.toBeDisabled();
 });
 
 // 충돌 배너 (2026-09-03 A5): 구조안과 복구 화면의 412는 ProjectView 배너의 "서버 내용 다시 읽기"로 회복한다
-// (자료 탭 경로는 ProjectView.flush.test.tsx)
+// (자료 단계 경로는 ProjectView.flush.test.tsx)
 it("구조안 승인 반영에서 412를 받으면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
   const deckWithStructure: Deck = {
     schema_version: 1,
@@ -423,8 +423,8 @@ it("자료 업로드 진행 중에는 다시 읽기 버튼도 잠긴다 (F-1)", 
   await waitFor(() => expect(reloadBtn).not.toBeDisabled());  // 업로드가 끝나면 다시 풀린다
 });
 
-// 업로드 중 화면 잠금 (계획서 B4 가정 7): 업로드가 응답하기 전까지는 자료 탭 안의 일이라도 탭 5개
-// 전부와 목록으로와 내보내기와 스냅샷 복구를 잠가야 FC-17(업로드 중 탭 전환)이 막힌다
+// 업로드 중 화면 잠금 (계획서 B4 가정 7): 업로드가 응답하기 전까지는 자료 단계 안의 일이라도 탭 5개
+// 전부와 목록으로와 내보내기와 스냅샷 복구를 잠가야 FC-17(업로드 중 단계 이동)이 막힌다
 it("자료 업로드가 진행 중이면 탭 버튼과 목록으로와 내보내기와 스냅샷 복구가 잠기고, 착지 뒤 풀린다", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
@@ -509,7 +509,7 @@ it("형식 기록을 읽을 수 없는 프로젝트는 열지 않고 보관 방�
 });
 
 // D2b-5a: 새로고침이나 다른 창에서 돌던 장 생성 묶음도 서비스의 진행 중 작업으로 잠근다
-it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 구조안 탭을 열고 다른 탭과 창 닫기를 막는다 (D2b-5a)", async () => {
+it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 구성 단계을 열고 다른 탭과 창 닫기를 막는다 (D2b-5a)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getActiveJob).mockResolvedValue({ ledger_available: true, active: {
@@ -539,7 +539,7 @@ it("다른 프로젝트의 AI 작업이 진행 중이면 안내하고 그 작업
   expect(screen.getByRole("button", { name: "편집" })).not.toBeDisabled();
 });
 
-it("진행 중 작업을 확인하기 전에는 탭을 잠그고 확인 중이라고 알린다 (D2b-5a)", async () => {
+it("진행 중 작업을 확인하기 전에는 단계를 잠그고 확인 중이라고 알린다 (D2b-5a)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   const status = deferred<Awaited<ReturnType<typeof api.getActiveJob>>>();
@@ -558,7 +558,7 @@ const batchActive = (project_: string, kind = "chapters") => ({ ledger_available
   id: "job-1", project: project_, kind, target: null, stage: "running" as const, created_at: "2026-10-08T10:00:00+09:00",
   cancel_requested: false } });
 
-it("열고 난 뒤 나타난 이 프로젝트 묶음은 편집 탭을 강제로 바꾸지 않고 잠금과 안내만 한다 (리뷰 R3)", async () => {
+it("열고 난 뒤 나타난 이 프로젝트 묶음은 편집 단계을 강제로 바꾸지 않고 잠금과 안내만 한다 (리뷰 R3)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
@@ -598,7 +598,7 @@ it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", a
     .mockResolvedValue({ active: null, ledger_available: true });
   vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));  // 서버는 저장 ETag가 다르면 412다
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
-  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));  // 구조안 탭이라 덱을 다시 읽는다
+  await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));  // 구성 단계이라 덱을 다시 읽는다
 });
 
 it("편집 단계에 미저장 변경이 없으면 다른 탭의 묶음이 끝난 뒤 새 덱으로 다시 마운트하고 충돌로 알리지 않는다 (β 리뷰 R1, D3a-2)", async () => {
@@ -726,7 +726,7 @@ it("이 탭이 이미 따라간 묶음이 끝나면 다시 읽지도 충돌로 �
 });
 
 it("구성 초안을 고친 채 다른 탭의 묶음이 끝나면 덱을 몰래 다시 읽지 않고 충돌로 알린다 (D3a-2, 계획 4.1)", async () => {
-  // 회귀 RED: 고치기 전 코드는 구조안 탭이면 덱을 다시 읽어 저장 ETag만 새로 바꿨다. 구성 화면의 초안 사본은
+  // 회귀 RED: 고치기 전 코드는 구성 단계이면 덱을 다시 읽어 저장 ETag만 새로 바꿨다. 구성 화면의 초안 사본은
   // 옛 값이라, 그 뒤 승인이 다른 탭의 구조를 옛 사본으로 덮을 수 있었다 (사실 15)
   const twoChapters: Deck = { ...deckWithSlide, structure: { chapters: [
     { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] },

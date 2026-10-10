@@ -19,12 +19,12 @@ import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, timings,
-  onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId,
+  onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange,
 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
-  onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 탭 전환 전에 플러시하도록
+  onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 단계 이동 전에 플러시하도록
   onDirtyChange?: (dirty: boolean) => void;  // 저장 대기/저장 중/저장 실패이면 참 (부모의 beforeunload 경고용)
   onConflictHint?: () => void;  // 412 를 만났음을 부모에 알린다. 배너는 이 화면이 직접 띄우므로 부모는 일반 배너만 생략한다
   onBusyChange?: (busy: boolean) => void;
@@ -35,12 +35,14 @@ export function EditorScreen({
   onFocusSaveStatus?: () => void;
   onDraftsChanged?: () => void;  // 충돌로 변경을 새로 보존했다. 머리의 보존 건수를 다시 센다 (C18)
   initialChapterId?: string | null;  // 복구 화면에서 옮긴 장을 미리 고른다 (C24)
+  onChapterChange?: (chapterId: string | null) => void;  // 고른 장. 부모가 다시 마운트할 때 같은 장을 고른다
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint);
   const chapters = editor.deck.structure.chapters;
   const [chapterId, setChapterId] = useState<string | null>(
     (initialChapterId && chapters.some((c) => c.id === initialChapterId) ? initialChapterId : chapters[0]?.id) ?? null);
   const [selected, setSelected] = useState<FrameRef | null>(null);
+  useEffect(() => { onChapterChange?.(chapterId); }, [chapterId, onChapterChange]);
   const [diagramDraft, setDiagramDraft] = useState<DiagramDraft | null>(null);
   const [diagramBusy, setDiagramBusy] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
@@ -85,7 +87,7 @@ export function EditorScreen({
   useEffect(() => {
     onEditorReady?.(flush);
     // 언마운트 시 등록을 해제한다: 다음 화면이 이 화면의 낡은 flush 함수를 계속 들고 있으면
-    // 탭 전환 플러시가 이미 사라진 편집기를 가리켜 무의미해진다 (2026-08-29 최종 리뷰 발견)
+    // 단계 이동 플러시가 이미 사라진 편집기를 가리켜 무의미해진다 (2026-08-29 최종 리뷰 발견)
     return () => onEditorReady?.(null);
   }, [onEditorReady, flush]);
 

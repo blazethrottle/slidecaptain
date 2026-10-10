@@ -1,5 +1,5 @@
 // 화면 이탈 경로의 플러시 검사 (2026-09-03 저장 안전성 묶음 태스크 C)
-// 배경: 내보내기만 플러시 결과를 검사했고, 목록 복귀(FC-08), 탭 전환(FC-14), 스냅샷 복구(FC-11)는 실패를 무시했다.
+// 배경: 내보내기만 플러시 결과를 검사했고, 목록 복귀(FC-08), 단계 이동(FC-14), 스냅샷 복구(FC-11)는 실패를 무시했다.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
@@ -72,7 +72,7 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
   expect(await screen.findByText("목록 화면")).toBeInTheDocument();
 });
 
-it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄운다 (FC-14)", async () => {
+it("단계 이동: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄운다 (FC-14)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
   await openEditorAndEdit("둘");
   await userEvent.click(screen.getByRole("button", { name: "구성" }));
@@ -149,8 +149,8 @@ it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (
   await waitFor(() => expect(api.listSnapshots).toHaveBeenCalled());
 });
 
-// 창 닫기 경고 (FC-15): 편집 탭과 자료 탭 양쪽의 미저장 상태에 beforeunload를 건다 (2026-09-03 A5)
-it("편집 탭에서 미저장 상태면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+// 창 닫기 경고 (FC-15): 편집 단계와 자료 단계 양쪽의 미저장 상태에 beforeunload를 건다 (2026-09-03 A5)
+it("편집 단계에서 미저장 상태면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   await openEditorAndEdit("셋");
   expect(dispatchBeforeUnload()).toBe(true);  // 아직 저장 대기
@@ -176,7 +176,7 @@ it("beforeunload 핸들러는 dirty일 때 returnValue를 빈 문자열로 설�
   addSpy.mockRestore();
 });
 
-it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+it("보고 목적 단계에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
@@ -192,8 +192,8 @@ it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunl
 });
 
 // 충돌 배너 (2026-09-03 A5): 구조안, 자료, 복구 화면의 412는 ProjectView 배너의
-// "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 탭 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
-it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+// "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 단계 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
+it("보고 목적 단계 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWith(["하나"])).mockResolvedValue(deckWith(["서버본"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
@@ -212,7 +212,7 @@ it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최
   await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
 });
 
-it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이동 중단 배너는 중복으로 뜨지 않는다 (A5b 리뷰)", async () => {
+it("보고 목적 단계에서 저장 버튼 없이 단계를 옮겨 412를 받아도 이동 중단 배너는 중복으로 뜨지 않는다 (A5b 리뷰)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
@@ -221,7 +221,7 @@ it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이�
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 저장 버튼 없이 탭 전환(leaveScreen 경유)
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 저장 버튼 없이 단계 이동(leaveScreen 경유)
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
   // leaveScreen의 일반 이동 중단 문구는 onConflict가 이미 배너를 띄운 경우 생략한다(중복 안내 방지)
@@ -230,7 +230,7 @@ it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이�
   expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 단계는 바뀌지 않았다 (다시 씀(D3a-2): 보고 정보는 보고 목적 단계)
 });
 
-it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
+it("보고 목적 단계 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
   // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
@@ -256,7 +256,7 @@ it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 
   expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 다시 씀(D3a-2): 보고 정보는 보고 목적 단계
 });
 
-it("편집 탭이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
+it("편집 단계이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   await openEditorAndEdit("둘");

@@ -61,6 +61,8 @@ it.each(["자료", "구성", "편집", "목록으로", "스냅샷 복구", "초�
     expect(api.createSnapshot).not.toHaveBeenCalled();
     expect(api.exportDeck).not.toHaveBeenCalled();
     expect(onBack).not.toHaveBeenCalled();
+    // 검수 입력을 지키려고 사용자가 이탈을 취소했다. 저장 실패가 아니므로 일반 이동 중단 배너를 띄우지 않는다 (D3a-2 리뷰 R4)
+    expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
   },
 );
 

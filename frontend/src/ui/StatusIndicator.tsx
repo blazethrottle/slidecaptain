@@ -55,12 +55,14 @@ export function StatusIndicator({ kind, detail }: { kind: StatusKind; detail?: s
  * 보조기기 알림. 자동 저장은 1.2초마다 상태가 바뀌므로 "저장됨"으로 바뀔 때만 알린다.
  * 저장 실패와 충돌은 화면의 기존 오류 알림(role=alert)이 이미 알리므로 여기서 다시 알리지 않는다.
  */
-export function SaveAnnouncer({ kind }: { kind: StatusKind }) {
+export function SaveAnnouncer({ kind }: { kind: StatusKind | null }) {
   const previous = useRef(kind);
   const [message, setMessage] = useState("");
   useEffect(() => {
-    // 충돌을 서버 내용으로 되돌린 뒤의 "저장됨"은 내 편집이 저장된 것이 아니므로 알리지 않는다 (리뷰 R10)
-    if (kind === "saved" && previous.current !== "saved" && previous.current !== "conflict") setMessage("저장됨");
+    // 충돌을 서버 내용으로 되돌린 뒤의 "저장됨"은 내 편집이 저장된 것이 아니므로 알리지 않는다 (리뷰 R10).
+    // null은 저장 상태를 보이지 않는 때다(단계를 옮기는 중, 복구 화면). 그 앞뒤의 바뀜은 저장이 아니므로
+    // 알리지 않는다. 저장 없이 단계를 떠날 때 "저장됨"을 낭독하지 않게 한다 (D3a-2 리뷰 R2)
+    if (kind === "saved" && previous.current !== null && previous.current !== "saved" && previous.current !== "conflict") setMessage("저장됨");
     else if (kind !== "saved") setMessage("");
     previous.current = kind;
   }, [kind]);

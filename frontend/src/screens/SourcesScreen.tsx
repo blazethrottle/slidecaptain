@@ -150,14 +150,14 @@ export function SourcesScreen({
     const items = Array.from(list);
     if (items.length === 0) return;
     // 업로드가 이미 진행 중이면 겹쳐 시작하지 않는다: 먼저 응답한 쪽의 finally가 onBusyChange(false)를
-    // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 탭 전환 방지)을 풀어 버리는 경합을 막는다
+    // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 단계 이동 방지)을 풀어 버리는 경합을 막는다
     // (B4 리뷰 F1). 파일 입력은 uploading 동안 disabled로도 막지만, 이 확인이 실제 방지선이다
     if (uploading) return;
     setInfo("");  // 지난 안내가 남아 있지 않게 한다
     setSuccess("");
     setTruncationNotice("");
     setUploading(true);
-    onBusyChange?.(true);  // 부모(ProjectView)가 탭 전환 등 이동 경로를 잠근다(계획서 B4)
+    onBusyChange?.(true);  // 부모(ProjectView)가 단계 이동 등 이동 경로를 잠근다(계획서 B4)
     try {
       let added = 0;
       let skipped = 0;

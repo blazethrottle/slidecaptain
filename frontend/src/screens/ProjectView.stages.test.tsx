@@ -3,7 +3,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck } from "../api/client";
-import { deckWith, planWith, preset, project } from "../test/fixtures";
+import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
+import { batchView, chapterResult, chapterView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { ProjectView } from "./ProjectView";
@@ -13,9 +14,9 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(), getActiveJob: vi.fn(),
-    listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn() } };
+    listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
+    getJob: vi.fn(), getAISettings: vi.fn() } };
 });
-vi.mock("./AISettingsPanel", () => ({ AISettingsPanel: () => null }));
 
 const STAGES = ["보고 목적", "자료", "구성", "편집", "검토와 내보내기"];
 const nav = () => screen.getByRole("navigation", { name: "보고서 작성 단계" });
@@ -38,6 +39,8 @@ beforeEach(() => {
   vi.mocked(api.listJobs).mockResolvedValue([]);
   vi.mocked(api.getActiveJob).mockResolvedValue({ active: null, ledger_available: true });
   vi.mocked(api.getStatus).mockRejectedValue(new Error("상태 조회 없음"));
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.getAISettings).mockRejectedValue(new Error("설정 조회 없음"));
 });
 
 async function openProject() {
@@ -309,5 +312,152 @@ describe("고급 작업 (계획 4.1)", () => {
     details.open = false;  // 사용자가 요약을 눌러 접으려 한다
     fireEvent(details, new Event("toggle"));
     expect(details.open).toBe(true);
+  });
+});
+
+describe("D3a-2 리뷰 반영", () => {
+  const twoChapters = (): Deck => ({ ...deckWith(["하나"]), structure: { chapters: [
+    { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] },
+    { id: "c2", topic: "둘째 장", conclusion: "", template: "bullet_box", source_refs: [] }] } });
+  const BODY = { template: "bullet_box" as const, bullets: [{ text: "생성", level: 0 as const }], conclusion: "결", footnote: "" };
+
+  it("이 탭이 구성 단계에서 띄운 묶음의 종결을 진행 작업 조회가 먼저 봐도 구성 화면을 다시 마운트하지 않아 편집 단계로 옮긴다 (R1)", async () => {
+    // 회귀 RED: 고치기 전 코드는 기준 조회 412 뒤 구성 화면을 다시 마운트해, 묶음을 따라가던 조회가 끊기고
+    // 편집 단계 이동과 결과 안내가 사라졌다(실제 서비스 24회 중 3회)
+    const deck = twoChapters();
+    const complete: Deck = { ...deck, slides: [...deck.slides, { chapter_id: "c2", eyebrow: "", subtitle: "", slots: BODY }] };
+    vi.mocked(api.getDeck).mockResolvedValue(deck);
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const final = batchView([chapterView("c2", "succeeded", { result: chapterResult(BODY) })]);
+    vi.mocked(api.startChapters).mockResolvedValue({ ...final, state: "running", outcome: null });
+    // 첫 조회는 아직 실행 중이다. 구성 화면은 다음 조회까지 기다리고(1초), 그 사이에 진행 작업 조회가 종결을 먼저 본다
+    vi.mocked(api.getJob).mockResolvedValueOnce({ ...final, state: "running", outcome: null }).mockResolvedValue(final);
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+    await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(1));
+    vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(
+      new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+    vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive())
+      .mockImplementation(async () => ({ active: null, ledger_available: true }));
+    vi.mocked(api.getDeck).mockResolvedValue(complete);
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalled());
+    await waitFor(() => expect(stageButton("편집")).toHaveAttribute("aria-current", "step"), { timeout: 3000 });
+  });
+
+  it("저장 없이 단계를 떠나면 보조기기에 저장됨을 알리지 않는다 (R2)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue(twoChapters());
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "둘째 장 삭제" }));
+    expect(headerStatus()).toBe("변경사항 있음");
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+    expect(document.querySelector(".project-topbar p.visually-hidden[role='status']")).toHaveTextContent("");
+  });
+
+  it("구성 단계의 문서 변경 패널에 적용하지 않은 입력이 있으면 머리는 저장됨이 아니다 (R3)", async () => {
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "문서 전체 변경과 근거 이동" }));
+    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+    fireEvent.change(await screen.findByLabelText("문서 후보 JSON"), { target: { value: "{}" } });
+    await waitFor(() => expect(headerStatus()).toBe("변경사항 있음"));
+    expect(document.querySelector(".header-save-status")).toHaveTextContent("적용하지 않은 입력이 있습니다");
+  });
+
+  it("지금 단계를 다시 고르면 플러시도 저장 상태 지우기도 하지 않는다 (R4)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject();
+    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await userEvent.click(stageButton("보고 목적"));
+    expect(api.putDeck).not.toHaveBeenCalled();
+    expect(headerStatus()).toBe("변경사항 있음");
+  });
+
+  it("복구 화면에서 고른 장은 다른 단계에 갔다 돌아오면 다시 고르지 않는다 (R4)", async () => {
+    const deck = twoChapters();
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deck, slides: [...deck.slides,
+      { chapter_id: "c2", eyebrow: "", subtitle: "", slots: BODY }] });
+    vi.mocked(api.listJobs).mockResolvedValue([{ ...batchView([]), kind: "chapter", target: "c2", candidate_status: "stale",
+      stale_reasons: ["template_changed"], result: { status: "ok", usage: emptyUsage(), slots: BODY }, chapters: [] }]);
+    await openProject();
+    await userEvent.click(screen.getByRole("button", { name: "스냅샷 복구" }));
+    await userEvent.click(await screen.findByRole("button", { name: "편집 단계로 옮겨 다시 생성" }));
+    expect(await screen.findByLabelText("장 주제")).toHaveValue("둘째 장");
+    await userEvent.click(stageButton("자료"));
+    await userEvent.click(stageButton("편집"));
+    expect(await screen.findByLabelText("장 주제")).toHaveValue("주제");
+  });
+
+  it("보존할 변경 없이 되돌리면 상단 머리의 저장 상태로 초점이 간다 (R5)", async () => {
+    vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+    await openProject();
+    await userEvent.click(stageButton("편집"));
+    const topic = await screen.findByLabelText("장 주제");
+    fireEvent.change(topic, { target: { value: "고침" } });
+    fireEvent.blur(topic);
+    // 자동 저장은 1.2초 뒤에 나가 412를 받는다
+    await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }, { timeout: 3000 });
+    await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));  // 보존할 변경이 없어진다
+    await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
+    await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".header-save-status")));
+  });
+
+  it("편집 단계에서 충돌로 변경을 보존하면 머리의 보존 건수가 늘어난다 (R5)", async () => {
+    const draft = { id: "draft-20261010-100000-000001", saved_at: "2026-10-10T10:00:00+09:00",
+      reason: "conflict" as const, source: "editor" as const, base_etag: null };
+    vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+    vi.mocked(api.saveDraft).mockResolvedValue(draft);
+    await openProject();
+    await userEvent.click(stageButton("편집"));
+    const topic = await screen.findByLabelText("장 주제");
+    expect(screen.queryByRole("button", { name: /보존한 변경/ })).toBeNull();
+    fireEvent.change(topic, { target: { value: "고침" } });
+    fireEvent.blur(topic);
+    vi.mocked(api.listDrafts).mockResolvedValue([draft]);
+    await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }, { timeout: 3000 }));
+    expect(await screen.findByRole("button", { name: "보존한 변경 1건" })).toBeInTheDocument();
+  });
+
+  it("주안점과 목표 장수는 단계 이동과 묶음 종결 뒤 다시 마운트에도 남는다 (R6, 계획 4.4)", async () => {
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.type(await screen.findByLabelText("문서의 주안점 및 원하는 결과 입력"), "경영진 관점");
+    await userEvent.type(screen.getByLabelText("목표 장수"), "5");
+    await userEvent.click(stageButton("자료"));
+    await userEvent.click(stageButton("구성"));
+    expect(await screen.findByLabelText("문서의 주안점 및 원하는 결과 입력")).toHaveValue("경영진 관점");
+    await otherTabBatchEnds(batchDeck);
+    await waitFor(() => expect(screen.getByLabelText("1번 장 주제")).toHaveValue("묶음이 만든 장"));
+    expect(screen.getByLabelText("문서의 주안점 및 원하는 결과 입력")).toHaveValue("경영진 관점");
+    expect(screen.getByLabelText("목표 장수")).toHaveValue(5);
+  });
+
+  it("편집 단계를 새 덱으로 다시 마운트해도 고른 장을 유지한다 (R6)", async () => {
+    const deck = twoChapters();
+    const withBoth = { ...deck, slides: [...deck.slides, { chapter_id: "c2", eyebrow: "", subtitle: "", slots: BODY }] };
+    vi.mocked(api.getDeck).mockResolvedValue(withBoth);
+    vi.mocked(api.measure).mockResolvedValue({ ...planWith(["하나"]), slides: [] });
+    await openProject();
+    await userEvent.click(stageButton("편집"));
+    await userEvent.click(await screen.findByRole("button", { name: /둘째 장/ }));
+    expect(await screen.findByLabelText("장 주제")).toHaveValue("둘째 장");
+    await otherTabBatchEnds({ ...withBoth, meta: { ...withBoth.meta, title: "묶음 뒤" } });
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("묶음 뒤"));
+    expect(screen.getByLabelText("장 주제")).toHaveValue("둘째 장");
+  });
+
+  it("단계를 옮기면 초점이 새 현재 단계 버튼에 있다 (R12)", async () => {
+    await openProject();
+    stageButton("자료").focus();
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(document.activeElement).toBe(stageButton("자료")));
+    await userEvent.click(screen.getByRole("button", { name: "스냅샷 복구" }));
+    await waitFor(() => expect(document.querySelector(".recovery-screen")).not.toBeNull());
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(document.activeElement).toBe(stageButton("구성")));
   });
 });

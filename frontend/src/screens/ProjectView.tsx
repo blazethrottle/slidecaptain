@@ -11,7 +11,7 @@ import { ReviewScreen } from "./ReviewScreen";
 import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
 import { SourcesScreen } from "./SourcesScreen";
-import { StructureScreen } from "./StructureScreen";
+import { EMPTY_BRIEF, StructureScreen, type StructureBrief } from "./StructureScreen";
 
 // 다섯 단계 (개정판 D3a-2, 계획 4.1, 제품 설계 3절). 단계 화면은 전환 때 언마운트한다: 숨긴 채 마운트를
 // 유지하면 화면이 옛 사본을 든 채 전역 저장 ETag만 새로 바뀌는 이음매(계획 사실 14, 15)가 다시 생긴다
@@ -42,6 +42,14 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const [showRecovery, setShowRecovery] = useState(false);
   // 복구 화면에서 "현재 입력으로 다시 생성"으로 옮긴 장. 옮긴 단계에서 그 장을 미리 고른다 (C24)
   const [focusChapter, setFocusChapter] = useState<string | null>(null);
+  // 구성 단계의 주안점과 목표 장수. 저장하지 않는 값이라 이 화면이 들고 있어 단계 이동과 다시 마운트 사이에 남는다
+  // (계획 4.4, 사실 13). D3a-5의 항목을 D3a-2 리뷰 R6 반영으로 당겼다
+  const [structureBrief, setStructureBrief] = useState<StructureBrief>(EMPTY_BRIEF);
+  const editorChapter = useRef<string | null>(null);  // 편집 화면에서 고른 장. 다시 마운트해도 같은 장을 고른다 (R6)
+  const onEditorChapterChange = useCallback((id: string | null) => { editorChapter.current = id; }, []);
+  // 사용자가 단계를 옮겼으면 새 현재 단계 버튼으로 초점을 돌려준다. 이동 중에는 단계 버튼이 잠겨 초점이
+  // 문서 본문으로 빠지기 때문이다 (D3a-2 리뷰 R12)
+  const focusStageAfterMove = useRef(false);
   const [generating, setGenerating] = useState(false);  // 구조안 승인 후 장별 순차 생성 진행 중 (쓰기 포크 차단)
   const [diagramGenerating, setDiagramGenerating] = useState(false);
   const [leaving, setLeaving] = useState(false);        // 화면 이탈 전 플러시 진행 중: 모든 이탈 경로 버튼을 잠근다
@@ -120,6 +128,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   dirtyRef.current = dirty;
   const showRecoveryRef = useRef(showRecovery);
   showRecoveryRef.current = showRecovery;
+  const generatingRef = useRef(false);
   useEffect(() => {
     if (wasBatchHere.current && !batchHere) {
       const endedJob = lastBatchId.current;
@@ -130,6 +139,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         .catch((e) => e instanceof ApiError && e.status === 412)
         .then((changed) => {
           if (!changed) return;
+          // 구성 화면이 생성 작업을 따라가는 중이면(같은 탭의 묶음) 그 화면이 종결 때 덱을 다시 읽고 편집 단계로
+          // 옮긴다. 여기서 다시 마운트하면 그 조회가 끊겨 편집 단계 이동과 결과 안내가 사라진다 (D3a-2 리뷰 R1)
+          if (!showRecoveryRef.current && stageRef.current === "structure" && generatingRef.current) return;
+          // 복구 화면은 덱 사본을 들지 않고 미저장 신호도 올리지 않는다. 그 가정이 깨져도 충돌 안내 대신 덱만
+          // 다시 읽도록 복구 화면을 사본 단계에서 뺀다
           const holdsCopy = !showRecoveryRef.current && DECK_COPY_STAGES.has(stageRef.current);
           if (holdsCopy && dirtyRef.current) {
             setConflict(endedJob !== null && startedHere.current.has(endedJob) ? "batch_here" : "other");
@@ -137,7 +151,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           }
           api.getDeck(project.name).then((fresh) => {
             setDeck(fresh);
-            if (holdsCopy) setScreenKey((k) => k + 1);  // 사본까지 새 덱으로 만든다
+            if (holdsCopy) {
+              if (stageRef.current === "editor") setFocusChapter(editorChapter.current);  // 고른 장을 유지한다
+              setScreenKey((k) => k + 1);  // 사본까지 새 덱으로 만든다
+            }
           }).catch(() => {});
         });
     }
@@ -146,6 +163,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   }, [batchHere, activeJob, project.name]);
   // 화면 전체를 막는 AI 작업: 구조안 승인의 장 생성, 도식 생성, 진행 중 작업 확인 전, 이 프로젝트의 장 생성 묶음.
   // 생성 중 이동과 편집의 허용(계획 4.4)은 D3a-5가 한다
+  generatingRef.current = generating;
   const aiBusy = generating || diagramGenerating || !jobChecked || batchHere;
   const aiBusyTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "AI 생성이 끝나면 이동할 수 있습니다";
 
@@ -166,6 +184,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   }, [project.name, project.status, stage, showRecovery, draftsRevision]);
   const onDraftsChanged = useCallback(() => setDraftsRevision((n) => n + 1), []);
   const focusSaveStatus = useCallback(() => saveStatusRef.current?.focus(), []);
+  useEffect(() => {
+    if (!focusStageAfterMove.current || deck === null) return;
+    const current = document.querySelector<HTMLButtonElement>(".stage-list [aria-current='step']");
+    if (current) { focusStageAfterMove.current = false; current.focus(); }
+  });
   // 검토 단계의 저장 상태: 검수 기록 폼에 저장하지 않은 입력이 있으면 그 상태, 없으면 표시하지 않는다 (계획 4.1)
   const onReviewDirty = useCallback((d: boolean) => {
     setDirty(d);
@@ -291,6 +314,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const closeRecovery = (next?: Stage, chapterId?: string) => {
     setShowRecovery(false);
     setConflict(null);
+    setError("");
     setDeck(null);
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
     setFocusChapter(chapterId ?? null);
@@ -300,12 +324,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const switchStage = async (next: Stage) => {
     // 복구 화면은 단계가 아니다. 단계를 고르면 복구 화면을 닫고 그 단계로 간다 (계획 4.1).
     // 복구 화면에는 이탈 확인이 없다(복원과 지우기는 각각 확인 창을 거친다)
-    if (showRecovery) { closeRecovery(next); return; }
+    if (showRecovery) { focusStageAfterMove.current = true; closeRecovery(next); return; }
     if (next === stage) return;  // 지금 단계를 다시 고르면 아무것도 하지 않는다(화면이 다시 마운트되지 않아 저장 상태를 다시 올리지 않는다)
     if (await leaveScreen("이동을")) {
       setError("");
       setSaveStatus(null);
       setFocusChapter(null);
+      focusStageAfterMove.current = true;
       setStage(next);
     }
   };
@@ -375,7 +400,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
               <StatusIndicator kind={saveStatus.kind} detail={saveStatus.detail} />
             </span>
           )}
-          <SaveAnnouncer kind={saveStatus?.kind ?? "saved"} />
+          <SaveAnnouncer kind={saveStatus?.kind ?? null} />
           {draftCount > 0 && (
             <button className="btn-text" onClick={openRecovery} disabled={locked}>보존한 변경 {draftCount}건</button>
           )}
@@ -454,7 +479,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {!showRecovery && stage === "structure" && (
           <StructureScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
-            onDone={() => setStage("editor")} onBusyChange={setGenerating} onConflict={onConflict}
+            onDone={() => { setError(""); setSaveStatus(null); setFocusChapter(null); setStage("editor"); }}
+            onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter} />
         )}
@@ -464,7 +490,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onConflictHint={() => { justConflicted.current = true; }}
             onDirtyChange={setDirty} onBusyChange={setDiagramGenerating}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
-            initialChapterId={focusChapter} />
+            initialChapterId={focusChapter} onChapterChange={onEditorChapterChange} />
         )}
         {!showRecovery && stage === "review" && (
           <ReviewScreen key={screenKeyValue} projectName={project.name} hasSlides={hasSlides} exporting={exporting}
