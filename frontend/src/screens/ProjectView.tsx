@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, ApiError, messageOf, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo } from "../api/client";
+import { api, ApiError, messageOf, onProjectEvent, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
@@ -12,10 +12,11 @@ import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
 import { SourcesScreen } from "./SourcesScreen";
 import { EMPTY_BRIEF, StructureScreen, type StructureBrief } from "./StructureScreen";
+import { batchSummary, stageLimitations, stageProgress, stageStatus, type Stage } from "./stageStatus";
 
 // 다섯 단계 (개정판 D3a-2, 계획 4.1, 제품 설계 3절). 단계 화면은 전환 때 언마운트한다: 숨긴 채 마운트를
 // 유지하면 화면이 옛 사본을 든 채 전역 저장 ETag만 새로 바뀌는 이음매(계획 사실 14, 15)가 다시 생긴다
-export type Stage = "purpose" | "sources" | "structure" | "editor" | "review";
+export type { Stage } from "./stageStatus";
 export const STAGES: ReadonlyArray<{ id: Stage; label: string }> = [
   { id: "purpose", label: "보고 목적" },
   { id: "sources", label: "자료" },
@@ -62,6 +63,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const [draftCount, setDraftCount] = useState(0);  // 충돌로 보존한 변경 건수 (C18)
   const [draftsRevision, setDraftsRevision] = useState(0);
   const saveStatusRef = useRef<HTMLSpanElement | null>(null);
+  // 단계 상태 (D3a-3, 계획 4.2). undefined는 첫 조회 전이다. 조회가 실패하면 "확인하지 못함"으로 보이고 준비됨으로 두지 않는다
+  const [progress, setProgress] = useState<ProjectProgress | undefined>(undefined);
+  const [progressFailed, setProgressFailed] = useState(false);
+  const progressSeq = useRef(0);
   // AI 전송 고지 대화 상자 (계획서 B3): 열려 있는 동안 사용자의 선택을 담을 resolve 함수를 들고 있는다.
   // null이 아니면 대화 상자가 열려 있다는 뜻이라 다른 상태와 함께 잠금 조건에도 쓴다
   const [consentResolve, setConsentResolve] = useState<((granted: boolean) => void) | null>(null);
@@ -105,6 +110,34 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     return () => clearTimeout(timer);
   }, [activeJob, jobPollMs, refreshActiveJob]);
   const batchHere = activeJob?.project === project.name && activeJob.kind === "chapters";
+  // 진행 API 다시 조회. 처음 열 때, 공통 알림(저장 성공, 작업 등록, 작업 종결) 뒤, 창 초점을 얻을 때다.
+  // 1회 소요 시간은 이 Mac에서 작업 행 0건 2.4ms, 2,000건 69.4ms(중앙값)라 알림마다 조회한다. 늦은 응답은 버린다
+  const refreshProgress = useCallback(async () => {
+    const seq = ++progressSeq.current;
+    try {
+      const next = await api.getProgress(project.name);
+      if (seq !== progressSeq.current) return;
+      setProgress(next);
+      setProgressFailed(false);
+    } catch {
+      if (seq === progressSeq.current) setProgressFailed(true);
+    }
+  }, [project.name]);
+  useEffect(() => {
+    if (project.status !== "ok") return;
+    void refreshProgress();
+    const off = onProjectEvent((event) => { if (event.project === project.name) void refreshProgress(); });
+    const onFocus = () => void refreshProgress();
+    window.addEventListener("focus", onFocus);
+    return () => { off(); window.removeEventListener("focus", onFocus); };
+  }, [project.name, project.status, refreshProgress]);
+  // 진행 작업이 바뀌면(다른 탭의 작업이 시작되거나 끝남) 단계 상태도 다시 읽는다
+  const activeJobId = activeJob?.id ?? null;
+  const seenJobId = useRef<string | null>(null);
+  useEffect(() => {
+    if (seenJobId.current !== activeJobId && project.status === "ok") void refreshProgress();
+    seenJobId.current = activeJobId;
+  }, [activeJobId, project.status, refreshProgress]);
   // 이 프로젝트를 열 때 이미 묶음이 돌고 있으면 진행 표시가 있는 구성 단계를 연다. 그 뒤에 나타난 묶음은
   // 편집 단계의 저장을 거치지 않고 단계를 바꾸지 않도록 안내만 한다 (D2b-5a 리뷰 R3, R18)
   const openedWithBatch = useRef<boolean | null>(null);
@@ -430,15 +463,30 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       <aside className="stage-sidebar">
         <nav aria-label="보고서 작성 단계">
           <ol className="stage-list">
-            {STAGES.map((s, index) => (
-              <li key={s.id}>
-                <button className="stage-button" aria-current={!showRecovery && stage === s.id ? "step" : undefined}
-                  disabled={stageDisabled(s.id)} title={stageTitle(s.id)} onClick={() => void switchStage(s.id)}>
-                  <span className="stage-number" aria-hidden="true">{index + 1}</span>
-                  <span className="stage-label">{s.label}</span>
-                </button>
-              </li>
-            ))}
+            {STAGES.map((s, index) => {
+              // 단계 상태는 버튼 밖의 다른 요소다. 버튼 이름은 단계 이름으로 두고 상태는 aria-describedby로 잇는다 (계획 4.2)
+              const current = !showRecovery && stage === s.id;
+              const status = stageStatus(s.id, { progress, failed: progressFailed, current, dirty,
+                activeJob, projectName: project.name });
+              const summary = s.id === "structure" ? batchSummary(progress?.jobs) : null;
+              const statusId = `stage-status-${s.id}`;
+              return (
+                <li key={s.id}>
+                  <button className="stage-button" aria-current={current ? "step" : undefined}
+                    aria-describedby={status || summary ? statusId : undefined}
+                    disabled={stageDisabled(s.id)} title={stageTitle(s.id)} onClick={() => void switchStage(s.id)}>
+                    <span className="stage-number" aria-hidden="true">{index + 1}</span>
+                    <span className="stage-label">{s.label}</span>
+                  </button>
+                  {(status || summary) && (
+                    <span className="stage-status" id={statusId}>
+                      {status && <StatusIndicator kind={status.kind} detail={status.detail} />}
+                      {summary && <span className="stage-summary">{summary}</span>}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         </nav>
       </aside>
@@ -473,7 +521,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onSaveStatusChange={setSaveStatus} />
         )}
         {!showRecovery && stage === "sources" && (
-          <SourcesScreen key={screenKeyValue} project={project}
+          <SourcesScreen key={screenKeyValue} project={project} limitations={stageLimitations(progress, "sources")}
             onScreenReady={(f) => { flushScreen.current = f; }}
             onDirtyChange={setDirty} onBusyChange={setUploading} onSaveStatusChange={setSaveStatus} />
         )}
@@ -494,6 +542,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {!showRecovery && stage === "review" && (
           <ReviewScreen key={screenKeyValue} projectName={project.name} hasSlides={hasSlides} exporting={exporting}
+            review={stageProgress(progress, "review")} progressFailed={progressFailed}
             exportDisabled={locked} exportTitle={lockedTitle}
             exportResult={exportResult?.projectName === project.name ? exportResult.result : null}
             historyRevision={historyRevision} onExport={() => void doExport()}

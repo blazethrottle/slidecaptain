@@ -2,7 +2,7 @@
 // 보존 건수, 복구 화면과 단계, 묶음 종결 뒤 분기(β R1 새 분기), 순서 시나리오, 탭 이름 없는 문구를 지킨다
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, type Deck } from "../api/client";
+import { api, ApiError, notifyProject, type Deck, type ProjectProgress } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
 import { batchView, chapterResult, chapterView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
@@ -15,7 +15,7 @@ vi.mock("../api/client", async (importOriginal) => {
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(), getActiveJob: vi.fn(),
     listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
-    getJob: vi.fn(), getAISettings: vi.fn() } };
+    getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn() } };
 });
 
 const STAGES = ["보고 목적", "자료", "구성", "편집", "검토와 내보내기"];
@@ -41,6 +41,7 @@ beforeEach(() => {
   vi.mocked(api.getStatus).mockRejectedValue(new Error("상태 조회 없음"));
   vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
   vi.mocked(api.getAISettings).mockRejectedValue(new Error("설정 조회 없음"));
+  vi.mocked(api.getProgress).mockResolvedValue(PROGRESS);
 });
 
 async function openProject() {
@@ -57,6 +58,20 @@ async function otherTabBatchEnds(after: Deck) {
     .mockImplementation(async () => ({ active: null, ledger_available: true }));
   await act(async () => { window.dispatchEvent(new Event("focus")); });
 }
+
+// 진행 API 응답 (D3a-3). 보고 목적은 확인 필요, 자료는 준비됨(한계 사유 붙음), 구성은 준비됨, 편집은 준비됨,
+// 검토는 사람 검토가 남은 섞인 상태다
+const PROGRESS: ProjectProgress = { project_status: "ok", jobs: [], stages: [
+  { stage: "purpose", state: "needs_review", reasons: ["report_type_unconfirmed"] },
+  { stage: "sources", state: "ready", reasons: ["extraction_review_unavailable"] },
+  { stage: "structure", state: "ready", reasons: [] },
+  { stage: "editing", state: "ready", reasons: [], written_chapters: 1, total_chapters: 1 },
+  { stage: "review", state: "needs_review", reasons: ["human_review_pending"], parts: [
+    { name: "auto_checks", state: "ready", reasons: ["draft_checks_only"] },
+    { name: "human_review", state: "not_started", reasons: [] },
+    { name: "file", state: "ready", reasons: [] }] },
+] };
+const statusOf = (stage: string) => document.getElementById(`stage-status-${stage}`);
 
 const batchDeck: Deck = { ...deckWith(["묶음이 만든 내용"]), structure: { chapters: [
   { id: "c1", topic: "묶음이 만든 장", conclusion: "", template: "bullet_box", source_refs: [] }] } };
@@ -459,5 +474,96 @@ describe("D3a-2 리뷰 반영", () => {
     await waitFor(() => expect(document.querySelector(".recovery-screen")).not.toBeNull());
     await userEvent.click(stageButton("구성"));
     await waitFor(() => expect(document.activeElement).toBe(stageButton("구성")));
+  });
+});
+
+describe("단계 상태 표시와 공통 알림 지점 (D3a-3, 계획 4.2, 4.5)", () => {
+  it("현재 단계와 단계 상태는 서로 다른 요소다. 상태는 버튼 밖에 있고 aria-describedby로 이어진다", async () => {
+    await openProject();
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("준비됨"));
+    const button = stageButton("구성");
+    expect(button).toHaveAttribute("aria-describedby", "stage-status-structure");
+    expect(button).not.toContainElement(statusOf("structure"));
+    expect(button.textContent).toBe("3구성");  // 버튼 안에는 번호와 단계 이름뿐이다
+    // 선택한 단계를 완료로 보이지 않는다: 현재 단계(보고 목적)의 상태는 서버의 확인 필요다
+    expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step");
+    expect(statusOf("purpose")).toHaveTextContent("확인 필요");
+    expect(statusOf("purpose")).toHaveTextContent("보고 유형을 직접 골랐는지는 아직 기록하지 않습니다");
+  });
+
+  it("검토 단계는 남은 부분을 말하고, 준비됨이면 체크 없는 초안 확인됨이다", async () => {
+    await openProject();
+    await waitFor(() => expect(statusOf("review")).toHaveTextContent("사람 검토가 남았습니다"));
+    vi.mocked(api.getProgress).mockResolvedValue({ ...PROGRESS, stages: PROGRESS.stages!.map((st) =>
+      st.stage === "review" ? { ...st, state: "ready" as const, reasons: [] } : st) });
+    await act(async () => notifyProject({ kind: "saved", project: project.name }));
+    await waitFor(() => expect(statusOf("review")).toHaveTextContent("초안 확인됨"));
+    expect(within(statusOf("review")!).getByRole("img")).toHaveAccessibleName("초안 점검 통과");
+  });
+
+  it("조회가 실패하면 단계 상태를 확인하지 못함으로 보이고 준비됨으로 두지 않는다", async () => {
+    vi.mocked(api.getProgress).mockRejectedValue(new ApiError(503, "진행 상태를 읽지 못했습니다."));
+    await openProject();
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("확인하지 못함"));
+    expect(nav().textContent).not.toMatch(/준비됨/);
+  });
+
+  it("공통 알림(저장, 작업 등록, 작업 종결) 뒤 이 프로젝트의 단계 상태를 다시 읽는다. 다른 프로젝트의 알림은 무시한다", async () => {
+    await openProject();
+    await waitFor(() => expect(api.getProgress).toHaveBeenCalled());
+    const before = vi.mocked(api.getProgress).mock.calls.length;
+    await act(async () => notifyProject({ kind: "saved", project: "다른 프로젝트" }));
+    expect(vi.mocked(api.getProgress).mock.calls.length).toBe(before);
+    for (const kind of ["saved", "job_started", "job_ended"] as const) {
+      await act(async () => notifyProject({ kind, project: project.name }));
+    }
+    expect(vi.mocked(api.getProgress).mock.calls.length).toBe(before + 3);
+  });
+
+  it("늦게 온 옛 응답은 새 응답을 덮지 않는다", async () => {
+    await openProject();
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("준비됨"));
+    const slow = deferred<ProjectProgress>();
+    vi.mocked(api.getProgress).mockReturnValueOnce(slow.promise).mockResolvedValueOnce({ ...PROGRESS,
+      stages: PROGRESS.stages!.map((st) => st.stage === "structure" ? { ...st, state: "needs_review" as const, reasons: ["stale_story_plan" as const] } : st) });
+    await act(async () => notifyProject({ kind: "saved", project: project.name }));
+    await act(async () => notifyProject({ kind: "saved", project: project.name }));
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("확인 필요"));
+    await act(async () => slow.resolve(PROGRESS));
+    expect(statusOf("structure")).toHaveTextContent("확인 필요");
+  });
+
+  it("현재 단계에 저장하지 않은 변경이 있으면 서버 상태 대신 작성 중이다", async () => {
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("준비됨"));
+    await userEvent.type(await screen.findByLabelText("보고 질문"), "질문");
+    expect(statusOf("structure")).toHaveTextContent("작성 중");
+    expect(statusOf("structure")).not.toHaveTextContent("준비됨");
+  });
+
+  it("준비됨에 붙은 사유는 단계 목록에 없고 그 단계 화면의 한계 안내로 보인다", async () => {
+    await openProject();
+    await waitFor(() => expect(statusOf("sources")).toHaveTextContent("준비됨"));
+    expect(nav().textContent).not.toMatch(/부분 추출 경고/);
+    await userEvent.click(stageButton("자료"));
+    expect(await screen.findByText(/부분 추출 경고는 아직 기록하지 않습니다/)).toBeInTheDocument();
+  });
+
+  it("검토 화면은 자동 검사(내보낸 파일 기준), 사람 검토, 파일 저장을 따로 보인다", async () => {
+    await openProject();
+    await userEvent.click(stageButton("검토와 내보내기"));
+    const parts = await screen.findByRole("list", { name: "검토의 세 부분" });
+    const items = within(parts).getAllByRole("listitem").map((li) => li.textContent);
+    expect(items).toEqual([expect.stringMatching(/^자동 검사\(내보낸 파일 기준\).*준비됨/),
+      expect.stringMatching(/^사람 검토.*시작 전/), expect.stringMatching(/^파일 저장.*준비됨/)]);
+    expect(screen.getByText("자동 검사는 내보낸 파일의 사전 점검이며 의미와 시각 품질의 통과가 아닙니다")).toBeInTheDocument();
+  });
+
+  it("구성 단계 옆에 가장 최근 장 생성 묶음의 장 요약을 보인다", async () => {
+    vi.mocked(api.getProgress).mockResolvedValue({ ...PROGRESS, jobs: [batchView([
+      chapterView("c1", "succeeded"), chapterView("c2", "failed")], { state: "failed", outcome: "partial" })] });
+    await openProject();
+    await waitFor(() => expect(statusOf("structure")).toHaveTextContent("2장 중 1장 실패"));
   });
 });

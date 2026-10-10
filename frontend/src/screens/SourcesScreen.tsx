@@ -20,9 +20,10 @@ function otherNotes(notes: string[]): string[] {
 
 // 자료 단계 (개정판 D3a-2). 보고 정보는 보고 목적 단계(ReportPurposeScreen)로 옮겼다. 이 화면은 덱을 쓰지 않는다
 export function SourcesScreen({
-  project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange,
+  project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange, limitations = [],
 }: {
   project: ProjectInfo;
+  limitations?: string[];  // 준비됨에 붙은 사유의 문구. 단계 목록 대신 이 화면의 한계 안내로 보인다 (계획 4.2)
   // 자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
   onDirtyChange?: (dirty: boolean) => void;
   onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 단계를 옮기기 전에 확인하도록
@@ -235,6 +236,7 @@ export function SourcesScreen({
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
       <section>
         <h2>입력 자료</h2>
+        {limitations.map((text) => <p key={text} className="hint">{text}</p>)}
         <p>완성된 리서치 자료(마크다운, 텍스트, CSV, 엑셀)를 넣어 주세요. 탐색기로 프로젝트 폴더의 sources에 파일을 넣어도 됩니다.</p>
         <ul>
           {files.map((f) => (

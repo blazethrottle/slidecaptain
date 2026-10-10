@@ -7,6 +7,8 @@ import type { SaveState } from "../state/useDeckEditor";
 export const STATUS_KINDS = [
   "not_started", "unsaved", "saving", "saved", "save_failed", "conflict",
   "ready", "needs_review", "failed", "running", "cancel_requested", "completion_unknown",
+  // 단계 상태 (D3a-3, 계획 4.2). 조회 실패, 현재 단계의 미저장 변경, 검토 단계의 준비됨
+  "unknown", "in_progress", "draft_checked",
 ] as const;
 export type StatusKind = (typeof STATUS_KINDS)[number];
 /** 상단 머리의 저장 상태 (D3a-2, 계획 4.1). 단계 화면이 자기 출처로 정해 올리고, null이면 표시하지 않는다. */
@@ -29,6 +31,12 @@ const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; 
   // 작업 상태 (D2b-5c). 취소 요청은 아직 진행 중이라 중립색, 완료 불명은 사용자의 확인이 필요해 주의색이다
   cancel_requested: { label: "취소 요청됨", icon: "\u23F8\uFE0E", iconName: "취소 대기", tone: "neutral" },
   completion_unknown: { label: "완료 여부 확인 필요", icon: "?", iconName: "결과 불명", tone: "warning" },
+  // 단계 상태를 읽지 못했다. 준비됨으로 두지 않는다. 글자는 완료 불명과 같지만 뜻과 색이 다르다 (D3a-3)
+  unknown: { label: "확인하지 못함", icon: "?", iconName: "상태 미확인", tone: "neutral" },
+  // 현재 단계에 저장하지 않은 변경이 있다. 서버의 단계 상태보다 앞선다 (제품 설계 3절 "구성 작성 중")
+  in_progress: { label: "작성 중", icon: "\u25D4\uFE0E", iconName: "작성 진행", tone: "warning" },
+  // 검토 단계의 준비됨. 제출 가능을 뜻하지 않으므로 체크를 쓰지 않는다 (계획 4.2)
+  draft_checked: { label: "초안 확인됨", icon: "\u25CE\uFE0E", iconName: "초안 점검 통과", tone: "primary" },
 };
 
 /** 저장 훅의 상태를 표시 종류로 옮긴다. 충돌은 저장 실패와 조치가 반대라 따로 둔다. */

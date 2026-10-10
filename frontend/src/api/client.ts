@@ -125,9 +125,27 @@ export function resetEtags(): void {
   etags.clear();
 }
 
+// 공통 알림 지점 (개정판 D3a-3, 계획 4.5). 저장 성공, 작업 등록 응답, 작업 종결을 화면 안 이벤트로 낸다.
+// 진행 API 다시 조회(D3a-3)와 진행 작업 갱신(D3a-5), 다른 탭 알림(D3a-6)이 이것을 듣는다. 저장하지 않는 POST
+// (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
+export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string };
+const projectListeners = new Set<(event: ProjectEvent) => void>();
+
+export function onProjectEvent(listener: (event: ProjectEvent) => void): () => void {
+  projectListeners.add(listener);
+  return () => { projectListeners.delete(listener); };
+}
+
+export function notifyProject(event: ProjectEvent): void {
+  for (const listener of [...projectListeners]) {
+    try { listener(event); } catch { /* 듣는 쪽의 오류가 요청을 실패로 만들지 않게 한다 */ }
+  }
+}
+
 async function request<T>(
   path: string, init?: RequestInit,
-  opts?: { etagKey?: string; updateEtag?: boolean; expectedEtag?: string; headers?: Record<string, string> },
+  opts?: { etagKey?: string; updateEtag?: boolean; expectedEtag?: string; headers?: Record<string, string>;
+    notify?: { kind: "saved" | "job_started"; project: string } },
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -142,7 +160,13 @@ async function request<T>(
     const etag = r.headers.get("ETag");
     if (etag) etags.set(opts.etagKey, etag);
   }
-  return r.json() as Promise<T>;
+  const body = await r.json() as T;
+  // 등록 응답을 받은 뒤에만 알린다. 그 전에 알리면 듣는 쪽의 조회가 빈 결과를 받는다 (계획 4.5)
+  if (opts?.notify) {
+    const id = (body as { id?: unknown } | null)?.id;
+    notifyProject({ ...opts.notify, jobId: opts.notify.kind === "job_started" && typeof id === "string" ? id : undefined });
+  }
+  return body;
 }
 
 const enc = encodeURIComponent;
@@ -194,7 +218,10 @@ export async function followJob(
     try {
       const view = await fetchJob();
       await onUpdate(view);
-      if (TERMINAL_JOB_STATES.has(view.state)) return view;
+      if (TERMINAL_JOB_STATES.has(view.state)) {
+        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id });
+        return view;
+      }
     } catch (error) {
       if (opts.signal?.aborted) throw error;
       opts.onError?.(error);
@@ -211,7 +238,7 @@ export const api = {
   putDeck: (name: string, deck: Deck, snapshot: boolean) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/deck?snapshot=${snapshot}`, {
       method: "PUT", body: JSON.stringify(deck),
-    }, { etagKey: name }),
+    }, { etagKey: name, notify: { kind: "saved", project: name } }),
   measure: (deck: Deck, projectName?: string) =>
     request<RenderPlan>(projectName ? `/api/projects/${enc(projectName)}/render-plan` : "/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
   // 확인은 저장본을 바꾸지 않는다. 취소한 요청의 늦은 응답이 이후 저장의 ETag를 되돌리면 안 된다.
@@ -224,15 +251,15 @@ export const api = {
   previewDocumentChange: (name: string, req: DocumentChangeRequest, etag: string) =>
     request<DocumentChangePreview>(`/api/projects/${enc(name)}/document-changes/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
   applyDocumentChange: (name: string, req: DocumentChangeApplyRequest, etag: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/document-changes/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+    request<Deck>(`/api/projects/${enc(name)}/document-changes/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag,notify:{kind:"saved",project:name}}),
   previewEvidenceMigration: (name: string, req: EvidenceMigrationRequest, etag: string) =>
     request<DocumentChangePreview>(`/api/projects/${enc(name)}/evidence-migrations/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
   applyEvidenceMigration: (name: string, req: EvidenceMigrationApplyRequest, etag: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/evidence-migrations/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+    request<Deck>(`/api/projects/${enc(name)}/evidence-migrations/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag,notify:{kind:"saved",project:name}}),
   applyStoryRewrite: (name: string, result: Pick<StoryRewriteResult, "deck" | "sources_fingerprint" | "base_etag">) =>
     request<Deck>(`/api/projects/${enc(name)}/story-plan/rewrite/apply`, {
       method: "POST", body: JSON.stringify({ deck: result.deck, sources_fingerprint: result.sources_fingerprint }),
-    }, { etagKey: name, expectedEtag: result.base_etag }),
+    }, { etagKey: name, expectedEtag: result.base_etag, notify: { kind: "saved", project: name } }),
   reviewNumbers: (name: string, deck: Deck) =>
     request<NumericReviewReport>(`/api/projects/${enc(name)}/review/numbers`, {
       method: "POST", body: JSON.stringify(deck),
@@ -250,7 +277,7 @@ export const api = {
   writeSource: (name: string, file: string, text: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/sources/${enc(file)}`, {
       method: "PUT", body: JSON.stringify({ text }),
-    }),
+    }, { notify: { kind: "saved", project: name } }),
   uploadSource: async (name: string, file: File, overwrite: boolean) => {
     // 파일 본문을 원시 바이트로 보낸다. request()의 JSON 헤더를 붙이지 않는다 (서버는 Content-Type을 보지 않는다)
     // X-Requested-With: 서버가 이 헤더를 요구해 다른 사이트에서 보내는 단순 요청을 막는다 (JSON 헤더는 붙이지 않는다)
@@ -259,7 +286,9 @@ export const api = {
       { method: "POST", body: file, headers: { "X-Requested-With": "SlideCaptain" } },
     );
     await throwIfFailed(r);
-    return r.json() as Promise<UploadResult>;
+    const result = await r.json() as UploadResult;
+    notifyProject({ kind: "saved", project: name });  // 업로드는 request()를 거치지 않으므로 여기서 알린다
+    return result;
   },
   getStatus: () => request<AppStatus>("/api/status"),
   // AI 전송 준비(로그인과 동의 확인). 승인 반영보다 먼저 불러, 동의를 거절하면 덱을 바꾸지 않는다 (D2b-5a)
@@ -268,7 +297,7 @@ export const api = {
   startChapters: (name: string, chapterIds: string[], headers: Record<string, string>, requestId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs`, {
       method: "POST", body: JSON.stringify({ request_id: requestId, kind: "chapters", params: { chapter_ids: chapterIds } }),
-    }, { etagKey: name, updateEtag: false, headers }),
+    }, { etagKey: name, updateEtag: false, headers, notify: { kind: "job_started", project: name } }),
   getJob: (name: string, jobId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}`, { cache: "no-store" }),
   listJobs: (name: string) => request<JobView[]>(`/api/projects/${enc(name)}/jobs`, { cache: "no-store" }),
@@ -278,16 +307,16 @@ export const api = {
   startJob: (name: string, body: { request_id: string; kind: string; params: unknown }, headers: Record<string, string>,
     expectedEtag?: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs`, { method: "POST", body: JSON.stringify(body) },
-      { expectedEtag, headers }),
+      { expectedEtag, headers, notify: { kind: "job_started", project: name } }),
   settleCandidate: (name: string, jobId: string, action: "applied" | "dismissed") =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
       method: "POST", body: JSON.stringify({ action }),
-    }),
+    }, { notify: { kind: "saved", project: name } }),
   // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
   dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
       method: "POST", body: JSON.stringify({ action: "dismissed", chapter_id: chapterId }),
-    }),
+    }, { notify: { kind: "saved", project: name } }),
   getActiveJob: () => request<ActiveJobStatus>("/api/jobs/active", { cache: "no-store" }),
   getAISettings: () => request<AISettings>("/api/ai/settings"),
   selectAI: (selection: AISelection) => request<AISelection>("/api/ai/selection", {
@@ -308,15 +337,17 @@ export const api = {
   getProgress: (name: string) =>
     request<ProjectProgress>(`/api/projects/${enc(name)}/progress`, { cache: "no-store" }),
   restoreDraft: (name: string, id: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
+    request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" },
+      { etagKey: name, notify: { kind: "saved", project: name } }),
   deleteDraft: (name: string, id: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/drafts/${enc(id)}`, { method: "DELETE" }),
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),
   restoreSnapshot: (name: string, id: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
+    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" },
+      { etagKey: name, notify: { kind: "saved", project: name } }),
   exportDeck: (name: string) =>
-    request<ExportResult>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
+    request<ExportResult>(`/api/projects/${enc(name)}/export`, { method: "POST" }, { notify: { kind: "saved", project: name } }),
   listExports: (name: string, offset = 0, limit = 20) =>
     request<ExportHistoryPage>(`/api/projects/${enc(name)}/exports?offset=${offset}&limit=${limit}`, { cache: "no-store" }),
   getExport: (name: string, id: string) =>
@@ -342,6 +373,6 @@ export const api = {
     if (!baseEtag.trim()) throw new ApiError(428, "검수 기준을 다시 확인해 주세요.");
     return request<ExportReviews>(`/api/projects/${enc(name)}/exports/${enc(id)}/reviews`, {
       method: "POST", body: JSON.stringify(input),
-    }, { expectedEtag: baseEtag });
+    }, { expectedEtag: baseEtag, notify: { kind: "saved", project: name } });
   },
 };

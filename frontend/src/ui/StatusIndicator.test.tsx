@@ -2,7 +2,7 @@
 import { act, render, screen } from "@testing-library/react";
 import { JobAnnouncer, SaveAnnouncer, STATUS_KINDS, StatusIndicator, saveStatusKind } from "./StatusIndicator";
 
-it("상태 12종(작업 상태 2종 포함)은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
+it("상태 15종(작업 상태 2종, 단계 상태 3종 포함)은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
   const labels = new Set<string>();
   const icons = new Set<string>();
   for (const kind of STATUS_KINDS) {
@@ -12,9 +12,10 @@ it("상태 12종(작업 상태 2종 포함)은 문구와 아이콘의 접근 가
     labels.add(container.querySelector(".status-label")!.textContent!);
     unmount();
   }
-  expect(STATUS_KINDS).toHaveLength(12);
-  expect(labels.size).toBe(12);
-  expect(icons.size).toBe(12);
+  // 다시 씀(D3a-3): 단계 상태 3종(확인하지 못함, 작성 중, 초안 확인됨)을 더해 12종에서 15종으로
+  expect(STATUS_KINDS).toHaveLength(15);
+  expect(labels.size).toBe(15);
+  expect(icons.size).toBe(15);
 });
 
 // D2a 이월 (7), D3a-1. 지금 코드의 틀린 동작: 접근 가능한 이름이 "빈 원", "연필" 같은 모양 이름이다.
@@ -32,6 +33,9 @@ const ICON_NAMES: Record<(typeof STATUS_KINDS)[number], string> = {
   running: "진행 중",
   cancel_requested: "취소 대기",
   completion_unknown: "결과 불명",
+  unknown: "상태 미확인",
+  in_progress: "작성 진행",
+  draft_checked: "초안 점검 통과",
 };
 const SHAPE_NAMES = ["빈 원", "연필", "회전 화살표", "체크", "경고 삼각형", "엇갈린 화살표", "체크 상자", "느낌표",
   "엑스", "진행 점", "일시 정지", "물음표"];
@@ -89,7 +93,7 @@ it("충돌을 서버 내용으로 되돌린 뒤의 저장됨은 알리지 않는
 });
 
 it("아이콘 글자는 색 이모지가 아니라 글자 모양으로 그리도록 요청한다 (D2a-5 리뷰 R13)", () => {
-  for (const kind of ["unsaved", "saving", "save_failed", "conflict", "ready", "running"] as const) {
+  for (const kind of ["unsaved", "saving", "save_failed", "conflict", "ready", "running", "in_progress", "draft_checked"] as const) {
     const { container, unmount } = render(<StatusIndicator kind={kind} />);
     expect(container.querySelector('[role="img"]')!.textContent).toMatch(/\uFE0E$/);
     unmount();

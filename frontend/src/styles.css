@@ -61,6 +61,7 @@
   --width-editor-left: 220px;
   --width-editor-right: 280px;
   --width-number-input: 8em;       /* 숫자 입력은 글자 크기에 맞춘다 */
+  --width-part-label: 12em;        /* 검토 상태의 부분 이름 칸. 가장 긴 이름(자동 검사(내보낸 파일 기준))에 맞춘다 */
   --indent-checkbox: 22px;         /* 체크 상자 옆 문단을 상자 글자에 맞춘다 */
   --height-textarea: 110px;
   --height-textarea-compact: 64px;
@@ -192,6 +193,9 @@ main.project-shell { padding: 0; }
   .project-topbar { padding: var(--space-3) var(--space-4); }
   .stage-body { padding: var(--space-4); }
   .project-topbar .ai-settings-body { left: var(--space-2); right: var(--space-2); width: auto; }
+  /* 좁은 띠에서는 단계 상태의 종류(문구와 아이콘)만 보이고 설명은 화면 낭독기에만 남긴다. 설명은 단계 화면에도 있다 */
+  .stage-status .status-detail { position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 }
 
 /* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다
@@ -365,3 +369,11 @@ main.project-shell { padding: 0; }
   clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* 오류가 아닌 주의 안내 (D3a-1, D2a 이월 6). [role="alert"]의 위험색과 구별한다 */
 .notice-warning { color: var(--color-warning); }
+/* 단계 상태 (D3a-3, 계획 4.2). 단계 버튼 밖의 다른 요소로, 버튼 아래에 붙는다 */
+.stage-list li { display: grid; gap: var(--space-1); }
+.stage-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1);
+  padding-inline-start: var(--space-3); font-size: var(--font-size-caption); }
+.stage-status .status-indicator { flex-wrap: wrap; }
+.stage-summary { color: var(--color-text-muted); }
+.review-parts { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+.review-part-name { display: inline-block; min-width: var(--width-part-label); }
