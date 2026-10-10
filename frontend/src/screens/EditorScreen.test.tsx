@@ -399,3 +399,29 @@ it("보존 뒤 서버 덱 읽기가 실패하면 되돌렸다고 말하지 않�
   expect(await screen.findByText(/서버 내용은 아직 읽지 못해/)).toBeInTheDocument();
   expect(screen.queryByText(/서버 내용으로 되돌렸습니다/)).toBeNull();
 });
+
+it("보존 성공 뒤 다음 충돌에서 보존이 실패하면 지난 성공 안내를 지우고 실패 안내로 초점을 옮긴다 (D2a 이월 13, D3a-1)", async () => {
+  // 지금 코드의 틀린 동작: 두 안내 문단이 함께 그려지고 같은 ref를 나눠 가져 초점이 지난 성공 안내로 간다
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  await screen.findByText(/되돌리기 전의 변경은 보존했습니다/);
+  // 둘째 충돌: 다시 고치고 저장이 412로 거절된 뒤 보존이 실패한다
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  // 되돌린 뒤에도 같은 틀이 선택돼 있으므로 한 번 누르면 바로 수정 상자가 열린다
+  await userEvent.click(await within(preview).findByText("하나"));
+  const box = await screen.findByLabelText("내용 수정");
+  await userEvent.clear(box);
+  await userEvent.type(box, "다시 고침{Enter}");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  const failure = await screen.findByText(/변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다/);
+  expect(screen.queryByText(/되돌리기 전의 변경은 보존했습니다/)).not.toBeInTheDocument();
+  await waitFor(() => expect(document.activeElement).toBe(failure.closest("p")));
+});

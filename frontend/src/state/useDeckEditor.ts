@@ -200,6 +200,8 @@ export function useDeckEditor(
           try {
             preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
           } catch (e) {
+            // 지난 충돌의 보존 성공 안내를 지운다. 남기면 두 결과 안내가 함께 그려지고 초점이 지난 안내로 간다 (D2a 이월 13)
+            setPreservedDraft(null);
             setPreserveFailure({ message: messageOf(e) });
             return;
           }

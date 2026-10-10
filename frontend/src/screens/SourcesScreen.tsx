@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type ProjectInfo, type UploadResult } from "../api/client";
+import { Button } from "../ui/Button";
+
+const KEPT_SOURCE_NOTICE = "수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.";
 
 const REPORT_TYPES = [
   ["weekly", "주간 업무 보고"],
@@ -148,7 +151,7 @@ export function SourcesScreen({
       const s = await api.readSource(project.name, f);
       if (request !== sourceRequest.current || !mountedRef.current) return;
       if (textRef.current !== savedText.current) {
-        setNotice("수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.");
+        setNotice(KEPT_SOURCE_NOTICE);
         return;
       }
       setSelected(f);
@@ -282,7 +285,10 @@ export function SourcesScreen({
 
   return (
     <div className="sources-screen">
-      {notice && <p role="alert">{notice}</p>}
+      {/* 편집 중 보존은 오류가 아니라 놓치면 안 되는 주의 안내다 (D2a 이월 6, D3a-1) */}
+      {notice && (notice === KEPT_SOURCE_NOTICE
+        ? <p role="status" className="notice-warning">{notice}</p>
+        : <p role="alert">{notice}</p>)}
       {success && !notice && <p role="status">{success}</p>}
       {info && <p className="info">{info}</p>}
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
@@ -315,7 +321,7 @@ export function SourcesScreen({
           </label>
         </div>
         <div className="actions">
-          <button onClick={saveMeta} disabled={saving}>보고 정보 저장</button>
+          <Button variant="primary" onClick={saveMeta} disabled={saving}>보고 정보 저장</Button>
         </div>
       </section>
       <section>
@@ -334,13 +340,16 @@ export function SourcesScreen({
             생성 시 자료 합계 10만 자 한도가 적용됩니다. 원본 엑셀은 프로젝트 폴더의 uploads 에 보관되고 AI
             에는 추출본만 갑니다. 같은 이름의 기존 자료가 있으면 엑셀 추출본으로 교체됩니다.
           </p>
-          <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
-            disabled={uploading}
-            onChange={(e) => {
-              const picked = e.target.files;
-              if (picked) void importFiles(picked);
-              e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
-            }} />
+          {/* 파일 올리기가 자료 단계의 주 행동이다 (D3a-1, 계획 4.6). 라벨이 버튼 모양을 맡는다 */}
+          <label className="btn-primary">파일 선택
+            <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
+              className="visually-hidden" disabled={uploading}
+              onChange={(e) => {
+                const picked = e.target.files;
+                if (picked) void importFiles(picked);
+                e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
+              }} />
+          </label>
         </div>
         <div className="field">
           <label>새 자료 이름 <span className="hint">(붙여넣기용 빈 자료를 만듭니다)</span>

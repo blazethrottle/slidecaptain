@@ -560,3 +560,35 @@ it("저장 뒤 다른 자료를 열면 지난 성공 안내를 지운다 (D2a-4 
   await userEvent.click(await screen.findByText("자료.md"));
   await waitFor(() => expect(screen.queryByText("보고 정보를 저장했습니다.")).toBeNull());
 });
+
+it("편집 중에 보존한 자료 안내는 오류가 아니라 주의 안내로 보인다 (D2a 이월 6, D3a-1)", async () => {
+  // 지금 코드의 틀린 동작: 오류 알림(role=alert, 위험색)으로 그린다
+  const pending = deferred<{ text: string }>();
+  vi.mocked(api.listSources).mockResolvedValue(["first.md", "second.md"]);
+  vi.mocked(api.readSource).mockResolvedValueOnce({ text: "첫 원문" }).mockReturnValue(pending.promise);
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));
+  const box = await screen.findByLabelText("자료 내용");
+  await userEvent.click(screen.getByRole("button", { name: "second.md" }));
+  await userEvent.type(box, " 수정 중");
+  await act(async () => pending.resolve({ text: "둘째 원문" }));
+  const kept = screen.getByText(/수정 중인 자료 내용을 보존했습니다/);
+  expect(kept).toHaveAttribute("role", "status");
+  expect(kept).toHaveClass("notice-warning");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("보고 정보와 입력 자료 영역은 각각 주 행동이 정확히 1개다 (D3a-1, 계획 4.6)", async () => {
+  vi.mocked(api.listSources).mockResolvedValue(["first.md"]);
+  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  render(<SourcesScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "first.md" }));  // 자료를 연 상태에서도 그대로다
+  await screen.findByLabelText("자료 내용");
+  const section = (name: string) => screen.getByRole("heading", { level: 2, name }).closest("section")!;
+  const report = section("보고 정보").querySelectorAll(".btn-primary");
+  expect(report).toHaveLength(1);
+  expect(report[0]).toHaveTextContent("보고 정보 저장");
+  const sources = section("입력 자료").querySelectorAll(".btn-primary");
+  expect(sources).toHaveLength(1);
+  expect(sources[0]).toContainElement(screen.getByLabelText("자료 파일 선택"));  // 파일 올리기가 주 행동이다
+});

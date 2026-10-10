@@ -57,6 +57,9 @@ for (const fg of textColors) {
 }
 const onPrimary = [color("color-on-primary"), color("color-primary")];
 if (onPrimary.every(Boolean) && contrast(...onPrimary) < 4.5) failures.push("주 행동 버튼 글자 대비 < 4.5");
+// 주 행동 버튼에 마우스를 올렸을 때의 바탕 (D3a-1)
+const onPrimaryHover = [color("color-on-primary"), color("color-primary-hover")];
+if (onPrimaryHover.every(Boolean) && contrast(...onPrimaryHover) < 4.5) failures.push("주 행동 버튼(마우스 올림) 글자 대비 < 4.5");
 
 // (3) 비텍스트: 초점선과 컴포넌트 경계는 배경과 패널 위에서 3:1 이상 (WCAG 1.4.11)
 for (const fg of ["color-focus", "color-border-strong"]) {

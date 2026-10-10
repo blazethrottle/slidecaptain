@@ -1110,8 +1110,8 @@ it("장 표의 취소 요청됨과 완료 여부 확인 필요는 상태 표시(
   render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}}
     pollIntervalMs={0} />);
   const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("tr")!;
-  await waitFor(() => expect(within(row(1)).getByRole("img", { name: "일시 정지" })).toBeInTheDocument());
-  expect(within(row(2)).getByRole("img", { name: "물음표" })).toBeInTheDocument();
+  await waitFor(() => expect(within(row(1)).getByRole("img", { name: "취소 대기" })).toBeInTheDocument());
+  expect(within(row(2)).getByRole("img", { name: "결과 불명" })).toBeInTheDocument();
 });
 
 it("사용자가 취소한 묶음의 요약은 실행 실패로 보이지 않는다 (리뷰 R12)", async () => {
@@ -1228,4 +1228,27 @@ it("자료만 바뀌어 반영하지 않은 장은 덱 충돌로 알리지 않�
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   expect(await screen.findByText(/만드는 동안 자료가 바뀌어 일부 장을 반영하지 않았습니다/)).toBeInTheDocument();
   expect(onConflict).not.toHaveBeenCalled();
+});
+
+describe("구성 단계의 주 행동은 상태마다 정확히 1개다 (D3a-1, 계획 4.6)", () => {
+  const primaries = () => [...document.querySelectorAll(".btn-primary")].map((b) => b.textContent);
+
+  it("초안이 없으면 구조안 생성", async () => {
+    render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+    await screen.findByRole("button", { name: "구조안 생성" });
+    expect(primaries()).toEqual(["구조안 생성"]);
+  });
+
+  it("유효한 초안이 있으면 승인하고 내용 생성이고, 다시 생성은 주 행동이 아니다", async () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await screen.findByRole("button", { name: "승인하고 내용 생성" });
+    expect(primaries()).toEqual(["승인하고 내용 생성"]);
+    expect(screen.getByRole("button", { name: "다시 생성" })).not.toHaveClass("btn-primary");
+  });
+
+  it("보고 질문이 바뀌어 초안이 낡으면 다시 생성", async () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await userEvent.type(await screen.findByLabelText("보고 질문"), "무엇을 판단하나");
+    expect(primaries()).toEqual(["다시 생성"]);
+  });
 });

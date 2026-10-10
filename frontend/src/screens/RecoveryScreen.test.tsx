@@ -185,7 +185,7 @@ it("결과 없이 끝난 지난 작업을 상태와 함께 보인다 (리뷰 R2)
   ]);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   expect(await screen.findByText("결과 없이 끝난 AI 작업")).toBeInTheDocument();
-  expect(screen.getByRole("img", { name: "물음표" })).toBeInTheDocument();  // 완료 여부 확인 필요
+  expect(screen.getByRole("img", { name: "결과 불명" })).toBeInTheDocument();  // 완료 여부 확인 필요
   expect(screen.getByText(/취소됨/)).toBeInTheDocument();
   expect(screen.getByText(/중단됨/)).toBeInTheDocument();
 });

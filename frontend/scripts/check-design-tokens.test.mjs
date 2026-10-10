@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("./check-design-tokens.mjs", import.meta.url));
 const ROOT = `:root {
   --color-bg: #F4F6F8; --color-panel: #FFFFFF; --color-text: #172B4D; --color-text-muted: #526174;
-  --color-border-strong: #7B8794; --color-primary: #244C83; --color-on-primary: #FFFFFF;
+  --color-border-strong: #7B8794; --color-primary: #244C83; --color-primary-hover: #193D70; --color-on-primary: #FFFFFF;
   --color-success: #176B55; --color-warning: #8A5700; --color-danger: #B42318; --color-accent-bg: #EEF3F9;
   --color-surface-subtle: #F8FAFC; --color-success-subtle: #EDF3EF; --color-focus: #517DC0;
   --space-2: 8px;

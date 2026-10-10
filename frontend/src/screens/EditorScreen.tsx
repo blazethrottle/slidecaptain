@@ -16,6 +16,7 @@ import { NumericReviewPanel } from "./NumericReviewPanel";
 import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
+import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, timings,
@@ -187,7 +188,7 @@ export function EditorScreen({
               : <>다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
                   ({formatSavedAt(editor.preservedDraft.saved_at)}).</>}
             {" "}스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
-            <button onClick={editor.dismissPreservedDraft}>닫기</button>
+            <Button variant="text" onClick={editor.dismissPreservedDraft}>닫기</Button>
           </p>
         )}
         {editor.measureError && (

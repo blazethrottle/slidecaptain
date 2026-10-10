@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SaveState } from "../state/useDeckEditor";
 
 // 상태 표시 (개정판 D2a-5, 제품 설계 4절). 색만으로 구별하지 않도록 상태마다 문구와 아이콘을 함께 둔다.
+// 아이콘의 접근 가능한 이름은 모양이 아니라 상태의 뜻이고, 라벨 문구와 같은 말을 두 번 읽지 않도록 라벨과 다르게 쓴다 (D2a 이월 7)
 // "현재 보고 있는 단계"는 내비게이션의 선택 표시라 D3에서 다룬다. 작업 상태(취소 요청, 완료 불명)는 D2b다.
 export const STATUS_KINDS = [
   "not_started", "unsaved", "saving", "saved", "save_failed", "conflict",
@@ -12,20 +13,20 @@ export type StatusKind = (typeof STATUS_KINDS)[number];
 type Tone = "neutral" | "warning" | "success" | "danger" | "primary";
 
 const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; tone: Tone }> = {
-  not_started: { label: "시작 전", icon: "○", iconName: "빈 원", tone: "neutral" },
+  not_started: { label: "시작 전", icon: "○", iconName: "아직 시작하지 않음", tone: "neutral" },
   // 일부 글자는 운영체제가 색 이모지로 그려 글자색이 적용되지 않는다. U+FE0E로 글자 모양을 요청한다 (D2a-5 리뷰 R13)
-  unsaved: { label: "변경사항 있음", icon: "\u270E\uFE0E", iconName: "연필", tone: "warning" },
-  saving: { label: "저장 중", icon: "\u21BB\uFE0E", iconName: "회전 화살표", tone: "neutral" },
-  saved: { label: "저장됨", icon: "✓", iconName: "체크", tone: "success" },
-  save_failed: { label: "저장하지 못했습니다. 변경은 이 화면에 남아 있습니다", icon: "\u26A0\uFE0E", iconName: "경고 삼각형", tone: "danger" },
-  conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "\u21C4\uFE0E", iconName: "엇갈린 화살표", tone: "danger" },
-  ready: { label: "준비됨", icon: "\u2611\uFE0E", iconName: "체크 상자", tone: "success" },
-  needs_review: { label: "확인 필요", icon: "!", iconName: "느낌표", tone: "warning" },
-  failed: { label: "실행 실패", icon: "✕", iconName: "엑스", tone: "danger" },
-  running: { label: "생성 중", icon: "\u22EF\uFE0E", iconName: "진행 점", tone: "primary" },
+  unsaved: { label: "변경사항 있음", icon: "\u270E\uFE0E", iconName: "저장하지 않은 변경", tone: "warning" },
+  saving: { label: "저장 중", icon: "\u21BB\uFE0E", iconName: "저장 진행", tone: "neutral" },
+  saved: { label: "저장됨", icon: "✓", iconName: "저장 완료", tone: "success" },
+  save_failed: { label: "저장하지 못했습니다. 변경은 이 화면에 남아 있습니다", icon: "\u26A0\uFE0E", iconName: "저장 실패 경고", tone: "danger" },
+  conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "\u21C4\uFE0E", iconName: "저장 충돌", tone: "danger" },
+  ready: { label: "준비됨", icon: "\u2611\uFE0E", iconName: "준비 완료", tone: "success" },
+  needs_review: { label: "확인 필요", icon: "!", iconName: "주의", tone: "warning" },
+  failed: { label: "실행 실패", icon: "✕", iconName: "실패", tone: "danger" },
+  running: { label: "생성 중", icon: "\u22EF\uFE0E", iconName: "진행 중", tone: "primary" },
   // 작업 상태 (D2b-5c). 취소 요청은 아직 진행 중이라 중립색, 완료 불명은 사용자의 확인이 필요해 주의색이다
-  cancel_requested: { label: "취소 요청됨", icon: "\u23F8\uFE0E", iconName: "일시 정지", tone: "neutral" },
-  completion_unknown: { label: "완료 여부 확인 필요", icon: "?", iconName: "물음표", tone: "warning" },
+  cancel_requested: { label: "취소 요청됨", icon: "\u23F8\uFE0E", iconName: "취소 대기", tone: "neutral" },
+  completion_unknown: { label: "완료 여부 확인 필요", icon: "?", iconName: "결과 불명", tone: "warning" },
 };
 
 /** 저장 훅의 상태를 표시 종류로 옮긴다. 충돌은 저장 실패와 조치가 반대라 따로 둔다. */

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, messageOf, type ExportQualification, type IndependentReviewRequest } from "../api/client";
 import type { ReviewLeaveGuard } from "./ReviewRecordsPanel";
+import { Button } from "../ui/Button";
 
 type Props = { projectName: string; exportId: string; readOnly?: boolean; busy?: boolean;
   onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void; onLeaveReady?: (guard: ReviewLeaveGuard | null) => void };
@@ -117,7 +118,7 @@ function Qualification({ projectName, exportId, readOnly = false, busy = false, 
         onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
       {file && <p>선택한 검수 파일: {file.name}</p>}
       <button disabled={disabled || !file || !basis?.can_import_review} onClick={() => void run("review")}>독립 검수 기록 확인</button>
-      <button disabled={disabled || !basis?.final_export_allowed} onClick={() => void run("publish")}>검수한 파일을 제출본으로 게시</button>
+      <Button variant="danger" disabled={disabled || !basis?.final_export_allowed} onClick={() => void run("publish")}>검수한 파일을 제출본으로 게시</Button>
     </>}
   </section>;
 }

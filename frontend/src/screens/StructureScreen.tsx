@@ -18,6 +18,7 @@ import { StoryRewritePanel } from "./StoryRewritePanel";
 import { DocumentChangePanel } from "./DocumentChangePanel";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import { formatSavedAt } from "../api/time";
+import { Button } from "../ui/Button";
 
 // 실패한 장은 결과 자체가 없어 usage 합계에서 빠진다: 그 사실을 합계 줄에 밝힌다 (가정 7)
 const FAILED_CHAPTER_USAGE_NOTICE =
@@ -147,6 +148,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [chapterUsageCount, setChapterUsageCount] = useState(0);  // 합계에 실제로 실린 장 수
   const [chapterUsageHadUnaccountedFailure, setChapterUsageHadUnaccountedFailure] = useState(false);
   const questionChanged = decisionQuestion.trim() !== (storyPlan?.brief.decision_question ?? "");
+  // 주 행동 (D3a-1, 계획 4.6): 초안이 없거나 낡으면 구조안 생성, 유효한 초안이면 승인
+  const validDraft = draft.length > 0 && !questionChanged && !storyStale;
   // 장 구성 초안, 보고 질문, 저장하지 못한 생성 결과가 남아 있으면 창 닫기 경고에 포함한다 (D2a-2, 리뷰 R1, R16)
   useEffect(()=>{
     dirtyParts.current.draft=draftDirty||questionChanged;
@@ -639,11 +642,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance hasDiagrams={hasDiagrams} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
       {earlierNotice && <p className="notice">{earlierNotice}
-        {staleStructure.current && <button onClick={() => {
+        {staleStructure.current && <Button variant="danger" onClick={() => {
           void settle(project.name, staleStructure.current!, "dismissed");
           staleStructure.current = null;
           setEarlierNotice("");
-        }}>후보 버리기</button>}</p>}
+        }}>후보 버리기</Button>}</p>}
       {rawText && <details><summary>AI 응답 원문</summary><pre>{rawText}</pre></details>}
       {/* C-1 리뷰 반영: draft 유무와 무관하게 렌더한다(형식 오류 안내 근처).
           draft가 비어 있으면 "장 구성" 섹션 자체가 없어 그 안에 두면 최초 생성의
@@ -675,9 +678,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           </label>
         </div>
         <div className="actions">
-          <button onClick={generate} disabled={busy || hasDiagrams}>
+          <Button variant={validDraft ? "secondary" : "primary"} onClick={generate} disabled={busy || hasDiagrams}>
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
-          </button>
+          </Button>
           {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
           {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
         </div>
@@ -731,7 +734,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                       {candidateText(chapterRow(c.id)!) && (
                         <details><summary>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
                       )}
-                      <button aria-label={`${i + 1}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</button>
+                      <Button variant="danger" aria-label={`${i + 1}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
                     </>)}
                   </td>
                 </tr>
@@ -761,7 +764,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               : null;
           })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}
-          <button onClick={approve} disabled={busy || draft.length === 0 || questionChanged}>승인하고 내용 생성</button>
+          <Button variant={validDraft ? "primary" : "secondary"} onClick={approve}
+            disabled={busy || draft.length === 0 || questionChanged}>승인하고 내용 생성</Button>
         </section>
       )}
       </fieldset>

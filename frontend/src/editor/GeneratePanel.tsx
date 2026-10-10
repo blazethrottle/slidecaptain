@@ -10,6 +10,7 @@ import {
 import { formatUsage } from "../api/usage";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
 import { ActiveJobNotice } from "../ui/ActiveJobNotice";
+import { Button } from "../ui/Button";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
@@ -209,7 +210,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
           {(job?.kind !== "condense" || slide) && (
             <button onClick={() => (job?.kind === "condense" ? condense() : void regenerate())}>현재 입력으로 다시 생성</button>
           )}
-          <button onClick={dismiss}>버리기</button>
+          <Button variant="danger" onClick={dismiss}>버리기</Button>
         </div>
       )}
       {result && result.status === "ok" && reasons.length === 0 && (
@@ -229,7 +230,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
             </p>
           )}
           <button onClick={() => void applyResult()} disabled={busy}>반영</button>
-          <button onClick={dismiss}>버리기</button>
+          <Button variant="danger" onClick={dismiss}>버리기</Button>
         </div>
       )}
       {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6).

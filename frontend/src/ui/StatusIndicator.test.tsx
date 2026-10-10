@@ -17,6 +17,36 @@ it("상태 12종(작업 상태 2종 포함)은 문구와 아이콘의 접근 가
   expect(icons.size).toBe(12);
 });
 
+// D2a 이월 (7), D3a-1. 지금 코드의 틀린 동작: 접근 가능한 이름이 "빈 원", "연필" 같은 모양 이름이다.
+// 이름은 상태의 뜻을 말하되 라벨 문구와 같지 않게 한다(화면 낭독기가 같은 말을 두 번 읽지 않게)
+const ICON_NAMES: Record<(typeof STATUS_KINDS)[number], string> = {
+  not_started: "아직 시작하지 않음",
+  unsaved: "저장하지 않은 변경",
+  saving: "저장 진행",
+  saved: "저장 완료",
+  save_failed: "저장 실패 경고",
+  conflict: "저장 충돌",
+  ready: "준비 완료",
+  needs_review: "주의",
+  failed: "실패",
+  running: "진행 중",
+  cancel_requested: "취소 대기",
+  completion_unknown: "결과 불명",
+};
+const SHAPE_NAMES = ["빈 원", "연필", "회전 화살표", "체크", "경고 삼각형", "엇갈린 화살표", "체크 상자", "느낌표",
+  "엑스", "진행 점", "일시 정지", "물음표"];
+
+it("아이콘의 접근 가능한 이름은 모양이 아니라 상태의 뜻이고 라벨 문구와 다르다 (D2a 이월 7)", () => {
+  for (const kind of STATUS_KINDS) {
+    const { container, unmount } = render(<StatusIndicator kind={kind} />);
+    const name = container.querySelector('[role="img"]')!.getAttribute("aria-label")!;
+    expect(name).toBe(ICON_NAMES[kind]);
+    expect(SHAPE_NAMES).not.toContain(name);
+    expect(name).not.toBe(container.querySelector(".status-label")!.textContent);
+    unmount();
+  }
+});
+
 it("저장 상태와 충돌 여부를 표시 종류로 옮긴다", () => {
   expect(saveStatusKind("저장됨", false)).toBe("saved");
   expect(saveStatusKind("저장 대기", false)).toBe("unsaved");

@@ -4,6 +4,7 @@ import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
 import { formatSavedAt } from "../api/time";
+import { Button } from "../ui/Button";
 
 // 사유와 출처는 이후 버전이 값을 늘릴 수 있어 모르는 값도 그대로 보인다 (D2a-2 리뷰 R5)
 function describeDraft(d: DraftInfo): string {
@@ -121,7 +122,7 @@ function JobCandidates({ project, onOpen }: { project: ProjectInfo; onOpen?: (ta
               {!WHOLE_DECK.has(c.job.kind) && onOpen && <><button onClick={() => onOpen(["structure", "chapters"].includes(c.job.kind) ? "structure" : "editor")}>
                 현재 입력으로 다시 생성</button>{" "}</>}
               {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
-              {TERMINAL_JOB_STATES.has(c.state) && <button onClick={() => void dismiss(c)}>버리기</button>}
+              {TERMINAL_JOB_STATES.has(c.state) && <Button variant="danger" onClick={() => void dismiss(c)}>버리기</Button>}
             </li>
           ))}
         </ul>
@@ -222,7 +223,7 @@ export function RecoveryScreen({ project, onBack, onConflict, onOpen }: {
             <li key={s.id}>
               {s.saved_at}
               {s.kind === "pre_migration" && <em> (새 형식으로 바꾸기 전)</em>}
-              {" "}<button onClick={() => restore(s.id)}>이 시점으로 복원</button>
+              {" "}<Button variant="danger" onClick={() => restore(s.id)}>이 시점으로 복원</Button>
             </li>
           ))}
         </ul>
@@ -239,7 +240,7 @@ export function RecoveryScreen({ project, onBack, onConflict, onOpen }: {
             {drafts.map((d) => (
               <li key={d.id}>
                 {formatSavedAt(d.saved_at)} {describeDraft(d)}{" "}
-                <button onClick={() => void restoreDraft(d.id)}>이 변경으로 복원</button>{" "}
+                <Button variant="danger" onClick={() => void restoreDraft(d.id)}>이 변경으로 복원</Button>{" "}
                 <button onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</button>
               </li>
             ))}
