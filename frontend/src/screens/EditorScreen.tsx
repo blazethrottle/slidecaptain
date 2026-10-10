@@ -121,12 +121,15 @@ export function EditorScreen({
   }, [project.name, editor.preservedDraft?.id]);
   const saveKind = saveStatusKind(editor.saveState, editor.conflict);
   // 되돌리기 중에는 버튼이 잠긴 영역 안에 있어 초점이 사라진다. 끝나면 결과 안내로 초점을 옮긴다
-  const outcomeRef = useRef<HTMLParagraphElement | null>(null);
+  // 두 결과 안내(보존 실패, 보존 성공)는 초점 대상을 따로 갖는다. 하나의 ref를 나눠 가지면 두 문단이 함께
+  // 그려질 때 React가 새로 붙은 요소에만 ref를 다시 걸어 초점 대상이 어긋날 수 있다 (D3a-1 리뷰 R4)
+  const failureRef = useRef<HTMLParagraphElement | null>(null);
+  const successRef = useRef<HTMLParagraphElement | null>(null);
   const saveStatusRef = useRef<HTMLDivElement | null>(null);
   const wasReloading = useRef(false);
   useEffect(() => {
     // 결과 안내가 없는 경로(보존할 변경 없음, 확인 뒤 되돌리기)는 저장 상태로 초점을 옮긴다 (리뷰 R11)
-    if (wasReloading.current && !editor.reloading) (outcomeRef.current ?? saveStatusRef.current)?.focus();
+    if (wasReloading.current && !editor.reloading) (failureRef.current ?? successRef.current ?? saveStatusRef.current)?.focus();
     wasReloading.current = editor.reloading;
   }, [editor.reloading]);
 
@@ -168,20 +171,20 @@ export function EditorScreen({
         {editor.preserveFailure && (
           <div>
             {/* 알림은 첫 문단에만 둔다: 덱 전체를 담은 복사 상자를 화면 낭독기가 읽지 않게 (리뷰 R15) */}
-            <p role="alert" tabIndex={-1} ref={outcomeRef}>
+            <p role="alert" tabIndex={-1} ref={failureRef}>
               변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다. ({editor.preserveFailure.message}){" "}
               아래 내용을 복사해 두거나, 그래도 되돌리면 이 화면의 변경은 사라집니다.
             </p>
             <UnsavedChangeBackup text={JSON.stringify(editor.deck, null, 2)} label="보존하지 못한 변경" />
-            <button disabled={editor.reloading} onClick={() => {
+            <Button variant="danger" disabled={editor.reloading} onClick={() => {
               if (window.confirm("보존하지 못한 변경은 사라집니다. 서버 내용으로 되돌릴까요?")) {
                 void editor.reloadFromServer({ discardUnsaved: true });
               }
-            }}>그래도 서버 내용으로 되돌리기</button>
+            }}>그래도 서버 내용으로 되돌리기</Button>
           </div>
         )}
         {editor.preservedDraft && (
-          <p role="status" tabIndex={-1} ref={outcomeRef}>
+          <p role="status" tabIndex={-1} ref={successRef}>
             {editor.reloadIncomplete
               ? <>변경을 보존했습니다({formatSavedAt(editor.preservedDraft.saved_at)}). 서버 내용은 아직 읽지 못해
                   화면은 바뀌지 않았습니다. "서버 내용으로 되돌리기"를 다시 눌러 주세요.</>

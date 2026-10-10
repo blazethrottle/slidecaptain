@@ -96,7 +96,10 @@ it("보존한 변경은 확인 뒤 고른 것만 지운다 (D2a-2)", async () =>
   vi.mocked(api.deleteDraft).mockResolvedValue({ ok: true });
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "이 보존본 지우기" }));
+  const remove = await screen.findByRole("button", { name: "이 보존본 지우기" });
+  // 지운 보존본은 되살릴 수 없으므로 위험 계층이다 (D3a-1 리뷰 R8)
+  expect(remove).toHaveClass("btn-danger");
+  await userEvent.click(remove);
   expect(api.deleteDraft).toHaveBeenCalledWith("p1", draft.id);
   expect(await screen.findByText("보존한 변경이 없습니다.")).toBeInTheDocument();
 });

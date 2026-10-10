@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck, type UploadResult } from "../api/client";
 import { SourcesScreen } from "./SourcesScreen";
@@ -591,4 +591,6 @@ it("보고 정보와 입력 자료 영역은 각각 주 행동이 정확히 1개
   const sources = section("입력 자료").querySelectorAll(".btn-primary");
   expect(sources).toHaveLength(1);
   expect(sources[0]).toContainElement(screen.getByLabelText("자료 파일 선택"));  // 파일 올리기가 주 행동이다
+  // 보이는 글자는 낭독하지 않는다. 입력의 이름("자료 파일 선택")과 두 번 읽히지 않게 (D3a-1 리뷰 R11)
+  expect(within(sources[0] as HTMLElement).getByText("파일 선택")).toHaveAttribute("aria-hidden", "true");
 });

@@ -22,7 +22,7 @@ const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; 
   conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "\u21C4\uFE0E", iconName: "저장 충돌", tone: "danger" },
   ready: { label: "준비됨", icon: "\u2611\uFE0E", iconName: "준비 완료", tone: "success" },
   needs_review: { label: "확인 필요", icon: "!", iconName: "주의", tone: "warning" },
-  failed: { label: "실행 실패", icon: "✕", iconName: "실패", tone: "danger" },
+  failed: { label: "실행 실패", icon: "✕", iconName: "오류", tone: "danger" },
   running: { label: "생성 중", icon: "\u22EF\uFE0E", iconName: "진행 중", tone: "primary" },
   // 작업 상태 (D2b-5c). 취소 요청은 아직 진행 중이라 중립색, 완료 불명은 사용자의 확인이 필요해 주의색이다
   cancel_requested: { label: "취소 요청됨", icon: "\u23F8\uFE0E", iconName: "취소 대기", tone: "neutral" },

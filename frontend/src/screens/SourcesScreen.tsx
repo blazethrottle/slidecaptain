@@ -341,7 +341,7 @@ export function SourcesScreen({
             에는 추출본만 갑니다. 같은 이름의 기존 자료가 있으면 엑셀 추출본으로 교체됩니다.
           </p>
           {/* 파일 올리기가 자료 단계의 주 행동이다 (D3a-1, 계획 4.6). 라벨이 버튼 모양을 맡는다 */}
-          <label className="btn-primary">파일 선택
+          <label className="btn-primary"><span aria-hidden="true">파일 선택</span>
             <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
               className="visually-hidden" disabled={uploading}
               onChange={(e) => {

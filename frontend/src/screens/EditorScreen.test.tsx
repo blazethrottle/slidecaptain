@@ -285,6 +285,8 @@ it("보존이 실패하면 변경 복사와 확인 뒤 되돌리기를 제시한
   await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
   expect(await screen.findByText(/변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "변경 내용 복사" })).toBeInTheDocument();
+  // 보존하지 못한 변경을 버리는 되돌리기는 위험 계층이다 (D3a-1 리뷰 R8)
+  expect(screen.getByRole("button", { name: "그래도 서버 내용으로 되돌리기" })).toHaveClass("btn-danger");
   expect(onDeckChange).not.toHaveBeenCalledWith(serverDeck);
   vi.spyOn(window, "confirm").mockReturnValueOnce(false);
   await userEvent.click(screen.getByRole("button", { name: "그래도 서버 내용으로 되돌리기" }));
@@ -401,7 +403,8 @@ it("보존 뒤 서버 덱 읽기가 실패하면 되돌렸다고 말하지 않�
 });
 
 it("보존 성공 뒤 다음 충돌에서 보존이 실패하면 지난 성공 안내를 지우고 실패 안내로 초점을 옮긴다 (D2a 이월 13, D3a-1)", async () => {
-  // 지금 코드의 틀린 동작: 두 안내 문단이 함께 그려지고 같은 ref를 나눠 가져 초점이 지난 성공 안내로 간다
+  // 회귀 RED: 고치기 전 코드는 두 안내 문단을 함께 그렸다(지난 성공 안내가 남음).
+  // 초점 단언은 고정이다: 고치기 전 코드에서도 초점은 새로 붙은 실패 안내로 갔다 (D3a-1 리뷰 R4)
   const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
   vi.mocked(api.measure).mockResolvedValue(plan);
   vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
@@ -424,4 +427,25 @@ it("보존 성공 뒤 다음 충돌에서 보존이 실패하면 지난 성공 �
   const failure = await screen.findByText(/변경을 보존하지 못해 서버 내용으로 되돌리지 않았습니다/);
   expect(screen.queryByText(/되돌리기 전의 변경은 보존했습니다/)).not.toBeInTheDocument();
   await waitFor(() => expect(document.activeElement).toBe(failure.closest("p")));
+});
+
+it("보존 뒤 서버 읽기만 실패해 다시 누르면 같은 덱을 다시 보존하지 않고 보존 사실을 유지한다 (D3a-1 리뷰 R22)", async () => {
+  // 회귀 RED: 고치기 전 코드는 같은 덱을 다시 보존했고, 그 보존이 실패하면 이미 보존한 사실을 지운 채
+  // "그래도 되돌리면 이 화면의 변경은 사라집니다"라고 안내했다
+  const serverDeck: Deck = { ...deck, meta: { ...deck.meta, title: "서버본" } };
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.getDeck).mockRejectedValueOnce(new ApiError(503, "서버가 응답하지 않습니다.")).mockResolvedValue(serverDeck);
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const preview = document.querySelector(".editor-center") as HTMLElement;
+  await within(preview).findByText("하나");
+  await editBullet(preview, "하나", "고침");
+  await userEvent.click(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }));
+  await screen.findByText(/서버 내용은 아직 읽지 못해/);
+  vi.mocked(api.saveDraft).mockRejectedValue(new ApiError(503, "서버가 응답하지 않습니다."));
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
+  expect(await screen.findByText(/되돌리기 전의 변경은 보존했습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/변경을 보존하지 못해/)).toBeNull();
+  expect(api.saveDraft).toHaveBeenCalledTimes(1);
 });

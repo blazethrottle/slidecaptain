@@ -35,6 +35,7 @@ export function useDeckEditor(
   // 충돌 해소의 미저장본 보존 (D2a-2): 진행 중 표시, 보존 결과, 보존 실패 시 복사할 내용
   const [reloading, setReloading] = useState(false);
   const [preservedDraft, setPreservedDraft] = useState<DraftInfo | null>(null);
+  const lastPreserved = useRef<{ deck: Deck; info: DraftInfo } | null>(null);  // 마지막으로 보존에 성공한 덱
   // 보존 실패의 원인 문구. 복사할 내용은 화면이 현재 덱에서 만든다: 실패 뒤의 편집도 담기 위해서다 (리뷰 R2)
   const [preserveFailure, setPreserveFailure] = useState<{ message: string } | null>(null);
   const reloadInFlight = useRef<Promise<void> | null>(null);
@@ -196,9 +197,16 @@ export function useDeckEditor(
         await saveChain.current;
         const unsaved = deckRef.current !== savedDeck.current ? deckRef.current : null;
         let preserved: DraftInfo | null = null;
-        if (unsaved && !options?.discardUnsaved) {
+        if (unsaved && !options?.discardUnsaved && unsaved === lastPreserved.current?.deck) {
+          // 이미 보존한 같은 덱이다(보존 뒤 서버 읽기만 실패해 다시 누른 경우). 다시 보존하지 않는다.
+          // 다시 보존이 실패하면 이미 보존한 사실을 지우고 "변경이 사라진다"고 잘못 안내했다 (D3a-1 리뷰 R22)
+          preserved = lastPreserved.current.info;
+          setPreserveFailure(null);
+          setPreservedDraft(preserved);
+        } else if (unsaved && !options?.discardUnsaved) {
           try {
             preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
+            lastPreserved.current = { deck: unsaved, info: preserved };
           } catch (e) {
             // 지난 충돌의 보존 성공 안내를 지운다. 남기면 두 결과 안내가 함께 그려지고 초점이 지난 안내로 간다 (D2a 이월 13)
             setPreservedDraft(null);

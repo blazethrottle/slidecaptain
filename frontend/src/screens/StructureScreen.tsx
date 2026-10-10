@@ -149,14 +149,26 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const [chapterUsageHadUnaccountedFailure, setChapterUsageHadUnaccountedFailure] = useState(false);
   const questionChanged = decisionQuestion.trim() !== (storyPlan?.brief.decision_question ?? "");
   // 주 행동 (D3a-1, 계획 4.6): 초안이 없거나 낡으면 구조안 생성, 유효한 초안이면 승인
+  const hasDiagrams = deck.structure.chapters.some(c => c.template === "diagram");
+  // 도식이 있으면 구조안 생성을 쓸 수 없으므로 주 행동이 아니다. 그때 초안이 낡았으면 버튼 주 행동은 없고
+  // 복구 안내가 다음 할 일을 말한다 (D3a-1 리뷰 R6)
   const validDraft = draft.length > 0 && !questionChanged && !storyStale;
+  const generatePrimary = !validDraft && !hasDiagrams;
+  // 승인이 지울 기존 장 내용. 누르기 전에 화면에 알린다 (D3a-1 리뷰 R13, 계획 4.6의 "장 내용 교체를 동반한 승인")
+  const keptSlides = () => {
+    const draftById = new Map(draft.map((c) => [c.id, c]));
+    return draftGenerated ? [] : deck.slides.filter((s) => {
+      const ch = draftById.get(s.chapter_id);
+      return ch !== undefined && ch.template === s.slots.template;
+    });
+  };
+  const replacedCount = deck.slides.length - keptSlides().length;
   // 장 구성 초안, 보고 질문, 저장하지 못한 생성 결과가 남아 있으면 창 닫기 경고에 포함한다 (D2a-2, 리뷰 R1, R16)
   useEffect(()=>{
     dirtyParts.current.draft=draftDirty||questionChanged;
     dirtyParts.current.backup=unsavedBackup!==null;
     reportDirty();
   },[draftDirty,questionChanged,unsavedBackup,reportDirty]);
-  const hasDiagrams = deck.structure.chapters.some(c => c.template === "diagram");
   const preserveUnsaved = async (target: Deck, reason: "conflict" | "generation_unsaved") => {
     try {
       const info = await api.saveDraft(project.name, { reason, source: "structure_approval", deck: target });
@@ -483,11 +495,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     if (unsavedBackup !== null && !window.confirm(UNSAVED_RESULT_CONFIRM)) return;
     // AI 재생성 초안은 장 id가 재부여되어 옛 슬라이드와의 대응이 보장되지 않으므로 전면 교체한다 (결정 15).
     // 기존 구조안을 손으로 고친 경우에만 id와 템플릿이 일치하는 슬라이드를 계승한다
-    const draftById = new Map(draft.map((c) => [c.id, c]));
-    const kept = draftGenerated ? [] : deck.slides.filter((s) => {
-      const ch = draftById.get(s.chapter_id);
-      return ch !== undefined && ch.template === s.slots.template;
-    });
+    const kept = keptSlides();
     const droppedCount = deck.slides.length - kept.length;
     if (droppedCount > 0) {
       const ok = window.confirm(
@@ -678,7 +686,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           </label>
         </div>
         <div className="actions">
-          <Button variant={validDraft ? "secondary" : "primary"} onClick={generate} disabled={busy || hasDiagrams}>
+          <Button variant={generatePrimary ? "primary" : "secondary"} onClick={generate} disabled={busy || hasDiagrams}>
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
           </Button>
           {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
@@ -764,7 +772,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               : null;
           })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}
+          {validDraft && replacedCount > 0 && (
+            <p className="notice-warning" id="approve-replace-warning">
+              승인하면 기존 장 내용 {replacedCount}개를 지우고 새로 생성합니다.</p>)}
           <Button variant={validDraft ? "primary" : "secondary"} onClick={approve}
+            aria-describedby={validDraft && replacedCount > 0 ? "approve-replace-warning" : undefined}
             disabled={busy || draft.length === 0 || questionChanged}>승인하고 내용 생성</Button>
         </section>
       )}

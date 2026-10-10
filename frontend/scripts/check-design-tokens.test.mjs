@@ -28,8 +28,11 @@ function run(body) {
 
 it("토큰만 쓴 크기, 1px 경계선, 매체 조건의 폭은 통과한다", () => {
   const { code, out } = run(`.a { padding: var(--space-2); border: 1px solid var(--color-border-strong); margin: 0; }
-.b { width: 100%; } .c { margin: -1px; }
+.b { width: 100%; height: 94dvh; } .c { outline: 1px dashed var(--color-focus); }
 @media (max-width: 780px) { .a { padding: var(--space-2); } }
+@media (min-width: 600px)
+  and (max-width: 900px) { .a { padding: var(--space-2); } }
+@container (max-width: 864px) { .a { padding: var(--space-2); } }
 `);
   expect(out).toContain("통과");
   expect(code).toBe(0);
@@ -42,6 +45,13 @@ it.each([
   ["음수", ".a { margin-left: -4px; }", "-4px"],
   ["매체 조건 안의 규칙 본문", "@media (max-width: 600px) { .a { padding: 14px; } }", "14px"],
   ["calc 안", ".a { max-height: calc(100dvh - 32px); }", "32px"],
+  ["대문자 단위", ".a { padding: 12PX; }", "12PX"],
+  ["pt", ".a { font-size: 11pt; }", "11pt"],
+  ["ch", ".a { max-width: 60ch; }", "60ch"],
+  ["지수 표기", ".a { padding: 1e1px; }", "1e1px"],
+  ["경계선이 아닌 1px", ".a { gap: 1px; }", "1px"],
+  ["calc 안의 1px", ".a { width: calc(1px * 12); }", "1px"],
+  ["컨테이너 조건 안의 규칙 본문", "@container (max-width: 864px) { .a { padding: 14px; } }", "14px"],
 ])("토큰 밖의 직접 크기(%s)를 잡는다", (_name, body, value) => {
   const { code, out } = run(body + "\n");
   expect(code).toBe(1);

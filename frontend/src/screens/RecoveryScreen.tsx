@@ -241,7 +241,7 @@ export function RecoveryScreen({ project, onBack, onConflict, onOpen }: {
               <li key={d.id}>
                 {formatSavedAt(d.saved_at)} {describeDraft(d)}{" "}
                 <Button variant="danger" onClick={() => void restoreDraft(d.id)}>이 변경으로 복원</Button>{" "}
-                <button onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</button>
+                <Button variant="danger" onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</Button>
               </li>
             ))}
           </ul>

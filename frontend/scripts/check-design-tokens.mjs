@@ -83,17 +83,27 @@ outside.split("\n").forEach((line, i) => {
   }
 });
 
-// (5) 토큰 블록 밖의 직접 크기 값 금지 (D3a-1, 계획 4.6). px, rem, em 길이는 :root의 크기 토큰으로만 쓴다.
+// (5) 토큰 블록 밖의 직접 크기 값 금지 (D3a-1, 계획 4.6). 길이 값은 :root의 크기 토큰으로만 쓴다.
+// 대상 단위: 절대 길이(px, pt, pc, cm, mm, in, q)와 글자 기준 길이(rem, em, ch, ex, lh, rlh, cap, ic).
+// 대소문자를 가리지 않고 지수 표기(1e1px)도 잡는다. 뷰포트 단위(vw, vh, dvh)와 %는 화면 비율이라 허용한다.
 // 허용 목록과 사유:
-// - 1px: 경계선 굵기와 화면 낭독기 전용 숨김 기법(.visually-hidden)의 최소 단위다. 크기 체계의 값이 아니다
-// - 매체 조건(@media 괄호 안)의 폭: 배치 전환 경계이고 요소의 크기가 아니다
+// - 1px: 경계선(border*, outline* 선언)의 굵기에만 허용한다. 다른 선언의 1px(calc 안 포함)는 위반이다
+// - 매체 조건(@media)과 컨테이너 조건(@container)의 괄호 안 폭: 배치 전환 경계이고 요소의 크기가 아니다.
+//   여러 줄에 걸친 조건도 지운다
 // 읽기 폭(입력 줄의 최대 폭 등)은 허용 목록에 두지 않고 --width-* 토큰으로 만든다
-const LENGTH = /(?<![-\w.#])(-?\d*\.?\d+)(px|rem|em)\b/g;
-const ALLOWED_LENGTHS = new Set(["1px", "-1px"]);
+// 한계: 문자열 안의 주석 기호("/*")는 주석으로 읽는다. 지금 styles.css에는 그런 문자열이 없다 (D3a-1 리뷰 R3)
+const LENGTH = /(?<![-\w.#])(-?\d*\.?\d+(?:e[+-]?\d+)?)(px|rem|em|pt|pc|cm|mm|in|q|ch|ex|lh|rlh|cap|ic)\b/gi;
+const sizeScope = outside.replace(/@(media|container)[^{]*/gi, (prelude) => prelude.replace(/[^\n]/g, ""));
 let sizeViolations = 0;
-outside.split("\n").forEach((line, i) => {
-  const code = line.replace(/@media[^{]*/g, "");
-  const found = [...code.matchAll(LENGTH)].map((m) => m[0]).filter((v) => !ALLOWED_LENGTHS.has(v));
+sizeScope.split("\n").forEach((line, i) => {
+  const found = [];
+  for (const m of line.matchAll(/([a-z-]+)\s*:\s*([^;{}]+)/gi)) {
+    const borderLike = /^(border|outline)/i.test(m[1]);
+    for (const v of m[2].matchAll(LENGTH)) {
+      if (borderLike && /^-?1px$/i.test(v[0])) continue;
+      found.push(v[0]);
+    }
+  }
   if (found.length) {
     sizeViolations += found.length;
     failures.push(`styles.css ${i + 1}행: 토큰 밖의 직접 크기 ${found.join(", ")}`);

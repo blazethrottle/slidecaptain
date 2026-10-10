@@ -31,3 +31,12 @@ it("aria-label이 있으면 그것이 접근 이름이고, 추가 클래스와 �
   rerender(<Button variant="danger" aria-label="1번 장 후보 버리기" disabled onClick={onClick}>후보 버리기</Button>);
   expect(screen.getByRole("button", { name: "1번 장 후보 버리기" })).toBeDisabled();
 });
+
+it("type을 정하지 않으면 button이라 폼 안에서 눌러도 폼을 제출하지 않는다 (D3a-1 리뷰 R20)", async () => {
+  const onSubmit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+  render(<form onSubmit={onSubmit}><Button variant="primary">저장</Button><Button type="submit">제출</Button></form>);
+  await userEvent.click(screen.getByRole("button", { name: "저장" }));
+  expect(onSubmit).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "제출" }));
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+});

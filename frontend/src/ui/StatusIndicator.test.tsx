@@ -28,7 +28,7 @@ const ICON_NAMES: Record<(typeof STATUS_KINDS)[number], string> = {
   conflict: "저장 충돌",
   ready: "준비 완료",
   needs_review: "주의",
-  failed: "실패",
+  failed: "오류",
   running: "진행 중",
   cancel_requested: "취소 대기",
   completion_unknown: "결과 불명",
@@ -42,7 +42,8 @@ it("아이콘의 접근 가능한 이름은 모양이 아니라 상태의 뜻이
     const name = container.querySelector('[role="img"]')!.getAttribute("aria-label")!;
     expect(name).toBe(ICON_NAMES[kind]);
     expect(SHAPE_NAMES).not.toContain(name);
-    expect(name).not.toBe(container.querySelector(".status-label")!.textContent);
+    // 라벨과 같거나 라벨의 일부이면 화면 낭독기가 같은 말을 두 번 읽는다 (D3a-1 리뷰 R21)
+    expect(container.querySelector(".status-label")!.textContent).not.toContain(name);
     unmount();
   }
 });

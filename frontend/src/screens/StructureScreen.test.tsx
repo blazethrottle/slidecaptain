@@ -1231,7 +1231,8 @@ it("자료만 바뀌어 반영하지 않은 장은 덱 충돌로 알리지 않�
 });
 
 describe("구성 단계의 주 행동은 상태마다 정확히 1개다 (D3a-1, 계획 4.6)", () => {
-  const primaries = () => [...document.querySelectorAll(".btn-primary")].map((b) => b.textContent);
+  // 누를 수 있는 주 행동만 센다. 비활성 주 행동은 행동할 수 없는 상태라 세지 않는다 (D3a-1 리뷰 R6)
+  const primaries = () => [...document.querySelectorAll(".btn-primary:not(:disabled)")].map((b) => b.textContent);
 
   it("초안이 없으면 구조안 생성", async () => {
     render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
@@ -1244,6 +1245,38 @@ describe("구성 단계의 주 행동은 상태마다 정확히 1개다 (D3a-1, 
     await screen.findByRole("button", { name: "승인하고 내용 생성" });
     expect(primaries()).toEqual(["승인하고 내용 생성"]);
     expect(screen.getByRole("button", { name: "다시 생성" })).not.toHaveClass("btn-primary");
+  });
+
+  it("보고 계획이 낡아 보류된 묶음이 있으면 다시 생성 (D3a-1 리뷰 R5)", async () => {
+    vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c2", "failed", { error: { error_class: "input",
+      status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } })], { state: "failed", outcome: "held_stale_plan" })]);
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await screen.findByRole("region", { name: "보고 계획 복구 안내" });
+    expect(primaries()).toEqual(["다시 생성"]);
+    expect(screen.getByRole("button", { name: "승인하고 내용 생성" })).not.toHaveClass("btn-primary");
+  });
+
+  it("도식이 있는 덱에서 보고 계획이 낡으면 누를 수 있는 주 행동은 없고 복구 안내가 다음 할 일을 말한다 (D3a-1 리뷰 R6)", async () => {
+    const DIAGRAM = { id: "c2", topic: "도식", conclusion: "", template: "diagram" as const, source_refs: [] };
+    vi.mocked(api.listJobs).mockResolvedValue([batchView([chapterView("c2", "failed", { error: { error_class: "input",
+      status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } })], { state: "failed", outcome: "held_stale_plan" })]);
+    render(<StructureScreen project={project} deck={deckWith([CH1, DIAGRAM], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await screen.findByRole("region", { name: "보고 계획 복구 안내" });
+    expect(primaries()).toEqual([]);
+    // 쓸 수 없는 구조안 생성은 주 행동 모양으로 두지 않는다
+    expect(screen.getByRole("button", { name: "다시 생성" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "다시 생성" })).not.toHaveClass("btn-primary");
+  });
+
+  it("승인이 기존 장 내용을 지우면 누르기 전에 그 수를 버튼 옆에 알린다 (D3a-1 리뷰 R13)", async () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER },
+      { chapter_id: "c2", slots: BODY }])} onDeckChange={() => {}} onDone={() => {}} />);
+    const approve = await screen.findByRole("button", { name: "승인하고 내용 생성" });
+    expect(screen.queryByText(/기존 장 내용/)).toBeNull();  // 지울 내용이 없으면 알리지 않는다
+    await userEvent.click(screen.getByRole("button", { name: "본문 삭제" }));
+    const warning = screen.getByText("승인하면 기존 장 내용 1개를 지우고 새로 생성합니다.");
+    expect(approve).toHaveAttribute("aria-describedby", warning.id);
+    expect(primaries()).toEqual(["승인하고 내용 생성"]);
   });
 
   it("보고 질문이 바뀌어 초안이 낡으면 다시 생성", async () => {
