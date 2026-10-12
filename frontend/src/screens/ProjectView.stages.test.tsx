@@ -176,8 +176,9 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
       return { ok: true };
     });
     // 다시 씀(D3b-5): 저장 버튼 대신 자동 저장을 기다린다
-    await openProject(30);
-    await userEvent.type(await screen.findByLabelText("보고서 제목"), " 고침");
+    await openProject(500);  // 입력 직후 "변경사항 있음"을 볼 시간 창 (Windows CI 대비)
+    await userEvent.click(await screen.findByLabelText("보고서 제목"));
+    await userEvent.paste(" 고침");
     expect(headerStatus()).toBe("변경사항 있음");
     await waitFor(() => expect(headerStatus()).toBe("저장됨"));
     await userEvent.click(stageButton("자료"));
@@ -285,12 +286,13 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     // 나가면 서버가 412로 거절하고 안내의 원인 문구가 "다른 창이나 프로그램"으로 바뀐다. 모의 저장은 거절하지 않으므로
     // PUT이 없는 것으로 확인한다
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    await openProject(200);
-    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await openProject(500);
+    await userEvent.click(screen.getByLabelText("보고서 제목"));
+    await userEvent.paste(" 고침");
     await otherTabBatchEnds(batchDeck);
     expect(await screen.findByText("먼저 저장되었습니다", { exact: false })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeEnabled());  // 묶음이 끝나 읽기 전용이 풀렸다
-    await act(() => new Promise((r) => setTimeout(r, 500)));
+    await act(() => new Promise((r) => setTimeout(r, 800)));
     expect(api.putDeck).not.toHaveBeenCalled();
   });
 

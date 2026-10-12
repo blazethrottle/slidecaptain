@@ -23,7 +23,9 @@ const deck: Deck = {
   slides: [],
 };
 
-const FAST = 20;  // 시험의 자동 저장 지연(ms)
+// 시험의 자동 저장 지연(ms). 글자를 하나씩 치는 시험은 Windows CI에서 한 글자에 20ms를 넘길 수 있으므로, 횟수를 세는
+// 시험은 입력을 한 번에 넣고(paste) 시간 창에 기대는 시험은 지연을 넉넉히 준다
+const FAST = 20;
 const SLOW = 60_000;  // 자동 저장이 끼어들지 않게 할 때
 type Props = Partial<Parameters<typeof ReportPurposeScreen>[0]>;
 function renderScreen(props: Props = {}) {
@@ -74,15 +76,18 @@ it("입력이 멈추면 한 번 자동 저장하고, 화면을 연 뒤 첫 저�
   renderScreen({ onDeckChange });
   const title = screen.getByLabelText("보고서 제목");
   await userEvent.clear(title);
-  await userEvent.type(title, "새 제목");
-  await waitFor(() => expect(puts()).toHaveLength(1));
-  expect(puts()[0]).toEqual(["p1", expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }), true]);
-  expect(onDeckChange).toHaveBeenCalled();
-  await userEvent.type(title, "2");
+  await waitFor(() => expect(puts()).toHaveLength(1));  // 지운 것도 입력이다
+  await userEvent.click(title);
+  await userEvent.paste("새 제목");
   await waitFor(() => expect(puts()).toHaveLength(2));
-  expect(puts()[1][2]).toBe(false);  // 둘째 저장부터는 스냅샷을 요청하지 않는다
+  expect(puts()[0][2]).toBe(true);  // 화면을 연 뒤 첫 저장은 스냅샷을 요청한다
+  expect(puts()[1]).toEqual(["p1", expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }), false]);
+  expect(onDeckChange).toHaveBeenCalled();
+  await userEvent.paste("2");
+  await waitFor(() => expect(puts()).toHaveLength(3));
+  expect(puts()[2][2]).toBe(false);  // 둘째 저장부터는 스냅샷을 요청하지 않는다
   await pause(FAST * 3);
-  expect(puts()).toHaveLength(2);
+  expect(puts()).toHaveLength(3);
 });
 
 it("보고 정보의 입력 항목이 각각 한 줄을 차지한다", async () => {
@@ -165,7 +170,8 @@ describe("자동 저장, 플러시와 충돌 (A5, D3b-5)", () => {
     vi.mocked(api.putDeck).mockReturnValueOnce(first.promise);
     let flush: (() => Promise<boolean | "declined">) | null = null;
     renderScreen({ onScreenReady: (f) => { flush = f; } });
-    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await userEvent.click(screen.getByLabelText("보고서 제목"));
+    await userEvent.paste("고침");
     await waitFor(() => expect(puts()).toHaveLength(1));
     const flushed = flush!();
     first.resolve({ ok: true });
@@ -190,31 +196,33 @@ describe("자동 저장, 플러시와 충돌 (A5, D3b-5)", () => {
 
   it("읽기 전용이 되면 예약된 저장이 나가지 않고, 풀리면 남은 입력을 저장한다 (리뷰 U2)", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    const view = renderScreen({ saveDelayMs: 100 });
-    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
-    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={100} readOnly />);
-    await pause(200);
+    const view = renderScreen({ saveDelayMs: 300 });
+    await userEvent.click(screen.getByLabelText("보고서 제목"));
+    await userEvent.paste("고침");
+    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={300} readOnly />);
+    await pause(500);
     expect(api.putDeck).not.toHaveBeenCalled();
-    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={100} />);
+    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={300} />);
     await waitFor(() => expect(puts()).toHaveLength(1));
   });
 
   it("마운트 뒤 충돌 신호가 오면 자동 저장을 멈춘다. 마운트 때 이미 늘어난 값은 신호가 아니다 (F1)", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    const props = { project, deck, onDeckChange: () => {}, saveDelayMs: 100 };
+    const props = { project, deck, onDeckChange: () => {}, saveDelayMs: 300 };
     const view = render(<ReportPurposeScreen {...props} conflictSignal={3} />);
     await userEvent.type(screen.getByLabelText("보고서 제목"), "가");
     await waitFor(() => expect(puts()).toHaveLength(1));  // 마운트 때의 3은 충돌이 아니다
     await userEvent.type(screen.getByLabelText("보고서 제목"), "나");
     view.rerender(<ReportPurposeScreen {...props} conflictSignal={4} />);
-    await pause(200);
+    await pause(500);
     expect(puts()).toHaveLength(1);
   });
 
   it("412가 아닌 실패에는 다시 저장을 둔다 (리뷰 U14)", async () => {
     vi.mocked(api.putDeck).mockRejectedValueOnce(new Error("서버 중단")).mockResolvedValue({ ok: true });
     renderScreen();
-    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await userEvent.click(screen.getByLabelText("보고서 제목"));
+    await userEvent.paste("고침");
     const retry = await screen.findByRole("button", { name: "다시 저장" });
     await userEvent.click(retry);
     await waitFor(() => expect(puts()).toHaveLength(2));
@@ -273,7 +281,8 @@ it("저장이 끝나도 성공 문장을 따로 보이지 않는다. 알림은 �
   // 다시 씀(D3b-5): 옛 시험은 성공 문장이 role 없이 보이는지 봤다. 자동 저장에서는 문장을 없앴다
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   renderScreen();
-  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
+  await userEvent.click(screen.getByLabelText("보고서 제목"));
+  await userEvent.paste(" 수정");
   await waitFor(() => expect(puts()).toHaveLength(1));
   expect(screen.queryByText("보고 정보를 저장했습니다.")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
