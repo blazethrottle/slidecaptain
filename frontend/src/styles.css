@@ -67,6 +67,7 @@
   --height-textarea-compact: 64px;
   --height-inline-editor: 60px;
   --size-hidden: 1px;              /* 화면 낭독기 전용 숨김 기법의 최소 상자 */
+  --size-primary-bar-clearance: 90px; /* 주 행동 막대의 가장 큰 측정 높이: 버튼만 61px, 지울 장 수 주의 한 줄이 붙으면 90px (D3a-7, 512~1440px에서 같음) */
   --shadow-dialog: 0 4px 24px var(--shadow-color);
   --shadow-dialog-wide: 0 8px 32px var(--shadow-color);
 }
@@ -165,14 +166,13 @@ main.project-shell { padding: 0; }
 .project-shell { display: grid; min-height: 100vh; background: var(--color-bg);
   grid-template-columns: var(--width-sidebar) minmax(0, 1fr); grid-template-rows: auto 1fr;
   grid-template-areas: "side top" "side body"; }
-.project-topbar { grid-area: top; position: relative; display: flex; flex-wrap: wrap; align-items: center;
-  justify-content: space-between; gap: var(--space-3) var(--space-5); padding: var(--space-4) var(--space-6);
+.project-topbar { grid-area: top; position: relative; display: grid; align-items: center; gap: var(--space-3) var(--space-5); padding: var(--space-4) var(--space-6);
   background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
 .topbar-title, .topbar-status, .topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
 /* 머리는 모든 폭에서 한 줄이다 (D3a-7 사용자 결정). 저장 상태는 저장한 뒤에 나타나므로(A19) 줄바꿈 배치에서는 폭이
    모자라면 줄이 바뀌어 본문이 밀렸다(1024×720에서 73px가 125px, D3a-2 리뷰 R9). 칸 배치로 제목 칸이 남는 폭을 받고,
    제목과 AI 상태 문구는 말줄임으로 줄어든다. 진행 안내와 실패 알림은 그 아래 줄 전체를 쓴다 */
-.project-topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, auto); }
+.project-topbar { grid-template-columns: minmax(0, 1fr) auto minmax(0, auto); }
 .topbar-title { flex-wrap: nowrap; }
 .topbar-title h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar-status, .topbar-actions { flex-wrap: nowrap; }
@@ -256,6 +256,9 @@ main.project-shell { padding: 0; }
 .primary-bar { position: sticky; bottom: 0; z-index: 1; margin-bottom: 0; padding-block: var(--space-2);
   background: var(--color-bg); border-top: 1px solid var(--color-border); }
 .primary-bar p { margin: 0; flex-basis: 100%; }
+/* Tab으로 옮긴 초점이 창 아래에 붙은 막대 뒤에 숨지 않게, 초점을 따라 스크롤할 때 막대 높이만큼 남긴다. 없을 때 512×360의
+   보고 목적과 구성, 1024×720의 장 구성표에서 초점 칸이 막대와 겹쳤다 (D3a-7) */
+html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
 
