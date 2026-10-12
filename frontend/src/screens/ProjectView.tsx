@@ -345,6 +345,20 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   // 숨겨 둔 상태 칸은 다음 그리기에서 나타나므로 초점은 그린 뒤에 준다 (D3a-7, R5)
   const focusSaveAfterRender = useRef(false);
   const focusSaveStatus = useCallback(() => { setSavedHere(true); focusSaveAfterRender.current = true; }, []);
+  // 초점이 창 아래에 붙은 주 행동 막대 뒤에 들어가면 그만큼 올린다. 문서의 scroll-padding은 초점 요소가 창 밖에 있을 때만
+  // 스크롤을 부르고, 창 안에 있지만 막대에 가린 요소는 그대로 둔다(D3b-8 측정: 780x700 구성 화면의 입력 35px 가림)
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      const bar = target?.closest(".stage-body") ? [...document.querySelectorAll<HTMLElement>(".stage-body .primary-bar")]
+        .find((b) => b.offsetParent !== null) : undefined;
+      if (!target || !bar || bar.contains(target)) return;
+      const covered = target.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+      if (covered > 0) window.scrollBy(0, covered + 8);
+    };
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
   useEffect(() => {
     if (focusSaveAfterRender.current && saveStatusRef.current) {
       focusSaveAfterRender.current = false;

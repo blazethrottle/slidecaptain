@@ -737,3 +737,16 @@ describe("D3a-3 리뷰 반영", () => {
     expect(within(parts).getAllByRole("listitem")[2]).toHaveTextContent("아직 내보낸 파일이 없습니다");
   });
 });
+
+it("초점이 창 아래 주 행동 막대에 가리면 가린 만큼 올린다 (D3b-8 측정, 780x700)", async () => {
+  await openProject();
+  const field = screen.getByLabelText("보고서 제목");
+  const bar = document.querySelector(".stage-body .primary-bar") as HTMLElement;
+  Object.defineProperty(bar, "offsetParent", { get: () => document.body, configurable: true });
+  bar.getBoundingClientRect = () => ({ top: 639, bottom: 700, left: 0, right: 780, width: 780, height: 61, x: 0, y: 639, toJSON: () => ({}) });
+  field.getBoundingClientRect = () => ({ top: 563, bottom: 674, left: 0, right: 500, width: 500, height: 111, x: 0, y: 563, toJSON: () => ({}) });
+  const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => {});
+  field.focus();
+  expect(scrollBy).toHaveBeenCalledWith(0, 35 + 8);
+  scrollBy.mockRestore();
+});
