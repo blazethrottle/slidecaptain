@@ -117,8 +117,9 @@ class ProjectInfo(BaseModel):
 class SnapshotInfo(BaseModel):
     id: str  # 파일 이름에서 확장자를 뺀 것 (예: deck-20260828-153000-123456)
     saved_at: str
-    # pre_migration: 형식 1 덱을 형식 2로 처음 바꾸기 직전의 복사본 (0.2.0으로 되돌릴 지점)
-    kind: Literal["snapshot", "pre_migration"] = "snapshot"
+    # pre_migration: 등급 1 덱을 처음 올리기 직전의 복사본 (0.2.0으로 되돌릴 지점).
+    # before_revert: 0.2.0 같은 다른 앱이 등급 3 덱을 되돌리기 직전의 덱 (D3b-1, 되찾을 지점)
+    kind: Literal["snapshot", "pre_migration", "before_revert"] = "snapshot"
 
 
 class DraftInfo(BaseModel):
@@ -380,36 +381,54 @@ class FileProjectStore:
         return stem
 
     def _write_deck_recorded(self, project_dir: Path, deck: Deck, *, snapshot: bool) -> str:
-        """덱을 쓰고 형식 기록을 덱 내용에 맞춘다 (D2a-1).
+        """덱을 쓰고 형식 기록을 덱 내용 등급에 맞춘다 (D2a-1, D3b-1).
 
-        디스크의 덱이 형식 1이고 새 덱이 형식 2이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을
-        남긴다. 몇 번째 저장이든 같다: 0.2.0이 manifest를 모른 채 형식 1 덱을 써 넣은 뒤에도
-        다시 복구 지점이 생긴다. 순서는 스냅샷, pending 기록, 덱 교체, 완료 기록이다. 끊기면
-        다음 쓰기가 덱 내용으로 pending을 마무리한다.
+        디스크의 덱이 등급 1이고 새 덱이 2 이상이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을 남긴다.
+        단 디스크 덱이 이 앱이 마지막으로 쓴 덱 그대로면 생략한다: 자동 저장이 등급을 오갈 때 강제 스냅샷이
+        쌓이지 않게 하고(리뷰 S13), 0.2.0이 manifest를 모른 채 덱을 고친 경우에는 다시 복구 지점을 남긴다
+        (재리뷰 RR2). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다.
+        등급 3에서는 manifest 번호가 중간 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
+        pending 기록을 옛 번호로 먼저 남기고 덱을 교체한 뒤 번호를 내린다. 끊기면 다음 쓰기가 덱 내용으로
+        pending을 마무리한다.
         """
         deck_path = project_dir / "deck.json"
         old_bytes = deck_path.read_bytes() if deck_path.exists() else None
         old = project_format.deck_format_of_bytes(old_bytes) if old_bytes is not None else None
         new = project_format.deck_format(deck)
-        manifest = project_format.reconcile(project_format.read_manifest(project_dir), old)
-        if old == 1 and new == 2:
-            # 형식 1에서 2로 바꾸는 저장은 화면의 스냅샷 요청과 관계없이 복구 지점을 남긴다 (최종 리뷰 F16).
-            # 그 복구 지점을 "새 형식으로 바꾸기 전"(0.2.0으로 되돌릴 지점)으로 기록하는 것은 0.2.0이
-            # 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외)
-            snapshot_id = self._snapshot_current(project_dir)
-            if project_format.legacy_readable(old_bytes):
-                etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
-                    at=project_format.now_iso(), kind="upgrade", from_format=1, to_format=2,
-                    snapshot_id=snapshot_id, status="pending",
-                ))
+        prior = project_format.read_manifest(project_dir)
+        revert_id = project_format.find_revert_snapshot(project_dir, prior)
+        manifest = project_format.reconcile(prior, old, revert_snapshot_id=revert_id)
+        old_etag = hashlib.sha256(old_bytes).hexdigest() if old_bytes is not None else None
+        if old is not None and new > old:
+            if old == 1:
+                # 생략은 0.2.0 복구 지점(등급 1에서 오른 완료 기록의 스냅샷)이 이미 있고 디스크 덱이 이 앱이 쓴
+                # 그대로일 때만이다. 첫 올림은 언제나 복구 지점을 남긴다
+                ours = (manifest.last_written_etag is not None and manifest.last_written_etag == old_etag
+                        and any(m.kind == "upgrade" and m.from_format == 1 and m.status == "done" and m.snapshot_id
+                                for m in manifest.migrations))
+                # 등급 1에서 오르는 저장의 복구 지점을 "새 형식으로 바꾸기 전"(0.2.0으로 되돌릴 지점)으로 기록하는
+                # 것은 0.2.0이 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외, 최종 리뷰 F16)
+                snapshot_id = self._snapshot_current(project_dir) if (snapshot or not ours) else None
+                legacy_ok = project_format.legacy_readable(old_bytes)
             else:
+                snapshot_id = self._snapshot_current(project_dir) if snapshot else None
+                legacy_ok = True
+            if legacy_ok:
+                etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
+                    at=project_format.now_iso(), kind="upgrade", from_format=old, to_format=new,
+                    snapshot_id=snapshot_id, status="pending",
+                ), raise_to=new)
+            else:
+                # 0.2.0도 열지 못하는 깨진 덱에서 오르는 저장은 기록을 남기지 않는다(리뷰 R9). 번호는 먼저 올린다
+                manifest.format_version = new
+                project_format.write_manifest(project_dir, manifest, self._atomic_write)
                 etag = self._write_deck(project_dir, deck)
-        elif old == 2 and new == 1:
-            # 형식이 내려가는 저장도 덱 교체 전에 pending을 남긴다. 그래야 마지막 기록이 실패해도 다음
+        elif old is not None and new < old:
+            # 등급이 내려가는 저장도 덱 교체 전에 pending을 남긴다. 그래야 마지막 기록이 실패해도 다음
             # 쓰기가 이 앱의 저장으로 마무리하고, 0.2.0의 외부 되돌림으로 잘못 기록하지 않는다 (최종 리뷰 F3)
             snapshot_id = self._snapshot_current(project_dir) if snapshot else None
             etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
-                at=project_format.now_iso(), kind="downgrade", from_format=2, to_format=1,
+                at=project_format.now_iso(), kind="downgrade", from_format=old, to_format=new,
                 snapshot_id=snapshot_id, status="pending",
             ))
         else:
@@ -417,17 +436,26 @@ class FileProjectStore:
                 self._snapshot_current(project_dir)
             etag = self._write_deck(project_dir, deck)
         manifest.format_version = new
+        # 마지막 쓰기 ETag는 쓰이는 때만 남긴다: 등급 3(되돌림 표시, 재리뷰 RR3)과, 0.2.0 복구 지점이 이미 있는
+        # 등급 1(강제 스냅샷 생략 판정, RR2). 그 밖에는 비워 둬 일반 저장이 manifest를 다시 쓰지 않게 한다
+        has_restore_point = any(m.kind == "upgrade" and m.from_format == 1 and m.status == "done" and m.snapshot_id
+                                for m in manifest.migrations)
+        manifest.last_written_etag = etag if new == 3 or (new == 1 and has_restore_point) else None
         try:
             project_format.write_manifest(project_dir, manifest, self._atomic_write)
         except OSError:
             # 덱은 이미 저장됐다. 기록 실패를 저장 실패로 돌려주면 화면이 새 ETag를 모른 채 다시
-            # 저장해 자기 저장과 충돌한다(리뷰 R5). 다음 쓰기의 reconcile이 기록을 바로잡는다
+            # 저장해 자기 저장과 충돌한다(리뷰 R5). 다음 쓰기의 reconcile이 기록을 바로잡는다. 등급이 오른
+            # 저장이면 manifest 번호는 이미 올라가 있다
             _LOG.warning("형식 기록(manifest.json) 쓰기 실패: %s", project_dir, exc_info=True)
         return etag
 
-    def _write_with_pending(self, project_dir: Path, deck: Deck, manifest, record) -> str:
-        """pending 이전 기록을 먼저 쓰고 덱을 교체한다. 완료 기록은 호출자의 마지막 manifest 쓰기가 남긴다."""
+    def _write_with_pending(self, project_dir: Path, deck: Deck, manifest, record, raise_to: int | None = None) -> str:
+        """pending 이전 기록을 먼저 쓰고 덱을 교체한다. 완료 기록은 호출자의 마지막 manifest 쓰기가 남긴다.
+        raise_to가 있으면 그 기록과 함께 manifest 번호를 먼저 올린다 (D3b-1, 재리뷰 RR6)."""
         manifest.migrations.append(record)
+        if raise_to is not None:
+            manifest.format_version = raise_to
         project_format.write_manifest(project_dir, manifest, self._atomic_write)
         etag = self._write_deck(project_dir, deck)
         record.status = "done"
@@ -570,6 +598,7 @@ class FileProjectStore:
         name = _nfc(name)
         d = self._project_dir_any(name)
         pre_migration = project_format.pre_migration_snapshot_ids(d)
+        before_revert = project_format.revert_snapshot_ids(d)  # 쓰기 전이어도 읽기만으로 감지한다 (재리뷰 RR3)
         infos = []
         for p in sorted((d / "snapshots").glob("deck-*.json")):
             m = _SNAPSHOT_RE.match(p.stem)
@@ -578,7 +607,8 @@ class FileProjectStore:
             ts = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S-%f").astimezone()
             infos.append(SnapshotInfo(
                 id=p.stem, saved_at=ts.isoformat(timespec="seconds"),
-                kind="pre_migration" if p.stem in pre_migration else "snapshot",
+                kind="before_revert" if p.stem in before_revert
+                else "pre_migration" if p.stem in pre_migration else "snapshot",
             ))
         return infos
 

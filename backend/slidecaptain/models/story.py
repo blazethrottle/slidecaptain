@@ -13,7 +13,7 @@ from slidecaptain.models.derivation import Derivation, DerivedValue, derive_valu
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Identifier = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$", max_length=64)]
 ReportType = Literal[
-    "research", "approval", "strategy", "weekly", "business", "monthly", "data", "project", "results",
+    "research", "approval", "strategy", "weekly", "business", "monthly", "data", "project", "results", "ir",
 ]
 ChapterRole = Literal["answer", "context", "evidence", "risk", "action", "cover", "divider"]
 

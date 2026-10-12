@@ -10,7 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from slidecaptain.models.jobs import JobView
-
+from slidecaptain.models.report_purpose import is_blank
 from slidecaptain.pipeline.story import story_fingerprint
 
 # 생성에 넣는 자료 합계의 상한 (단계 4 결정 14). server/app.py도 이 값을 쓴다
@@ -24,7 +24,7 @@ StageState = Literal["not_started", "ready", "needs_review"]
 # 준비됨에 해당하는 값을 뺀 것이다(export_history.py의 artifact_status와 input_status, export_reviews.py의
 # 범주 상태). 원천 값이 늘면 이 목록에 없는 사유를 만들어 응답 검증이 실패하므로 시험이 먼저 깨진다
 ProgressReason = Literal[
-    "title_missing", "report_type_unconfirmed",
+    "title_missing", "report_type_unconfirmed", "key_message_missing",
     "sources_unreadable", "sources_missing", "sources_over_limit", "extraction_review_unavailable",
     "chapters_missing", "plan_missing", "stale_story_plan",
     "chapters_unwritten",
@@ -64,8 +64,13 @@ class ProjectProgress(BaseModel):
 def _purpose(deck) -> StageProgress:
     if not deck.meta.title.strip():
         return StageProgress(stage="purpose", state="not_started", reasons=["title_missing"])
-    # 보고 유형은 기본값(research)과 사용자의 명시 선택을 구별할 기록이 없다(D3에서 다룬다)
-    return StageProgress(stage="purpose", state="needs_review", reasons=["report_type_unconfirmed"])
+    # 유형은 사용자가 직접 골랐거나 기본값(research)이 아니면 확인된 것으로 본다. 저장값을 바꾸지 않고 여기서만
+    # 추론하므로 0.2.0이나 이전 개정판에서 이미 다른 유형을 고른 덱은 업데이트 뒤에도 준비됨이다 (D3b-1, 리뷰 S9)
+    if not (deck.meta.report_type_confirmed or deck.meta.report_type != "research"):
+        return StageProgress(stage="purpose", state="needs_review", reasons=["report_type_unconfirmed"])
+    # 핵심 내용은 필수가 아니다(제품 설계 5절 B). 비어 있으면 준비됨에 한계로 알린다
+    reasons = ["key_message_missing"] if is_blank(deck.meta.key_message) else []
+    return StageProgress(stage="purpose", state="ready", reasons=reasons)
 
 
 def _sources(sources: dict[str, str] | None, sources_error: str | None) -> StageProgress:

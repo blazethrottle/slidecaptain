@@ -41,11 +41,13 @@ def _write_legacy_deck(store, name="p1", report_type="research"):
 
 
 def test_deck_format_is_one_for_legacy_report_types_and_two_otherwise():
+    # 다시 씀 (D3b-1, 계획 4.2): 등급은 "어느 앱이 읽는가"다. 중간 빌드가 모르는 IR은 등급 3이다
     for legacy in ("research", "approval", "strategy"):
         assert deck_format(_deck(legacy)) == 1
     for new in ("weekly", "business", "monthly", "data", "project", "results"):
         assert deck_format(_deck(new)) == 2
-    assert MAX_SUPPORTED_FORMAT == 2
+    assert deck_format(_deck("ir")) == 3
+    assert MAX_SUPPORTED_FORMAT == 3
 
 
 def test_create_project_writes_manifest_after_deck(store):
@@ -274,9 +276,18 @@ def test_deck_json_schema_is_pinned_to_the_supported_format():
     이 앱은 모르는 필드를 읽을 때 버린다. 새 필드를 더하면서 형식을 올리지 않으면 이전 앱이
     그 필드를 경고 없이 지운다. 스키마를 바꿨다면 형식 판정을 갱신한 뒤 아래 해시를 바꾼다.
     """
-    schema = json.dumps(Deck.model_json_schema(), sort_keys=True, ensure_ascii=False)
+    # 다시 씀 (D3b-1, 재리뷰 RR7): 유형별 추가 입력 칸과 길이 상한은 스키마에 드러나지 않으므로 함께 해시한다.
+    # 칸이나 상한을 바꾸면 이전 빌드가 그 덱을 읽지 못하므로 manifest 형식 번호를 올려야 한다
+    from slidecaptain.models import report_purpose as rp
+
+    contract = {
+        "schema": Deck.model_json_schema(),
+        "details": {t: [name for name, _ in fields] for t, fields in rp.REPORT_DETAIL_FIELDS.items()},
+        "limits": [rp.KEY_MESSAGE_MAX, rp.OUTCOME_OTHER_MAX, rp.DETAIL_MAX],
+    }
+    schema = json.dumps(contract, sort_keys=True, ensure_ascii=False)
     digest = hashlib.sha256(schema.encode("utf-8")).hexdigest()
-    assert (MAX_SUPPORTED_FORMAT, digest) == (2, project_format.PINNED_DECK_SCHEMA_SHA256), (
+    assert (MAX_SUPPORTED_FORMAT, digest) == (3, project_format.PINNED_DECK_SCHEMA_SHA256), (
         "덱 스키마가 바뀌었습니다. storage/project_format.py의 deck_format과 MAX_SUPPORTED_FORMAT을 "
         f"검토하고 PINNED_DECK_SCHEMA_SHA256을 {digest}로 갱신해 주세요"
     )

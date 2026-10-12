@@ -5006,7 +5006,8 @@
               "monthly",
               "data",
               "project",
-              "results"
+              "results",
+              "ir"
             ],
             "title": "Report Type",
             "default": "research"
@@ -5026,6 +5027,44 @@
             "type": "object",
             "title": "Preset Overrides",
             "default": {}
+          },
+          "report_type_confirmed": {
+            "type": "boolean",
+            "title": "Report Type Confirmed"
+          },
+          "key_message": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Key Message"
+          },
+          "desired_outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "facts",
+                  "business_plan",
+                  "persuasion",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desired Outcome"
+          },
+          "desired_outcome_other": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Desired Outcome Other"
+          },
+          "report_details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Report Details"
           }
         },
         "type": "object",
@@ -9802,7 +9841,8 @@
               "monthly",
               "data",
               "project",
-              "results"
+              "results",
+              "ir"
             ],
             "title": "Report Type",
             "default": "research"
@@ -9906,6 +9946,7 @@
               "enum": [
                 "title_missing",
                 "report_type_unconfirmed",
+                "key_message_missing",
                 "sources_unreadable",
                 "sources_missing",
                 "sources_over_limit",
@@ -10437,7 +10478,8 @@
             "type": "string",
             "enum": [
               "snapshot",
-              "pre_migration"
+              "pre_migration",
+              "before_revert"
             ],
             "title": "Kind",
             "default": "snapshot"
@@ -10809,6 +10851,7 @@
               "enum": [
                 "title_missing",
                 "report_type_unconfirmed",
+                "key_message_missing",
                 "sources_unreadable",
                 "sources_missing",
                 "sources_over_limit",

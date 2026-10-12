@@ -20,6 +20,8 @@ from slidecaptain.storage.project_format import read_manifest
 
 REPO = Path(__file__).resolve().parents[2]
 LEGACY_TAG = "v0.2.0"
+# 개정판 중간 빌드(D2a~D3a)의 마지막 커밋. manifest 형식 2까지 읽고 보고 유형 9종을 안다 (D3b-1)
+INTERIM_REF = "afe9138"
 
 _LEGACY_SCRIPT = r"""
 import json
@@ -45,22 +47,37 @@ elif command.startswith("restore:"):
     store.restore_snapshot("p1", command.split(":", 1)[1])
     store.load_deck("p1")
     out["load"] = "ok"
+elif command.startswith("save:"):
+    # 0.2.0 사용자가 덱을 열어 제목을 고치고 저장한다(화면의 저장은 직전 상태를 스냅샷으로 남긴다)
+    deck = store.load_deck("p1")
+    deck.meta.title = command.split(":", 1)[1]
+    store.save_deck("p1", deck, snapshot=True)
+    out["load"] = "ok"
 print(json.dumps(out))
 """
 
 
-@pytest.fixture(scope="module")
-def legacy_backend(tmp_path_factory):
-    target = tmp_path_factory.mktemp("legacy020")
-    archive = target / "legacy.tar"
+def _extract(tmp_path_factory, ref: str, label: str) -> Path:
+    target = tmp_path_factory.mktemp(label)
+    archive = target / "code.tar"
     result = subprocess.run(
-        ["git", "-C", str(REPO), "archive", "--format=tar", "-o", str(archive), LEGACY_TAG, "backend/slidecaptain"],
+        ["git", "-C", str(REPO), "archive", "--format=tar", "-o", str(archive), ref, "backend/slidecaptain"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
-    assert result.returncode == 0, f"{LEGACY_TAG} 태그의 코드를 꺼내지 못했습니다: {result.stderr}"
+    assert result.returncode == 0, f"{ref}의 코드를 꺼내지 못했습니다: {result.stderr}"
     with tarfile.open(archive) as tar:
         tar.extractall(target, filter="data")
     return target / "backend"
+
+
+@pytest.fixture(scope="module")
+def legacy_backend(tmp_path_factory):
+    return _extract(tmp_path_factory, LEGACY_TAG, "legacy020")
+
+
+@pytest.fixture(scope="module")
+def interim_backend(tmp_path_factory):
+    return _extract(tmp_path_factory, INTERIM_REF, "interim-d3a")
 
 
 def _run_legacy(legacy_backend: Path, root: Path, command: str) -> dict:
@@ -117,3 +134,66 @@ def test_new_app_records_a_second_upgrade_after_legacy_restore(store, legacy_bac
     upgrades = [m for m in read_manifest(store.root / "p1").migrations if m.kind == "upgrade"]
     assert len(upgrades) == 2
     assert read_manifest(store.root / "p1").format_version == 2
+
+
+# -- D3b-1: 새 항목 덱과 0.2.0, 중간 빌드 (계획 4.2) ------------------------------------------------
+
+def _purpose_deck(**meta):
+    meta.setdefault("title", "보고")
+    return Deck(meta=DeckMeta(**meta))
+
+
+def test_legacy_app_cannot_open_a_deck_with_purpose_content(store, legacy_backend):
+    store.create_project("p1")
+    store.save_deck("p1", _purpose_deck(report_type="approval", key_message="예산 증액을 승인받는다"), snapshot=False)
+    out = _run_legacy(legacy_backend, store.root, "load")
+    assert out == {"statuses": {"p1": "needs_recovery"}, "load": "error"}
+
+
+def test_confirmed_type_alone_keeps_the_deck_open_in_the_legacy_app(store, legacy_backend):
+    """유형 확인 표시는 형식 등급에 넣지 않는다 (계획 4.1의 Q1 해석)."""
+    store.create_project("p1")
+    store.save_deck("p1", _purpose_deck(report_type="approval", report_type_confirmed=True), snapshot=False)
+    out = _run_legacy(legacy_backend, store.root, "load")
+    assert out == {"statuses": {"p1": "ok"}, "load": "ok"}
+
+
+def test_purpose_content_is_recoverable_after_a_legacy_restore_and_a_later_legacy_save(store, legacy_backend):
+    store.create_project("p1")
+    store.save_deck("p1", _purpose_deck(report_type="approval", key_message="핵심"), snapshot=False)
+    [pre] = [s for s in store.list_snapshots("p1") if s.kind == "pre_migration"]
+    _run_legacy(legacy_backend, store.root, f"restore:{pre.id}")
+    # 쓰기 없이 목록에서 되찾을 지점이 보인다 (재리뷰 RR3)
+    [mark] = [s for s in store.list_snapshots("p1") if s.kind == "before_revert"]
+    _run_legacy(legacy_backend, store.root, "save:0.2.0에서 고침")
+    assert [s.id for s in store.list_snapshots("p1") if s.kind == "before_revert"] == [mark.id]
+    restored, _ = store.restore_snapshot("p1", mark.id)
+    assert restored.meta.key_message == "핵심"
+
+
+def test_legacy_edit_after_own_downgrade_is_kept_as_a_legacy_restore_point(store, legacy_backend):
+    """새 앱이 등급 1로 내린 뒤 0.2.0이 고친 상태는 다음 올림의 강제 스냅샷에 남는다 (재리뷰 RR2)."""
+    store.create_project("p1")
+    store.save_deck("p1", _purpose_deck(key_message="핵심"), snapshot=False)
+    store.save_deck("p1", _purpose_deck(), snapshot=False)
+    _run_legacy(legacy_backend, store.root, "save:0.2.0 사용자가 고침")
+    store.save_deck("p1", _purpose_deck(key_message="다시"), snapshot=False)
+    restorable = []
+    for snap in store.list_snapshots("p1"):
+        data = json.loads((store.root / "p1" / "snapshots" / f"{snap.id}.json").read_text(encoding="utf-8"))
+        restorable.append((snap.kind, data["meta"]["title"]))
+    assert ("pre_migration", "0.2.0 사용자가 고침") in restorable
+
+
+def test_interim_build_refuses_level_three_projects_without_touching_them(store, interim_backend):
+    """중간 빌드(D2a~D3a)는 등급 3 프로젝트를 "더 새 형식"으로 거절한다 (리뷰 S4, 재리뷰 RR1)."""
+    store.create_project("p1")
+    store.save_deck("p1", _purpose_deck(key_message="핵심"), snapshot=False)
+    store.create_project("p2")
+    store.save_deck("p2", _purpose_deck(report_type="ir"), snapshot=False)
+    before = {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
+    out = _run_legacy(interim_backend, store.root, "load")
+    assert out["statuses"] == {"p1": "newer_format", "p2": "newer_format"}
+    assert out["load"] == "error"
+    after = {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
+    assert after == before

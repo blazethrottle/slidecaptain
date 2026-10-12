@@ -13,7 +13,8 @@ export type ProgressReason = NonNullable<StageProgress["reasons"]>[number];
 // 사유 문구. 행동 지시가 아니라 사실 설명이다. 서버의 사유 목록(고정 목록)을 빠짐없이 덮는지 타입 검사가 확인한다
 export const REASON_TEXT = {
   title_missing: "보고서 제목이 없습니다",
-  report_type_unconfirmed: "보고 유형을 직접 골랐는지는 아직 기록하지 않습니다",
+  report_type_unconfirmed: "보고 유형을 아직 고르지 않았습니다",
+  key_message_missing: "전달할 핵심 내용이 비어 있습니다",
   sources_unreadable: "자료를 읽지 못했습니다",
   sources_missing: "자료가 없습니다",
   sources_over_limit: "자료 합계가 10만 자 한도를 넘습니다",

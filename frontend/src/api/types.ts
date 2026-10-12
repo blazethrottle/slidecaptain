@@ -1584,7 +1584,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results" | "ir";
             /**
              * Audience
              * @default
@@ -1601,6 +1601,18 @@ export interface components {
              */
             preset_overrides: {
                 [key: string]: unknown;
+            };
+            /** Report Type Confirmed */
+            report_type_confirmed?: boolean;
+            /** Key Message */
+            key_message?: string;
+            /** Desired Outcome */
+            desired_outcome?: ("facts" | "business_plan" | "persuasion" | "other") | null;
+            /** Desired Outcome Other */
+            desired_outcome_other?: string;
+            /** Report Details */
+            report_details?: {
+                [key: string]: string;
             };
         };
         /** Derivation */
@@ -3437,7 +3449,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results" | "ir";
             /**
              * Reading Profile
              * @default 미지정
@@ -3481,7 +3493,7 @@ export interface components {
              * Reasons
              * @default []
              */
-            reasons: ("title_missing" | "report_type_unconfirmed" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
+            reasons: ("title_missing" | "report_type_unconfirmed" | "key_message_missing" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
         };
         /** ReviewVerdict */
         ReviewVerdict: {
@@ -3674,7 +3686,7 @@ export interface components {
              * @default snapshot
              * @enum {string}
              */
-            kind: "snapshot" | "pre_migration";
+            kind: "snapshot" | "pre_migration" | "before_revert";
         };
         /**
          * SourceLocator
@@ -3950,7 +3962,7 @@ export interface components {
              * Reasons
              * @default []
              */
-            reasons: ("title_missing" | "report_type_unconfirmed" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
+            reasons: ("title_missing" | "report_type_unconfirmed" | "key_message_missing" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
             /** Written Chapters */
             written_chapters?: number | null;
             /** Total Chapters */

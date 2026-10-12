@@ -64,6 +64,18 @@ it("새 형식으로 바꾸기 전 복사본을 구별해 보인다 (D2a-1)", as
   expect(items[1]).toHaveTextContent("새 형식으로 바꾸기 전");
 });
 
+it("0.2.0 같은 다른 앱이 되돌리기 직전의 덱을 구별해 보인다 (D3b-1, 재리뷰 RR3)", async () => {
+  vi.mocked(api.listSnapshots).mockResolvedValue([
+    { id: "deck-20261012-100000-000001", saved_at: "2026-10-12T10:00:00+09:00", kind: "before_revert" },
+    { id: "deck-20261012-110000-000001", saved_at: "2026-10-12T11:00:00+09:00", kind: "snapshot" },
+  ]);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  const items = await screen.findAllByRole("listitem");
+  expect(items[0]).not.toHaveTextContent("0.2.0에서 되돌리기 전");
+  expect(items[1]).toHaveTextContent("0.2.0에서 되돌리기 전");
+  expect(items[1]).not.toHaveTextContent("새 형식으로 바꾸기 전");
+});
+
 
 const draft = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
   reason: "generation_unsaved" as const, source: "structure_approval" as const, base_etag: null };

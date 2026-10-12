@@ -259,6 +259,9 @@ def _every_reason_produced():
 
     deck, sources = _fixture("q3b-project.json")
     take(project_progress(deck, sources=sources))
+    # 유형을 확인했고 핵심 내용이 비어 있다 (D3b-1)
+    take(project_progress(deck.model_copy(update={"meta": deck.meta.model_copy(update={"report_type_confirmed": True})}),
+                          sources=sources))
     take(project_progress(deck, sources={}))
     take(project_progress(deck, sources={"a.md": "가" * 100_001}))
     take(project_progress(deck, sources=None, sources_error="읽기 실패"))

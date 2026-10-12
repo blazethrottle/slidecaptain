@@ -556,7 +556,8 @@ describe("단계 상태 표시와 공통 알림 지점 (D3a-3, 계획 4.2, 4.5)"
     // 선택한 단계를 완료로 보이지 않는다: 현재 단계(보고 목적)의 상태는 서버의 확인 필요다
     expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step");
     expect(statusOf("purpose")).toHaveTextContent("확인 필요");
-    expect(statusOf("purpose")).toHaveTextContent("보고 유형을 직접 골랐는지는 아직 기록하지 않습니다");
+    // 다시 씀 (D3b-1, 계획 4.2): 이제 선택을 기록하므로 문구가 "아직 고르지 않음"이다
+    expect(statusOf("purpose")).toHaveTextContent("보고 유형을 아직 고르지 않았습니다");
   });
 
   it("검토 단계는 남은 부분을 말하고, 준비됨이면 체크 없는 초안 확인됨이다", async () => {

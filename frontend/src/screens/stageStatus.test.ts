@@ -19,7 +19,8 @@ it("서버 상태를 상태 종류로 옮기고, 확인 필요는 첫 사유를 
     { stage: "structure", state: "needs_review", reasons: ["stale_story_plan"] },
     { stage: "editing", state: "ready" },
   ]);
-  expect(status("purpose", p)).toEqual({ kind: "needs_review", detail: "보고 유형을 직접 골랐는지는 아직 기록하지 않습니다" });
+  // 다시 씀 (D3b-1): 선택을 기록하므로 문구가 "아직 고르지 않음"이다
+  expect(status("purpose", p)).toEqual({ kind: "needs_review", detail: "보고 유형을 아직 고르지 않았습니다" });
   expect(status("sources", p)).toEqual({ kind: "not_started" });
   expect(status("structure", p)?.detail).toBe(
     "자료, 보고 정보, 장 구성(편집 단계의 장 순서와 템플릿 포함)이 바뀌어 구성을 다시 확인해야 합니다");

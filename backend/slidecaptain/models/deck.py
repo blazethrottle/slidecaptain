@@ -6,17 +6,23 @@
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from slidecaptain.models.diagram import DiagramInput, parse_diagram_spec
 from slidecaptain.models.story import ReportType, StoryPlan
 from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
 from slidecaptain.models.change_review import DocumentChangeReview
+from slidecaptain.models.report_purpose import (
+    DETAIL_KEYS, DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, PURPOSE_DEFAULTS, DesiredOutcome, deck_level,
+    is_blank,
+)
 
-# 2026-10-08 D2a-1: 이 값은 1로 동결한다. 0.2.0이 읽을 수 있는지(형식 1, 2)는 storage/project_format.py의
-# deck_format이 덱 내용으로 판정하고 프로젝트의 manifest.json에 기록한다. 덱 스키마를 바꾸면
-# test_project_format의 스키마 해시 시험이 실패하므로 그때 형식 판정을 함께 갱신한다.
+# 2026-10-08 D2a-1, 2026-10-12 D3b-1: 덱 내용 등급(models/report_purpose.py)이 3이면 2, 아니면 1이다.
+# 입력으로 받은 값(1 또는 2)은 무시하고 검증 뒤 내용으로 정한다. 3 이상은 이 앱보다 새 앱이 쓴 덱이라 거절한다.
+# 3종 유형에 새 항목만 더한 덱은 0.2.0의 필드 검증을 통과하고 이 버전 검사에서 막힌다(새 항목을 지우지 않게).
+# 덱 스키마를 바꾸면 test_project_format의 스키마 해시 시험이 실패하므로 그때 형식 판정을 함께 갱신한다.
 SCHEMA_VERSION = 1
+SUPPORTED_SCHEMA_VERSIONS = (1, 2)
 
 GeneratedTemplateName = Literal[
     "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
@@ -243,12 +249,47 @@ class Slide(BaseModel):
         return self
 
 
+def _omittable(schema: dict) -> None:
+    schema.pop("default", None)
+
+
 class DeckMeta(BaseModel):
     title: str
     report_type: ReportType = "research"
     audience: str = ""  # 피보고자: 문체와 상세 수준의 기준으로만 쓰고 문서에 적지 않는다 (2026-09-01)
     presenter: str = ""  # 보고자(이름 또는 부서): 표지에 표기. 장 제목처럼 슬롯이 아니라 여기서 렌더한다 (2026-09-01 추가)
     preset_overrides: dict[str, Any] = {}
+    # 보고 목적 (D3b-1, 계획 4.2). 기본값이면 직렬화하지 않는다. 구성 계획(ReportBrief)에 복사하지 않는다:
+    # 0.2.0의 구성 계획 모델은 모르는 필드에서 검증이 실패한다
+    # 스키마에서 기본값 표기를 뺀다: 기본값이면 응답에 키가 없으므로 화면 타입(openapi-typescript)이 "없을 수 있음"으로
+    # 만들어야 한다. 기본값을 적어 두면 생성기가 항상 있는 값으로 만든다
+    report_type_confirmed: bool = Field(default=False, json_schema_extra=_omittable)  # 형식 등급에는 넣지 않는다
+    key_message: str = Field(default="", max_length=KEY_MESSAGE_MAX, json_schema_extra=_omittable)  # 핵심 내용
+    # None은 사용자가 고르지 않음(화면의 기본 표시: 사실 및 데이터 중심)
+    desired_outcome: DesiredOutcome | None = Field(default=None, json_schema_extra=_omittable)
+    # 기타를 고르지 않아도 지우지 않는다(제품 설계 6절)
+    desired_outcome_other: str = Field(default="", max_length=OUTCOME_OTHER_MAX, json_schema_extra=_omittable)
+    # 유형별 추가 입력. 키는 "유형.칸"(models/report_purpose.py)
+    report_details: dict[str, str] = Field(default_factory=dict, json_schema_extra=_omittable)
+
+    @field_validator("report_details")
+    @classmethod
+    def _known_detail_fields(cls, value: dict[str, str]) -> dict[str, str]:
+        unknown = sorted(set(value) - DETAIL_KEYS)
+        if unknown:
+            raise ValueError(f"알 수 없는 추가 입력 칸입니다: {', '.join(unknown)}")
+        too_long = sorted(k for k, v in value.items() if len(v) > DETAIL_MAX)
+        if too_long:
+            raise ValueError(f"추가 입력은 칸마다 {DETAIL_MAX}자까지입니다: {', '.join(too_long)}")
+        return {k: v for k, v in value.items() if not is_blank(v)}  # 비운 칸은 버린다 (재리뷰 RR5)
+
+    @model_serializer(mode="wrap")
+    def _omit_default_purpose(self, handler):
+        payload = handler(self)
+        for name, default in PURPOSE_DEFAULTS.items():
+            if getattr(self, name) == default:
+                payload.pop(name, None)
+        return payload
 
 
 class Deck(BaseModel):
@@ -267,12 +308,14 @@ class Deck(BaseModel):
 
     @model_validator(mode="after")
     def _schema_version_supported(self) -> "Deck":
-        if self.schema_version != SCHEMA_VERSION:
+        if self.schema_version not in SUPPORTED_SCHEMA_VERSIONS:
             raise ValueError(
                 f"이 덱 파일의 스키마 버전({self.schema_version})은 지원하지 않습니다. "
-                f"이 앱은 버전 {SCHEMA_VERSION}만 읽을 수 있습니다. "
+                f"이 앱은 버전 {SUPPORTED_SCHEMA_VERSIONS[-1]}까지 읽을 수 있습니다. "
                 f"파일이 더 새 버전이라면 앱을 업데이트해 주세요."
             )
+        # 입력값이 아니라 내용으로 정한다 (D3b-1). 저장, ETag 계산, 복원, CLI가 모두 이 검증을 거친다
+        self.schema_version = 2 if deck_level(self) == 3 else 1
         return self
 
     @model_validator(mode="after")
