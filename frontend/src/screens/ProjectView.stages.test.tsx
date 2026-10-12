@@ -196,7 +196,8 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
 describe("주 행동 막대 (D3a-7 사용자 결정, 계획 6절 배치)", () => {
   // 막대는 창 아래에 붙는 영역이다. 막대가 위로 올라오려면 위쪽 끝이 첫 화면 안에 있는 상자(화면, 첫 영역, 입력 묶음)의
   // 바로 안에 있어야 한다. 실제 위치는 브라우저 측정(layout.cjs)이 재고, 이 시험은 구조를 지킨다
-  const BAR_PARENTS = ".purpose-screen > section, .sources-screen > section, .structure-controls, .structure-controls > section, .review-screen";
+  // 다시 씀(D3b-5): 보고 목적은 입력 영역이 셋으로 나뉘어 막대를 화면 상자 바로 안에 둔다
+  const BAR_PARENTS = ".purpose-screen, .sources-screen > section, .structure-controls, .structure-controls > section, .review-screen";
   for (const name of ["보고 목적", "자료", "구성", "검토와 내보내기"]) {
     it(`${name}: 주 행동이 막대 하나 안에 있고 막대는 화면 상자 바로 안에 있다`, async () => {
       vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [] }, slides: [] });

@@ -1,0 +1,113 @@
+{
+ "fields": {
+  "approval": [
+   [
+    "decision_question",
+    "결정할 질문"
+   ],
+   [
+    "alternatives",
+    "대안"
+   ]
+  ],
+  "business": [
+   [
+    "target_work",
+    "대상 업무"
+   ],
+   [
+    "share_purpose",
+    "공유 목적"
+   ]
+  ],
+  "data": [
+   [
+    "metrics",
+    "주요 지표"
+   ],
+   [
+    "scope",
+    "기간과 대상"
+   ]
+  ],
+  "ir": [
+   [
+    "investment_stage",
+    "투자 단계"
+   ],
+   [
+    "ask_and_use",
+    "투자 요청과 사용 계획"
+   ]
+  ],
+  "monthly": [
+   [
+    "month",
+    "대상 월"
+   ],
+   [
+    "comparison_basis",
+    "목표 또는 비교 기준"
+   ]
+  ],
+  "project": [
+   [
+    "project",
+    "프로젝트"
+   ],
+   [
+    "reference_date",
+    "기준일"
+   ],
+   [
+    "milestones",
+    "주요 마일스톤"
+   ]
+  ],
+  "research": [
+   [
+    "question",
+    "조사 질문"
+   ],
+   [
+    "scope",
+    "조사 범위"
+   ]
+  ],
+  "results": [
+   [
+    "activity_scope",
+    "활동 범위"
+   ],
+   [
+    "goal_criteria",
+    "목표와 평가 기준"
+   ]
+  ],
+  "strategy": [
+   [
+    "goal",
+    "목표"
+   ],
+   [
+    "review_period",
+    "검토 기간"
+   ]
+  ],
+  "weekly": [
+   [
+    "period",
+    "보고 기간"
+   ],
+   [
+    "baseline",
+    "계획 또는 이전 보고서"
+   ]
+  ]
+ },
+ "limits": {
+  "desired_outcome_other": 8000,
+  "detail": 1000,
+  "key_message": 8000
+ }
+}

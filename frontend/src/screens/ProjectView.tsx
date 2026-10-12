@@ -699,7 +699,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onScreenReady={(f) => { flushScreen.current = f; }} onDirtyChange={setDirty} onConflict={onConflict}
             onPreserveReady={(f) => { preserveScreen.current = f; }} saveDelayMs={purposeSaveMs}
             onSaveStatusChange={setSaveStatus} onNext={() => void switchStage("sources")}
-            nextDisabled={navLocked} nextTitle={navTitle} />
+            nextDisabled={navLocked} nextTitle={navTitle}
+            limitations={progressFailed ? [] : stageLimitations(progress, "purpose")} />
         )}
         {!showRecovery && stage === "sources" && (
           <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}

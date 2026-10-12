@@ -259,6 +259,16 @@ main.project-shell { padding: 0; }
 /* Tab으로 옮긴 초점이 창 아래에 붙은 막대 뒤에 숨지 않게, 초점을 따라 스크롤할 때 막대 높이만큼 남긴다. 없을 때 512×360의
    보고 목적과 구성, 1024×720의 장 구성표에서 초점 칸이 막대와 겹쳤다 (D3a-7) */
 html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
+/* 보고 목적 화면 (D3b-5, 계획 4.5). 유형 영역이 넓으면 예시를 오른쪽 열에, 좁으면 추가 입력 아래에 둔다. 경계 720px는
+   임시값이다: 예시 그림이 들어오는 D3b-6에서 앱 셸 안의 실제 폭과 첫 화면 높이를 재서 정하고 뷰포트 환산값을 기록한다 */
+.purpose-type { container-type: inline-size; container-name: purpose-type; }
+.purpose-type-layout { display: grid; gap: var(--space-4); }
+@container purpose-type (min-width: 720px) {
+  .purpose-type-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+}
+.purpose-composition { margin: 0 0 var(--space-2); padding-inline-start: var(--space-6); }
+.purpose-outcomes { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.type-example { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
 

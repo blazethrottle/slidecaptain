@@ -13,7 +13,9 @@ import pytest
 from pydantic import ValidationError
 
 from slidecaptain.models.deck import Deck, DeckMeta
-from slidecaptain.models.report_purpose import REPORT_DETAIL_FIELDS, is_blank
+from slidecaptain.models.report_purpose import (
+    DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, REPORT_DETAIL_FIELDS, is_blank,
+)
 from slidecaptain.pipeline.progress import _purpose as purpose_progress
 from slidecaptain.storage import project_format
 from slidecaptain.storage.file_store import FileProjectStore
@@ -463,3 +465,21 @@ def test_put_of_a_version_one_deck_with_purpose_content_writes_version_two(store
         body["meta"]["key_message"] = ""
         assert client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]}).status_code == 200
     assert json.loads(_deck_bytes(store))["schema_version"] == 1 and _manifest(store).format_version == 1
+
+
+DETAIL_FIXTURE = Path(__file__).parent / "fixtures" / "report-purpose-fields.json"
+
+
+def test_report_purpose_fields_match_the_fixture_the_screen_uses():
+    """화면의 유형별 추가 입력 칸과 길이 상한이 서버 표와 같은지 고정 파일로 잇는다 (D3b-5). 화면 시험이 같은
+    파일을 읽어 화면의 표와 비교한다. 칸이나 상한을 바꾸면 SLIDECAPTAIN_UPDATE_FIXTURES=1로 다시 쓴다."""
+    import os
+
+    collected = {
+        "fields": {kind: [list(pair) for pair in fields] for kind, fields in REPORT_DETAIL_FIELDS.items()},
+        "limits": {"key_message": KEY_MESSAGE_MAX, "desired_outcome_other": OUTCOME_OTHER_MAX, "detail": DETAIL_MAX},
+    }
+    text = json.dumps(collected, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+    if os.environ.get("SLIDECAPTAIN_UPDATE_FIXTURES") == "1":
+        DETAIL_FIXTURE.write_text(text, encoding="utf-8")
+    assert DETAIL_FIXTURE.read_text(encoding="utf-8") == text, "보고 목적 칸 표가 바뀌었습니다. 고정 파일을 다시 써 주세요"

@@ -1,37 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, messageOf, type Deck, type ProjectInfo } from "../api/client";
+import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type ProjectInfo } from "../api/client";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import type { SaveStatus } from "../ui/StatusIndicator";
+import {
+  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, OUTCOMES, REPORT_DETAIL_FIELDS, REPORT_TYPE_GUIDES, hiddenInputs,
+  purposeMetaEqual, purposePromptValues, REPORT_TYPES, typeConfirmed, type DesiredOutcome, type ReportType,
+} from "./reportPurpose";
+import { ReportTypeExample } from "./ReportTypeExample";
 
 // 보고 목적 단계 (개정판 D3a-2, 계획 4.1). 입력 항목과 저장 계약은 옛 자료 탭의 "보고 정보"와 같다:
 // 저장 순간의 최신 덱에 이 화면의 보고 정보만 바꿔 덱 전체를 PUT한다. 입력이 멈추면 자동 저장한다 (D3b-5).
-export const REPORT_TYPES = [
-  ["weekly", "주간 업무 보고"],
-  ["business", "일반 업무 보고"],
-  ["monthly", "월간 보고"],
-  ["data", "데이터 설명 보고"],
-  ["research", "리서치 결과 보고"],
-  ["project", "프로젝트 보고"],
-  ["results", "결과 보고"],
-  ["approval", "승인요청"],
-  ["strategy", "전략기획"],
-  ["ir", "IR Pitch Deck"],
-] as const satisfies ReadonlyArray<readonly [Deck["meta"]["report_type"], string]>;
-// 빠진 유형이 있으면 타입 검사가 실패한다. 없는 옵션의 값은 브라우저가 첫 옵션으로 보여 사용자가 보는 유형과
-// 저장된 유형이 달라진다 (D3b-1 리뷰 R3)
-type MissingReportType = Exclude<Deck["meta"]["report_type"], (typeof REPORT_TYPES)[number][0]>;
-const reportTypesComplete: [MissingReportType] extends [never] ? true : never = true;
-void reportTypesComplete;
 
-// 보고 정보 4필드만 비교한다: preset_overrides는 이 화면이 건드리지 않는 필드라 비교에 넣으면
-// 다른 단계가 남긴 변경과 무관하게 흔들릴 수 있다
-function metaEqual(a: Deck["meta"], b: Deck["meta"]): boolean {
-  return a.title === b.title && a.report_type === b.report_type
-    && a.presenter === b.presenter && a.audience === b.audience
-    && !!a.report_type_confirmed === !!b.report_type_confirmed;  // 확인 표시도 저장할 값이다 (D3b-1 리뷰 R4)
-}
+// 후보형 작업 (결과를 사용자가 반영하는 작업). 진행 중이면 보고 목적을 고칠 때 결과가 이전 입력 기준이 될 수 있다
+const CANDIDATE_KINDS = new Set(["structure", "chapter", "condense", "rewrite", "repair", "diagram"]);
 
 // 충돌 해소 전 보존의 결과 (D3b-5, 계획 4.5, B9). none은 보존할 미저장 입력이 없다는 뜻이다
 export type PurposePreserveResult = { kind: "none" } | { kind: "preserved"; savedAt: string } | { kind: "failed" };
@@ -39,7 +22,7 @@ export type PurposePreserveResult = { kind: "none" } | { kind: "preserved"; save
 export function ReportPurposeScreen({
   project, deck, onDeckChange, onDirtyChange, onScreenReady, onPreserveReady, onConflict, onSaveStatusChange,
   readOnly = false, readOnlyNotice = false, conflictSignal = 0, onNext, nextDisabled = false, nextTitle,
-  saveDelayMs = 1200,
+  saveDelayMs = 1200, limitations = [],
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -61,6 +44,7 @@ export function ReportPurposeScreen({
   nextDisabled?: boolean;
   nextTitle?: string;
   saveDelayMs?: number;  // 자동 저장 지연. 편집 화면과 같은 1,200ms (계획 4.5, 사실 10)
+  limitations?: string[];  // 준비됨에 붙은 사유의 문구(핵심 내용 없음 등). 이 화면의 한계 안내로 보인다 (D3b-1 리뷰 R7)
 }) {
   const [meta, setMeta] = useState(deck.meta);
   const metaRef = useRef(meta);
@@ -86,7 +70,21 @@ export function ReportPurposeScreen({
   onDeckChangeRef.current = onDeckChange;
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
-  const dirty = !metaEqual(meta, saved);
+  const dirty = !purposeMetaEqual(meta, saved);
+  // 구성 계획에 쓰인 보고 목적 값을 고치면 미리 알린다. 화면을 연 때의 값과 비교한다 (계획 4.5, α 묶음 리뷰 A6)
+  const [openedValues] = useState(() => JSON.stringify(purposePromptValues(deck.meta)));
+  const planWillBeStale = !!deck.structure.story_plan && JSON.stringify(purposePromptValues(meta)) !== openedValues;
+  // 처분하지 않은 구조안 후보나 진행 중인 후보형 작업이 있으면 고치기 전에 알린다 (리뷰 U21, V19)
+  const [candidatesPending, setCandidatesPending] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api.listJobs(project.name).then((jobs) => {
+      if (!live) return;
+      setCandidatesPending(jobs.some((job) => (job.kind === "structure" && job.candidate_status === "held")
+        || (CANDIDATE_KINDS.has(job.kind) && !TERMINAL_JOB_STATES.has(job.state))));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [project.name]);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
@@ -107,7 +105,7 @@ export function ReportPurposeScreen({
 
   const doSave = useCallback(async (target: Deck["meta"]): Promise<boolean> => {
     if (conflictRef.current) return false;
-    if (metaEqual(target, savedRef.current)) return true;  // 저장할 것이 없다
+    if (purposeMetaEqual(target, savedRef.current)) return true;  // 저장할 것이 없다
     setSaving(true);
     try {
       const updated = { ...deckRef.current, meta: target };
@@ -123,7 +121,7 @@ export function ReportPurposeScreen({
       // 저장하는 동안 이어 친 입력은 이어서 저장한다. 입력을 잠그지 않으므로 이 경로가 없으면 글자가 남지 않는다
       // (리뷰 U1). 그사이 읽기 전용이 됐으면 이어 저장하지 않는다 (리뷰 U2)
       const residual = metaRef.current;
-      if (metaEqual(residual, target) || pausedRef.current) return true;
+      if (purposeMetaEqual(residual, target) || pausedRef.current) return true;
       return await doSave(residual);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {
@@ -150,14 +148,14 @@ export function ReportPurposeScreen({
 
   // 자동 저장: 입력이 멈추고 saveDelayMs 뒤. 충돌 중이거나 읽기 전용이면 예약하지 않는다 (리뷰 U2, U3)
   useEffect(() => {
-    if (conflict || readOnly || metaEqual(meta, saved)) return;
+    if (conflict || readOnly || purposeMetaEqual(meta, saved)) return;
     const timer = setTimeout(() => void saveNow(), saveDelayMs);
     return () => clearTimeout(timer);
   }, [meta, saved, conflict, readOnly, saveDelayMs, saveNow]);
 
   // 언마운트 저장: 마지막 입력을 잃지 않는다. 충돌 중이거나 읽기 전용이면 보내지 않는다
   useEffect(() => () => {
-    if (!conflictRef.current && !pausedRef.current && !metaEqual(metaRef.current, savedRef.current)) {
+    if (!conflictRef.current && !pausedRef.current && !purposeMetaEqual(metaRef.current, savedRef.current)) {
       void saveNowRef.current();
     }
   }, []);
@@ -165,7 +163,7 @@ export function ReportPurposeScreen({
   // 떠나기 전 확인. 읽기 전용이면 저장하지 않는다(묶음 중 저장은 묶음의 사슬을 끊는다). 고친 입력이 남았으면 버릴지
   // 묻고, 머물기를 고르면 부모가 실패 안내를 띄우지 않게 "declined"를 돌려준다
   const leaveGuard = useCallback(async (): Promise<boolean | "declined"> => {
-    const clean = metaEqual(metaRef.current, savedRef.current);
+    const clean = purposeMetaEqual(metaRef.current, savedRef.current);
     if (pausedRef.current && !clean) {
       return window.confirm(BATCH_DISCARD_CONFIRM) ? true : "declined";
     }
@@ -185,7 +183,7 @@ export function ReportPurposeScreen({
   const preserve = useCallback(async (): Promise<PurposePreserveResult> => {
     await saveChain.current;
     const unsaved = metaRef.current;
-    if (metaEqual(unsaved, savedRef.current)) return { kind: "none" };
+    if (purposeMetaEqual(unsaved, savedRef.current)) return { kind: "none" };
     try {
       const info = await api.saveDraft(project.name, {
         reason: "conflict", source: "purpose", deck: { ...deckRef.current, meta: unsaved } });
@@ -204,9 +202,26 @@ export function ReportPurposeScreen({
   const retry = () => { setNotice(""); setLastSave("ok"); void saveNow(); };
   // 유형 드롭다운은 초점이 떠날 때 바로 저장한다. 키보드 화살표로 바뀌는 중간 유형은 자동 저장 지연이 묶는다
   const flushOnBlur = () => {
-    if (!conflictRef.current && !pausedRef.current && !metaEqual(metaRef.current, savedRef.current)) void saveNow();
+    if (!conflictRef.current && !pausedRef.current && !purposeMetaEqual(metaRef.current, savedRef.current)) void saveNow();
   };
   const locked = readOnly;
+  const confirmed = typeConfirmed(meta);
+  const type = meta.report_type;
+  const guide = REPORT_TYPE_GUIDES[type];
+  const hidden = hiddenInputs(meta);
+  const hiddenCount = hidden.details.length + (hidden.other ? 1 : 0);
+  const update = (patch: Partial<Deck["meta"]>) => setMeta((current) => ({ ...current, ...patch }));
+  const setDetail = (name: string, value: string) =>
+    setMeta((current) => ({ ...current, report_details: { ...(current.report_details ?? {}), [`${type}.${name}`]: value } }));
+  // 숨은 입력 지우기: 다른 유형의 추가 입력과 기타가 아닐 때의 기타 설명. 생성에 쓰지 않으므로 계획을 낡게 하지 않는다
+  const clearHidden = () => setMeta((current) => ({
+    ...current,
+    report_details: Object.fromEntries(Object.entries(current.report_details ?? {})
+      .filter(([key]) => key.startsWith(`${current.report_type}.`))),
+    ...(current.desired_outcome !== "other" ? { desired_outcome_other: "" } : {}),
+  }));
+  const keyLength = (meta.key_message ?? "").length;
+  const otherBlank = meta.desired_outcome === "other" && !(meta.desired_outcome_other ?? "").trim();
 
   return (
     <div className="purpose-screen">
@@ -214,48 +229,116 @@ export function ReportPurposeScreen({
         <p role="alert">{notice} <Button onClick={retry} disabled={locked || saving}>다시 저장</Button></p>
       )}
       {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
+      {candidatesPending && (
+        <p className="notice">고치면 구성 단계의 구조안 후보가 이전 입력 기준이 될 수 있습니다.</p>
+      )}
+      {planWillBeStale && (
+        <p className="notice">보고 목적을 바꿨습니다. 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>
+      )}
       {backup && (
         <div role="alert">
           <p>보고 정보를 보존하지 못했습니다. 서버 내용을 다시 읽기 전에 아래 내용을 복사해 보관해 주세요.</p>
           <UnsavedChangeBackup text={backup} label="저장하지 못한 보고 정보" />
         </div>
       )}
-      <section>
-        <h2>보고 정보</h2>
+      {limitations.map((text) => <p key={text} className="hint">{text}</p>)}
+      <section aria-labelledby="purpose-basic">
+        <h2 id="purpose-basic">기본 정보</h2>
         <div className="field">
           <label>보고서 제목
             <input aria-label="보고서 제목" value={meta.title} disabled={locked}
-              onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
-          </label>
-        </div>
-        <div className="field">
-          <label>보고 유형
-            <select aria-label="보고 유형" value={meta.report_type} disabled={locked} onBlur={flushOnBlur}
-              // 유형을 직접 고르면 확인 표시를 함께 저장한다 (D3b-1 리뷰 R4)
-              onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"],
-                report_type_confirmed: true })}>
-              {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
+              onChange={(e) => update({ title: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>보고자 <span className="hint">(이름 또는 부서. 표지에 표기됩니다)</span>
             <input aria-label="보고자" value={meta.presenter ?? ""} disabled={locked}
-              onChange={(e) => setMeta({ ...meta, presenter: e.target.value })} />
+              onChange={(e) => update({ presenter: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>피보고자 <span className="hint">(문서에 적히지 않고, 문체와 상세 수준을 맞추는 데만 씁니다)</span>
             <input aria-label="피보고자" value={meta.audience ?? ""} disabled={locked}
-              onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
+              onChange={(e) => update({ audience: e.target.value })} />
           </label>
         </div>
-        {/* 주 행동 막대: 화면이 길면 창 아래에 붙어 첫 화면 안에 남는다 (D3a-7 사용자 결정, 계획 6절 배치).
-            보고 정보는 자동 저장하므로 주 행동은 다음 단계로 옮기는 것이다 (D3b-5, Q2) */}
-        <div className="actions primary-bar">
-          <Button variant="primary" onClick={() => onNext?.()} disabled={nextDisabled} title={nextTitle}>자료 단계로</Button>
+        <div className="field">
+          <label>이 보고서에서 전달할 핵심 내용
+            <textarea aria-label="핵심 내용" aria-describedby="key-message-count" value={meta.key_message ?? ""}
+              maxLength={KEY_MESSAGE_MAX} disabled={locked} onChange={(e) => update({ key_message: e.target.value })} />
+          </label>
+          <p id="key-message-count" className="hint">{keyLength.toLocaleString("ko-KR")} / {KEY_MESSAGE_MAX.toLocaleString("ko-KR")}자</p>
         </div>
       </section>
+      <section aria-labelledby="purpose-type" className="purpose-type">
+        <h2 id="purpose-type">보고 유형과 구성</h2>
+        <div className="purpose-type-layout">
+          <div className="purpose-type-inputs">
+            <div className="field">
+              <label>보고 유형
+                <select aria-label="보고 유형" aria-describedby="report-type-guide" value={confirmed ? type : ""}
+                  disabled={locked} onBlur={flushOnBlur}
+                  // 유형을 직접 고르면 확인 표시를 함께 저장한다 (D3b-1 리뷰 R4)
+                  onChange={(e) => update({ report_type: e.target.value as ReportType, report_type_confirmed: true })}>
+                  {/* 확인되지 않은 덱은 고르기를 요청한다. 기본 유형 그대로 쓰려는 사용자도 한 번 골라야 확인된다 (리뷰 U10) */}
+                  {!confirmed && <option value="" disabled>보고 유형을 고르세요</option>}
+                  {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                </select>
+              </label>
+            </div>
+            <div id="report-type-guide">
+              {confirmed ? (
+                <>
+                  <p>{guide.summary}</p>
+                  <p className="hint">이 유형의 추천 구성</p>
+                  <ol className="purpose-composition">{guide.composition.map((part) => <li key={part}>{part}</li>)}</ol>
+                </>
+              ) : <p className="hint">유형을 고르지 않으면 리서치 결과 보고로 만듭니다.</p>}
+            </div>
+            {confirmed && REPORT_DETAIL_FIELDS[type].map(([name, label]) => (
+              <div className="field" key={`${type}.${name}`}>
+                <label>{label} <span className="hint">(선택)</span>
+                  <input aria-label={label} value={meta.report_details?.[`${type}.${name}`] ?? ""} maxLength={DETAIL_MAX}
+                    disabled={locked} onChange={(e) => setDetail(name, e.target.value)} />
+                </label>
+              </div>
+            ))}
+            {hiddenCount > 0 && (
+              <p className="hint">다른 유형에서 입력한 내용 {hiddenCount}개가 남아 있습니다. 생성에는 쓰지 않습니다.{" "}
+                <Button onClick={clearHidden} disabled={locked}>지우기</Button></p>
+            )}
+          </div>
+          <ReportTypeExample selected={confirmed ? type : null} />
+        </div>
+      </section>
+      <section aria-labelledby="purpose-outcome">
+        <h2 id="purpose-outcome">원하는 결과</h2>
+        <fieldset className="purpose-outcomes" disabled={locked}>
+          <legend className="visually-hidden">원하는 결과</legend>
+          {OUTCOMES.map(([value, label]) => (
+            <label key={value}>
+              <input type="radio" name="desired-outcome" value={value} checked={meta.desired_outcome === value}
+                onChange={() => update({ desired_outcome: value as DesiredOutcome })} /> {label}
+            </label>
+          ))}
+        </fieldset>
+        {meta.desired_outcome === "other" && (
+          <div className="field">
+            <label>기타 목적 설명
+              <textarea aria-label="기타 목적 설명" aria-describedby={otherBlank ? "outcome-other-blank" : undefined}
+                value={meta.desired_outcome_other ?? ""} maxLength={OUTCOME_OTHER_MAX} disabled={locked}
+                onChange={(e) => update({ desired_outcome_other: e.target.value })} />
+            </label>
+            {otherBlank && <p id="outcome-other-blank" className="hint">기타 목적의 설명이 비어 있습니다.</p>}
+          </div>
+        )}
+        {!meta.desired_outcome && <p className="hint">고르지 않으면 보고 유형의 구성을 따릅니다.</p>}
+      </section>
+      {/* 주 행동 막대: 화면이 길면 창 아래에 붙어 첫 화면 안에 남는다 (D3a-7 사용자 결정, 계획 6절 배치).
+          보고 정보는 자동 저장하므로 주 행동은 다음 단계로 옮기는 것이다 (D3b-5, Q2) */}
+      <div className="actions primary-bar">
+        <Button variant="primary" onClick={() => onNext?.()} disabled={nextDisabled} title={nextTitle}>자료 단계로</Button>
+      </div>
     </div>
   );
 }
