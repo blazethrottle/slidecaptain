@@ -29,6 +29,7 @@ from pydantic import BaseModel, ValidationError
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
+from slidecaptain.models.report_purpose import PURPOSE_SCREEN_FIELDS
 from slidecaptain.storage import project_format
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
@@ -771,13 +772,18 @@ class FileProjectStore:
                 ) from e
             if envelope.get("source") == "purpose":
                 # 보고 목적 화면은 본문을 고치지 않으므로 보고 정보만 되찾는다. 덱 전체를 쓰면 그 탭이 본 옛 장과
-                # 슬라이드가 다른 곳의 변경을 되돌린다 (D3b-5 리뷰 R15). 지금 덱을 읽지 못하면 보존본 전체로 복원한다
+                # 슬라이드가 다른 곳의 변경을 되돌린다 (D3b-5 리뷰 R15). 메타도 보고 정보 칸만 얹는다: 메타 전체를 쓰면
+                # 다른 곳에서 바꾼 디자인 값이 되돌아갔다 (β 묶음 리뷰 B6). 지금 덱을 읽지 못하면 보존본 전체로 복원한다
                 try:
                     current = self.load_deck(name)
                 except StorageError:
                     current = None
                 if current is not None:
-                    deck = Deck.model_validate({**current.model_dump(mode="json"), "meta": deck.meta.model_dump(mode="json")})
+                    body = current.model_dump(mode="json")
+                    kept = deck.meta.model_dump(mode="json")
+                    meta = {k: v for k, v in body["meta"].items() if k not in PURPOSE_SCREEN_FIELDS}
+                    meta.update({k: kept[k] for k in PURPOSE_SCREEN_FIELDS if k in kept})
+                    deck = Deck.model_validate({**body, "meta": meta})
             etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
 

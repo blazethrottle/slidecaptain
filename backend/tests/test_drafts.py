@@ -238,3 +238,26 @@ def test_purpose_draft_restores_only_the_report_info_onto_the_current_deck(clien
     restored = client.post(f"/api/projects/p1/drafts/{draft_id}/restore").json()
     assert restored["meta"]["key_message"] == "보존할 핵심 내용"
     assert [c["id"] for c in restored["structure"]["chapters"]] == ["c9"]
+
+
+def test_purpose_draft_restore_keeps_design_values_changed_elsewhere(client):
+    """보고 목적 보존본의 복원은 메타 가운데 보고 정보 칸만 되찾는다. 그 사이 다른 곳에서 바꾼 디자인 값과, 보존본에
+    없던 보고 정보의 기본값 칸은 보존본 쪽을 따른다 (β 묶음 리뷰 B6)."""
+    client.post("/api/projects", json={"name": "p1"})
+    seen = client.get("/api/projects/p1/deck").json()
+    seen["meta"]["key_message"] = "보존할 핵심 내용"
+    seen["meta"]["presenter"] = "보존한 보고자"
+    draft_id = client.post("/api/projects/p1/drafts",
+                           json={"reason": "conflict", "source": "purpose", "deck": seen}).json()["id"]
+    newer = client.get("/api/projects/p1/deck")
+    body = newer.json()
+    body["meta"]["preset_overrides"] = {"font_roles": {"title_pt": 30}}
+    body["meta"]["desired_outcome"] = "facts"
+    put = client.put("/api/projects/p1/deck", json=body, headers={"If-Match": newer.headers["ETag"]})
+    assert put.status_code == 200, put.text
+    restored = client.post(f"/api/projects/p1/drafts/{draft_id}/restore").json()
+    assert restored["meta"]["preset_overrides"] == {"font_roles": {"title_pt": 30}}
+    assert restored["meta"]["key_message"] == "보존할 핵심 내용"
+    assert restored["meta"]["presenter"] == "보존한 보고자"
+    # 보존본은 원하는 결과를 고르지 않았다(기본값이라 직렬화에 없다). 보고 정보는 보존본 쪽으로 되돌린다
+    assert restored["meta"].get("desired_outcome") is None

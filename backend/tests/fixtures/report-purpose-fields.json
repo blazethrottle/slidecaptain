@@ -109,5 +109,16 @@
   "desired_outcome_other": 8000,
   "detail": 1000,
   "key_message": 8000
- }
+ },
+ "screen_fields": [
+  "audience",
+  "desired_outcome",
+  "desired_outcome_other",
+  "key_message",
+  "presenter",
+  "report_details",
+  "report_type",
+  "report_type_confirmed",
+  "title"
+ ]
 }

@@ -39,6 +39,14 @@ DETAIL_KEYS = frozenset(f"{t}.{name}" for t, fields in REPORT_DETAIL_FIELDS.item
 LEGACY_REPORT_TYPES = frozenset({"research", "approval", "strategy"})
 INTERIM_REPORT_TYPES = LEGACY_REPORT_TYPES | {"weekly", "business", "monthly", "data", "project", "results"}
 
+# 보고 목적 화면이 고치는 메타 칸(보고 정보). 이 화면의 보존본을 복원할 때 이 칸만 지금 덱에 얹는다. 메타의 나머지
+# (디자인 값 preset_overrides)는 편집 화면이 고치므로 되돌리지 않는다 (D3b β 묶음 리뷰 B6). 화면의 저장 비교
+# (purposeMetaEqual)가 같은 칸을 보는지 고정 파일로 잇는다
+PURPOSE_SCREEN_FIELDS = (
+    "title", "presenter", "audience", "report_type", "report_type_confirmed",
+    "key_message", "desired_outcome", "desired_outcome_other", "report_details",
+)
+
 # 새 항목의 이름과 기본값. 기본값이면 직렬화에서 뺀다(기존 덱의 바이트, ETag, 지문을 바꾸지 않는다)
 PURPOSE_DEFAULTS: dict[str, object] = {
     "report_type_confirmed": False,
