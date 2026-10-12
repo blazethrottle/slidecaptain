@@ -1617,6 +1617,21 @@ describe("장 카드 목록 리뷰 반영 (D3b-7 리뷰)", () => {
     expect(screen.getByRole("button", { name: "2번 장 위로" })).toHaveFocus();  // 마지막 카드를 지우면 앞 카드
   });
 
+  it("같은 버튼에 초점을 다시 두는 이동은 그 버튼을 창 안으로 스크롤한다 (반영 재리뷰 F6)", async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) { scrolled.push(this); };
+    try {
+      render(<StructureScreen project={project} deck={deckWith([CH1, CH2, CH3], [])} onDeckChange={() => {}} onDone={() => {}} />);
+      await userEvent.click(screen.getByRole("button", { name: "1번 장 아래로" }));
+      const moved = screen.getByRole("button", { name: "2번 장 아래로" });
+      expect(moved).toHaveFocus();
+      expect(scrolled).toContain(moved);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("남은 장이 없게 지우면 장 목록과 장 추가가 사라지므로 생성 버튼으로 초점을 옮긴다 (R2, β 묶음 리뷰 B5)", async () => {
     render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
     await userEvent.click(screen.getByRole("button", { name: "1번 장 삭제" }));

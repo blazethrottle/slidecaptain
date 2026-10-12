@@ -66,6 +66,20 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const [conflict, setConflict] = useState<Conflict>(null);  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
   // 늘리면 편집 화면과 보고 목적 화면이 충돌 처리로 들어간다 (B2, D3b-5: 보고 목적은 자동 저장을 멈춘다)
   const [conflictSignal, setConflictSignal] = useState(0);
+  // 충돌 안내는 앱 화면의 비활성(크게 보기가 열린 동안)이 풀린 뒤에 그린다. 비활성 영역 안에 생긴 알림은 낭독되지 않고,
+  // 비활성이 풀려도 다시 알리지 않는다 (β 묶음 리뷰 B7, 반영 재리뷰 F4)
+  const [conflictReady, setConflictReady] = useState(false);
+  useEffect(() => {
+    if (!conflict) { setConflictReady(false); return; }
+    const root = document.getElementById("root");
+    if (!root?.hasAttribute("inert")) { setConflictReady(true); return; }
+    setConflictReady(false);
+    const observer = new MutationObserver(() => {
+      if (!root.hasAttribute("inert")) { observer.disconnect(); setConflictReady(true); }
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["inert"] });
+    return () => observer.disconnect();
+  }, [conflict]);
   // 보고 목적 화면의 충돌 보존. 실패한 뒤 다시 누르면 복사 상자를 본 것으로 보고 버리기 확인으로 넘어간다 (B9)
   const preserveScreen = useRef<null | (() => Promise<PurposePreserveResult>)>(null);
   const preserveFailed = useRef(false);
@@ -86,6 +100,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const [progress, setProgress] = useState<ProjectProgress | undefined>(undefined);
   const [progressFailed, setProgressFailed] = useState(false);
   const progressSeq = useRef(0);
+  // 진행 API 응답을 반영한 횟수. 보고 목적 화면이 저장 뒤 첫 판정을 기다리는 데 쓴다 (β 반영 재리뷰 F2)
+  const [progressRevision, setProgressRevision] = useState(0);
   // AI 전송 고지 대화 상자 (계획서 B3): 열려 있는 동안 사용자의 선택을 담을 resolve 함수를 들고 있는다.
   // null이 아니면 대화 상자가 열려 있다는 뜻이라 다른 상태와 함께 잠금 조건에도 쓴다
   const [consentResolve, setConsentResolve] = useState<((granted: boolean) => void) | null>(null);
@@ -185,6 +201,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
       if (seq !== progressSeq.current) return;
       setProgress(next);
       setProgressFailed(false);
+      setProgressRevision((n) => n + 1);
     } catch {
       if (seq === progressSeq.current) setProgressFailed(true);
     }
@@ -297,6 +314,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
           // 단계 버튼으로 옮긴다 (β 묶음 리뷰 B7)
           api.getDeck(project.name).then((fresh) => {
             setDeck(fresh);
+            // 서버 덱을 다시 읽었으므로 이 탭은 최신 사본을 들고, 보존할 미저장 입력도 없다. 앞서 뜬 충돌 안내를 지운다:
+            // 남기면 다시 마운트한 보고 목적이 충돌 상태로 시작해 최신 덱에서도 자동 저장을 멈췄다 (β 반영 재리뷰 F1)
+            setConflict(null);
             if (holdsCopy && document.activeElement?.closest(".stage-body, [role='dialog']")) focusStageAfterMove.current = true;
             if (holdsCopy) {
               if (stageRef.current === "editor") setFocusChapter(editorChapter.current);  // 고른 장을 유지한다
@@ -348,8 +368,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   // 숨겨 둔 상태 칸은 다음 그리기에서 나타나므로 초점은 그린 뒤에 준다 (D3a-7, R5)
   const focusSaveAfterRender = useRef(false);
   const focusSaveStatus = useCallback(() => { setSavedHere(true); focusSaveAfterRender.current = true; }, []);
-  // 초점이 창 아래에 붙은 주 행동 막대 뒤에 들어가면 그만큼 올린다. 문서의 scroll-padding은 초점 요소가 창 밖에 있을 때만
-  // 스크롤을 부르고, 창 안에 있지만 막대에 가린 요소는 그대로 둔다(D3b-8 측정: 780x700 구성 화면의 입력 35px 가림).
+  // 초점이 창 아래에 붙은 주 행동 막대 뒤에 들어가면 그만큼 올린다. 브라우저는 문서의 scroll-padding으로 대부분 스스로
+  // 올리지만, 창 안에서 막대에 가린 요소를 그대로 두는 경우가 있었다(D3b-8 측정: 780x700 구성 화면의 입력 35px 가림).
   // 막대가 창 아래에 붙어 있고 요소가 막대 위에서 시작할 때만 올린다: 제자리에 있거나 지나간 막대 뒤의 요소까지 올리면
   // 초점 요소가 창 위로 사라졌다. 올리는 양은 요소의 위 끝이 창 위로 나가지 않게 제한한다. 대화 상자 안의 초점은 뒤 화면과
   // 무관하고, 마우스를 누르는 동안 생긴 초점에서 화면을 움직이면 click이 다른 요소에 간다 (β 묶음 리뷰 B3, B4, B11)
@@ -368,14 +388,18 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
       const amount = Math.min(rect.bottom - barRect.top + 8, rect.top);
       if (rect.bottom > barRect.top && amount > 0) window.scrollBy(0, amount);
     };
+    // 떼는 이벤트가 오지 않는 경우(맥락 메뉴가 떼기를 가져감, 누른 채 앱 전환)에도 키 입력이나 창 전환이 누름 상태를 푼다.
+    // 풀지 않으면 그 뒤의 키보드 초점을 모두 건너뛰었다 (반영 재리뷰 F5)
     const press = ["pointerdown", "mousedown"] as const;
-    const release = ["pointerup", "pointercancel", "mouseup"] as const;
+    const release = ["pointerup", "pointercancel", "mouseup", "keydown"] as const;
     press.forEach((name) => document.addEventListener(name, onPress, true));
     release.forEach((name) => document.addEventListener(name, onRelease, true));
+    window.addEventListener("blur", onRelease);
     document.addEventListener("focusin", onFocusIn);
     return () => {
       press.forEach((name) => document.removeEventListener(name, onPress, true));
       release.forEach((name) => document.removeEventListener(name, onRelease, true));
+      window.removeEventListener("blur", onRelease);
       document.removeEventListener("focusin", onFocusIn);
     };
   }, []);
@@ -577,9 +601,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
 
   // 구성, 보고 목적, 복구 화면의 412는 전용 UI 없이 이 안내의 "서버 내용 다시 읽기"로 회복한다.
   // 편집 단계의 충돌은 EditorScreen 자체의 되돌리기 버튼이 처리하므로 onConflict를 넘기지 않는다
-  // 이미 떠 있는 안내의 원인(이 탭의 묶음 종결)을 덮지 않는다. 충돌 중에 단계를 떠나려 하면 화면이 다시 알리는데, 그때
-  // 문구가 "다른 창이나 프로그램"으로 바뀌었다 (D3b-5 리뷰 R16)
-  const onConflict = () => { justConflicted.current = true; setConflict((c) => c ?? "other"); };
+  // 떠나기 시도의 재알림(renotify)은 이미 떠 있는 안내의 원인(이 탭의 묶음 종결)을 덮지 않는다. 덮으면 문구가 "다른 창이나
+  // 프로그램"으로 바뀌었다 (D3b-5 리뷰 R16). 실제 412는 새 원인으로 적는다: 처음 원인에 고정하면 다른 탭의 저장 때문에
+  // 생긴 412도 "생성한 장이 문서에 반영되었습니다"로 남았다 (β 묶음 리뷰 B9, 반영 재리뷰 F1)
+  const onConflict = (renotify = false) => {
+    justConflicted.current = true;
+    setConflict((c) => (renotify && c ? c : "other"));
+  };
   // AI 전송 고지 대화 상자가 열린 동안은 leaving과 같은 조건으로 내비게이션을 잠근다 (계획서 B3)
   const dialogOpen = consentResolve !== null;
   const reloadDeck = async () => {
@@ -734,7 +762,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
           <p role="alert">{error} <button onClick={() => setError("")}>닫기</button></p>
         )}
         {preservedNotice && <p role="status">{preservedNotice}</p>}
-        {conflict && (
+        {conflict && conflictReady && (
           <p role="alert">
             {conflict === "batch_here"
               ? "생성한 장이 문서에 반영되었습니다. 이 화면의 저장하지 않은 변경은 필요하면 복사해 둔 뒤 서버 내용을 다시 읽어 주세요."
@@ -764,7 +792,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onSaveStatusChange={setSaveStatus} onNext={() => void switchStage("sources")}
             nextDisabled={navLocked} nextTitle={navTitle}
             limitations={progressFailed ? [] : stageLimitations(progress, "purpose")}
-            planStale={!progressFailed && !!stageProgress(progress, "structure")?.reasons.includes("stale_story_plan")}
+            planStale={progressFailed || progress === undefined ? null
+              : !!stageProgress(progress, "structure")?.reasons.includes("stale_story_plan")}
+            progressRevision={progressRevision}
             startInConflict={conflict !== null} />
         )}
         {!showRecovery && stage === "sources" && (

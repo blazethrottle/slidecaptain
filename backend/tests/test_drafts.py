@@ -247,6 +247,7 @@ def test_purpose_draft_restore_keeps_design_values_changed_elsewhere(client):
     seen = client.get("/api/projects/p1/deck").json()
     seen["meta"]["key_message"] = "보존할 핵심 내용"
     seen["meta"]["presenter"] = "보존한 보고자"
+    seen["meta"]["report_type_confirmed"] = True  # 기본값이 아닌 칸도 되찾는다 (반영 재리뷰 변형 SV4)
     draft_id = client.post("/api/projects/p1/drafts",
                            json={"reason": "conflict", "source": "purpose", "deck": seen}).json()["id"]
     newer = client.get("/api/projects/p1/deck")
@@ -259,5 +260,6 @@ def test_purpose_draft_restore_keeps_design_values_changed_elsewhere(client):
     assert restored["meta"]["preset_overrides"] == {"font_roles": {"title_pt": 30}}
     assert restored["meta"]["key_message"] == "보존할 핵심 내용"
     assert restored["meta"]["presenter"] == "보존한 보고자"
+    assert restored["meta"]["report_type_confirmed"] is True
     # 보존본은 원하는 결과를 고르지 않았다(기본값이라 직렬화에 없다). 보고 정보는 보존본 쪽으로 되돌린다
     assert restored["meta"].get("desired_outcome") is None

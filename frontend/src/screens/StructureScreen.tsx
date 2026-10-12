@@ -443,7 +443,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const card = cards.find((c) => c.dataset.chapterId === want.id);
     const [up, down] = [...(card?.querySelectorAll<HTMLButtonElement>(".chapter-card-moves button") ?? [])];
     const [first, other] = want.which === "up" ? [up, down] : [down, up];
-    (first && !first.disabled ? first : other)?.focus();
+    const target = first && !first.disabled ? first : other;
+    target?.focus();
+    // 누른 버튼에 초점을 다시 두면 초점이 옮겨지지 않아 브라우저가 스크롤하지 않는다. 카드와 함께 창 밖으로 나간 버튼을
+    // 창 안으로 올린다(문서의 scroll-padding이 주 행동 막대 높이를 비워 둔다) (β 반영 재리뷰 F6)
+    target?.scrollIntoView?.({ block: "nearest" });
   }, [draft]);
   const add = () => {
     setDraft([...draft, {

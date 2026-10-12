@@ -504,6 +504,47 @@ describe("D3b-5 리뷰 반영", () => {
     expect(screen.queryByText(STALE_ELSEWHERE)).toBeNull();
   });
 
+  it("이미 낡은 계획에서 고쳤다 되돌려 저장하면 저장 뒤 첫 진행 API 응답에서 원인 미단정 문장으로 돌아간다 (반영 재리뷰 F2)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const props = { project, deck: planned({ key_message: "핵심" }), onDeckChange: () => {}, saveDelayMs: FAST, planStale: true };
+    const view = render(<ReportPurposeScreen {...props} progressRevision={1} />);
+    expect(screen.getByText(STALE_ELSEWHERE)).toBeInTheDocument();
+    const field = screen.getByLabelText("이 보고서에서 전달할 핵심 내용");
+    await userEvent.type(field, " 추가");
+    await waitFor(() => expect(puts().at(-1)?.[1].meta.key_message).toBe("핵심 추가"));
+    view.rerender(<ReportPurposeScreen {...props} progressRevision={2} />);
+    expect(screen.getByText(WARNING)).toBeInTheDocument();  // 이 화면이 바꾼 값이 남아 있다
+    await userEvent.clear(field);
+    await userEvent.type(field, "핵심");
+    await waitFor(() => expect(puts().at(-1)?.[1].meta.key_message).toBe("핵심"));
+    expect(screen.getByText(WARNING)).toBeInTheDocument();  // 판정을 기다린다
+    view.rerender(<ReportPurposeScreen {...props} progressRevision={3} />);
+    expect(screen.getByText(STALE_ELSEWHERE)).toBeInTheDocument();
+    expect(screen.queryByText(WARNING)).toBeNull();
+  });
+
+  it("진행 API를 읽지 못하면 지난 판정을 유지한다 (반영 재리뷰 F3)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const props = { project, deck: planned(), onDeckChange: () => {}, saveDelayMs: FAST };
+    const view = render(<ReportPurposeScreen {...props} planStale={false} progressRevision={1} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await waitFor(() => expect(puts().length).toBe(1));
+    view.rerender(<ReportPurposeScreen {...props} planStale progressRevision={2} />);
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+    view.rerender(<ReportPurposeScreen {...props} planStale={null} progressRevision={2} />);
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+  });
+
+  it("계획 값이 아닌 칸만 저장하면 판정을 기다리지 않는다 (변형 N9)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    renderScreen({ deck: planned(), planStale: false });
+    await userEvent.type(screen.getByLabelText("보고자"), "팀");
+    await waitFor(() => expect(puts().length).toBe(1));
+    await pause(FAST * 2);
+    expect(screen.queryByText(WARNING)).toBeNull();
+    expect(screen.queryByText(STALE_ELSEWHERE)).toBeNull();
+  });
+
   it("계획 값을 바꿔 저장하면 진행 API가 아직 낡음을 알리기 전에도 안내가 꺼지지 않는다 (β 묶음 리뷰 B1)", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
     const props = { project, deck: planned(), onDeckChange: () => {}, saveDelayMs: FAST };
@@ -665,7 +706,7 @@ describe("β 묶음 리뷰 반영 (B5, B7, B8)", () => {
     await act(async () => { left = await guard!(); });
     expect(left).toBe(false);
     expect(api.putDeck).not.toHaveBeenCalled();
-    expect(onConflict).toHaveBeenCalled();  // 다시 알린다
+    expect(onConflict).toHaveBeenCalledWith(true);  // 재알림이다. 부모는 떠 있는 안내의 원인을 바꾸지 않는다 (B9)
   });
 
   it("다른 탭의 작업 시작 알림에도 작업 목록을 다시 읽는다 (D3b-5 R7, 변형 P10)", async () => {

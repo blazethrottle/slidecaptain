@@ -23,7 +23,7 @@ export type PurposePreserveResult = { kind: "none" } | { kind: "preserved"; save
 export function ReportPurposeScreen({
   project, deck, onDeckChange, onDirtyChange, onScreenReady, onPreserveReady, onConflict, onSaveStatusChange,
   readOnly = false, readOnlyNotice = false, conflictSignal = 0, onNext, nextDisabled = false, nextTitle,
-  saveDelayMs = 1200, limitations = [], planStale = false, startInConflict = false,
+  saveDelayMs = 1200, limitations = [], planStale = false, progressRevision = 0, startInConflict = false,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -33,7 +33,8 @@ export function ReportPurposeScreen({
   onScreenReady?: (flush: (() => Promise<boolean | "declined">) | null) => void;
   // 부모가 "서버 내용 다시 읽기" 전에 미저장 보고 정보를 보존하도록 (D3b-5, B9)
   onPreserveReady?: (preserve: (() => Promise<PurposePreserveResult>) | null) => void;
-  onConflict?: () => void;  // 저장이 412를 받으면 부모가 충돌 안내를 띄운다
+  // 저장이 412를 받으면 부모가 충돌 안내를 띄운다. 충돌 중 떠나기 시도의 재알림은 renotify로 알려 원인을 바꾸지 않게 한다
+  onConflict?: (renotify?: boolean) => void;
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 보고 정보를 고치지 않는다. readOnlyNotice는 묶음을
   // 확인했을 때만 안내를 보인다 (D3a-5, 계획 4.4)
@@ -46,7 +47,9 @@ export function ReportPurposeScreen({
   nextTitle?: string;
   saveDelayMs?: number;  // 자동 저장 지연. 편집 화면과 같은 1,200ms (계획 4.5, 사실 10)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구(핵심 내용 없음 등). 이 화면의 한계 안내로 보인다 (D3b-1 리뷰 R7)
-  planStale?: boolean;  // 진행 API가 구성 계획을 낡았다고 판정했다 (D3b-5 리뷰 R6)
+  // 진행 API가 구성 계획을 낡았다고 판정했다 (D3b-5 리뷰 R6). null은 조회 전이거나 조회에 실패해 모른다는 뜻이다
+  planStale?: boolean | null;
+  progressRevision?: number;  // 진행 API 응답을 반영한 횟수. 저장 뒤 첫 판정을 기다리는 데 쓴다 (반영 재리뷰 F2)
   // 부모의 충돌 안내가 떠 있는 채로 열렸다. 그 안내가 해소되기 전에는 자동 저장하지 않는다 (D3b-5 리뷰 R3)
   startInConflict?: boolean;
 }) {
@@ -77,17 +80,26 @@ export function ReportPurposeScreen({
   const dirty = !purposeMetaEqual(meta, saved);
   // 저장된 구성 계획을 낡게 하는 값(서버 계획 지문의 메타 칸과 보고 목적 값)을 고치면 미리 알린다 (계획 4.5, D3b-5 리뷰 R1,
   // R2, R6). 저장 전 입력은 저장본과 비교하고, 저장한 뒤에는 진행 API의 판정(planStale)을 따른다. 화면을 연 때의 값과
-  // 비교하면 값을 되돌려 계획이 다시 현재가 돼도 안내가 남았다 (β 묶음 리뷰 B1). 저장이 계획 값을 바꾼 뒤 진행 API를
-  // 다시 읽기 전까지는 판정을 기다리며 안내를 유지한다(안내가 꺼졌다 켜지며 다시 낭독되지 않게 한다). 이 화면이 바꾼
-  // 값이 아니면 원인을 보고 정보로 단정하지 않는다: 자료나 장 구성만 바뀌어도 진행 API는 같은 사유를 낸다 (B2)
-  // 이 화면에서 저장한 값이 연 때와 다르고 진행 API가 낡았다고 하면, 원인은 이 화면의 변경으로 본다
+  // 비교하면 값을 되돌려 계획이 다시 현재가 돼도 안내가 남았다 (β 묶음 리뷰 B1). 저장이 계획 값을 바꾸면 저장을 시작한
+  // 뒤의 진행 API 응답이 올 때까지 판정을 기다리며 안내를 유지한다(안내가 꺼졌다 켜지며 다시 낭독되지 않게 한다). 판정
+  // 값의 변화만 기다리면, 이미 낡은 계획에서는 값이 바뀌지 않아 대기가 풀리지 않았다 (반영 재리뷰 F2). 진행 API를 읽지
+  // 못하면 지난 판정을 유지한다(F3). 이 화면이 바꾼 값이 아니면 원인을 보고 정보로 단정하지 않는다: 자료나 장 구성만
+  // 바뀌어도 진행 API는 같은 사유를 낸다 (B2)
   const [openedValues] = useState(() => planInputValues(deck.meta));
-  const [verdictPending, setVerdictPending] = useState(false);
-  useEffect(() => { setVerdictPending(false); }, [planStale]);
+  const [knownStale, setKnownStale] = useState(planStale ?? false);
+  useEffect(() => { if (planStale !== null) setKnownStale(planStale); }, [planStale]);
+  const revisionRef = useRef(progressRevision);
+  revisionRef.current = progressRevision;
+  const [pendingSince, setPendingSince] = useState<number | null>(null);
+  useEffect(() => {
+    if (pendingSince !== null && progressRevision > pendingSince) setPendingSince(null);
+  }, [progressRevision, pendingSince]);
+  useEffect(() => { if (planStale !== null) setPendingSince(null); }, [planStale]);
   const hasPlan = !!deck.structure.story_plan;
-  const planChangedHere = hasPlan && (planInputValues(meta) !== planInputValues(saved) || verdictPending
-    || (planStale && planInputValues(saved) !== openedValues));
-  const planStaleElsewhere = hasPlan && !planChangedHere && planStale;
+  const planChangedHere = hasPlan && (planInputValues(meta) !== planInputValues(saved) || pendingSince !== null
+    // 이 화면에서 저장한 값이 연 때와 다르고 진행 API가 낡았다고 하면, 원인은 이 화면의 변경으로 본다
+    || (knownStale && planInputValues(saved) !== openedValues));
+  const planStaleElsewhere = hasPlan && !planChangedHere && knownStale;
   // 반영하지 않은 생성 후보나 진행 중인 생성 작업이 있으면 고치기 전에 알린다. 작업이 시작하거나 끝나면 다시 읽는다
   // (리뷰 U21, V19, D3b-5 리뷰 R7)
   const [candidates, setCandidates] = useState<{ held: boolean; running: boolean }>({ held: false, running: false });
@@ -132,12 +144,13 @@ export function ReportPurposeScreen({
     if (conflictRef.current) return false;
     if (purposeMetaEqual(target, savedRef.current)) return true;  // 저장할 것이 없다
     setSaving(true);
+    const revisionAtStart = revisionRef.current;
     try {
       const updated = { ...deckRef.current, meta: target };
       await api.putDeck(project.name, updated, firstSave.current);
       if (conflictRef.current) return false;  // 다른 경로가 관측한 충돌을 늦은 성공으로 지우지 않는다
       firstSave.current = false;
-      if (planInputValues(target) !== planInputValues(savedRef.current)) setVerdictPending(true);
+      if (planInputValues(target) !== planInputValues(savedRef.current)) setPendingSince(revisionAtStart);
       savedRef.current = target;
       setSaved(target);
       // 착지한 동안 부모 덱이 바뀌었을 수 있으므로 최신 덱에 보고 정보만 얹는다 (D3b-5 리뷰 R8)
@@ -196,7 +209,7 @@ export function ReportPurposeScreen({
     }
     if (conflictRef.current) {
       if (clean) return true;  // 충돌 뒤 입력을 되돌려 남은 변경이 없으면 떠나도 잃는 것이 없다
-      onConflictRef.current?.();
+      onConflictRef.current?.(true);  // 재알림이다. 떠 있는 안내의 원인을 바꾸지 않는다
       return false;
     }
     return saveNow();
