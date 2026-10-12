@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, savedEtag, type Deck, type Preset, type QualityReport, type RenderPlan, type UploadResult } from "../api/client";
+import { api, ApiError, notifyProject, savedEtag, type Deck, type Preset, type QualityReport, type RenderPlan, type UploadResult } from "../api/client";
 import qualityFixture from "../../../backend/tests/fixtures/q1b1-quality.json";
 import { deferred } from "../test/fixtures";
 import { emptyUsage } from "../test/usage";
@@ -32,8 +32,16 @@ beforeEach(() => {
 });
 
 // 등록은 되었고 조회는 끝나지 않는 장 생성 묶음
+// 등록하면 서버의 진행 작업에 그 묶음이 생기고, 실제 등록 함수처럼 공통 알림을 낸다(client.ts request, D3a-5)
 function hangingBatch() {
-  vi.mocked(api.startChapters).mockResolvedValue({
+  vi.mocked(api.startChapters).mockImplementation(async () => {
+    vi.mocked(api.getActiveJob).mockImplementation(async () => batchActive(project.name));
+    notifyProject({ kind: "job_started", project: project.name, jobId: "job-1" });
+    return hangingView();
+  });
+  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+}
+const hangingView = (): Awaited<ReturnType<typeof api.startChapters>> => ({
     id: "job-1", project: project.name, kind: "chapters", state: "running", target: null, params: {},
     candidate_status: "none", outcome: null, owner: "this_instance", created_at: "2026-10-08T10:00:00+09:00",
     started_at: null, finished_at: null, provider: null, model: null, base_etag: null, current_etag: null,
@@ -41,8 +49,6 @@ function hangingBatch() {
     chapters: [{ chapter_id: "c1", position: 0, state: "running", candidate_status: "none", error: null, result: null,
       started_at: null, finished_at: null }],
   });
-  vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
-}
 
 // 업로드 잠금과 beforeunload 테스트가 공용으로 쓰는 XLSX 픽스처와 헬퍼 (계획서 B4)
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -298,7 +304,9 @@ it("단계 이동 전 편집기 플러시를 기다린 뒤 다음 단계를 연�
   expect(document.querySelector(".editor-screen")).toBeNull();
 });
 
-it("장별 순차 생성이 진행 중일 때는 편집 단계으로 이동할 수 없다", async () => {
+// 다시 씀 (D3a-5, 계획 4.4 표, 사용자 결정 Q1의 A): 묶음 중에도 단계 이동은 허용하고 덱 편집을 읽기 전용으로,
+// 내보내기와 스냅샷 복구를 잠근다. 종전에는 단계 이동 자체를 잠갔다
+it("장별 순차 생성 중에도 단계는 옮길 수 있고, 내보내기와 스냅샷 복구는 잠근다", async () => {
   // 구조안이 이미 있고(승인 전) 슬라이드는 아직 없는 프로젝트: 승인 즉시 순차 생성이 시작된다
   const deckWithStructure: Deck = {
     schema_version: 1,
@@ -314,18 +322,14 @@ it("장별 순차 생성이 진행 중일 때는 편집 단계으로 이동할 �
   render(<ProjectView project={project} onBack={() => {}} />);
   await userEvent.click(await screen.findByRole("button", { name: "구성" }));
   await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
-  const editorBtn = screen.getByRole("button", { name: "편집" });
-  await waitFor(() => expect(editorBtn).toBeDisabled());
-  // hasSlides가 false라서가 아니라 생성 진행 중이라서 막혔음을 문구로 구분한다
-  expect(editorBtn).toHaveAttribute("title", "AI 생성이 끝나면 이동할 수 있습니다");
-  const sourcesBtn = screen.getByRole("button", { name: "자료" });
-  expect(sourcesBtn).toBeDisabled();
-  // 다시 씀(D3a-2): 내보내기는 검토 단계 화면 안에 있으므로 그 단계로 가는 버튼이 잠김을 본다
-  expect(screen.getByRole("button", { name: "검토와 내보내기" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "보고 목적" })).toBeDisabled();
+  expect(await screen.findByText("이 프로젝트에서 AI 생성이 진행 중입니다.", { exact: false })).toBeInTheDocument();
+  for (const name of ["보고 목적", "자료", "구성", "편집", "검토와 내보내기"]) {
+    expect(screen.getByRole("button", { name })).toBeEnabled();
+  }
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
-  // 구성 단계 자체는 진행 표시가 그 화면에 있으므로 잠그지 않는다
-  expect(screen.getByRole("button", { name: "구성" })).not.toBeDisabled();
+  expect(screen.getByRole("button", { name: "스냅샷 복구" })).toHaveAttribute("title", "내용 생성이 끝나면 쓸 수 있습니다");
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
+  expect(await screen.findByRole("button", { name: "초안 PPTX 내보내기" })).toBeDisabled();
 });
 
 // 충돌 배너 (2026-09-03 A5): 구조안과 복구 화면의 412는 ProjectView 배너의 "서버 내용 다시 읽기"로 회복한다
@@ -492,7 +496,8 @@ it("장별 순차 생성이 진행 중이면 beforeunload가 막힌다", async (
   expect(dispatchBeforeUnload()).toBe(false);
   await userEvent.click(await screen.findByRole("button", { name: "구성" }));
   await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toBeDisabled());
+  // 다시 씀 (D3a-5): 묶음 중에도 단계 이동은 잠그지 않으므로 상단 작업 표시를 기다린다
+  await screen.findByText("이 프로젝트에서 AI 생성이 진행 중입니다.", { exact: false });
   expect(dispatchBeforeUnload()).toBe(true);
 });
 
@@ -513,7 +518,8 @@ it("형식 기록을 읽을 수 없는 프로젝트는 열지 않고 보관 방�
 });
 
 // D2b-5a: 새로고침이나 다른 창에서 돌던 장 생성 묶음도 서비스의 진행 중 작업으로 잠근다
-it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 구성 단계을 열고 다른 탭과 창 닫기를 막는다 (D2b-5a)", async () => {
+// 다시 씀 (D3a-5): 다른 단계로 가는 것은 막지 않고 덱 편집을 읽기 전용으로 둔다
+it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 구성 단계를 열고 창 닫기를 막는다 (D2b-5a)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getActiveJob).mockResolvedValue({ ledger_available: true, active: {
@@ -521,8 +527,8 @@ it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 �
     created_at: "2026-10-08T10:00:00+09:00", cancel_requested: false } });
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
   await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
-  expect(screen.getByRole("button", { name: "편집" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "편집" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
   expect(dispatchBeforeUnload()).toBe(true);
 });
 
@@ -543,17 +549,21 @@ it("다른 프로젝트의 AI 작업이 진행 중이면 안내하고 그 작업
   expect(screen.getByRole("button", { name: "편집" })).not.toBeDisabled();
 });
 
-it("진행 중 작업을 확인하기 전에는 단계를 잠그고 확인 중이라고 알린다 (D2b-5a)", async () => {
+// 다시 씀 (D3a-5): 확인 전에는 묶음일 수 있으므로 묶음과 같이 덱 편집과 복구를 잠근다. 단계 이동은 막지 않는다
+it("진행 중 작업을 확인하기 전에는 덱 편집과 스냅샷 복구를 잠그고 확인 중이라고 알린다 (D2b-5a)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   const status = deferred<Awaited<ReturnType<typeof api.getActiveJob>>>();
   vi.mocked(api.getActiveJob).mockReturnValue(status.promise);
   render(<ProjectView project={project} onBack={() => {}} />);
-  const editorBtn = await screen.findByRole("button", { name: "편집" });
-  expect(editorBtn).toBeDisabled();
-  expect(editorBtn).toHaveAttribute("title", "작업 상태를 확인하는 중입니다");
+  const recovery = await screen.findByRole("button", { name: "스냅샷 복구" });
+  expect(recovery).toBeDisabled();
+  expect(recovery).toHaveAttribute("title", "작업 상태를 확인하는 중입니다");
+  expect(screen.getByRole("button", { name: "편집" })).toBeEnabled();
+  expect(screen.getByLabelText("보고서 제목")).toBeDisabled();
   status.resolve({ active: null, ledger_available: true });
-  await waitFor(() => expect(editorBtn).not.toBeDisabled());
+  await waitFor(() => expect(recovery).not.toBeDisabled());
+  expect(screen.getByLabelText("보고서 제목")).toBeEnabled();
 });
 
 // -- D2b-5a 리뷰 반영 -------------------------------------------------------------------------
@@ -577,7 +587,9 @@ it("열고 난 뒤 나타난 이 프로젝트 묶음은 편집 단계을 강제�
   await new Promise((r) => setTimeout(r, 30));  // 탭을 바꾸는 효과가 있었다면 실행될 시간을 준다
   expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(document.querySelector(".structure-screen")).toBeNull();
-  expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
+  // 다시 씀 (D3a-5): 잠그는 것은 단계 이동이 아니라 덱 편집과 복구다
+  expect(screen.getByText(/생성 중인 장은 끝나면 보입니다/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
 });
 
 it("진행 중으로 확인한 작업은 조회가 한 번 실패해도 잠금을 유지하고 계속 조회한다 (리뷰 R4)", async () => {
@@ -589,7 +601,7 @@ it("진행 중으로 확인한 작업은 조회가 한 번 실패해도 잠금�
     .mockImplementation(async () => batchActive(project.name));  // 응답마다 새 객체 (리뷰 R22)
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   await waitFor(() => expect(vi.mocked(api.getActiveJob).mock.calls.length).toBeGreaterThanOrEqual(4));
-  expect(screen.getByRole("button", { name: "편집" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();  // 다시 씀 (D3a-5): 묶음 잠금
   expect(dispatchBeforeUnload()).toBe(true);
 });
 

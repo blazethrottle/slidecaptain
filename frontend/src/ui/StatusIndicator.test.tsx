@@ -101,33 +101,29 @@ it("아이콘 글자는 색 이모지가 아니라 글자 모양으로 그리도
   }
 });
 
-it("작업 알림은 진행 중 작업이 사라질 때만 알린다 (D2b-5c)", () => {
-  const a = { id: "job-a", project: "보고 A" };
-  const { rerender, container } = render(<JobAnnouncer active={null} />);
+// 다시 씀 (D3a-5, 묶음 리뷰 A12): 알림은 종결 알림만 듣는다. 진행 작업에서 사라진 작업은 프로젝트 화면이 결과를
+// 읽어 종결 알림을 낸다(ProjectView.generation.test.tsx)
+it("작업 알림은 작업이 끝날 때 한 번 알리고, 새 작업이 시작되면 글을 비운다 (D2b-5c)", () => {
+  const { container } = render(<JobAnnouncer />);
   const status = () => container.querySelector('[role="status"]')!.textContent;
   expect(status()).toBe("");
-  rerender(<JobAnnouncer active={a} />);
+  act(() => notifyProject({ kind: "job_started", project: "보고 A", jobId: "job-a" }));
   expect(status()).toBe("");
-  rerender(<JobAnnouncer active={{ ...a }} />);  // 조회마다 새 객체가 와도 같은 작업이면 알리지 않는다
-  expect(status()).toBe("");
-  rerender(<JobAnnouncer active={null} />);
+  act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: "job-a", state: "succeeded" }));
   expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
-  // 다시 씀(D3a-4 리뷰 R11): 한 작업은 한 번만 알리므로 이미 알린 작업 대신 새 작업 c를 쓴다
-  const c = { id: "job-c", project: "보고 C" };
-  rerender(<JobAnnouncer active={c} />);
-  rerender(<JobAnnouncer active={{ id: "job-b", project: "보고 B" }} />);  // 한 조회 간격 안에 다음 작업이 시작됐다
-  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 C)");
+  act(() => notifyProject({ kind: "job_started", project: "보고 A", jobId: "job-b" }));
+  expect(status()).toBe("");  // 같은 글이 다시 와도 화면 낭독기가 읽게 비운다
+  act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: "job-b", state: "succeeded" }));
+  expect(status()).toBe("AI 생성 작업이 끝났습니다(보고 A)");
 });
 
-it("같은 탭이 시작한 작업은 진행 작업 조회가 몰라도 종결 알림으로 결과를 알리고, 한 번만 알린다 (D3a-4 리뷰 R11)", () => {
-  // 지금 코드의 틀린 동작: 진행 작업 조회에서 사라짐을 보지 못하면 아무것도 알리지 않는다
-  const { rerender, container } = render(<JobAnnouncer active={null} />);
+it("한 작업의 종결 알림이 두 번 와도 한 번만 알린다 (D3a-4 리뷰 R11, 묶음 리뷰 A12)", () => {
+  const { container } = render(<JobAnnouncer />);
   const status = () => container.querySelector('[role="status"]')!.textContent;
   act(() => notifyProject({ kind: "job_ended", project: "보고 D", jobId: "job-d", state: "failed" }));
-  expect(status()).toBe("AI 생성 작업이 실패했습니다(보고 D)");
-  // 늦게 온 진행 작업 조회가 같은 작업의 사라짐을 보아도 다시 알리지 않는다
-  rerender(<JobAnnouncer active={{ id: "job-d", project: "보고 D" }} />);
-  rerender(<JobAnnouncer active={null} />);
+  // 조회한 화면과 프로젝트 화면이 같은 작업의 종결을 각각 알린다. 결과 없는 늦은 알림이 결과 문구를 덮지 않는다
+  act(() => notifyProject({ kind: "job_ended", project: "보고 D", jobId: "job-d", state: "failed" }));
+  act(() => notifyProject({ kind: "job_ended", project: "보고 D", jobId: "job-d" }));
   expect(status()).toBe("AI 생성 작업이 실패했습니다(보고 D)");
 });
 
@@ -141,19 +137,15 @@ it("작업 알림은 성공, 실패, 취소, 중단, 완료 불명을 다른 문
     ["remote_completion_unknown", "AI 생성 작업이 끝났는지 확인하지 못했습니다(보고 A)"],
   ];
   for (const [state, text] of cases) {
-    // 종결 알림이 진행 작업의 사라짐보다 먼저 온 경우
-    const a = { id: `job-${state}`, project: "보고 A" };
-    const first = render(<JobAnnouncer active={a} />);
-    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: a.id, state: state as never }));
-    first.rerender(<JobAnnouncer active={null} />);
+    const first = render(<JobAnnouncer />);
+    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: `job-${state}`, state: state as never }));
     expect(status(first.container)).toBe(text);
     first.unmount();
-    // 사라짐을 먼저 알리고 종결 알림이 뒤에 온 경우: 결과 문구로 고친다
-    const b = { id: `job-late-${state}`, project: "보고 A" };
-    const second = render(<JobAnnouncer active={b} />);
-    second.rerender(<JobAnnouncer active={null} />);
+    // 결과를 읽지 못해 결과 없이 알린 뒤 결과가 오면 고친다
+    const second = render(<JobAnnouncer />);
+    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: `job-late-${state}` }));
     expect(status(second.container)).toBe("AI 생성 작업이 끝났습니다(보고 A)");
-    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: b.id, state: state as never }));
+    act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: `job-late-${state}`, state: state as never }));
     expect(status(second.container)).toBe(text);
     second.unmount();
   }
@@ -181,7 +173,7 @@ it("저장 상태를 보이지 않는 때(null)를 거친 저장됨은 알리지
 
 it("같은 결과의 작업이 연달아 끝나도 작업 종류가 글에 들어가 두 번째도 알린다 (D3a 묶음 리뷰 A1)", () => {
   // 지금 코드의 틀린 동작: 구조안 생성 성공 뒤 내용 생성 성공은 글이 같아 화면 낭독기가 다시 읽지 않는다
-  const { container } = render(<JobAnnouncer active={null} />);
+  const { container } = render(<JobAnnouncer />);
   const status = () => container.querySelector('[role="status"]')!.textContent;
   act(() => notifyProject({ kind: "job_ended", project: "보고 E", jobId: "job-s", state: "succeeded", jobKind: "structure" }));
   expect(status()).toBe("구조안 생성이 끝났습니다(보고 E)");

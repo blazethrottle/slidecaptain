@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, type StructureResult } from "../api/client";
+import { api, type JobView, type StructureResult } from "../api/client";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { comparisonDeck, derivedDeck, storyDeck } from "../test/story";
@@ -14,13 +14,22 @@ vi.mock("../api/client", async (importOriginal) => {
 
 // D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
 const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
+// 승인 직전에 구조안 후보를 다시 조회한다 (D3a-5). 기본 생성이 만든 후보는 ID로 돌려주고 묶음 조회는 batchGetJob이 맡는다
+const batchGetJob = vi.fn<typeof api.getJob>();
+const structureCandidates = new Map<string, JobView>();
 beforeEach(() => {
+  structureCandidates.clear();
+  batchGetJob.mockReset();
+  vi.mocked(api.getJob).mockImplementation((name, id) =>
+    structureCandidates.has(id) ? Promise.resolve(structureCandidates.get(id)!) : batchGetJob(name, id));
   vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
   vi.mocked(api.startJob).mockImplementation(async (name, body) => {
     const result = await generateStructure(name, body.params as Record<string, unknown>);
     const failed = result.status !== "ok";
-    return jobView("structure", { project: name, result: result as unknown as Record<string, unknown>,
+    const view = jobView("structure", { id: "job-structure", project: name, result: result as unknown as Record<string, unknown>,
       state: failed ? "failed" : "succeeded", candidate_status: failed ? "none" : "held" });
+    structureCandidates.set(view.id, view);
+    return view;
   });
 });
 
@@ -43,7 +52,7 @@ it.each([storyDeck, comparisonDeck, derivedDeck])("질문을 계획 요청으로
   const final = batchView(deck.structure.chapters.map((c) => chapterView(c.id, "succeeded",
     { result: chapterResult({ template: "summary", conclusion: "비용 확인 후 판단", points: [] }) })), { project: "synthetic" });
   vi.mocked(api.startChapters).mockResolvedValueOnce({ ...final, state: "running", outcome: null });
-  vi.mocked(api.getJob).mockResolvedValueOnce(final);
+  vi.mocked(batchGetJob).mockResolvedValueOnce(final);
   // 서버 묶음이 모든 장을 적용한 덱
   vi.mocked(api.getDeck).mockResolvedValue({ ...deck, slides: deck.structure.chapters.map((c) => ({ chapter_id: c.id,
     eyebrow: "", subtitle: "", slots: { template: "summary" as const, conclusion: "비용 확인 후 판단", points: [] } })) });

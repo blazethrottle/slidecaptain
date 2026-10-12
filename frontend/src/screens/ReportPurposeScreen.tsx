@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type ProjectInfo } from "../api/client";
+import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
 import type { SaveStatus } from "../ui/StatusIndicator";
 
@@ -25,7 +26,8 @@ function metaEqual(a: Deck["meta"], b: Deck["meta"]): boolean {
 }
 
 export function ReportPurposeScreen({
-  project, deck, onDeckChange, onDirtyChange, onScreenReady, onConflict, onSaveStatusChange,
+  project, deck, onDeckChange, onDirtyChange, onScreenReady, onConflict, onSaveStatusChange, readOnly = false,
+  readOnlyNotice = false,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -34,6 +36,10 @@ export function ReportPurposeScreen({
   onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모가 단계를 옮기기 전에 플러시하도록
   onConflict?: () => void;  // 저장이 412를 받으면 부모가 충돌 안내를 띄운다
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
+  // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 보고 정보를 고치지 않는다. readOnlyNotice는 묶음을
+  // 확인했을 때만 안내를 보인다 (D3a-5, 계획 4.4)
+  readOnly?: boolean;
+  readOnlyNotice?: boolean;
 }) {
   const [meta, setMeta] = useState(deck.meta);
   const metaRef = useRef(meta);
@@ -81,14 +87,19 @@ export function ReportPurposeScreen({
   }, [project.name, deck, onDeckChange, onDirtyChange, onConflict]);
 
   // 진행 중 저장 뒤에 이어 붙는다: 버튼 클릭 직후 단계를 옮겨도 같은 내용을 낡은 ETag로 다시 보내지 않는다
+  // 읽기 전용이면 저장하지 않는다. 묶음 중 저장은 묶음의 사슬을 끊는다. 고친 입력이 남았으면 버릴지 묻는다
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const flushMeta = useCallback((): Promise<boolean> => {
     const next = saveChain.current.then(() => {
       if (metaEqual(metaRef.current, savedMeta.current)) return true;  // 저장할 것이 없다
+      if (readOnlyRef.current) return window.confirm(BATCH_DISCARD_CONFIRM);
       return doSaveMeta(metaRef.current);
     });
     saveChain.current = next.catch(() => false);
     return next;
   }, [doSaveMeta]);
+  const locked = saving || readOnly;
 
   useEffect(() => {
     onScreenReady?.(flushMeta);
@@ -100,17 +111,18 @@ export function ReportPurposeScreen({
       {notice && <p role="alert">{notice}</p>}
       {/* 저장 알림은 상단 머리의 저장 상태 하나로 모은다. 이 글은 보이기만 한다 (D3a 묶음 리뷰 A2) */}
       {success && !notice && <p className="notice">{success}</p>}
+      {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
       <section>
         <h2>보고 정보</h2>
         <div className="field">
           <label>보고서 제목
-            <input aria-label="보고서 제목" value={meta.title} disabled={saving}
+            <input aria-label="보고서 제목" value={meta.title} disabled={locked}
               onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>보고 유형
-            <select aria-label="보고 유형" value={meta.report_type} disabled={saving}
+            <select aria-label="보고 유형" value={meta.report_type} disabled={locked}
               onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
               {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
@@ -118,18 +130,18 @@ export function ReportPurposeScreen({
         </div>
         <div className="field">
           <label>보고자 <span className="hint">(이름 또는 부서. 표지에 표기됩니다)</span>
-            <input aria-label="보고자" value={meta.presenter ?? ""} disabled={saving}
+            <input aria-label="보고자" value={meta.presenter ?? ""} disabled={locked}
               onChange={(e) => setMeta({ ...meta, presenter: e.target.value })} />
           </label>
         </div>
         <div className="field">
           <label>피보고자 <span className="hint">(문서에 적히지 않고, 문체와 상세 수준을 맞추는 데만 씁니다)</span>
-            <input aria-label="피보고자" value={meta.audience ?? ""} disabled={saving}
+            <input aria-label="피보고자" value={meta.audience ?? ""} disabled={locked}
               onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
           </label>
         </div>
         <div className="actions">
-          <Button variant="primary" onClick={() => void flushMeta()} disabled={saving}>보고 정보 저장</Button>
+          <Button variant="primary" onClick={() => void flushMeta()} disabled={locked}>보고 정보 저장</Button>
         </div>
       </section>
     </div>

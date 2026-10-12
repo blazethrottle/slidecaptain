@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, ApiError, messageOf, onProjectEvent, savedEtag, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
+import { api, ApiError, messageOf, notifyProject, onProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
+import { ActiveJobContext, type ActiveJobState } from "../ui/ActiveJobNotice";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
@@ -71,7 +72,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // null이 아니면 대화 상자가 열려 있다는 뜻이라 다른 상태와 함께 잠금 조건에도 쓴다
   const [consentResolve, setConsentResolve] = useState<((granted: boolean) => void) | null>(null);
   const [consentStatus, setConsentStatus] = useState<AppStatus | undefined>(undefined);
-  const flushScreen = useRef<null | (() => Promise<boolean>)>(null);
+  // "declined"는 화면이 떠나기 전 확인에서 사용자가 머물기를 골랐다는 뜻이다. 실패 안내를 띄우지 않는다 (D3a-5)
+  const flushScreen = useRef<null | (() => Promise<boolean | "declined">)>(null);
   // leaveScreen이 flush 실패의 일반 배너를 띄우기 전에 확인한다: onConflict가 이미 그 실패를
   // 설명했으면(플러시 도중 412) 중복 배너를 생략한다 (A5b 리뷰 발견 3)
   const justConflicted = useRef(false);
@@ -79,6 +81,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const [jobChecked, setJobChecked] = useState(false);
   const [activeJob, setActiveJob] = useState<ActiveJob | null>(null);
   const [ledgerAvailable, setLedgerAvailable] = useState(true);
+  const [activeRevision, setActiveRevision] = useState(0);  // 진행 작업 조회가 끝난 횟수 (실패 안내가 작업 종결을 판정한다)
   const checkSeq = useRef(0);
   const checkedOnce = useRef(false);
   const refreshActiveJob = useCallback(async () => {
@@ -88,6 +91,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       if (seq !== checkSeq.current) return;  // 늦게 온 옛 응답은 버린다 (D2b-5a 리뷰 R18)
       setActiveJob(status.active ?? null);
       setLedgerAvailable(status.ledger_available);
+      setActiveRevision((n) => n + 1);
     } catch {
       if (seq !== checkSeq.current) return;
       // 첫 확인이 실패하면 잠그지 않는다(생성 버튼이 원인을 안내한다). 진행 중으로 확인한 작업은 놓지 않고
@@ -103,13 +107,39 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [refreshActiveJob]);
-  // 진행 중 작업이 있는 동안만 다시 확인한다
+  // 진행 중 작업이 있는 동안만 다시 확인한다. 조회가 끝날 때마다(activeRevision) 다음 조회를 예약한다: 응답이 앞과
+  // 같은 객체여도 조회가 멈추지 않게 한다
   useEffect(() => {
     if (!activeJob) return;
     const timer = setTimeout(() => void refreshActiveJob(), jobPollMs);
     return () => clearTimeout(timer);
-  }, [activeJob, jobPollMs, refreshActiveJob]);
-  const batchHere = activeJob?.project === project.name && activeJob.kind === "chapters";
+  }, [activeJob, activeRevision, jobPollMs, refreshActiveJob]);
+  // 이 탭이 작업을 등록하거나 따라가던 작업이 끝나면 바로 다시 확인한다. 진행 작업 조회는 처음 열 때와 창 초점에만
+  // 일어나 같은 탭이 등록한 작업을 몰랐다(계획 사실 11). 등록을 알고 나면 위 조회가 이어지므로, 그 작업을 조회하던
+  // 화면이 내려가도 종결을 놓치지 않는다 (D3a-5, D3a-3 리뷰 R9)
+  useEffect(() => onProjectEvent((event) => {
+    if (event.kind === "job_started" || event.kind === "job_ended") void refreshActiveJob();
+  }), [refreshActiveJob]);
+  // 진행 작업에서 사라진 작업은 원장에서 결과를 읽어 종결을 알린다. 그 작업을 조회하던 화면이 내려갔으면 종결
+  // 알림을 낼 곳이 없고, 진행 작업의 사라짐만으로는 결과를 몰라 "끝났습니다"와 결과 문구를 두 번 알렸다
+  // (D3a-5, 묶음 리뷰 A12). 결과를 읽지 못하면 상태 없이 알린다(알림 쪽이 끝났다고만 말한다)
+  const previousActive = useRef<ActiveJob | null>(null);
+  useEffect(() => {
+    const before = previousActive.current;
+    previousActive.current = activeJob;
+    if (!before || before.id === activeJob?.id) return;
+    void Promise.resolve().then(() => api.getJob(before.project, before.id))
+      .then((view) => (TERMINAL_JOB_STATES.has(view.state) ? view : null))
+      .catch(() => null)
+      .then((view) => notifyProject({ kind: "job_ended", project: before.project, jobId: before.id,
+        state: view?.state, jobKind: view?.kind ?? before.kind }));
+  }, [activeJob]);
+  // 잠금은 화면이 보고하는 바쁨이 아니라 서버의 진행 작업으로 정한다 (D3a-5, 계획 4.4 표). 이 프로젝트의 장 생성
+  // 묶음 중에는 덱 편집을 읽기 전용으로, 내보내기와 복구와 다시 읽기와 검수 기록을 잠그고, 단계 이동은 막지
+  // 않는다. 진행 작업을 확인하기 전에는 묶음일 수 있으므로 묶음과 같이 잠근다(새로고침 직후 잠금 공백 방지)
+  const thisProjectJob = activeJob?.project === project.name ? activeJob : null;
+  const batchHere = thisProjectJob?.kind === "chapters";
+  const batchLocked = batchHere || !jobChecked;
   // 진행 API 다시 조회. 처음 열 때, 공통 알림(저장 성공, 작업 등록, 작업 종결) 뒤, 창 초점을 얻을 때다.
   // 1회 소요 시간은 이 Mac에서 작업 행 0건 2.4ms, 2,000건 69.4ms(중앙값)라 알림마다 조회한다. 늦은 응답은 버린다
   const refreshProgress = useCallback(async () => {
@@ -194,11 +224,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     wasBatchHere.current = batchHere;
     if (batchHere && activeJob) lastBatchId.current = activeJob.id;
   }, [batchHere, activeJob, project.name]);
-  // 화면 전체를 막는 AI 작업: 구조안 승인의 장 생성, 도식 생성, 진행 중 작업 확인 전, 이 프로젝트의 장 생성 묶음.
-  // 생성 중 이동과 편집의 허용(계획 4.4)은 D3a-5가 한다
   generatingRef.current = generating;
-  const aiBusy = generating || diagramGenerating || !jobChecked || batchHere;
-  const aiBusyTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "AI 생성이 끝나면 이동할 수 있습니다";
+  // 화면 바쁨(generating, diagramGenerating)은 그 화면 안의 입력 잠금과, 등록 응답 전이라 서버가 아직 모르는
+  // 이 탭의 작업에만 쓴다. 화면이 바뀌면 내려간 화면의 바쁨은 버린다: 언마운트로 조회를 멈춘 화면은 바쁨을 내리지
+  // 않았다 (계획 사실 10)
+  useEffect(() => { setGenerating(false); setDiagramGenerating(false); }, [stage, screenKey, showRecovery]);
+  const aiRunningHere = thisProjectJob !== null || generating || diagramGenerating;
+  const batchTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "내용 생성이 끝나면 쓸 수 있습니다";
 
   useEffect(() => {
     if (project.status === "ok") {
@@ -252,12 +284,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       // 구형 구현이 있다 (A5b 리뷰 발견 5)
       // 독립 앱에서는 진행 중 AI 작업을 main 프로세스가 "계속 작업 / 취소 후 닫기"로 묻는다. 여기서 또 막으면
       // 취소한 뒤에도 같은 대화 상자가 한 번 더 뜬다 (D2b-5c 리뷰 R3). 웹 모드는 이 경고가 유일한 안내다
-      const aiRunning = !window.slidecaptain && (generating || diagramGenerating || batchHere);
+      // 이 프로젝트의 진행 작업을 서버 기준으로 본다. 화면을 옮겨도 작업이 도는 동안 경고하고, 끝나면 푼다 (D3a-5)
+      const aiRunning = !window.slidecaptain && aiRunningHere;
       if (dirty || uploading || aiRunning) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty, uploading, generating, diagramGenerating, batchHere]);
+  }, [dirty, uploading, aiRunningHere]);
 
   if (project.status === "newer_format") {
     // 이 앱이 모르는 형식이다. 모르는 필드를 버린 채 열거나 내보내지 않도록 아무 것도 읽지 않는다 (D2a-1)
@@ -329,10 +362,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       // 이번 플러시 동안 생긴 충돌만 본다: 저장 버튼처럼 leaveScreen 밖에서 켜진 값이 새어 들어와
       // 무관한 실패의 배너까지 삼키지 않게 호출 직전에 재설정한다 (묶음 최종 리뷰 1)
       justConflicted.current = false;
-      const flushed = await flushScreen.current();
+      const result = await flushScreen.current();
+      const flushed = result === true;
       if (flushed) {
         setDirty(false);
-      } else if (!justConflicted.current && stage !== "review") {
+      } else if (result !== "declined" && !justConflicted.current && stage !== "review") {
         setError(`마지막 편집을 저장하지 못해 ${action} 중단했습니다. 저장 상태를 확인한 뒤 다시 시도해 주세요.`);
       }
       return flushed;
@@ -407,24 +441,28 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
   };
 
-  const locked = aiBusy || uploading || leaving || dialogOpen;
-  const lockedTitle = aiBusy ? aiBusyTitle : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined;
-  // 구성 단계는 generating으로는 잠그지 않는 예외다(진행 표시가 그 화면에 있다). 업로드는 자료 단계 안의
-  // 일이라 여기까지 잠가야 FC-17이 막힌다(계획서 B4 가정 7)
-  const stageDisabled = (id: Stage) => id === "structure"
-    ? diagramGenerating || uploading || leaving || dialogOpen
-    : locked;
-  const stageTitle = (id: Stage) => id === "structure"
-    ? (diagramGenerating ? "AI 생성이 끝나면 이동할 수 있습니다" : uploading ? "자료 업로드가 끝나면 이동할 수 있습니다" : undefined)
-    : lockedTitle;
+  // 이동 잠금: 업로드(자료 단계 안의 일이라 FC-17), 이탈 전 플러시, 고지 대화 상자. 도식 작성 창의 AI 호출 중에도
+  // 잠근다. 작성 창의 입력은 덱이 아니어서 편집 화면의 플러시가 이탈을 거절하기 때문이다(계획 4.4와 다른 점, 구현 기록)
+  const navLocked = uploading || leaving || dialogOpen || diagramGenerating;
+  const navTitle = uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
+    : diagramGenerating ? "도식 생성이 끝나면 이동할 수 있습니다" : undefined;
+  // 묶음 중 잠그는 머리 행동(스냅샷 복구, 보존한 변경, 서버 내용 다시 읽기). AI 설정은 어느 작업이든 잠근다:
+  // 서버가 생성 중 설정 변경을 409로 거절한다 (계획 4.4)
+  const recoveryLocked = navLocked || batchLocked;
+  const recoveryTitle = navTitle ?? (batchLocked ? batchTitle : undefined);
+  const aiSettingsLocked = navLocked || activeJob !== null || generating || !jobChecked;
+  const stageDisabled = (_id: Stage) => navLocked;
+  const stageTitle = (_id: Stage) => navTitle;
   const screenKeyValue = `${stage}:${screenKey}`;
+  const activeJobState: ActiveJobState = { active: activeJob, revision: activeRevision, refresh: () => void refreshActiveJob() };
 
   return (
+    <ActiveJobContext.Provider value={activeJobState}>
     <main className="project-view project-shell">
       {/* DOM 순서는 상단 머리, 단계 목록, 본문이다. 화면 배치는 grid 영역으로 한다 (계획 6절 키보드 순서) */}
       <header className="project-topbar">
         <div className="topbar-title">
-          <button onClick={goBack} disabled={locked} title={lockedTitle}>목록으로</button>
+          <button onClick={goBack} disabled={navLocked} title={navTitle}>목록으로</button>
           <h1>{deck.meta.title}</h1>
         </div>
         <div className="topbar-status">
@@ -435,7 +473,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           )}
           <SaveAnnouncer kind={saveStatus?.kind ?? null} />
           {draftCount > 0 && (
-            <button className="btn-text" onClick={openRecovery} disabled={locked}>보존한 변경 {draftCount}건</button>
+            <button className="btn-text" onClick={openRecovery} disabled={recoveryLocked} title={recoveryTitle}>보존한 변경 {draftCount}건</button>
           )}
           {activeJob && (
             // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
@@ -455,11 +493,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         </div>
         <div className="topbar-actions">
           <AiStatusLine compact className="topbar-ai" />
-          <AISettingsPanel disabled={locked} />
-          <button onClick={openRecovery} disabled={locked} title={lockedTitle}>스냅샷 복구</button>
+          <AISettingsPanel disabled={aiSettingsLocked} />
+          <button onClick={openRecovery} disabled={recoveryLocked} title={recoveryTitle}>스냅샷 복구</button>
         </div>
       </header>
-      <JobAnnouncer active={activeJob} />
+      <JobAnnouncer />
       <aside className="stage-sidebar">
         <nav aria-label="보고서 작성 단계">
           <ol className="stage-list">
@@ -509,8 +547,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             {/* 다른 이동 버튼과 같은 조건으로 잠근다: 업로드 진행 중 눌러 자료 화면이 통째로
                 언마운트되면, 나중에 응답한 업로드 결과가 화면에 영구히 반영되지 않는다(B 묶음
                 최종 리뷰 major F-1) */}
-            <button onClick={reloadDeck} disabled={locked}
-              title={aiBusy ? "AI 생성이 끝나면 다시 읽을 수 있습니다"
+            <button onClick={reloadDeck} disabled={recoveryLocked}
+              title={batchLocked ? "내용 생성이 끝나면 다시 읽을 수 있습니다"
                 : uploading ? "자료 업로드가 끝나면 다시 읽을 수 있습니다" : undefined}>서버 내용 다시 읽기</button>
           </p>
         )}
@@ -524,11 +562,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {!showRecovery && stage === "purpose" && (
           <ReportPurposeScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
+            readOnly={batchLocked} readOnlyNotice={batchHere}
             onScreenReady={(f) => { flushScreen.current = f; }} onDirtyChange={setDirty} onConflict={onConflict}
             onSaveStatusChange={setSaveStatus} />
         )}
         {!showRecovery && stage === "sources" && (
           <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}
+            batchRunning={batchHere}
             onScreenReady={(f) => { flushScreen.current = f; }}
             onDirtyChange={setDirty} onBusyChange={setUploading} onSaveStatusChange={setSaveStatus} />
         )}
@@ -538,7 +578,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
-            limitations={progressFailed ? [] : stageLimitations(progress, "structure")} />
+            limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked} />
         )}
         {!showRecovery && stage === "editor" && (
           <EditorScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
@@ -546,12 +586,14 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onConflictHint={() => { justConflicted.current = true; }}
             onDirtyChange={setDirty} onBusyChange={setDiagramGenerating}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
-            initialChapterId={focusChapter} onChapterChange={onEditorChapterChange} />
+            initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
+            readOnly={batchLocked} readOnlyNotice={batchHere} />
         )}
         {!showRecovery && stage === "review" && (
           <ReviewScreen key={screenKeyValue} projectName={project.name} hasSlides={hasSlides} exporting={exporting}
             review={stageProgress(progress, "review")} progressFailed={progressFailed}
-            exportDisabled={locked} exportTitle={lockedTitle}
+            exportDisabled={navLocked || batchLocked} exportTitle={navTitle ?? (batchLocked ? batchTitle : undefined)}
+            recordsLocked={batchLocked} batchRunning={batchHere}
             exportResult={exportResult?.projectName === project.name ? exportResult.result : null}
             historyRevision={historyRevision} onExport={() => void doExport()}
             onScreenReady={guard => { flushScreen.current = guard; }}
@@ -559,5 +601,6 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
       </div>
     </main>
+    </ActiveJobContext.Provider>
   );
 }

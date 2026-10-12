@@ -15,7 +15,7 @@ vi.mock("../api/client", async (importOriginal) => {
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(), getActiveJob: vi.fn(),
     listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
-    getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn() } };
+    getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn(), uploadSource: vi.fn() } };
 });
 
 const STAGES = ["보고 목적", "자료", "구성", "편집", "검토와 내보내기"];
@@ -589,11 +589,14 @@ describe("D3a-3 리뷰 반영", () => {
     await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBeGreaterThanOrEqual(before + 3));
   });
 
+  // 다시 씀 (D3a-5): 생성 중에는 단계 이동을 잠그지 않는다. 남은 이동 잠금인 자료 업로드로 확인한다
   it("잠긴 단계 버튼은 상태와 함께 잠금 사유를 접근 가능한 설명으로 보인다 (R7)", async () => {
-    vi.mocked(api.getActiveJob).mockResolvedValue(batchActive());
-    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    vi.mocked(api.uploadSource).mockImplementation(() => new Promise(() => {}));
+    await openProject();
+    await userEvent.click(stageButton("자료"));
+    await userEvent.upload(await screen.findByLabelText("자료 파일 선택"), new File(["가"], "메모.md", { type: "text/markdown" }));
     await waitFor(() => expect(stageButton("편집")).toBeDisabled());
-    await waitFor(() => expect(stageButton("편집")).toHaveAccessibleDescription(/AI 생성이 끝나면 이동할 수 있습니다/));
+    expect(stageButton("편집")).toHaveAccessibleDescription(/자료 업로드가 끝나면 이동할 수 있습니다/);
     expect(stageButton("편집")).toHaveAccessibleDescription(/준비됨/);
   });
 

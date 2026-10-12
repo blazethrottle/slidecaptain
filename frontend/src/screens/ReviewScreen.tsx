@@ -25,7 +25,7 @@ function partStatus(part: ReviewPart): { kind: StatusKind; detail?: string } {
 }
 export function ReviewScreen({
   projectName, hasSlides, exporting, exportDisabled, exportTitle, exportResult, historyRevision, onExport,
-  onScreenReady, onDirtyChange, review, progressFailed = false,
+  onScreenReady, onDirtyChange, review, progressFailed = false, recordsLocked = false, batchRunning = false,
 }: {
   review?: StageProgress;  // 진행 API의 검토 단계. 세 부분의 상태와 사유를 담는다
   progressFailed?: boolean;
@@ -39,6 +39,9 @@ export function ReviewScreen({
   onExport: () => void;
   onScreenReady?: (guard: (() => Promise<boolean>) | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 검수 기록과 제출본 영역을 잠근다 (D3a-5, 계획 4.4)
+  recordsLocked?: boolean;
+  batchRunning?: boolean;  // 묶음을 확인했을 때만 잠긴 이유를 보인다
 }) {
   const parts = review?.parts ?? [];
   // 조회가 실패하면 지난 응답의 한계 안내를 보이지 않는다 (D3a-3 리뷰 R14)
@@ -46,6 +49,7 @@ export function ReviewScreen({
     : [...new Set(parts.flatMap((p) => p.reasons ?? []).filter((r) => READY_LIMITATIONS.has(r)))];
   return (
     <div className="review-screen">
+      {batchRunning && <p role="status">내용 생성이 끝나면 내보내기와 검수 기록을 쓸 수 있습니다.</p>}
       <section aria-labelledby="review-state-heading">
         <h2 id="review-state-heading">검토 상태</h2>
         {progressFailed ? <p><StatusIndicator kind="unknown" /> 검토 상태를 읽지 못했습니다.</p>
@@ -69,7 +73,7 @@ export function ReviewScreen({
         </div>
         {exportResult && <ExportQualitySummary result={exportResult} />}
       </section>
-      <ExportHistoryPanel key={historyRevision} projectName={projectName} busy={exporting}
+      <ExportHistoryPanel key={historyRevision} projectName={projectName} busy={exporting || recordsLocked}
         onScreenReady={onScreenReady} onDirtyChange={onDirtyChange} />
     </div>
   );

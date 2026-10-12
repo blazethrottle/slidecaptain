@@ -8,6 +8,7 @@ import { formatUsage } from "../api/usage";
 import { Diagnostics } from "../ui/Diagnostics";
 import { describeAiOutput, describeFailure } from "../ui/failure";
 import { FailureNotice } from "../ui/FailureNotice";
+import { useHeaderShowsJob } from "../ui/ActiveJobNotice";
 
 const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.";
 const REPAIR_CANCELLED_NOTICE = "수정 요청을 취소했습니다. 입력과 기존 저장본은 유지됩니다.";
@@ -231,6 +232,8 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
       && <p className="usage">사용 호출 {result.calls}회, 재검수 {result.review_calls}회, 수정 {result.rounds}회차</p>}
     {"raw_text" in result && result.raw_text && result.status !== "ok" && <><p>재작성 응답 원문</p><pre>{result.raw_text}</pre></>}
   </>;
+  // 머리가 이 수리 작업을 보이는 동안은 머리의 "그 작업 취소" 하나만 둔다 (D3a-5, 묶음 리뷰 A11)
+  const headerShowsRepair = useHeaderShowsJob(repairJob);
   return <section className="story-rewrite" aria-label="보고 계획 재작성">
     <h2>기존 편집을 보존하며 계획 재작성</h2>
     <p>장 수와 제목, 본문과 도식은 유지하고 현재 자료로 보고 질문, 장 순서와 근거 연결을 다시 계획합니다. 도식이 의존하는 원자료가 바뀌었다면 재작성을 중단합니다.</p>
@@ -243,7 +246,7 @@ export function StoryRewritePanel({ projectName, deck, disabled, onApplied, onBu
       <button disabled={busy || disabled || !question.trim()} onClick={preview}>재작성 미리보기</button>
       {dirty && <button disabled={busy} onClick={() => { if (window.confirm("재작성 입력과 후보를 버릴까요?")) { dropCandidate(); clear(); } }}>재작성 취소</button>}
       {busy && <span role="status">처리 중입니다...</span>}
-      {busy && repairJob && <button onClick={() => void stopRepair()}>실행 중단</button>}
+      {busy && repairJob && !headerShowsRepair && <button onClick={() => void stopRepair()}>실행 중단</button>}
     </div>
     <details><summary>문제 목록으로 제한된 수정·재검수</summary>
       <p>현재 선택한 AI에 원문 자료, 기존 초안과 문제 목록을 보냅니다. 실패·형식 재시도와 별도 AI 재검수까지 아래 총 호출에 포함됩니다. 본문과 도식은 유지하며 제출 승인은 부여하지 않습니다.</p>

@@ -6,13 +6,15 @@ import {
   type TemplateName,
 } from "../api/client";
 import {
-  blockingReasons, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText, waitJob,
+  blockingReasons, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText,
+  stillActive, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { Diagnostics } from "../ui/Diagnostics";
 import { describeAiOutput, describeFailure, describeJobFailure, type FailureDescription } from "../ui/failure";
 import { FailureNotice } from "../ui/FailureNotice";
 import { StatusIndicator } from "../ui/StatusIndicator";
+import { BATCH_READ_ONLY_NOTICE, useHeaderShowsJob } from "../ui/ActiveJobNotice";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
 import { batchSummary } from "./stageStatus";
@@ -33,6 +35,9 @@ const FAILED_CHAPTER_USAGE_NOTICE =
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
 const UNSAVED_RESULT_CONFIRM =
   "저장하지 못한 생성 결과가 있습니다. 복사하지 않고 계속하면 그 결과는 사라집니다. 계속할까요?";
+// 장 구성 초안은 승인해야 덱에 들어간다. 단계 이동이 열려 있으므로 떠나기 전에 묻는다 (D3a-5, D2a 이월 (2), C16)
+const DRAFT_LEAVE_CONFIRM =
+  "승인하지 않은 장 구성 초안은 저장되지 않습니다. 이 화면을 떠나면 고친 내용이 사라집니다. 계속할까요?";
 
 type ProgressLabel = "대기" | "생성 중" | "완료" | "실패" | "취소" | "보류" | "중단" | "취소 요청됨"
   | "완료 여부 확인 필요" | "이전 입력 기준";
@@ -46,6 +51,9 @@ const CANCEL_REQUESTED_NOTICE = "취소를 요청했습니다. AI가 응답을 �
 // 승인 반영이 저장 충돌(412)로 거절됐을 때 실패 안내의 "무슨 일"과 "무엇이 보존됐는가" (D2a 이월 3, D3a-4)
 const APPROVAL_CONFLICT = "다른 창이나 프로그램에서 먼저 저장되어 장 구성을 승인하지 않았습니다.";
 const APPROVAL_NOT_PRESERVED = "승인하려던 장 구성을 보존하지 못했습니다. 아래 상자의 내용을 복사해 보관해 주세요.";
+// 승인 직전 재조회 (D3a-5, 계획 4.4 구조안 후보 보강 ②). 편집 단계 장 재생성의 반영 직전 재조회와 같이, 확인하지
+// 못하면 승인하지 않는다
+const APPROVAL_CHECK_ERROR = "구조안 후보가 지금 입력 기준인지 확인하지 못해 승인하지 않았습니다. 잠시 뒤 다시 승인해 주세요.";
 
 // 등록을 다시 보낼 수 있으면 실패 안내의 주 행동이 "내용 생성 다시 시작"이다. 안내와 버튼이 엇갈리지 않게 한다
 // (리뷰 R7). 다른 작업 진행 중이면 그 작업 취소가 먼저이고 다시 시작은 보조 행동이다
@@ -91,19 +99,25 @@ export type StructureBrief = { instructions: string; targetChapters: string };
 export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "" };
 
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
-  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], pollIntervalMs = 1000 }: {
+  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
+  readOnlyNotice = false, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onDone: () => void;
   onBusyChange?: (busy: boolean) => void;  // 승인 중 순차 생성 진행을 부모(ProjectView)에 알려 다른 탭 진입을 막는다
   onConflict?: () => void;  // 승인 루프의 putDeck이 412를 받으면 부모가 배너를 띄운다
-  onScreenReady?: (flush: () => Promise<boolean>) => void;
+  // 떠나기 전 확인. "declined"는 사용자가 머물기를 골랐다는 뜻이라 부모가 실패 안내를 띄우지 않는다
+  onScreenReady?: (flush: () => Promise<boolean | "declined">) => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
   focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구(보고 계획 없음 등). 이 화면의 한계 안내로 보인다 (A3)
+  // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 장 구성과 구성 적용을 잠근다 (D3a-5, 계획 4.4).
+  // readOnlyNotice는 묶음을 확인했을 때만 안내한다. 이 화면이 그 묶음을 따라가는 중이면 진행 표시가 대신한다
+  readOnly?: boolean;
+  readOnlyNotice?: boolean;
   // 주안점과 목표 장수. 저장하지 않는 값이라 부모(프로젝트 화면)가 들고 있어 단계 이동과 다시 마운트 사이에
   // 남는다(계획 4.4, 사실 13, D3a-2 리뷰 R6). 넘기지 않으면 이 화면 안에서만 든다
   brief?: StructureBrief;
@@ -142,13 +156,15 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const structureJob = useRef<string | null>(null);
   const staleStructure = useRef<string | null>(null);
   const [earlierNotice, setEarlierNotice] = useState("");
+  const [staleApproval, setStaleApproval] = useState("");  // 승인 직전 재조회가 찾은 낡음 이유 문구 (D3a-5)
   const registerRewrite = useCallback((guard:()=>Promise<boolean>)=>{rewriteLeave.current=guard;},[]);
   const registerDocument = useCallback((guard:()=>Promise<boolean>)=>{documentLeave.current=guard;},[]);
   // 화면을 떠나기 전 확인. 저장하지 못한 생성 결과(복사 상자)가 있으면 먼저 확인을 받는다 (리뷰 R1).
   // 끝에 미저장 신호를 다시 보고한다: 부모가 이동 준비 중 신호를 지우면 내보내기처럼 화면이 남는
   // 경우 초안의 미저장 표시가 꺼진 채 남았다 (리뷰 R9)
   useEffect(()=>{onScreenReady?.(async()=>{
-    if(dirtyParts.current.backup&&!window.confirm(UNSAVED_RESULT_CONFIRM))return false;
+    if(dirtyParts.current.backup&&!window.confirm(UNSAVED_RESULT_CONFIRM))return "declined";
+    if(dirtyParts.current.draft&&!dirtyParts.current.backup&&!window.confirm(DRAFT_LEAVE_CONFIRM))return "declined";
     const ok=await documentLeave.current() && await rewriteLeave.current();
     queueMicrotask(reportDirty);
     return ok;
@@ -270,6 +286,26 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     }
   };
 
+  // 만드는 동안 자료나 저장본이 바뀐 후보는 승인 전에 알린다 (리뷰 R22). 다시 연 화면이 이어서 받은 후보도 같은
+  // 안내를 띄운다 (D3a-5, 계획 4.4 구조안 후보 보강 ①)
+  const noteStaleInputs = (view: JobView) => {
+    const reasons = blockingReasons(view);
+    if (reasons.length > 0) setEarlierNotice(`구조안을 만드는 동안 입력이 바뀌었습니다(${reasonText(reasons)}). 승인하기 전에 다시 생성을 검토해 주세요.`);
+  };
+  // 승인 직전 재조회에서 낡은 후보를 버린다. 초안을 저장된 장 구성으로 되돌린다
+  const discardStaleCandidate = () => {
+    const id = structureJob.current;
+    if (id) void settle(project.name, id, "dismissed");
+    structureJob.current = null;
+    setStaleApproval("");
+    setEarlierNotice("");
+    setDraft(deck.structure.chapters);
+    setStoryPlan(deck.structure.story_plan ?? null);
+    setDecisionQuestion(deck.structure.story_plan?.brief.decision_question ?? "");
+    setDraftGenerated(false);
+    setNumbers([]);
+  };
+
   const generate = async () => {
     if (hasDiagrams) return;
     setBusy(true);
@@ -277,6 +313,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     resetError();
     setStoryStale(false);
     setCancelNotice("");
+    setStaleApproval("");
     setRawText("");
     setStructureUsage(null);
     // F1 리뷰 반영: 새 구조안을 받으면 이전 승인 루프의 장 사용량 합계는 더 이상 유효하지 않다
@@ -309,11 +346,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         } });
       setFollowError("");
       showStructure(final);
-      // 만드는 동안 자료나 저장본이 바뀌었으면 승인 전에 알린다 (리뷰 R22)
-      const reasons = blockingReasons(final);
-      if (reasons.length > 0) setEarlierNotice(`구조안을 만드는 동안 입력이 바뀌었습니다(${reasonText(reasons)}). 승인하기 전에 다시 생성을 검토해 주세요.`);
+      noteStaleInputs(final);
     } catch (e) {
       if (controller.signal.aborted) return;  // 화면이 내려갔다 (리뷰 R23)
+      setFollowError("");  // 조회를 멈췄다. "계속 확인합니다"를 남기지 않는다 (D3a-5, β R8)
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
       else if (e instanceof JobCancelled) setCancelNotice("구조안 생성이 취소되었습니다.");
       else showFailure(e);  // 다른 작업이 진행 중이면 실패 안내가 그 작업 취소 버튼을 보인다 (리뷰 R12)
@@ -426,7 +462,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           }
         }
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
-        onError: () => setFollowError(JOB_FOLLOW_ERROR) });
+        onError: () => setFollowError(JOB_FOLLOW_ERROR), stillActive: () => stillActive(jobId) });
       summarize(final, true, latest ?? deck);
       if (deckUnread) {
         setError("AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다. 서버 내용을 다시 읽어 주세요.");
@@ -437,7 +473,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         .every((ch) => (latest as Deck).slides.some((sl) => sl.chapter_id === ch.id));
       if (registeredHere && final.state === "succeeded" && complete && !deckUnread) onDone();
     } catch (e) {
-      if (!controller.signal.aborted) showFailure(e);
+      if (!controller.signal.aborted) { setFollowError(""); showFailure(e); }
     } finally {
       if (followAbort.current === controller) followAbort.current = null;
       setBusy(false);
@@ -463,11 +499,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         const controller = new AbortController();
         followAbort.current = controller;
         try {
-          showStructure(await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
-            onError: () => setFollowError(JOB_FOLLOW_ERROR) }));
+          const final = await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
+            onError: () => setFollowError(JOB_FOLLOW_ERROR) });
+          showStructure(final);
+          noteStaleInputs(final);
           setFollowError("");
         } catch (e) {
-          if (!controller.signal.aborted) showFailure(e);
+          if (!controller.signal.aborted) { setFollowError(""); showFailure(e); }
         } finally {
           if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
         }
@@ -594,6 +632,28 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setBusy(true);
     onBusyChange?.(true);
     resetError();
+    setStaleApproval("");
+    // 초안이 AI 후보면 승인 직전에 그 작업을 다시 조회해 서버가 계산한 낡음 이유로 막는다. 생성 중 단계 이동이
+    // 열리면 같은 탭에서 "구조안 생성, 자료 수정, 구성 복귀, 승인"이 가능해지기 때문이다 (D3a-5, 계획 4.4 보강 ②)
+    const candidateId = structureJob.current;
+    if (candidateId) {
+      let fresh: JobView;
+      try {
+        fresh = await api.getJob(project.name, candidateId);
+      } catch {
+        if (mounted.current) { setError(APPROVAL_CHECK_ERROR); setBusy(false); onBusyChange?.(false); }
+        return;
+      }
+      const reasons = blockingReasons(fresh);
+      if (reasons.length > 0) {
+        if (mounted.current) {
+          setEarlierNotice("");
+          setStaleApproval(reasonText(reasons));
+          setBusy(false); onBusyChange?.(false);
+        }
+        return;
+      }
+    }
     setStoryStale(false);
     setCancelNotice("");
     setPreservedNotice("");
@@ -711,13 +771,16 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       && c.error?.code !== "held_stale_plan" && !deck.slides.some((sl) => sl.chapter_id === chapterId))
     : undefined;
 
+  // 머리가 이 묶음을 보이는 동안은 머리의 "그 작업 취소" 하나만 둔다 (D3a-5, 묶음 리뷰 A11)
+  const headerShowsJob = useHeaderShowsJob(job?.id);
   return (
     <div className="structure-screen">
+      {readOnly && readOnlyNotice && !busy && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
       {/* 생성 중에는 아래 입력 영역이 잠기므로 중단 버튼은 그 밖에 둔다 */}
-      {busy && job && !TERMINAL_JOB_STATES.has(job.state) && (
+      {busy && job && !TERMINAL_JOB_STATES.has(job.state) && !headerShowsJob && (
         <p><button onClick={cancelGeneration} disabled={job.state === "cancel_requested" || job.cancel_requested}>생성 중단</button></p>
       )}
-      <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive}>
+      <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive || readOnly}>
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
       {/* 저장 충돌은 위쪽 충돌 배너가 이미 경고로 알린다 (리뷰 R15) */}
@@ -743,6 +806,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       )}
       {storyStale && <div role="alert"><StoryPlanRecoveryGuidance hasDiagrams={hasDiagrams} /></div>}
       {cancelNotice && <p className="notice">{cancelNotice}</p>}
+      {staleApproval && <p role="status" className="notice-warning">
+        이 구조안은 만든 뒤 입력이 바뀌어 승인하지 않았습니다({staleApproval}). &apos;다시 생성&apos;으로 현재 입력 기준
+        구조안을 만들거나, 이 후보를 버리고 저장된 장 구성으로 돌아가 주세요.{" "}
+        <Button variant="danger" onClick={discardStaleCandidate}>후보 버리기</Button></p>}
       {earlierNotice && <p className="notice">{earlierNotice}
         {staleStructure.current && <Button variant="danger" onClick={() => {
           void settle(project.name, staleStructure.current!, "dismissed");
@@ -831,7 +898,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                       : progress[c.id] === "완료 여부 확인 필요" ? <> <StatusIndicator kind="completion_unknown" /></>
                         : progress[c.id] && <span> {progress[c.id]}</span>}
                     {chapterRow(c.id) && (
-                      <button aria-label={`${i + 1}번 장 다시 생성`} onClick={() => void regenerateChapter(c.id)}>
+                      <button aria-label={`${i + 1}번 장 다시 생성`} aria-describedby="chapter-regenerate-hint"
+                        onClick={() => void regenerateChapter(c.id)}>
                         {["stale", "held"].includes(chapterRow(c.id)!.candidate_status) ? "현재 입력으로 다시 생성" : "이 장 다시 생성"}</button>
                     )}
                     {["stale", "held"].includes(chapterRow(c.id)?.candidate_status ?? "") && (<>
@@ -846,6 +914,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             </tbody>
           </table>
           </div>
+          {/* 구성 단계의 장 다시 생성은 묶음이라 덱을 읽기 전용으로 만든다. 편집 단계의 같은 이름 버튼(후보형)과
+              다르다는 것을 알린다 (D3a-5, 계획 4.4) */}
+          {draft.some((c) => chapterRow(c.id)) && (
+            <p className="hint" id="chapter-regenerate-hint">장을 다시 생성하는 동안 문서 편집이 잠깁니다.</p>)}
           <button onClick={add}>장 추가</button>
           {/* F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 실패 단서만은 표시한다.
               chapterUsageSummary만 조건으로 두면 성공분이 0건일 때 이 문단 자체가 사라졌다 */}
@@ -879,7 +951,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       )}
       </fieldset>
       {deck.structure.story_plan && <StoryRewritePanel projectName={project.name} deck={deck}
-        disabled={busy || documentActive || draftGenerated || JSON.stringify(draft) !== JSON.stringify(deck.structure.chapters)}
+        disabled={busy || readOnly || documentActive || draftGenerated || JSON.stringify(draft) !== JSON.stringify(deck.structure.chapters)}
         onBusyChange={onBusyChange} onActiveChange={setRewriteActive} onConflict={onConflict}
         onScreenReady={registerRewrite} onDirtyChange={setRewriteDirty}
         onApplied={saved => {
@@ -894,12 +966,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       <details className="advanced-actions" open={documentOpen ? true : undefined}
         onToggle={(e) => { if (documentOpen && !e.currentTarget.open) e.currentTarget.open = true; }}>
       <summary>고급 작업</summary>
-      <button aria-expanded={documentOpen} disabled={busy || rewriteActive} onClick={()=>{
+      <button aria-expanded={documentOpen} disabled={busy || readOnly || rewriteActive} onClick={()=>{
         if(!documentOpen){setDocumentOpen(true);return;}
         void documentLeave.current().then(allowed=>{if(allowed){setDocumentOpen(false);documentLeave.current=async()=>true;setDocumentDirty(false);setDocumentActive(false);}});
       }}>문서 전체 변경과 근거 이동</button>
       {documentOpen && <DocumentChangePanel projectName={project.name} deck={deck}
-        disabled={busy || rewriteActive || draftGenerated || JSON.stringify(draft)!==JSON.stringify(deck.structure.chapters)}
+        disabled={busy || readOnly || rewriteActive || draftGenerated || JSON.stringify(draft)!==JSON.stringify(deck.structure.chapters)}
         onBusyChange={onBusyChange} onActiveChange={setDocumentActive} onConflict={onConflict}
         onScreenReady={registerDocument} onDirtyChange={setDocumentDirty}
         onApplied={saved=>{

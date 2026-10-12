@@ -15,11 +15,13 @@ import { NumericReviewPanel } from "./NumericReviewPanel";
 import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
+import { BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, timings,
-  onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange,
+  onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange, readOnly = false,
+  readOnlyNotice = false,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -36,6 +38,10 @@ export function EditorScreen({
   onDraftsChanged?: () => void;  // 충돌로 변경을 새로 보존했다. 머리의 보존 건수를 다시 센다 (C18)
   initialChapterId?: string | null;  // 복구 화면에서 옮긴 장을 미리 고른다 (C24)
   onChapterChange?: (chapterId: string | null) => void;  // 고른 장. 부모가 다시 마운트할 때 같은 장을 고른다
+  // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 덱을 고치지 않는다. 장을 골라 보는 것은 허용한다.
+  // 묶음이 끝나면 부모가 새 덱으로 다시 마운트한다 (D3a-5, 계획 4.4). readOnlyNotice는 묶음을 확인했을 때만 안내한다
+  readOnly?: boolean;
+  readOnlyNotice?: boolean;
 }) {
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint);
   const chapters = editor.deck.structure.chapters;
@@ -105,7 +111,7 @@ export function EditorScreen({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 되돌리기(서버 내용 다시 읽기) 중에는 보존할 덱이 바뀌지 않게 단축키도 막는다 (리뷰 R11)
-      if (diagramDraft || diagramBusy || templateBusyRef.current || editor.reloading) return;
+      if (readOnly || diagramDraft || diagramBusy || templateBusyRef.current || editor.reloading) return;
       // 인라인 편집 입력 중에는 브라우저 네이티브 undo가 동작해야 하므로 덱 undo가 끼어들지 않는다
       // (2026-08-29 최종 리뷰 발견)
       const t = e.target as HTMLElement;
@@ -117,7 +123,7 @@ export function EditorScreen({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editor.undo, editor.redo, editor.reloading, diagramDraft, diagramBusy]);
+  }, [editor.undo, editor.redo, editor.reloading, diagramDraft, diagramBusy, readOnly]);
 
   // 보존한 변경 건수는 상단 머리가 센다 (C18). 새로 보존하면 다시 세 달라고 알린다
   const preservedId = editor.preservedDraft?.id;
@@ -148,12 +154,13 @@ export function EditorScreen({
     {diagramBusy && !diagramDraft && <p role="status">도식 AI 응답을 기다리고 있습니다. 작성창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
     {templateBusy && <p role="status">전환 전 내용을 저장하고 있습니다.</p>}
     {editor.reloading && <p role="status">변경을 보존하고 서버 내용을 다시 읽고 있습니다.</p>}
+    {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
     <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
           onSelect={(id) => { setChapterId(id); setSelected(null); }}
-          onReorder={(from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
-        <button disabled={editor.conflict || diagramBusy} onClick={() => setDiagramDraft(createDiagramDraft(editor.deck))}>도식 추가</button>
+          onReorder={readOnly ? undefined : (from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
+        <button disabled={readOnly || editor.conflict || diagramBusy} onClick={() => setDiagramDraft(createDiagramDraft(editor.deck))}>도식 추가</button>
       </aside>
       <section className="editor-center">
         {editor.saveError && (
@@ -204,7 +211,7 @@ export function EditorScreen({
           // 낡은 계획(덱이 바뀐 뒤 새 계획이 오기 전)으로는 편집을 열지 않는다 (2026-09-03 FC-05)
           <Preview key={slide.chapter_id} slide={slide} style={editor.plan.style}
             pageW={editor.plan.page_width_pt} pageH={editor.plan.page_height_pt}
-            editable={!editor.planStale}
+            editable={!editor.planStale && !readOnly}
             selected={selected} onSelect={setSelected} onCommitText={commitText} />
         ) : editor.measureError ? (
           <p>미리보기를 만들지 못했습니다. 위 오류를 확인한 뒤 다시 그려 주세요.</p>
@@ -216,7 +223,7 @@ export function EditorScreen({
           <p>이 장은 아직 내용이 없습니다. 구성 단계에서 생성해 주세요.</p>
         )}
       </section>
-      <aside className="editor-right">
+      <aside className="editor-right" inert={readOnly}>
         <button onClick={editor.undo} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
         <button onClick={editor.redo} disabled={!editor.canRedo}>다시 실행</button>
         {chapterId && (

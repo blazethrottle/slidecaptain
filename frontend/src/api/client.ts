@@ -217,14 +217,22 @@ function pause(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+export const JOB_RECORD_LOST = "작업 기록을 읽지 못해 결과를 확인하지 못했습니다. 앱을 다시 시작해 주세요.";
+
 // 앞 응답을 받은 뒤 다음 조회를 예약한다. 조회가 실패하면 onError로 알리고 계속 조회한다 (계획서 5.9).
 // 간격은 인자로 받아 시험에서 바꿀 수 있게 한다
 // 조회 함수는 호출하는 쪽이 넘긴다: 화면이 쓰는 api 객체(시험에서는 모의)로 조회하게 하려는 것이다
+// stillActive: 조회가 실패할 때 그 작업이 아직 진행 중인지 진행 작업 확인(실행기 메모리)으로 묻는다. 진행 중이
+// 아니면 한 번 더 조회해 보고, 그래도 실패하면 작업 기록을 읽지 못한다고 멈춘다. 원장을 읽지 못하는 동안 끝없이
+// 조회하며 화면을 잠그지 않게 한다. 조회 실패 횟수의 임계값은 근거가 되는 측정값이 없어 두지 않는다
+// (D3a-5, 계획 4.4 β R8, 사실 18). 확인 자체가 실패하면 진행 중으로 보고 계속 조회한다
 export async function followJob(
   fetchJob: () => Promise<JobView>, onUpdate: (view: JobView) => void | Promise<void>,
-  opts: { intervalMs?: number; signal?: AbortSignal; onError?: (error: unknown) => void } = {},
+  opts: { intervalMs?: number; signal?: AbortSignal; onError?: (error: unknown) => void;
+    stillActive?: () => Promise<boolean> } = {},
 ): Promise<JobView> {
   const intervalMs = opts.intervalMs ?? 1000;
+  let lastTry = false;
   for (;;) {
     opts.signal?.throwIfAborted();
     try {
@@ -234,9 +242,16 @@ export async function followJob(
         notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind });
         return view;
       }
+      lastTry = false;
     } catch (error) {
       if (opts.signal?.aborted) throw error;
+      if (lastTry) throw new ApiError(503, JOB_RECORD_LOST, "job_ledger_unavailable");
       opts.onError?.(error);
+      const active = opts.stillActive;
+      if (active && !(await Promise.resolve().then(active).catch(() => true))) {
+        lastTry = true;
+        continue;
+      }
     }
     await pause(intervalMs, opts.signal);
   }

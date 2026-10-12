@@ -4,6 +4,10 @@ import type { SaveStatus } from "../ui/StatusIndicator";
 import { Button } from "../ui/Button";
 
 const KEPT_SOURCE_NOTICE = "수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.";
+// 장 생성 묶음 중 자료를 바꾸는 비용 (D3a-5, 계획 4.4, 사실 16). 묶음의 사슬은 자료를 보지 않으므로, 자료를 바꾼 뒤
+// 처음 끝나는 장(이미 AI 호출을 마친 장)은 이전 입력 기준 후보로 남고 남은 장은 중단된다
+const BATCH_SOURCES_NOTICE = "내용 생성 중에 자료를 고치면, 생성 중인 장 하나가 문서에 반영되지 않고 남은 장 생성이 멈춥니다. 저장하기 전에 한 번 더 묻습니다.";
+const BATCH_SOURCES_CONFIRM = "내용 생성이 진행 중입니다. 지금 자료를 바꾸면 AI 호출 하나의 결과가 반영되지 않고, 남은 장 생성이 멈춥니다. 남은 장은 끝난 뒤 다시 생성해야 합니다. 계속할까요?";
 
 // 로드 후 상한을 넘어 잘린 자리를 설명하는 note는 이 접두사로 시작한다(backend/slidecaptain/sources/xlsx.py
 // _build_extraction). 이 note만 잘림 알림으로 따로 빼고, 나머지(계산값 없음 건수 등)는 결과 안내
@@ -20,9 +24,10 @@ function otherNotes(notes: string[]): string[] {
 
 // 자료 단계 (개정판 D3a-2). 보고 정보는 보고 목적 단계(ReportPurposeScreen)로 옮겼다. 이 화면은 덱을 쓰지 않는다
 export function SourcesScreen({
-  project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange, limitations = [],
+  project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange, limitations = [], batchRunning = false,
 }: {
   project: ProjectInfo;
+  batchRunning?: boolean;  // 이 프로젝트의 장 생성 묶음이 진행 중이다. 편집은 허용하되 바꾸기 전에 묻는다 (D3a-5)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구. 단계 목록 대신 이 화면의 한계 안내로 보인다 (계획 4.2)
   // 자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
   onDirtyChange?: (dirty: boolean) => void;
@@ -53,6 +58,9 @@ export function SourcesScreen({
   const [truncationNotice, setTruncationNotice] = useState("");  // 잘린 파일 알림 (오류 아님, 결과 안내와 별도)
   const [uploading, setUploading] = useState(false);  // 업로드 진행 중 (계획서 B4 가정 7)
   const mountedRef = useRef(true);
+  const batchRef = useRef(batchRunning);
+  batchRef.current = batchRunning;
+  const confirmDuringBatch = () => !batchRef.current || window.confirm(BATCH_SOURCES_CONFIRM);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; ++sourceRequest.current; };
@@ -111,6 +119,7 @@ export function SourcesScreen({
 
   const saveText = async () => {
     if (selected === null || sourceSavePending.current) return;
+    if (!confirmDuringBatch()) return;
     const request = sourceRequest.current;
     sourceSavePending.current = true;
     setSourceSaving(true);
@@ -135,6 +144,7 @@ export function SourcesScreen({
       warn("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
       return;
     }
+    if (!confirmDuringBatch()) return;
     const base = newName.trim();
     const f = base.includes(".") ? base : `${base}.md`;
     try {
@@ -154,6 +164,7 @@ export function SourcesScreen({
     }
     const items = Array.from(list);
     if (items.length === 0) return;
+    if (!confirmDuringBatch()) return;
     // 업로드가 이미 진행 중이면 겹쳐 시작하지 않는다: 먼저 응답한 쪽의 finally가 onBusyChange(false)를
     // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 단계 이동 방지)을 풀어 버리는 경합을 막는다
     // (B4 리뷰 F1). 파일 입력은 uploading 동안 disabled로도 막지만, 이 확인이 실제 방지선이다
@@ -241,6 +252,7 @@ export function SourcesScreen({
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
       <section>
         <h2>입력 자료</h2>
+        {batchRunning && <p role="status" className="notice-warning">{BATCH_SOURCES_NOTICE}</p>}
         {limitations.map((text) => <p key={text} className="hint">{text}</p>)}
         <p>완성된 리서치 자료(마크다운, 텍스트, CSV, 엑셀)를 넣어 주세요. 탐색기로 프로젝트 폴더의 sources에 파일을 넣어도 됩니다.</p>
         <ul>

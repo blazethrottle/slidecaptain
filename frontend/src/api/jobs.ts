@@ -42,6 +42,11 @@ export function jobResult<T>(view: JobView): T {
     view.error?.code ?? undefined, undefined, view);
 }
 
+// 진행 작업 확인이 이 작업을 진행 중으로 돌려주는가. 작업 조회가 실패할 때만 묻는다 (D3a-5, β R8)
+export function stillActive(jobId: string): Promise<boolean> {
+  return api.getActiveJob().then((status) => status.active?.id === jobId);
+}
+
 // 작업이 끝날 때까지 조회한다. signal은 조회만 멈추고 작업을 취소하지 않는다
 export function waitJob(name: string, view: JobView, opts: {
   intervalMs?: number; signal?: AbortSignal; onUpdate?: (view: JobView) => void; onError?: (error: unknown) => void;
@@ -52,7 +57,7 @@ export function waitJob(name: string, view: JobView, opts: {
     return Promise.resolve(view);
   }
   return followJob(() => api.getJob(name, view.id), (next) => opts.onUpdate?.(next),
-    { intervalMs: opts.intervalMs, signal: opts.signal, onError: opts.onError });
+    { intervalMs: opts.intervalMs, signal: opts.signal, onError: opts.onError, stillActive: () => stillActive(view.id) });
 }
 
 // 등록부터 결과까지. onStarted로 작업 ID를 알려 화면이 취소와 후보 처분에 쓰게 한다
