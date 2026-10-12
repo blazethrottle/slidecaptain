@@ -8,8 +8,10 @@ from typing import Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from slidecaptain.models.deck import Deck
+from slidecaptain.models.report_purpose import prompt_dump
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.provider import ProviderError
+from slidecaptain.pipeline.report_types import purpose_block
 from slidecaptain.pipeline.repair_budget import RepairBudget, RepairCoordinator, BudgetStopped
 from slidecaptain.pipeline.rewrite import validate_rewrite, rewrite_prompt
 from slidecaptain.pipeline.service import GenerationService, GenerationUsage, _UsageCollector
@@ -115,7 +117,8 @@ async def repair_story(deck: Deck, sources: dict[str, str], req: StoryRepairRequ
         return result.deck
 
     async def review(candidate, wrapped):
-        context = json.dumps({"deck": candidate.model_dump(mode="json"), "sources": sources}, ensure_ascii=False)
+        # 보고 목적 값은 지시 부분에 한 번 넣고 덱 덤프에서는 뺀다. 숨은 입력이 외부 AI로 나가지 않는다 (D3b-3 리뷰 R1)
+        context = json.dumps({"deck": prompt_dump(candidate), "sources": sources}, ensure_ascii=False)
         # Deck's rewrite input already has a 60k limit; keep critique explicit too.
         if len(context) > 180_000:
             raise BudgetStopped("재검수 입력이 너무 큽니다. 후보를 보존하고 중단합니다.")
@@ -124,7 +127,8 @@ async def repair_story(deck: Deck, sources: dict[str, str], req: StoryRepairRequ
             "현재 자료에 비춰 주장/근거/비교 조건/계산/요약-본문의 정합성을 검사하세요. 기존 본문은 사실의 근거가 아닙니다. "
             "확인할 수 없거나 누락된 사항도 findings로 반환하고 code와 target(장/주장 ID)을 명시하세요. "
             "근거 없이 무결점을 선언하지 마세요. scope_note에 실제 확인한 범위와 한계를 명시하세요. "
-            "전체 제출 승인/PowerPoint 검수는 하지 마세요.\n" + context,
+            "전체 제출 승인/PowerPoint 검수는 하지 마세요.\n"
+            + purpose_block(candidate.meta, req.brief.report_type) + "\n" + context,
             RepairCritique.model_json_schema())
         try:
             critique = RepairCritique.model_validate(response.structured)

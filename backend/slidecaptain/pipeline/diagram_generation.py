@@ -99,7 +99,7 @@ def diagram_prompt(
         "배치에 맞추기 위해 실제 관계를 선형 순서로 바꾸거나 삭제하지 마세요. "
         "배치 지원 여부는 이후 수동 검사에서 확인합니다. 엠대시와 중점은 생성 문구에 쓰지 마세요.\n"
         # 보고 목적 값은 지시 부분에 한 번 넣는다. 문맥의 메타는 지금처럼 세 값만 둔다 (D3b-3, 계획 4.4)
-        "보고 목적:\n" + purpose_block(deck.meta) + "\n"
+        + purpose_block(deck.meta, plan.brief.report_type) + "\n"
         "보고 정보, 선택 주장과 등록 발췌:\n" + context
     )
     return prompt, evidence

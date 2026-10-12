@@ -19,6 +19,7 @@ from slidecaptain.models.deck import Chapter, Deck, DeckMeta, GeneratedChapter, 
 from slidecaptain.models.diagram import DiagramInput
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import CapacityWarning
+from slidecaptain.models.report_purpose import purpose_texts
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.normalize import collect_strings, normalize_payload
 from slidecaptain.pipeline.diagram_generation import DiagramDraft, GenerateDiagramRequest, diagram_prompt, parse_diagram_draft
@@ -328,7 +329,8 @@ class GenerationService:
             ] + [edge.label for edge in diagram.edges]
             return DiagramGenerationResult(
                 status=outcome, diagram=diagram, raw_text=raw,
-                unverified_numbers=find_unverified_numbers(texts, [item.excerpt for item in evidence]),
+                unverified_numbers=find_unverified_numbers(  # 보고 목적 값은 사용자가 적은 값이다 (D3b-3 리뷰 R2)
+                    texts, [item.excerpt for item in evidence] + purpose_texts(deck.meta)),
                 format_retried=retried, usage=summary,
             )
         finally:
@@ -356,7 +358,8 @@ class GenerationService:
                 texts += candidate.structure.story_plan.unanswered_questions
             return StoryRewriteResult(
                 status=outcome, deck=candidate, raw_text=raw, format_retried=retried, usage=summary,
-                unverified_numbers=find_unverified_numbers(texts, list(sources.values()) + [deck.meta.title]),
+                unverified_numbers=find_unverified_numbers(
+                    texts, list(sources.values()) + [deck.meta.title] + purpose_texts(deck.meta)),
             )
         finally:
             self._emit_usage(on_usage, "rewrite", None, outcome, summary or collector.summary())
@@ -412,7 +415,7 @@ class GenerationService:
                 structure=structure,
                 raw_text=raw,
                 unverified_numbers=find_unverified_numbers(
-                    texts, list(sources.values()) + [meta.title]
+                    texts, list(sources.values()) + [meta.title] + purpose_texts(meta)
                 ),
                 format_retried=retried,
                 usage=summary,
@@ -590,7 +593,7 @@ class GenerationService:
             raw_text=raw,
             warnings=warnings,
             unverified_numbers=find_unverified_numbers(
-                texts, list(sources.values()) + [deck.meta.title]
+                texts, list(sources.values()) + [deck.meta.title] + purpose_texts(deck.meta)
                 + chapter_derived_numbers(deck.structure.story_plan, chapter)
             ),
             format_retried=retried,

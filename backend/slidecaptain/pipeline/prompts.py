@@ -132,7 +132,7 @@ def build_structure_prompt(
 - 보고 유형: {REPORT_TYPE_GUIDES[report_type]}
 - 피보고자: {audience or NOT_ENTERED}
 {count_line}
-{purpose_block(meta)}
+{purpose_block(meta, report_type)}
 
 {REPORT_TYPE_RULES}
 
@@ -332,7 +332,7 @@ def build_chapter_prompt(
 - 피보고자: {audience or NOT_ENTERED}
 - 오늘 날짜: {today}
 - 보고 유형: {REPORT_TYPE_GUIDES[report_type]}
-{purpose_block(deck.meta)}
+{purpose_block(deck.meta, report_type)}
 
 유형별 구성은 전체 문서의 참고다. 지정한 한 장의 역할과 근거에 맞는 내용만 채우고 다른 장을 추가하지 않는다.
 {REPORT_TYPE_RULES}

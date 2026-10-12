@@ -1,11 +1,14 @@
 """보고 목적 선택이 저장과 각 생성 단계에 전달되는지 합성 자료로 검증한다."""
 import json
+import typing
 from pathlib import Path
 
 import pytest
 
 from slidecaptain.models.deck import Deck, DeckMeta
-from slidecaptain.models.story import ReportBrief
+from slidecaptain.models.report_purpose import REPORT_DETAIL_FIELDS
+from slidecaptain.models.story import ReportBrief, ReportType
+from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES
 from slidecaptain.pipeline.prompts import build_structure_prompt, build_chapter_prompt
 from slidecaptain.pipeline.rewrite import rewrite_prompt, parse_story_rewrite
 from slidecaptain.pipeline.story import story_fingerprint, require_current_story, StaleStoryPlan

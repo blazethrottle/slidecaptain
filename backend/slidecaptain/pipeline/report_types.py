@@ -29,29 +29,53 @@ OUTCOME_LABELS = {
     "other": "기타",
 }
 NOT_ENTERED = "미입력(사용자가 정하지 않음)"
-# 보고 목적 값의 생성 규칙 (D3b-3, 계획 4.4). 원하는 결과는 사용자가 명시한 목적이라 유형 규칙의 "강요하지
-# 않는다"보다 우선한다(리뷰 V14). 미입력 값을 지어내지 않는 것은 지금 유형 규칙과 같다
+# 보고 목적 값의 생성 규칙 (D3b-3, 계획 4.4). 보고 목적 값은 사용자가 직접 적은 보고 정보라 표지, 범위,
+# 요청 문장에 옮겨 쓸 수 있고 근거 자료로 인용하지 않는다(리뷰 R2). 원하는 결과는 사용자가 명시했을 때만
+# 유형 규칙의 "강요하지 않는다"보다 우선한다(리뷰 V14, R7)
+PURPOSE_HEADER = "보고 목적 (사용자가 직접 정한 지시이며 자료가 아니다):"
 PURPOSE_RULES = (
-    "미입력은 사용자가 정하지 않았다는 뜻이다. 미입력인 기간, 성과, 담당, 목표를 만들지 않는다. "
+    "보고 목적 값은 사용자가 직접 적은 보고 정보다. 그 값과 수치는 표지, 범위, 요청 문장에 그대로 옮겨 쓸 수 있고, "
+    "주장의 근거나 자료로 인용하지 않는다. "
+    "미입력은 사용자가 정하지 않았다는 뜻이다. 미입력인 기간, 성과, 담당, 목표를 만들지 않는다."
+)
+OUTCOME_PRIORITY_RULE = (
     "원하는 결과는 사용자가 명시한 목적이므로 유형 규칙의 '강요하지 않는다'보다 우선한다. 단 근거 없는 제안을 만들지 않는다."
 )
+OUTCOME_NOT_SELECTED = "사용자 미선택. 보고 유형의 구성을 따른다"
+TYPE_MISMATCH = "구성 계획의 보고 유형과 지금 유형이 달라 쓰지 않음"
 
 
-def purpose_block(meta) -> str:
-    """지시문에 넣는 보고 목적 줄. 값은 purpose_prompt_values에서 꺼내므로 판정 해시, 구성 계획 지문과 항상 같은
-    칸을 본다(재리뷰 RR12). 숨은 입력은 넣지 않는다."""
+def _indent(value: str) -> str:
+    # 여러 줄 값의 둘째 줄부터 들여 써서 글머리 구조를 지킨다 (리뷰 R9)
+    return value.replace("\n", "\n  ")
+
+
+def purpose_block(meta, report_type=None) -> str:
+    """지시문에 넣는 보고 목적 절(머리 줄 포함). 값은 purpose_prompt_values에서 꺼내므로 판정 해시, 구성 계획
+    지문과 항상 같은 칸을 본다(재리뷰 RR12). 숨은 입력은 넣지 않는다.
+
+    report_type은 지시문이 구성 안내에 쓰는 유형이다. 메타 유형과 다르면 추가 입력 줄을 쓰지 않는다
+    (리뷰 R12. 추가 입력 칸은 메타 유형의 칸이라 다른 유형의 안내와 섞으면 뜻이 맞지 않는다)."""
     from slidecaptain.models.report_purpose import REPORT_DETAIL_FIELDS, purpose_prompt_values
 
     values = purpose_prompt_values(meta)
     outcome = values.get("desired_outcome")
     if outcome is None:
-        outcome_text = "사용자 미선택(기본: 사실 및 데이터 중심)"
+        outcome_text = OUTCOME_NOT_SELECTED
     elif outcome == "other":
-        outcome_text = f"기타: {values['desired_outcome_other']}" if "desired_outcome_other" in values \
+        outcome_text = f"기타: {_indent(values['desired_outcome_other'])}" if "desired_outcome_other" in values \
             else f"기타(설명 {NOT_ENTERED})"
     else:
         outcome_text = OUTCOME_LABELS[outcome]
     details = values.get("report_details", {})
-    lines = [f"- 전달할 핵심 내용: {values.get('key_message', NOT_ENTERED)}", f"- 원하는 결과: {outcome_text}"]
-    lines += [f"- {label}: {details.get(name, NOT_ENTERED)}" for name, label in REPORT_DETAIL_FIELDS.get(meta.report_type, ())]
-    return "\n".join(lines) + "\n" + PURPOSE_RULES
+    lines = [PURPOSE_HEADER, f"- 전달할 핵심 내용: {_indent(values.get('key_message', NOT_ENTERED))}",
+             f"- 원하는 결과: {outcome_text}"]
+    if report_type is None or report_type == meta.report_type:
+        lines += [f"- {label}: {_indent(details.get(name, NOT_ENTERED))}"
+                  for name, label in REPORT_DETAIL_FIELDS.get(meta.report_type, ())]
+    else:
+        lines.append(f"- 유형별 추가 입력: {TYPE_MISMATCH}")
+    lines.append(PURPOSE_RULES)
+    if outcome is not None:
+        lines.append(OUTCOME_PRIORITY_RULE)
+    return "\n".join(lines)

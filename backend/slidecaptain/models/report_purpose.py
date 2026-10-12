@@ -102,11 +102,32 @@ def purpose_prompt_values(meta) -> dict:
     return values
 
 
+def purpose_texts(meta) -> list[str]:
+    """보고 목적 값의 문자열 목록. 사용자가 직접 적은 보고 정보이므로 미검증 수치 검사의 허용 목록에 더한다
+    (D3b-3 리뷰 R2). 지시문과 같은 칸만 담도록 purpose_prompt_values에서 꺼낸다."""
+    values = purpose_prompt_values(meta)
+    texts = [values[name] for name in ("key_message", "desired_outcome_other") if name in values]
+    return texts + list(values.get("report_details", {}).values())
+
+
+def prompt_dump(deck) -> dict:
+    """AI 지시문의 문맥에 넣는 덱 덤프 (D3b-3 리뷰 R1, R11). 재작성 문맥과 수리의 독립 검수가 쓴다.
+
+    보고 목적 다섯 칸은 지시 부분(purpose_block)에 한 번만 넣으므로 여기서 뺀다. 숨은 입력이 외부 AI로
+    나가지 않게 하는 것도 이 함수의 몫이다. 출력 지문용 output_dump와 용도가 달라 따로 둔다."""
+    raw = deck.model_dump(mode="json")
+    for name in PURPOSE_DEFAULTS:
+        raw["meta"].pop(name, None)
+    return raw
+
+
 def output_dump(deck) -> dict:
     """출력 지문(내보내기, 수치 검토, 의미 검토)에 넣는 덱 덤프 (D3b-2, 재리뷰 RR4).
 
     보고 목적 다섯 칸은 PPTX에 나오지 않는 생성 입력이라 뺀다. schema_version은 보고 목적 값으로 정해지므로
-    1로 고정한다(빼면 기존 덱의 지문이 바뀐다). 기존 덱의 덤프는 그대로다."""
+    1로 고정한다(빼면 기존 덱의 지문이 바뀐다). 기존 덱의 덤프는 그대로다.
+    출력 지문은 검수 기록의 기준 비교에만 쓴다. 지문이 같아도 수치 검토와 의미 검토는 구성 계획의 낡음을
+    따로 보므로, 이 지문을 검토 결과의 캐시 열쇠로 쓰지 않는다(D3b-2 리뷰 R6). 지시문 문맥에는 prompt_dump를 쓴다."""
     raw = deck.model_dump(mode="json")
     raw["schema_version"] = 1
     for name in PURPOSE_DEFAULTS:
