@@ -277,6 +277,16 @@ class DocumentChangeBasis(BaseModel):
     evidence_fingerprints: dict[str, str]
 
 
+class BriefMismatch(Exception):
+    """구조안 등록의 brief가 현재 보고 정보와 다르다 (D3b-2, 리뷰 V20). 대개 다른 탭이나 기기가 보고 정보를 바꾼
+    뒤 옛 화면이 생성을 누른 경우라, 화면이 입력 오류가 아니라 다시 읽기로 안내하도록 코드를 싣는다 (D3b-2 리뷰 R1)."""
+
+    code = "brief_mismatch"
+
+    def __init__(self):
+        super().__init__("보고 대상과 유형이 현재 보고 정보와 다릅니다. 다른 곳에서 바뀌었다면 최신 내용을 다시 읽어 주세요.")
+
+
 class _CallMarker:
     """제공자 감싸개: complete 호출마다 직전에 on_call을 부른다. 다른 속성은 원래 제공자의 것을 쓴다.
     실행 단계는 둘째 호출에도 불린다는 것에 기댄다(형식 재시도 단계, D3b-4 리뷰 R11)."""
@@ -810,6 +820,10 @@ def create_app(
     async def provider_error_handler(request, exc: ProviderError):
         # 등록 단계의 오류도 원장 행과 같은 원인 코드를 싣는다 (D3a-4, 계획 4.3)
         return JSONResponse(status_code=503, content={"detail": str(exc), "code": exc.code})
+
+    @app.exception_handler(BriefMismatch)
+    async def brief_mismatch_handler(request, exc: BriefMismatch):
+        return JSONResponse(status_code=422, content={"detail": str(exc), "code": exc.code})
 
     @app.exception_handler(ConnectionConflict)
     async def connection_conflict_handler(request, exc: ConnectionConflict):
@@ -1706,7 +1720,7 @@ def create_app(
         # 지시문은 요청 brief의 유형과 피보고자를 읽고 판정 해시는 메타를 본다. 다르면 재작성처럼 거절한다 (D3b-2, 리뷰 V20)
         if req.brief is not None and (req.brief.report_type != deck.meta.report_type
                                       or req.brief.audience != deck.meta.audience):
-            raise HTTPException(422, "보고 대상과 유형은 현재 보고 정보와 같아야 합니다.")
+            raise BriefMismatch()
         _require_current_selection(selection_id)
         if strict:  # 작업 API는 자료 422를 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
             _load_sources(name)

@@ -272,6 +272,18 @@ it("최초 승인 반영의 putDeck이 412면 생성을 시작하지 않고 onCo
   expect(api.startChapters).not.toHaveBeenCalled();  // 생성을 등록하지 않았다
 });
 
+it("다른 곳에서 보고 정보가 바뀌어 등록이 거절되면 다시 읽기를 안내하고 충돌 배너를 띄운다 (D3b-2 리뷰 R1)", async () => {
+  generateStructure.mockRejectedValue(new ApiError(422,
+    "보고 대상과 유형이 현재 보고 정보와 다릅니다. 다른 곳에서 바뀌었다면 최신 내용을 다시 읽어 주세요.", "brief_mismatch"));
+  const onConflict = vi.fn();
+  render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}}
+    onConflict={onConflict} />);
+  await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  expect(await screen.findByText(/서버 내용 다시 읽기/)).toBeTruthy();
+  expect(screen.queryByText("입력 형식이 맞지 않습니다.")).toBeNull();  // 고칠 입력이 없다
+});
+
 // AI 전송 고지 취소 (계획서 B3): 취소는 실패가 아니므로 role=alert가 아닌 안내 문구로 보인다
 it("구조안 생성에서 AI 전송을 취소하면 알림이 아닌 안내 문구를 보인다", async () => {
   generateStructure.mockRejectedValue(new AiConsentDeclined());

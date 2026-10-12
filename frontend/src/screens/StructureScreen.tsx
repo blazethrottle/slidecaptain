@@ -280,6 +280,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setStoryStale(stale);
     setError("");
     setFailure(stale ? null : describeFailure(error));
+    // 다른 곳에서 보고 정보가 바뀌었다. 위쪽 충돌 배너가 다시 읽기를 맡는다 (D3b-2 리뷰 R1)
+    if (error instanceof ApiError && error.code === "brief_mismatch") onConflict?.();
   };
   const resetError = () => { setError(""); setFailure(null); setFailureLead(""); setFormatWhat(""); setBatchFailure(null); };
 
@@ -544,7 +546,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           }
         } else if (earlier) {
           staleStructure.current = earlier.id;
-          setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 현재 자료로 다시 생성해 주세요.`);
+          setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 최신 내용으로 다시 생성해 주세요.`);  // 사유는 자료만이 아니다 (D3b-2 리뷰 R9)
         }
         // 가장 최근 구조안 작업이 이 화면이 내려간 동안 실패하거나 끝나지 않았으면 원인별 안내로 한 번 보인다.
         // 생성 중 다른 단계로 갈 수 있게 된 뒤로 이 실패를 볼 곳이 없었다 (D3a-β 리뷰 B1)

@@ -98,6 +98,13 @@
   }
  },
  "http": {
+  "brief_mismatch": {
+   "body": {
+    "code": "brief_mismatch",
+    "detail": "보고 대상과 유형이 현재 보고 정보와 다릅니다. 다른 곳에서 바뀌었다면 최신 내용을 다시 읽어 주세요."
+   },
+   "status": 422
+  },
   "consent_missing": {
    "body": {
     "detail": "AI 전송 확인이 필요합니다. 화면의 안내를 확인한 뒤 다시 시도해 주세요."

@@ -237,6 +237,9 @@ export function describeFailure(error: unknown): FailureDescription {
   if (error.code === "settings_unreadable" || error.code === "service_stopping") {
     return make("service_unreachable", error.message, PRESERVED.input, "restart_app", { diagnostics });
   }
+  // 구조안 등록의 보고 정보가 저장본과 다르다. 다른 탭이나 기기가 보고 정보를 바꾼 경우라 고칠 입력이 없고,
+  // 최신 저장본을 다시 읽는 것이 할 일이다. 화면은 충돌 배너를 함께 띄운다 (D3b-2 리뷰 R1)
+  if (error.code === "brief_mismatch") return make("deck_conflict", error.message, PRESERVED.deck, "reload_server", { diagnostics });
   if (error.status === 422) {
     // 입력 검증 문구는 서버 구현의 말이라 고정 문구로 바꾸고 원문은 진단 상세로 보낸다 (계획 4.3)
     return make("input_unknown", "입력 형식이 맞지 않습니다.", PRESERVED.input, "check_input", { diagnostics });

@@ -116,6 +116,10 @@ def _collect(tmp_path_factory) -> dict:
         http["project_missing"] = {"status": missing.status_code, "body": missing.json()}
         consent = client.post("/api/projects/p1/generate/structure", json={}, headers={"X-AI-Consent": "no"})
         http["consent_missing"] = {"status": consent.status_code, "body": consent.json()}
+        # 다른 탭이 보고 정보를 바꾼 뒤 옛 화면이 구조안을 등록한다 (D3b-2 리뷰 R1)
+        mismatch = _register(client, request_id="req-00000004",
+                             brief={"decision_question": "확대할 것인가?", "audience": "", "report_type": "weekly"})
+        http["brief_mismatch"] = {"status": mismatch.status_code, "body": mismatch.json()}
     store = FileProjectStore(tmp_path_factory.mktemp("ledger"))
     _project(store)
     (store.root / LEDGER_NAME).write_bytes(b"broken" * 50)

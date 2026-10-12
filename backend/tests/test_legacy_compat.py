@@ -55,6 +55,7 @@ elif command == "jobs":
         response = client.get("/api/projects/p1/jobs")
         out["jobs"] = response.status_code
         out["reasons"] = [j["stale_reasons"] for j in response.json()] if response.status_code == 200 else None
+        out["kinds"] = [j["kind"] for j in response.json()] if response.status_code == 200 else None
 elif command.startswith("save:"):
     # 0.2.0 사용자가 덱을 열어 제목을 고치고 저장한다(화면의 저장은 직전 상태를 스냅샷으로 남긴다)
     deck = store.load_deck("p1")
@@ -215,19 +216,35 @@ def test_interim_build_lists_jobs_with_new_relevance_markers(store, interim_back
     from test_jobs_candidates import SLOTS, _two_chapters
     from test_jobs_candidates import GateProvider as ChapterGate
 
+    from slidecaptain.pipeline.provider import ProviderResponse
+    from test_jobs_api import STRUCTURE
+
+    class Provider(ChapterGate):
+        async def complete(self, prompt, schema):
+            if "chapters" in schema.get("properties", {}):  # 구조안 요청
+                return ProviderResponse(structured=STRUCTURE, raw_text="r")
+            return await super().complete(prompt, schema)
+
     _two_chapters(store)
     store.write_source("p1", "자료.md", "시장 규모는 500억 원이다")
-    provider = ChapterGate(SLOTS)
+    provider = Provider(SLOTS)
     provider.release.set()
     headers = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
+    relevance = {}
     with TestClient(create_app(store, provider=provider), headers=headers) as client:
-        job = client.post("/api/projects/p1/jobs", json={"request_id": "chapter-0001", "kind": "chapter",
-                                                         "params": {"chapter_id": "c1"}}).json()
-        assert client.app.state.job_runner._handles[job["id"]].wait_sync(10) is not None
-        relevance = client.get(f"/api/projects/p1/jobs/{job['id']}").json()["relevance_hash"]
-    assert relevance.startswith("c1:") and relevance.count("|") == 2
+        for kind, params in (("chapter", {"chapter_id": "c1"}), ("structure", {})):
+            job = client.post("/api/projects/p1/jobs", json={"request_id": f"{kind}-0001", "kind": kind,
+                                                             "params": params}).json()
+            assert client.app.state.job_runner._handles[job["id"]].wait_sync(10) is not None
+            view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
+            assert view["candidate_status"] == "held", view
+            relevance[kind] = view["relevance_hash"]
+    assert relevance["chapter"].startswith("c1:") and relevance["chapter"].count("|") == 2
+    assert relevance["structure"].startswith("s1:")
     out = _run_legacy(interim_backend, store.root, "jobs")
     assert out["jobs"] == 200
-    # 이전 빌드는 표지 때문에 템플릿이 다르다고 보고(계산식도 달라 보고 계획 변경도 함께 나온다) 반영하지 않는다
-    [reasons] = out["reasons"]
-    assert "template_changed" in reasons
+    reasons = dict(zip(out["kinds"], out["reasons"]))
+    # 이전 빌드는 표지 때문에 장 템플릿이 다르다고 보고(계산식도 달라 보고 계획 변경도 함께 나온다) 반영하지 않는다
+    assert "template_changed" in reasons["chapter"]
+    # 구조안 행은 이전 빌드가 ETag로 판정한다. 덱이 그대로라 사유가 없다 (D3b-2 리뷰 R8)
+    assert reasons["structure"] == []

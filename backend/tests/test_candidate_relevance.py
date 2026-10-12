@@ -189,6 +189,38 @@ def test_presenter_change_before_start_does_not_fail_the_job(store, manager):
     assert view["state"] == "succeeded", view
 
 
+def _put_chapters(client):
+    deck = client.get("/api/projects/p1/deck")
+    body = deck.json()
+    body["structure"]["chapters"] = [{"id": "c9", "topic": "다른 곳에서 바뀐 장", "conclusion": "새 결론",
+                                      "template": "bullet_box", "source_refs": []}]
+    response = client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]})
+    assert response.status_code == 200, response.text
+
+
+def test_structure_change_before_start_fails_with_the_structure_message(store, manager):
+    """임대 직후 재비교에서 반영 기준 (나)가 다르면 AI를 부르지 않고 실패한다 (계획 4.3, D3b-2 리뷰 R2)."""
+    _project(store)
+    entered, resume = __import__("threading").Event(), __import__("threading").Event()
+    real_status = manager.connections["claude"].status
+
+    def slow_status():
+        entered.set()
+        assert resume.wait(5)
+        return real_status()
+
+    manager.connections["claude"].status = slow_status
+    with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
+        job = _register(client, headers={"X-AI-Selection": manager.selection_id}).json()
+        assert entered.wait(5)
+        _put_chapters(client)
+        resume.set()
+        view = _wait(client, job["id"])
+    assert view["state"] == "failed" and view["error"]["status"] == 412
+    assert "문서 구성이나 슬라이드가 바뀌었습니다" in view["error"]["detail"]
+    assert manager.connections["claude"].calls == []
+
+
 @pytest.mark.parametrize("update, code", [
     ({"title": "다른 제목"}, "structure_input_changed"),
     ({"key_message": "핵심을 새로 씀"}, "structure_input_changed"),
@@ -265,6 +297,23 @@ def test_rows_without_the_marker_are_judged_by_the_etag(store):
     assert view["stale_reasons"] == ["deck_changed"]
 
 
+def test_rows_with_an_unknown_marker_are_judged_by_the_etag(store):
+    """다음 판정식(예: s2:)이 쓴 행은 이 빌드가 해시를 해석하지 않고 ETag로 판정한다 (리뷰 V9, D3b-2 리뷰 R3)."""
+    _project(store)
+    provider = GateProvider()
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        job = _register(client).json()
+        _wait(client, job["id"])
+        with sqlite3.connect(store.root / LEDGER_NAME) as db:
+            (written,) = db.execute("SELECT relevance_hash FROM jobs WHERE id = ?", (job["id"],)).fetchone()
+            assert written.startswith("s1:")
+            db.execute("UPDATE jobs SET relevance_hash = ? WHERE id = ?", ("s2:" + written[3:], job["id"]))
+        _put_meta(client, presenter="김보고")
+        view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
+    assert view["stale_reasons"] == ["deck_changed"]
+
+
 def test_structure_registration_rejects_a_brief_that_differs_from_the_report_info(store):
     _project(store)
     provider = GateProvider()
@@ -272,7 +321,11 @@ def test_structure_registration_rejects_a_brief_that_differs_from_the_report_inf
     brief = {"decision_question": "확대할 것인가?", "audience": "", "report_type": "weekly"}
     with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
         response = _register(client, brief=brief)
-    assert response.status_code == 422
+        sync = client.post("/api/projects/p1/generate/structure", json={"brief": brief})
+    # 다른 탭이 보고 정보를 바꾼 경우가 대부분이라, 화면이 다시 읽기로 안내하도록 코드를 싣는다 (D3b-2 리뷰 R1)
+    for body in (response, sync):
+        assert body.status_code == 422 and body.json()["code"] == "brief_mismatch"
+    assert provider.calls == 0
 
 
 # -- 장 후보 ---------------------------------------------------------------------

@@ -67,6 +67,7 @@ const HTTP: Record<string, Row> = {
   selection_changed: ["target_changed", "check_target",
     "화면 위쪽의 'AI 연결 및 모델'에서 지금 연결과 모델을 확인한 뒤 다시 생성해 주세요."],
   validation: ["input_unknown", "check_input", "입력을 확인한 뒤 다시 생성해 주세요."],
+  brief_mismatch: ["deck_conflict", "reload_server", "위쪽 충돌 안내의 '서버 내용 다시 읽기'를 눌러 주세요."],
 };
 
 async function httpError(name: string): Promise<unknown> {
