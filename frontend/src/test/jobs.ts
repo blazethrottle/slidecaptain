@@ -20,6 +20,7 @@ export function batchView(chapters: ChapterView[], extra: Partial<JobView> = {})
     candidate_status: "none", outcome: "all_applied", owner: "this_instance", created_at: "2026-10-08T10:00:00+09:00",
     started_at: null, finished_at: null, provider: null, model: null, base_etag: null, current_etag: null,
     relevance_hash: null, stale_reasons: [], cancel_requested: false, error: null, result: null,
+    step: null, step_started_at: null, elapsed_seconds: null,  // 서버는 세 칸을 항상 싣는다 (D3b-4 리뷰 R8)
     chapters: chapters.map((c, i) => ({ ...c, position: i })), ...extra,
   };
 }
@@ -30,6 +31,7 @@ export function jobView(kind: string, extra: Partial<JobView> = {}): JobView {
     id: "job-1", project: "p1", kind, state: "succeeded", target: null, params: {}, candidate_status: "held",
     outcome: null, owner: "this_instance", created_at: "2026-10-08T10:00:00+09:00", started_at: "2026-10-08T10:00:00+09:00",
     finished_at: null, provider: null, model: null, base_etag: null, current_etag: null, relevance_hash: null,
-    stale_reasons: [], cancel_requested: false, error: null, result: null, chapters: [], ...extra,
+    stale_reasons: [], cancel_requested: false, error: null, result: null, chapters: [],
+    step: null, step_started_at: null, elapsed_seconds: null, ...extra,
   };
 }

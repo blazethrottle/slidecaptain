@@ -165,10 +165,13 @@ class JobHandle:
         self.stage = "queued"  # 메모리의 단계. 진행 중 작업 요약에 쓴다 (α 묶음 리뷰 A7)
         # 구조안의 실행 단계 (D3b-4, 계획 4.8). 시간이 드는 경계만 둔다: 연결 확인(임대 대기, 로그인 확인, 재비교),
         # 첫 AI 호출, 형식 재시도 호출. 메모리에만 두고 원장 형식은 바꾸지 않는다
-        self.step: str | None = "connecting" if spec is not None and spec.kind == "structure" else None
-        self.step_started_at = _now()
+        # 단계와 시작 시각은 한 번에 바꾸고 한 번에 읽는다. 요청 스레드가 둘을 따로 읽어 섞이지 않게 한다 (D3b-4 리뷰 R9)
+        self.step_state: tuple[str | None, str] = (
+            "connecting" if spec is not None and spec.kind == "structure" else None, _now())
         self.started_mono = time.monotonic()
         self.calls = 0
+        # 결과가 정해졌다. 임대 반납은 연결 잠금을 기다릴 수 있어, 그 사이에도 단계 칸을 비운다 (D3b-4 리뷰 R3)
+        self.settled = False
         self.current_chapter: str | None = None  # 묶음에서 지금 생성하는 장
         self.sent_chapters: set[str] = set()
         self.created_at = _now()
@@ -390,6 +393,7 @@ class JobRunner:
             _LOG.exception("AI 생성 작업 실행 중 예기치 않은 오류: %s", job_id)
             outcome = Outcome(self._fail(job_id, "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None))
         finally:
+            handle.settled = True
             if release is not None:
                 try:
                     release()  # 작업 루프의 동기 호출이라 요청 취소의 영향을 받지 않는다 (계획서 5.5)
@@ -403,27 +407,32 @@ class JobRunner:
             handle._finish(outcome)
 
     def _on_call(self, handle: JobHandle) -> None:
-        """제공자 호출 직전. 구조안은 첫 호출이 구성 생성, 둘째 호출이 형식 재시도다(구조안 생성은 형식 게이트를 한 번
-        거친다, pipeline/service.py). 그다음 원격 호출 시각을 남긴다."""
+        """제공자 호출마다 직전에 불린다. 구조안은 호출 번호로 단계를 정한다: 첫 호출이 구성 생성, 둘째 호출이 형식
+        재시도다. 구조안 생성은 형식 게이트를 한 번만 거치므로 호출은 최대 두 번이고 순서도 이와 같다
+        (pipeline/service.py, 시험이 호출 목적 순서를 고정한다). 그다음 원격 호출 시각을 남긴다."""
         handle.calls += 1
         if handle.spec.kind == "structure":
-            handle.step = "generating" if handle.calls == 1 else "retrying_format"
-            handle.step_started_at = _now()
+            handle.step_state = ("generating" if handle.calls == 1 else "retrying_format", _now())
         self._mark_sent(handle)
 
-    def step_fields(self, job_id: str) -> dict:
-        """작업 응답의 실행 단계 칸. 이 실행기가 돌리는 끝나지 않은 작업만 경과 초가 있고, 단계는 구조안만 있다.
-        취소 요청 중에는 단계를 비운다(화면은 취소 표시를 우선한다)."""
+    def step_fields(self, job_id: str, *, finished: bool = False) -> dict:
+        """작업 응답의 실행 단계 칸. 단계는 이 실행기가 돌리는 끝나지 않은 구조안 작업만 있고, 경과 초는 이 실행기가
+        돌리는 끝나지 않은 모든 작업에 있다. 취소 요청 중에는 단계를 비운다(화면은 취소 표시를 우선한다).
+        finished는 원장이 이미 종결 상태라는 뜻이다. 메모리 핸들이 아직 끝나지 않았어도 세 칸을 비운다 (리뷰 R3)."""
         with self._lock:
             handle = self._handles.get(job_id)
-        if handle is None or handle.done:
+        if finished or handle is None or handle.done:
             return {"step": None, "step_started_at": None, "elapsed_seconds": None}
         return self._step_fields(handle)
 
     @staticmethod
     def _step_fields(handle: JobHandle) -> dict:
-        step = None if handle.cancel_requested else handle.step
-        return {"step": step, "step_started_at": handle.step_started_at if step else None,
+        if handle.settled:
+            return {"step": None, "step_started_at": None, "elapsed_seconds": None}
+        step, started_at = handle.step_state
+        if handle.cancel_requested:
+            step = None
+        return {"step": step, "step_started_at": started_at if step else None,
                 "elapsed_seconds": int(time.monotonic() - handle.started_mono)}
 
     def _mark_sent(self, handle: JobHandle) -> None:

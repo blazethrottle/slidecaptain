@@ -278,7 +278,8 @@ class DocumentChangeBasis(BaseModel):
 
 
 class _CallMarker:
-    """제공자 감싸개: 첫 complete 호출 직전에 on_call을 부른다. 다른 속성은 원래 제공자의 것을 쓴다."""
+    """제공자 감싸개: complete 호출마다 직전에 on_call을 부른다. 다른 속성은 원래 제공자의 것을 쓴다.
+    실행 단계는 둘째 호출에도 불린다는 것에 기댄다(형식 재시도 단계, D3b-4 리뷰 R11)."""
 
     def __init__(self, provider, on_call: Callable[[], None]):
         self._inner, self._on_call = provider, on_call
@@ -392,7 +393,7 @@ def create_app(
     def _acquire_service(selection_id: str | None, on_call: Callable[[], None]):
         """작업 루프의 작업 스레드에서 임대를 잡는다. 돌려주는 release는 동기 함수다.
 
-        제공자는 첫 호출 직전에 on_call을 부르는 감싸개로 넘긴다. 원격 호출 시각을 실제 호출 시점에 남겨
+        제공자는 호출마다 직전에 on_call을 부르는 감싸개로 넘긴다. 원격 호출 시각을 실제 호출 시점에 남겨
         재시작 조정이 호출 전 실패를 "완료 여부 불명"으로 잘못 분류하지 않게 한다 (D2b-3 리뷰 R6).
         """
         if ai_connections is None:
@@ -718,7 +719,7 @@ def create_app(
                 created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
                 provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
                 relevance_hash=row.relevance_hash, stale_reasons=reasons,
-                cancel_requested=runner.cancel_requested(row.id), error=error, **runner.step_fields(row.id),
+                cancel_requested=runner.cancel_requested(row.id), error=error, **runner.step_fields(row.id, finished=terminal),
                 result=row.result if isinstance(row.result, dict) else None,
                 chapters=[ChapterView(
                     chapter_id=c.chapter_id, position=c.position, state=c.state, candidate_status=c.candidate_status,

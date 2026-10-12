@@ -167,7 +167,8 @@ class JobView(BaseModel):
     error: JobError | None
     result: dict[str, Any] | None
     chapters: list[ChapterView]  # 묶음이 아니면 빈 목록
-    # 구조안의 실행 단계 (D3b-4, 계획 4.8). 이 실행기의 끝나지 않은 구조안 작업만 값이 있다. 경과 초는 등록 때부터 센
+    # 실행 단계 (D3b-4, 계획 4.8). 단계는 이 실행기의 끝나지 않은 구조안 작업만, 경과 초는 이 실행기의 끝나지 않은
+    # 모든 작업에 값이 있다(D3b-4 리뷰 R4). 경과 초는 등록 때부터 센
     # 서버 값이다(화면은 이 값을 받은 뒤 스스로 센다. 두 시계 차이로 값이 튀지 않게). 스키마에 기본값을 적지 않아
     # 화면 타입에서 없을 수 있는 칸이 된다
     step: Literal["connecting", "generating", "retrying_format"] | None = Field(default=None, json_schema_extra=_no_default)
@@ -185,7 +186,8 @@ class ActiveJob(BaseModel):
     stage: Literal["queued", "running", "cancel_requested"]  # queued는 임대 대기
     created_at: str
     cancel_requested: bool
-    # 구조안의 실행 단계 (D3b-4, 계획 4.8). 이 실행기의 끝나지 않은 구조안 작업만 값이 있다. 경과 초는 등록 때부터 센
+    # 실행 단계 (D3b-4, 계획 4.8). 단계는 이 실행기의 끝나지 않은 구조안 작업만, 경과 초는 이 실행기의 끝나지 않은
+    # 모든 작업에 값이 있다(D3b-4 리뷰 R4). 경과 초는 등록 때부터 센
     # 서버 값이다(화면은 이 값을 받은 뒤 스스로 센다. 두 시계 차이로 값이 튀지 않게). 스키마에 기본값을 적지 않아
     # 화면 타입에서 없을 수 있는 칸이 된다
     step: Literal["connecting", "generating", "retrying_format"] | None = Field(default=None, json_schema_extra=_no_default)

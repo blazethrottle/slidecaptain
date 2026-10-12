@@ -14,6 +14,11 @@ assistant 메시지와 structured_output이 든 result 메시지.
 - FAKE_CLAUDE_STATUS_DELAY: auth status 응답 전에 기다리는 초. 연결 확인 단계를 관측할 때 쓴다(D3b-4)
 - FAKE_CLAUDE_RESPONSES: 응답 JSON 목록 파일. 호출 순서대로 꺼내고, 다 쓰면 마지막 것을 되풀이한다
 - FAKE_CLAUDE_LOGGED_IN: 0이면 로그아웃 상태로 답한다
+
+호출 번호는 작업별 번호가 아니라 기록 폴더(calls.log)의 누적 호출 번호다. 한 서비스에서 작업을 여러 번
+돌리면 둘째 작업의 첫 호출은 0이 아니고, 응답 목록도 이어서 꺼낸다(D3b-4 리뷰 R7). 작업마다 새 기록 폴더를
+쓰거나, 관문을 열기 전에 calls.log의 마지막 번호를 읽어 그 번호의 관문을 연다. 번호는 줄 수를 읽고 한 줄
+덧붙여 정하므로 원자적이지 않다. 서비스 둘이 같은 기록 폴더를 쓰지 않는다.
 """
 
 import json
