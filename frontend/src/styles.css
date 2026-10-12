@@ -68,6 +68,43 @@
   --height-inline-editor: 60px;
   --size-hidden: 1px;              /* 화면 낭독기 전용 숨김 기법의 최소 상자 */
   --size-primary-bar-clearance: 90px; /* 주 행동 막대의 가장 큰 측정 높이: 버튼만 61px, 지울 장 수 주의 한 줄이 붙으면 90px (D3a-7, 512~1440px에서 같음) */
+  /* 보고 유형 예시 그림의 색 (D3b-6, 계획 4.6). 시안의 값을 그대로 옮겼다. 예시는 합성 슬라이드라 화면 주제색과 따로 둔다 */
+  --example-ink: #172b4d;
+  --example-muted: #526174;
+  --example-blue: #244c83;
+  --example-green: #176b55;
+  --example-amber: #8a5700;
+  --example-paper: #ffffff;
+  --example-surface: #f4f7fb;
+  --example-blue-subtle: #eef3fa;
+  --example-amber-subtle: #fff2d9;
+  --example-green-subtle: #e7f3ed;
+  --example-gray-subtle: #f4f6f8;
+  --example-gray-faint: #f8fafc;
+  --example-blue-on-dark: #b9cee9;
+  --example-ir-text-muted: #b9cee0;
+  --example-ir-text-faint: #9ebcc9;
+  --example-ir-accent: #60d5bc;
+  --example-ir-bg: #102337;
+  --example-ir-panel: #173c4d;
+  --example-ir-card: #1d4055;
+  --example-ir-line: #4a6b7d;
+  --example-axis: #8c9db0;
+  --example-line: #d9e0e7;
+  --example-grid: #edf1f6;
+  --example-grid-strong: #e8edf2;
+  --example-track: #e9eef5;
+  --example-blue-muted: #9db7d8;
+  --example-point: #427bb9;
+  --example-point-highlight: #f2ab40;
+  --example-amber-bar: #ba7c16;
+  --example-amber-line: #b57b16;
+  --example-red: #b42318;
+  /* 좁은 폭에서 예시 그림의 높이 상한. 경계(유형 영역 720px)에서 두 열일 때 그림 높이와 같게 둔다: 열 폭 (720 - 16) / 2 = 352px,
+     높이 352 x 450 / 800 = 198px. 경계를 넘을 때 그림 크기가 튀지 않는다 (D3b-6 측정) */
+  --height-example-narrow: 198px;
+  --width-example-large: 960px;     /* 크게 보기 대화 상자의 최대 폭 */
+  --width-example-min: 640px;       /* 크게 보기 그림의 최소 폭. 더 좁은 창에서는 가로로 스크롤한다 */
   --shadow-dialog: 0 4px 24px var(--shadow-color);
   --shadow-dialog-wide: 0 8px 32px var(--shadow-color);
 }
@@ -259,8 +296,9 @@ main.project-shell { padding: 0; }
 /* Tab으로 옮긴 초점이 창 아래에 붙은 막대 뒤에 숨지 않게, 초점을 따라 스크롤할 때 막대 높이만큼 남긴다. 없을 때 512×360의
    보고 목적과 구성, 1024×720의 장 구성표에서 초점 칸이 막대와 겹쳤다 (D3a-7) */
 html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
-/* 보고 목적 화면 (D3b-5, 계획 4.5). 유형 영역이 넓으면 예시를 오른쪽 열에, 좁으면 추가 입력 아래에 둔다. 경계 720px는
-   임시값이다: 예시 그림이 들어오는 D3b-6에서 앱 셸 안의 실제 폭과 첫 화면 높이를 재서 정하고 뷰포트 환산값을 기록한다 */
+/* 보고 목적 화면 (D3b-5, 계획 4.5). 유형 영역이 넓으면 예시를 오른쪽 열에, 좁으면 추가 입력 아래에 둔다. 경계는 유형 영역
+   폭 720px다(D3b-6 측정). 창 폭으로는 단계 목록이 옆에 있을 때 약 956px 이상, 단계 띠로 바뀌는 780px 이하에서는 약 752px 이상이
+   두 열이다. 두 열의 그림 높이는 이 경계에서 약 198px이고, 측정한 다섯 크기 모두 가로 넘침이 없고 보고서 제목이 첫 화면 안이다 */
 .purpose-type { container-type: inline-size; container-name: purpose-type; }
 .purpose-type-layout { display: grid; gap: var(--space-4); }
 @container purpose-type (min-width: 720px) {
@@ -269,6 +307,16 @@ html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 .purpose-composition { margin: 0 0 var(--space-2); padding-inline-start: var(--space-6); }
 .purpose-outcomes { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .type-example { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
+.example-art { display: block; width: 100%; height: auto; font-family: "Noto Sans KR", sans-serif; }
+@container purpose-type (max-width: 719px) { .example-art { max-height: var(--height-example-narrow); } }
+.example-overlay { position: fixed; inset: 0; background: var(--color-overlay); display: flex; align-items: center;
+  justify-content: center; z-index: 120; }
+.example-dialog { background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-4); box-sizing: border-box;
+  width: 100%; max-width: var(--width-example-large); max-height: 100dvh; overflow-y: auto; box-shadow: var(--shadow-dialog); }
+.example-dialog-art { overflow-x: auto; }
+.example-art-large { display: block; width: 100%; min-width: var(--width-example-min); height: auto;
+  font-family: "Noto Sans KR", sans-serif; }
+.example-close { min-height: var(--control-height-primary); }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
 

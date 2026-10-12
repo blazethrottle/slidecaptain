@@ -111,6 +111,17 @@ sizeScope.split("\n").forEach((line, i) => {
 });
 if (sizeViolations) failures.push(`직접 크기 값 합계 ${sizeViolations}개`);
 
+// (6) 보고 유형 예시 그림 파일의 직접 색 금지 (D3b-6, 계획 4.6, 리뷰 U7). 그림은 예시 토큰(var(--example-*))으로만 칠한다.
+// styles.css를 검사할 때만 함께 본다(검사 스크립트 자체의 시험은 다른 CSS 파일을 준다)
+if (!process.argv[2]) {
+  for (const file of ["ExampleArt.tsx", "ReportTypeExample.tsx"]) {
+    const path = fileURLToPath(new URL(`../src/screens/${file}`, import.meta.url));
+    readFileSync(path, "utf8").split("\n").forEach((line, i) => {
+      if (/#[0-9a-fA-F]{3,8}\b/.test(line) || colorFunction.test(line)) failures.push(`${file} ${i + 1}행: 직접 색 ${line.trim()}`);
+    });
+  }
+}
+
 if (failures.length) {
   console.error(`디자인 토큰 검사 실패 ${failures.length}건`);
   for (const f of failures) console.error(" - " + f);
