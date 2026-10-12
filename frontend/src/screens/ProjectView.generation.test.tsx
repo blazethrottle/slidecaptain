@@ -419,12 +419,18 @@ describe("D3a-5 리뷰 반영", () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
     await openProject(60_000);
     await userEvent.click(stageButton("편집"));
-    await screen.findByLabelText("장 주제");
+    // 다시 씀 (D3a-β 재리뷰 F5): 되돌릴 이력을 먼저 만든다. 종전에는 이력이 없어 단축키를 막지 않아도 통과했다
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await userEvent.tab();
+    await waitFor(() => expect(api.putDeck).toHaveBeenCalled(), { timeout: 3000 });
+    const edited = (screen.getByLabelText("장 주제") as HTMLInputElement).value;
     await batchFromOtherTab();
     await waitFor(() => expect(document.querySelector(".preview-canvas")).toHaveClass("stale"));
     const before = vi.mocked(api.putDeck).mock.calls.length;
+    (document.activeElement as HTMLElement | null)?.blur();
     await userEvent.keyboard("{Control>}z{/Control}");
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(screen.getByLabelText("장 주제")).toHaveValue(edited);
     expect(vi.mocked(api.putDeck).mock.calls.length).toBe(before);
     expect(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }).closest("[inert]")).not.toBeNull();
   });
@@ -587,7 +593,7 @@ describe("D3a-β 묶음 리뷰 반영", () => {
     await userEvent.click(await screen.findByRole("button", { name: "구조안 생성" }));
     await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
     await userEvent.click(stageButton("자료"));
-    const failed = jobView("structure", { id: "job-s", state: "failed", candidate_status: "none",
+    const failed = jobView("structure", { id: "job-s", state: "failed", candidate_status: "none", finished_at: new Date().toISOString(),
       error: { error_class: "connection", status: 503, detail: "AI 호출이 정상적으로 끝나지 않았습니다.", code: "provider_call_failed" } });
     vi.mocked(api.getJob).mockResolvedValue(failed);
     vi.mocked(api.listJobs).mockResolvedValue([failed]);
@@ -628,6 +634,11 @@ describe("D3a-β 묶음 리뷰 반영", () => {
     const notice = (await screen.findByText(/일부 장을 만들지 못했습니다/)).closest(".failure-notice");
     expect(notice).not.toBeNull();
     expect(screen.queryByText(/지난 내용 생성/)).toBeNull();
+    // 두 번째로 열면 경고를 되풀이하지 않고 지난 묶음 한 줄로 보인다 (재리뷰 F13)
+    await userEvent.click(stageButton("자료"));
+    await userEvent.click(stageButton("구성"));
+    expect(await screen.findByText(/지난 내용 생성/)).toBeInTheDocument();
+    expect(document.querySelector(".failure-notice")).toBeNull();
   });
 
   it("이 탭이 시작한 묶음을 떠났다 돌아와 따라가면 성공 뒤 편집 단계로 옮긴다 (B7)", async () => {
@@ -665,5 +676,113 @@ describe("D3a-β 묶음 리뷰 반영", () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
     expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step");
     peer.close();
+  });
+});
+
+describe("D3a-β 반영 커밋 재리뷰 반영", () => {
+  async function batchFromOtherTab() {
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+  }
+  async function batchEnds() {
+    vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "저장본이 바뀌었습니다."));
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(null));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 진행 중입니다/)).toBeNull());
+  }
+
+  it("묶음 종결 충돌을 되돌린 뒤 다른 단계에 갔다 오면 충돌이 없고 새 편집이 저장된다 (F1)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00", reason: "conflict",
+      source: "editor" } as Awaited<ReturnType<typeof api.saveDraft>>);
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await userEvent.tab();
+    await batchFromOtherTab();
+    await batchEnds();
+    await screen.findByText(/생성한 장이 문서에 반영되어/);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
+    await waitFor(() => expect(screen.queryByText(/생성한 장이 문서에 반영되어/)).toBeNull());
+    confirm.mockRestore();
+    await userEvent.click(stageButton("자료"));
+    await userEvent.click(stageButton("편집"));
+    await screen.findByLabelText("장 주제");
+    expect(screen.queryByText(/생성한 장이 문서에 반영되어/)).toBeNull();
+    const before = vi.mocked(api.putDeck).mock.calls.length;
+    await userEvent.type(screen.getByLabelText("장 주제"), " 다시");
+    await userEvent.tab();
+    await waitFor(() => expect(vi.mocked(api.putDeck).mock.calls.length).toBeGreaterThan(before), { timeout: 3000 });
+  });
+
+  it("저장 충돌 중에 묶음으로 읽기 전용이 되어도 떠나지 않고 버리기 확인을 묻지 않는다 (F4)", async () => {
+    vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await userEvent.tab();
+    await screen.findByRole("button", { name: "서버 내용으로 되돌리기" }, { timeout: 3000 });
+    await batchFromOtherTab();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await userEvent.click(stageButton("자료"));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(stageButton("편집")).toHaveAttribute("aria-current", "step");
+    confirm.mockRestore();
+  });
+
+  it("화면을 열기 전에 끝난 구조안 실패는 다시 연 구성 화면에 보이지 않는다 (F2)", async () => {
+    vi.mocked(api.listJobs).mockResolvedValue([jobView("structure", { id: "job-old", state: "failed", candidate_status: "none",
+      finished_at: "2026-10-01T10:00:00+09:00", error: { error_class: "connection", status: 503, detail: "옛 실패", code: "provider_call_failed" } })]);
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await screen.findByLabelText("1번 장 주제");
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(screen.queryByText(/옛 실패/)).toBeNull();
+  });
+
+  it("편집 단계 작업이 다른 단계에 있는 동안 실패하면 머리 알림이 그 장을 골라 편집 단계로 보내고, 생성 패널이 원인을 보인다 (F3)", async () => {
+    vi.mocked(api.startJob).mockImplementation(async () =>
+      registered(jobView("chapter", { id: "job-c", state: "running", candidate_status: "none", target: "c1" })));
+    vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+    await openProject();
+    await userEvent.click(stageButton("편집"));
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapter", project.name, "job-c")));
+    await userEvent.click(await screen.findByRole("button", { name: "이 장 다시 생성" }));
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    await userEvent.click(stageButton("자료"));
+    const failed = jobView("chapter", { id: "job-c", state: "failed", candidate_status: "none", target: "c1",
+      finished_at: new Date().toISOString(),
+      error: { error_class: "connection", status: 503, detail: "장 생성 호출이 끝나지 않았습니다.", code: "provider_call_failed" } });
+    vi.mocked(api.getJob).mockResolvedValue(failed);
+    vi.mocked(api.listJobs).mockResolvedValue([failed]);
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(null));
+    await within(header()).findByText(/편집 단계의 AI 생성이 실패했습니다/);
+    await userEvent.click(within(header()).getByRole("button", { name: "편집 단계로 이동" }));
+    await waitFor(() => expect(stageButton("편집")).toHaveAttribute("aria-current", "step"));
+    expect(await screen.findByText("장 생성 호출이 끝나지 않았습니다.")).toBeInTheDocument();
+    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+  });
+
+  it("새 작업이 시작되면 지난 실패 알림을 내린다 (F9)", async () => {
+    await openProject(60_000);
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-x", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/);
+    await act(async () => notifyProject({ kind: "job_started", project: project.name, jobId: "job-y" }, { broadcast: false }));
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull());
+  });
+
+  it("첫 확인이 끝나기 전에 사용자가 단계를 옮겼으면 열 때의 묶음으로 단계를 바꾸지 않는다 (F7)", async () => {
+    let first!: (s: ReturnType<typeof status>) => void;
+    vi.mocked(api.getActiveJob).mockReturnValueOnce(new Promise((r) => { first = r; }))
+      .mockImplementation(async () => status(activeOf("chapters")));
+    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    await userEvent.click(await screen.findByRole("button", { name: "자료" }));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    await act(async () => first(status(activeOf("chapters"))));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(stageButton("자료")).toHaveAttribute("aria-current", "step");
   });
 });

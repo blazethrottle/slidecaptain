@@ -53,7 +53,8 @@ export function waitJob(name: string, view: JobView, opts: {
 } = {}): Promise<JobView> {
   if (TERMINAL_JOB_STATES.has(view.state)) {
     // 등록 응답이 이미 종결이면 조회를 거치지 않으므로 여기서 종결을 알린다 (D3a-3 리뷰 R9)
-    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind });
+    notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind,
+      target: view.target });
     return Promise.resolve(view);
   }
   return followJob(() => api.getJob(name, view.id), (next) => opts.onUpdate?.(next),
@@ -76,6 +77,15 @@ export function pendingCandidate(jobs: JobView[], kinds: JobKind[], target: stri
   const latest = jobs.find((j) => (kinds as string[]).includes(j.kind) && (target === null || j.target === target));
   if (!latest || latest.state !== "succeeded" || !latest.result) return null;
   return latest.candidate_status === "held" || latest.candidate_status === "stale" ? latest : null;
+}
+
+// 결과 없이 끝난 실패 상태 (다시 연 화면이 지난 실패로 보인다, D3a-β 리뷰 B1)
+export const FAILED_JOB_STATES: ReadonlySet<string> = new Set(["failed", "interrupted", "remote_completion_unknown"]);
+
+// 작업이 이 시각(ms) 뒤에 끝났는가. 끝난 시각이 없으면 만든 시각으로 본다 (D3a-β 재리뷰 F2)
+export function endedSince(view: JobView, since: number): boolean {
+  const at = Date.parse(view.finished_at ?? view.created_at);
+  return Number.isNaN(at) || at >= since;
 }
 
 // 진행 중인 같은 종류와 대상의 작업 (화면을 다시 열었을 때 이어서 조회한다)

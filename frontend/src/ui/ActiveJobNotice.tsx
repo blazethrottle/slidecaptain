@@ -13,6 +13,11 @@ export const BATCH_READ_ONLY_NOTICE = "내용 생성 중에는 문서를 고칠 
 // 묶음 중 읽기 전용이 된 화면에 저장하지 않은 입력이 남아 있으면 떠나기 전에 묻는다. 저장하면 묶음의 사슬이 끊긴다
 export const BATCH_DISCARD_CONFIRM = "내용 생성 중이라 고친 내용을 저장할 수 없습니다. 이 화면을 떠나면 고친 내용이 사라집니다. 계속할까요?";
 
+// 머리가 지금 보이는 진행 작업. 프로젝트 화면 밖이면 없다
+export function useHeaderActiveJob(): ActiveJob | null {
+  return useContext(ActiveJobContext)?.active ?? null;
+}
+
 // 머리가 이 작업을 보이고 있는가. 보이는 동안 화면 안에는 같은 작업의 취소 버튼을 두지 않는다 (A11)
 export function useHeaderShowsJob(jobId: string | null | undefined): boolean {
   const ctx = useContext(ActiveJobContext);

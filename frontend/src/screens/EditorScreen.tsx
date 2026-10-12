@@ -23,7 +23,7 @@ import { Button } from "../ui/Button";
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, onAiBusyChange, timings,
   onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange, readOnly = false,
-  readOnlyNotice = false, conflictSignal = 0,
+  readOnlyNotice = false, conflictSignal = 0, seenJobFailures, failuresSince = 0,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -53,14 +53,21 @@ export function EditorScreen({
   // 늘어나면 충돌 처리로 들어간다. 장 생성 묶음이 끝났을 때 이 화면에 저장하지 않은 편집이 남아 있으면 부모가 보낸다.
   // 이 화면의 "서버 내용으로 되돌리기"가 편집을 보존한 뒤 새 문서를 읽는다 (D3a-β 리뷰 B2)
   conflictSignal?: number;
+  // 생성 패널이 다시 열릴 때 그 장의 지난 실패를 한 번 보이는 데 쓴다 (D3a-β 재리뷰 F3)
+  seenJobFailures?: Set<string>;
+  failuresSince?: number;
 }) {
   // 읽기 전용(장 생성 묶음 중)에는 저장을 멈춘다. 묶음 중 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7)
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint, readOnly);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  // 마운트한 뒤에 늘어난 신호만 본다. 신호는 프로젝트 화면에서 줄지 않으므로, 마운트 때의 값을 새 신호로 읽으면
+  // 한 번 겪은 충돌이 다시 열 때마다 되살아났다 (D3a-β 재리뷰 F1)
   const reportConflict = editor.reportConflict;
+  const seenSignal = useRef(conflictSignal);
   useEffect(() => {
-    if (conflictSignal > 0) reportConflict(BATCH_END_CONFLICT);
+    if (conflictSignal > seenSignal.current) reportConflict(BATCH_END_CONFLICT);
+    seenSignal.current = conflictSignal;
   }, [conflictSignal, reportConflict]);
   const chapters = editor.deck.structure.chapters;
   const [chapterId, setChapterId] = useState<string | null>(
@@ -113,13 +120,15 @@ export function EditorScreen({
     // 읽기 전용이면 저장하지 않는다. 이미 나간 저장은 착지를 기다리고(그 편집은 사라지지 않는다), 그래도
     // 저장하지 않은 편집이 남았으면 버릴지 묻는다 (D3a-5 리뷰 R7, D3a-β 리뷰 B5)
     if (readOnlyRef.current) {
+      // 저장 충돌 중이면 지금처럼 떠나지 않는다. 고친 내용은 "서버 내용으로 되돌리기"가 보존한다 (재리뷰 F4)
+      if (editor.conflict) return editor.flushSave();
       if (await editor.flushSave()) return true;
       return window.confirm(BATCH_DISCARD_CONFIRM) ? true : "declined";
     }
     const saved = await editor.flushSave();
     // 저장을 기다리는 동안 새로 연 작성 창도 보호한다. 시작 시점의 상태만 검사하면 입력을 버리고 이동한다.
     return saved && diagramDraftRef.current === null && !templateBusyRef.current;
-  }, [editor.flushSave]);
+  }, [editor.flushSave, editor.conflict]);
 
   useEffect(() => {
     onEditorReady?.(flush);
@@ -187,7 +196,7 @@ export function EditorScreen({
     {editor.reloading && <p role="status">변경을 보존하고 서버 내용을 다시 읽고 있습니다.</p>}
     {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}
       {/* 묶음 전에 고친 내용이 남아 있으면 그 결과를 알린다 (D3a-β 리뷰 B2) */}
-      {editor.saveState !== "저장됨" && " 고친 내용은 생성이 끝난 뒤 다시 저장합니다. 그사이 문서가 바뀌었으면 충돌 안내가 뜨고, 서버 내용으로 되돌릴 때 고친 내용을 보존합니다."}</p>}
+      {editor.saveState === "저장 대기" && " 고친 내용은 생성이 끝난 뒤 다시 저장합니다. 그사이 문서가 바뀌었으면 충돌 안내가 뜨고, 서버 내용으로 되돌릴 때 고친 내용을 보존합니다."}</p>}
     <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
@@ -269,6 +278,7 @@ export function EditorScreen({
         <SemanticReviewPanel projectName={project.name} deck={editor.deck} />
         {chapterId && (
           <GeneratePanel project={project} deck={editor.deck} chapterId={chapterId}
+            seenJobFailures={seenJobFailures} failuresSince={failuresSince}
             onReplace={editor.replace} />
         )}
         {slide && slide.warnings.length > 0 && (

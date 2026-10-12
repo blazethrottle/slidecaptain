@@ -89,6 +89,11 @@ it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델 변�
   expect(screen.getByRole("button", { name: "구성" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "목록으로" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeDisabled();
+  // 실제로 떠날 수 있다 (D3a-β 재리뷰 F6). 버튼이 열려 있어도 이탈이 거절되면 편집에 머문다
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "구성" })).toHaveAttribute("aria-current", "step"));
+  await userEvent.click(screen.getByRole("button", { name: "편집" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step"));
   const deck = fixture.deck as Deck;
   const slide = deck.slides.find(s => s.slots.template === "diagram")!;
   await act(async () => pending.resolve(new Response(JSON.stringify({ status: "ok",

@@ -131,7 +131,7 @@ export function resetEtags(): void {
 // (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
 // job_ended는 종결 상태를 싣는다: 작업 종결 알림이 성공, 실패, 취소, 중단을 다르게 알린다 (D3a-4, C23)
 export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string;
-  state?: JobView["state"]; jobKind?: string };
+  state?: JobView["state"]; jobKind?: string; target?: string | null };
 const projectListeners = new Set<(event: ProjectEvent) => void>();
 
 export function onProjectEvent(listener: (event: ProjectEvent) => void): () => void {
@@ -286,7 +286,8 @@ export async function followJob(
       const view = await fetchJob();
       await onUpdate(view);
       if (TERMINAL_JOB_STATES.has(view.state)) {
-        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind });
+        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind,
+          target: view.target });
         return view;
       }
       lastTry = false;

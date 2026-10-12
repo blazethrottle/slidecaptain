@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ActiveJobCancel, useActiveJobFate } from "./ActiveJobNotice";
+import { ActiveJobCancel, useActiveJobFate, useHeaderActiveJob } from "./ActiveJobNotice";
 import { Button } from "./Button";
 import { Diagnostics } from "./Diagnostics";
 import { actionLabel, type FailureAction, type FailureDescription } from "./failure";
@@ -32,12 +32,16 @@ function Notice({ failure: given, lead, actions = {}, role, children, inModal = 
   // 취소를 가리킨다. 같은 작업의 취소 버튼을 두 곳에 두지 않는다 (D3a-5, 묶음 리뷰 A10). 대화 상자 안에서는 진행
   // 중일 때 안내 안의 취소 버튼을 남긴다
   const seen = useActiveJobFate(given.active);
+  const headerJob = useHeaderActiveJob();
+  // 거절의 원인 작업이 끝나고 다른 작업이 돌고 있으면 지금 도는 작업을 말하고 그 작업을 취소 대상으로 한다 (재리뷰 F11)
+  const replaced = seen === "running" && !!headerJob && !!given.active && headerJob.id !== given.active.id;
+  const base: FailureDescription = replaced ? { ...given, what: "다른 AI 작업이 진행 중입니다.", active: headerJob! } : given;
   const fate = inModal && seen === "running" ? "unknown" : seen;
   const failure: FailureDescription = fate === "ended"
-    ? { ...given, what: `진행 중이던 다른 AI 작업(${given.active!.project})이 끝났습니다.`, guidance: "다시 시도할 수 있습니다." }
+    ? { ...base, what: `진행 중이던 다른 AI 작업(${given.active!.project})이 끝났습니다.`, guidance: "다시 시도할 수 있습니다." }
     : fate === "running"
-      ? { ...given, guidance: "그 작업이 끝나기를 기다리거나, 화면 위쪽의 '그 작업 취소'로 그 작업을 취소해 주세요." }
-      : given;
+      ? { ...base, guidance: "그 작업이 끝나기를 기다리거나, 화면 위쪽의 '그 작업 취소'로 그 작업을 취소해 주세요." }
+      : base;
   const primary = actions[failure.action];
   const secondary = failure.secondary;
   const secondaryHandler = secondary ? actions[secondary.action] : undefined;

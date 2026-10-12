@@ -60,8 +60,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 자료 단계의 XLSX 업로드가 진행 중이다(계획서 B4 가정 7). generating과 합치지 않는다: 구성 단계는
   // 생성 중에는 잠그지 않는 예외가 있는데, 업로드는 자료 단계 안의 일이라 구성 단계까지 잠가야 FC-17이 막힌다
   const [uploading, setUploading] = useState(false);
-  const [conflict, setConflict] = useState<Conflict>(null);
-  const [editorConflictSignal, setEditorConflictSignal] = useState(0);  // 늘리면 편집 화면이 충돌 처리로 들어간다 (B2)  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
+  const [conflict, setConflict] = useState<Conflict>(null);  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
+  const [editorConflictSignal, setEditorConflictSignal] = useState(0);  // 늘리면 편집 화면이 충돌 처리로 들어간다 (B2)
+  // 이 화면을 연 시각. 다시 연 단계 화면은 이 시각 뒤에 끝난 작업의 실패만 보인다(새로고침마다 오래된 실패를
+  // 되풀이하지 않는다, D3a-β 재리뷰 F2)
+  const [openedAt] = useState(() => Date.now());
+  // 사용자가 처음 확인이 끝나기 전에 단계를 옮겼는가. 그랬으면 열 때의 묶음으로 단계를 바꾸지 않는다 (재리뷰 F7)
+  const userMoved = useRef(false);
+  // 편집 화면의 도식 AI 호출 중(작성 창을 닫은 뒤 포함). 구성 화면의 바쁨과 나눠 든다: 닫힌 작성 창의 늦은
+  // 해제가 구성 화면의 바쁨을 내리지 않게 한다 (재리뷰 F10)
+  const [editorAiBusy, setEditorAiBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(null);  // 상단 머리의 저장 상태 (계획 4.1 출처 표)
   const [draftCount, setDraftCount] = useState(0);  // 충돌로 보존한 변경 건수 (C18)
   const [draftsRevision, setDraftsRevision] = useState(0);
@@ -96,7 +104,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       if (seq === 1 && openedWithBatch.current === null) {
         const opened = status.active?.project === project.name && status.active.kind === "chapters";
         openedWithBatch.current = opened;
-        if (opened) setStage("structure");
+        if (opened && !userMoved.current) setStage("structure");
       }
       if (seq !== checkSeq.current) return;  // 늦게 온 옛 응답은 버린다 (D2b-5a 리뷰 R18)
       setActiveJob(status.active ?? null);
@@ -209,15 +217,27 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const generatingRef = useRef(false);
   // 다른 단계에 있는 동안 이 프로젝트의 AI 생성이 실패하거나 끝나지 않으면 머리에 보이게 알린다. 종결 낭독은 보이지
   // 않으므로, 결과를 확인할 단계를 버튼으로 잇는다 (D3a-β 리뷰 B1)
-  const [jobProblem, setJobProblem] = useState<{ stage: Stage; state: string } | null>(null);
+  // 다시 연 화면이 지난 실패를 원인별로 보이는 작업 종류(구성 화면과 편집 단계의 생성 패널). 그 밖(도식, 재작성,
+  // 수리)은 다시 연 화면에 실패가 남지 않으므로 알림을 그 단계에 가도 지우지 않는다 (재리뷰 F3)
+  const REOPEN_SHOWS = new Set(["structure", "chapters", "chapter", "condense"]);
+  const [jobProblem, setJobProblem] = useState<{ stage: Stage; state: string; kind: string; target: string | null } | null>(null);
   useEffect(() => onProjectEvent((event) => {
-    if (event.kind !== "job_ended" || event.project !== project.name || !event.state || !event.jobKind) return;
+    if (event.project !== project.name) return;
+    // 같은 프로젝트에서 새 작업이 시작되면 지난 실패 알림을 내린다 (재리뷰 F9)
+    if (event.kind === "job_started") { setJobProblem(null); return; }
+    if (event.kind !== "job_ended" || !event.state || !event.jobKind) return;
     if (!["failed", "interrupted", "remote_completion_unknown"].includes(event.state)) return;
     const target = JOB_STAGE[event.jobKind];
     if (!target || (!showRecoveryRef.current && stageRef.current === target)) return;
-    setJobProblem({ stage: target, state: event.state });
+    setJobProblem({ stage: target, state: event.state, kind: event.jobKind, target: event.target ?? null });
   }), [project.name]);
-  useEffect(() => { if (!showRecovery && jobProblem?.stage === stage) setJobProblem(null); }, [stage, showRecovery, jobProblem]);
+  useEffect(() => onRemoteProjectEvent((event) => {
+    if (event.project === project.name && event.kind === "job_started") setJobProblem(null);
+  }), [project.name]);
+  useEffect(() => {
+    if (!showRecovery && jobProblem?.stage === stage && REOPEN_SHOWS.has(jobProblem.kind)) setJobProblem(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, showRecovery, jobProblem]);
   // 구성 화면이 다시 열려도 이미 보인 실패를 되풀이하지 않는다 (B1)
   const seenJobFailures = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -259,8 +279,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 화면 바쁨(generating, diagramGenerating)은 그 화면 안의 입력 잠금과, 등록 응답 전이라 서버가 아직 모르는
   // 이 탭의 작업에만 쓴다. 화면이 바뀌면 내려간 화면의 바쁨은 버린다: 언마운트로 조회를 멈춘 화면은 바쁨을 내리지
   // 않았다 (계획 사실 10)
-  useEffect(() => { setGenerating(false); setDiagramGenerating(false); }, [stage, screenKey, showRecovery]);
-  const aiRunningHere = thisProjectJob !== null || generating || diagramGenerating;
+  useEffect(() => { setGenerating(false); setDiagramGenerating(false); setEditorAiBusy(false); }, [stage, screenKey, showRecovery]);
+  const aiRunningHere = thisProjectJob !== null || generating || diagramGenerating || editorAiBusy;
   const batchTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "내용 생성이 끝나면 쓸 수 있습니다";
 
   useEffect(() => {
@@ -419,7 +439,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     if (next) setStage(next);
   };
 
-  const switchStage = async (next: Stage) => {
+  // chapterId: 그 단계에서 미리 고를 장 (머리의 실패 알림이 편집 단계 작업의 장으로 보낸다, 재리뷰 F3)
+  const switchStage = async (next: Stage, chapterId?: string | null) => {
+    userMoved.current = true;
     // 복구 화면은 단계가 아니다. 단계를 고르면 복구 화면을 닫고 그 단계로 간다 (계획 4.1).
     // 복구 화면에는 이탈 확인이 없다(복원과 지우기는 각각 확인 창을 거친다)
     if (showRecovery) { focusStageAfterMove.current = true; closeRecovery(next); return; }
@@ -427,7 +449,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     if (await leaveScreen("이동을")) {
       setError("");
       setSaveStatus(null);
-      setFocusChapter(null);
+      setFocusChapter(chapterId ?? null);
       focusStageAfterMove.current = true;
       setStage(next);
     }
@@ -482,7 +504,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 서버가 생성 중 설정 변경을 409로 거절한다 (계획 4.4)
   const recoveryLocked = navLocked || batchLocked;
   const recoveryTitle = navTitle ?? (batchLocked ? batchTitle : undefined);
-  const aiSettingsLocked = uploading || leaving || dialogOpen || activeJob !== null || generating || !jobChecked;
+  const aiSettingsLocked = uploading || leaving || dialogOpen || activeJob !== null || generating || editorAiBusy || !jobChecked;
   const stageDisabled = (_id: Stage) => navLocked;
   const stageTitle = (_id: Stage) => navTitle;
   const screenKeyValue = `${stage}:${screenKey}`;
@@ -522,7 +544,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
               <StatusIndicator kind="failed" />{" "}
               {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계의 AI 생성이{" "}
               {jobProblem.state === "failed" ? "실패했습니다" : "끝나지 않았습니다"}.{" "}
-              <button onClick={() => void switchStage(jobProblem.stage)} disabled={navLocked} title={navTitle}>
+              <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked || jobProblem.stage === stage}
+                title={navTitle}>
                 {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>{" "}
               <button className="btn-text" onClick={() => setJobProblem(null)}>닫기</button>
             </p>
@@ -620,7 +643,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
-            registeredJobs={startedHere.current} seenJobFailures={seenJobFailures.current}
+            registeredJobs={startedHere.current} seenJobFailures={seenJobFailures.current} failuresSince={openedAt}
             limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked}
             readOnlyNotice={batchHere} />
         )}
@@ -628,10 +651,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           <EditorScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
             onEditorReady={(f) => { flushScreen.current = f; }}
             onConflictHint={() => { justConflicted.current = true; }}
-            onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setGenerating}
+            onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setEditorAiBusy}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
             initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
-            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={editorConflictSignal} />
+            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={editorConflictSignal}
+            seenJobFailures={seenJobFailures.current} failuresSince={openedAt} />
         )}
         {!showRecovery && stage === "review" && (
           <ReviewScreen key={screenKeyValue} projectName={project.name} hasSlides={hasSlides} exporting={exporting}

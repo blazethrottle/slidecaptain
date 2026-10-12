@@ -6,8 +6,8 @@ import {
   type TemplateName,
 } from "../api/client";
 import {
-  blockingReasons, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle, slotsText,
-  stillActive, waitJob,
+  blockingReasons, endedSince, FAILED_JOB_STATES, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
+  slotsText, stillActive, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { Diagnostics } from "../ui/Diagnostics";
@@ -100,7 +100,7 @@ export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "
 
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
   onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
-  readOnlyNotice = false, registeredJobs, seenJobFailures, pollIntervalMs = 1000 }: {
+  readOnlyNotice = false, registeredJobs, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -123,6 +123,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   registeredJobs?: ReadonlySet<string>;
   // 이미 보인 생성 실패의 작업 ID. 다시 연 화면이 지난 구조안 실패를 한 번만 보인다 (D3a-β 리뷰 B1)
   seenJobFailures?: Set<string>;
+  // 이 시각(ms) 뒤에 끝난 작업의 실패만 다시 연 화면에 보인다. 새로고침마다 오래된 실패를 되풀이하지 않는다 (재리뷰 F2)
+  failuresSince?: number;
   // 주안점과 목표 장수. 저장하지 않는 값이라 부모(프로젝트 화면)가 들고 있어 단계 이동과 다시 마운트 사이에
   // 남는다(계획 4.4, 사실 13, D3a-2 리뷰 R6). 넘기지 않으면 이 화면 안에서만 든다
   brief?: StructureBrief;
@@ -484,6 +486,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         }
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
         onError: () => setFollowError(JOB_FOLLOW_ERROR), stillActive: () => stillActive(jobId) });
+      seenJobFailures?.add(final.id);  // 머문 화면에서 본 결과는 다시 연 화면이 원인별 안내로 되풀이하지 않는다 (F13)
       summarize(final, true, latest ?? deck);
       if (deckUnread) {
         setError("AI 작업은 끝났지만 저장본을 다시 읽지 못했습니다. 서버 내용을 다시 읽어 주세요.");
@@ -546,8 +549,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         // 가장 최근 구조안 작업이 이 화면이 내려간 동안 실패하거나 끝나지 않았으면 원인별 안내로 한 번 보인다.
         // 생성 중 다른 단계로 갈 수 있게 된 뒤로 이 실패를 볼 곳이 없었다 (D3a-β 리뷰 B1)
         const last = jobs.find((j) => j.kind === "structure");
-        if (!earlier && last && ["failed", "interrupted", "remote_completion_unknown"].includes(last.state)
-            && !seenJobFailures?.has(last.id)) {
+        if (!earlier && last && FAILED_JOB_STATES.has(last.state)
+            && !seenJobFailures?.has(last.id) && endedSince(last, failuresSince)) {
           seenJobFailures?.add(last.id);
           if (last.result) showStructure(last);  // 형식 오류: 응답 원문과 함께 형식 오류 안내
           else { setFailureLead("지난 구조안 생성이 끝나지 않았습니다."); setFailure(describeJobFailure(last)); }
@@ -568,7 +571,12 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (!TERMINAL_JOB_STATES.has(latest.state)) {
         latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
         void follow(latest.id, registeredJobs?.has(latest.id) ?? false);
-      } else { setJob(latest); summarize(latest, false, deck, registeredJobs?.has(latest.id) ?? false); }
+      } else {
+        // 이 탭이 등록한 묶음의 실패는 처음 한 번만 원인별 안내로 보이고, 그 뒤로는 지난 묶음처럼 한 줄이다 (재리뷰 F13)
+        const rich = (registeredJobs?.has(latest.id) ?? false) && !seenJobFailures?.has(latest.id);
+        if (rich) seenJobFailures?.add(latest.id);
+        setJob(latest); summarize(latest, false, deck, rich);
+      }
     }).catch(() => { /* 원장 문제는 생성 버튼을 누를 때 안내한다 */ });
     return () => { live = false; mounted.current = false; followAbort.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps

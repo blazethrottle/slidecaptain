@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  AiConsentDeclined, api, isStaleStoryPlan, type ChapterResult, type Deck, type JobView, type ProjectInfo,
+  AiConsentDeclined, api, ApiError, isStaleStoryPlan, type ChapterResult, type Deck, type JobView, type ProjectInfo,
   type Slots,
 } from "../api/client";
 import {
-  blockingReasons, JOB_FOLLOW_ERROR, sameSlots, slotsText, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
+  blockingReasons, endedSince, FAILED_JOB_STATES, JOB_FOLLOW_ERROR, sameSlots, slotsText, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
   waitJob,
 } from "../api/jobs";
 import { formatUsage } from "../api/usage";
@@ -20,11 +20,14 @@ const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 
 const KINDS = ["chapter", "condense"] as const;
 const APPLY_CHECK_ERROR = "후보의 현재 상태를 확인하지 못해 반영하지 않았습니다. 잠시 뒤 다시 반영해 주세요.";
 
-export function GeneratePanel({ project, deck, chapterId, onReplace, pollIntervalMs = 1000 }: {
+export function GeneratePanel({ project, deck, chapterId, onReplace, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   chapterId: string;
   onReplace: (next: Deck) => void;
+  // 이미 보인 실패와 기준 시각. 다시 열 때 이 장의 가장 최근 작업이 그 뒤에 실패했으면 한 번 보인다 (D3a-β 재리뷰 F3)
+  seenJobFailures?: Set<string>;
+  failuresSince?: number;
   pollIntervalMs?: number;
 }) {
   const [instructions, setInstructions] = useState("");
@@ -52,6 +55,7 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
     }
   };
   const showError = (e: unknown) => {
+    if (e instanceof ApiError && e.job) seenJobFailures?.add(e.job.id);
     if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
     else if (e instanceof JobCancelled) setCancelNotice("생성이 취소되었습니다.");
     else if (isStaleStoryPlan(e)) setStoryStale(true);
@@ -87,7 +91,13 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, pollInterva
         return;
       }
       const earlierJob = pendingCandidate(jobs, [...KINDS], chapterId);
-      if (earlierJob) show(earlierJob, true);
+      if (earlierJob) { show(earlierJob, true); return; }
+      // 이 장의 가장 최근 작업이 이 화면이 내려간 동안 실패했으면 원인별 안내로 한 번 보인다
+      const last = jobs.find((j) => (KINDS as readonly string[]).includes(j.kind) && j.target === chapterId);
+      if (last && FAILED_JOB_STATES.has(last.state) && !seenJobFailures?.has(last.id) && endedSince(last, failuresSince)) {
+        seenJobFailures?.add(last.id);
+        show(last, false);
+      }
     }).catch(() => { /* 지난 결과를 찾지 못해도 새 생성은 할 수 있다 */ });
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
