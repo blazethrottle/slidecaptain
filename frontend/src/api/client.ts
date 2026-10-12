@@ -126,7 +126,7 @@ export function resetEtags(): void {
   etags.clear();
 }
 
-// 공통 알림 지점 (개정판 D3a-3, 계획 4.5). 저장 성공, 작업 등록 응답, 작업 종결을 화면 안 이벤트로 낸다.
+// 공통 알림 지점 (개정판 D3a-3, 계획 4.5). 저장 성공, 작업 등록 응답, 작업 종결을 화면 안 이벤트로 내고 다른 탭에도 알린다.
 // 진행 API 다시 조회(D3a-3)와 진행 작업 갱신(D3a-5), 다른 탭 알림(D3a-6)이 이것을 듣는다. 저장하지 않는 POST
 // (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
 // job_ended는 종결 상태를 싣는다: 작업 종결 알림이 성공, 실패, 취소, 중단을 다르게 알린다 (D3a-4, C23)
@@ -143,6 +143,45 @@ export function notifyProject(event: ProjectEvent): void {
   for (const listener of [...projectListeners]) {
     try { listener(event); } catch { /* 듣는 쪽의 오류가 요청을 실패로 만들지 않게 한다 */ }
   }
+  try { projectChannel()?.postMessage(event); } catch { /* 다른 탭 알림이 실패해도 이 탭의 일은 계속한다 */ }
+}
+
+// 다른 탭 알림 (개정판 D3a-6, 계획 4.5, β R15). 같은 출처의 탭 사이에 위 이벤트를 BroadcastChannel로 알린다. 채널
+// 객체는 탭마다 하나만 만든다. 표준상 보낸 객체는 자기 메시지를 받지 않으므로 같은 탭의 반영은 위에서 직접 한다.
+// 받는 쪽은 메시지 내용을 믿지 않고 서버를 다시 조회하는 데만 쓴다(진행 작업, 진행 API). 덱을 읽지 않고 저장 ETag를
+// 바꾸지 않는다. 채널이 없는 환경에서는 지금처럼 창 초점 조회로 돌아간다
+const CHANNEL_NAME = "slidecaptain-project-events";
+const EVENT_KINDS = new Set(["saved", "job_started", "job_ended"]);
+let channel: BroadcastChannel | null | undefined;
+const remoteListeners = new Set<(event: ProjectEvent) => void>();
+
+function projectChannel(): BroadcastChannel | null {
+  if (channel !== undefined) return channel;
+  try {
+    channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL_NAME) : null;
+  } catch {
+    channel = null;
+  }
+  if (channel) {
+    // Node(시험 환경)의 채널은 열려 있는 동안 프로세스를 붙잡는다. 브라우저에는 이 함수가 없다
+    (channel as unknown as { unref?: () => void }).unref?.();
+    channel.onmessage = (message: MessageEvent) => {
+      const data = message.data as Partial<ProjectEvent> | null;
+      if (!data || typeof data.project !== "string" || !EVENT_KINDS.has(data.kind as string)) return;
+      const event: ProjectEvent = { kind: data.kind as ProjectEvent["kind"], project: data.project };
+      for (const listener of [...remoteListeners]) {
+        try { listener(event); } catch { /* 듣는 쪽의 오류가 다른 듣는 쪽을 막지 않게 한다 */ }
+      }
+    };
+  }
+  return channel;
+}
+
+// 다른 탭이 낸 알림을 듣는다. 받는 알림에는 종류와 프로젝트 이름만 싣는다
+export function onRemoteProjectEvent(listener: (event: ProjectEvent) => void): () => void {
+  projectChannel();
+  remoteListeners.add(listener);
+  return () => { remoteListeners.delete(listener); };
 }
 
 async function request<T>(

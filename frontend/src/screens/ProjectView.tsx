@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, ApiError, messageOf, notifyProject, onProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
+import { api, ApiError, messageOf, notifyProject, onProjectEvent, onRemoteProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
 import { ActiveJobContext, type ActiveJobState } from "../ui/ActiveJobNotice";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
@@ -120,6 +120,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   useEffect(() => onProjectEvent((event) => {
     if (event.kind === "job_started" || event.kind === "job_ended") void refreshActiveJob();
   }), [refreshActiveJob]);
+  // 다른 탭의 알림 (D3a-6, 계획 4.5, β R15). 진행 작업이 없는 탭도 창 초점 없이 다른 탭의 작업 시작과 종결을 안다.
+  // 받는 탭은 서버를 다시 조회만 한다(진행 작업은 서비스 전체 하나라 어느 프로젝트의 알림이든 조회한다)
+  useEffect(() => onRemoteProjectEvent((event) => {
+    if (event.kind === "job_started" || event.kind === "job_ended") void refreshActiveJob();
+  }), [refreshActiveJob]);
   // 실패 안내와 화면 안 취소 버튼이 읽는 머리의 진행 작업. 그릴 때마다 새 객체를 만들면 그것을 듣는 부품의
   // 효과가 매번 다시 돌아 진행 작업 조회를 되풀이한다 (D3a-5)
   const activeJobState = useMemo<ActiveJobState>(() => ({ active: activeJob, revision: activeRevision,
@@ -161,9 +166,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     if (project.status !== "ok") return;
     void refreshProgress();
     const off = onProjectEvent((event) => { if (event.project === project.name) void refreshProgress(); });
+    const offRemote = onRemoteProjectEvent((event) => { if (event.project === project.name) void refreshProgress(); });
     const onFocus = () => void refreshProgress();
     window.addEventListener("focus", onFocus);
-    return () => { off(); window.removeEventListener("focus", onFocus); };
+    return () => { off(); offRemote(); window.removeEventListener("focus", onFocus); };
   }, [project.name, project.status, refreshProgress]);
   // 진행 작업이 바뀌면(다른 탭의 작업이 시작되거나 끝남) 단계 상태도 다시 읽는다
   const activeJobId = activeJob?.id ?? null;

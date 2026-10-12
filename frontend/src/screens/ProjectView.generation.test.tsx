@@ -3,7 +3,7 @@
 // 실패 안내와 머리 작업 표시의 이음매(묶음 리뷰 A10, A11)를 지킨다
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, notifyProject, type ActiveJob, type Deck } from "../api/client";
+import { api, ApiError, notifyProject, savedEtag, type ActiveJob, type Deck } from "../api/client";
 import { deckWith, planWith, preset, project } from "../test/fixtures";
 import { batchView, chapterView, jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
@@ -350,5 +350,28 @@ describe("작업 종결 알림 (묶음 리뷰 A12)", () => {
     observer.disconnect();
     expect(texts.filter(Boolean)).toEqual(["내용 생성을 취소했습니다(p1)"]);
     expect(api.getJob).toHaveBeenCalledWith("p1", "job-1");
+  });
+});
+
+describe("다른 탭 알림 받기 (D3a-6, 계획 4.5)", () => {
+  it("다른 탭의 작업 시작과 종결을 창 초점 없이 다시 조회해 반영하고, 덱과 저장 ETag는 건드리지 않는다", async () => {
+    await openProject(60_000);
+    const deckReads = vi.mocked(api.getDeck).mock.calls.length;
+    const etag = savedEtag(project.name);
+    const progressReads = vi.mocked(api.getProgress).mock.calls.length;
+    const peer = new BroadcastChannel("slidecaptain-project-events");
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters", "다른보고", "job-9")));
+    peer.postMessage({ kind: "job_started", project: "다른보고", jobId: "job-9" });
+    expect(await within(header()).findByText(/다른 프로젝트\(다른보고\)에서 AI 생성이 진행 중입니다/)).toBeInTheDocument();
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(null));
+    peer.postMessage({ kind: "job_ended", project: "다른보고", jobId: "job-9" });
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 진행 중입니다/)).toBeNull());
+    // 다른 프로젝트의 알림은 이 프로젝트의 진행 API를 다시 읽지 않는다. 이 프로젝트의 저장 알림은 읽는다
+    expect(vi.mocked(api.getProgress).mock.calls.length).toBe(progressReads + 2);  // 진행 작업이 바뀐 두 번
+    peer.postMessage({ kind: "saved", project: project.name });
+    await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBe(progressReads + 3));
+    expect(vi.mocked(api.getDeck).mock.calls.length).toBe(deckReads);
+    expect(savedEtag(project.name)).toBe(etag);
+    peer.close();
   });
 });
