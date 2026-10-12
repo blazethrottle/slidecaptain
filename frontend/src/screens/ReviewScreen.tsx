@@ -66,13 +66,15 @@ export function ReviewScreen({
       <section aria-labelledby="review-export-heading">
         <h2 id="review-export-heading">초안 내보내기</h2>
         <p className="quality-notice">현재 산출물은 검수 전 초안입니다. 보고 흐름, 근거와 실제 PowerPoint 표시를 확인한 뒤 제출해 주세요.</p>
-        <div className="actions">
-          <Button variant="primary" onClick={onExport} disabled={!hasSlides || exporting || exportDisabled}
-            title={exportTitle ?? "내용과 시각 품질을 검수하지 않은 초안으로 내보냅니다"}>초안 PPTX 내보내기</Button>
-          {!hasSlides && <span className="hint">내보낼 장이 아직 없습니다.</span>}
-        </div>
-        {exportResult && <ExportQualitySummary result={exportResult} />}
       </section>
+      {/* 주 행동 막대는 화면 상자의 자식이다. 내보내기 영역은 좁은 창에서 첫 화면 아래에서 시작해 그 안에서는 막대가 올라오지
+          못한다. 순서는 영역 제목과 안내, 막대, 내보내기 결과로 종전과 같다 (D3a-7 사용자 결정) */}
+      <div className="actions primary-bar">
+        <Button variant="primary" onClick={onExport} disabled={!hasSlides || exporting || exportDisabled}
+          title={exportTitle ?? "내용과 시각 품질을 검수하지 않은 초안으로 내보냅니다"}>초안 PPTX 내보내기</Button>
+        {!hasSlides && <span className="hint">내보낼 장이 아직 없습니다.</span>}
+      </div>
+      {exportResult && <ExportQualitySummary result={exportResult} />}
       <ExportHistoryPanel key={historyRevision} projectName={projectName} busy={exporting}
         recordsLockedReason={!recordsLocked ? undefined : batchRunning
           ? "내용 생성이 끝나면 검수 기록과 제출본 검수를 쓸 수 있습니다." : "작업 상태를 확인하는 중입니다."}

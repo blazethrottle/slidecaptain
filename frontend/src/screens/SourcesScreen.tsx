@@ -275,7 +275,11 @@ export function SourcesScreen({
             생성 시 자료 합계 10만 자 한도가 적용됩니다. 원본 엑셀은 프로젝트 폴더의 uploads 에 보관되고 AI
             에는 추출본만 갑니다. 같은 이름의 기존 자료가 있으면 엑셀 추출본으로 교체됩니다.
           </p>
-          {/* 파일 올리기가 자료 단계의 주 행동이다 (D3a-1, 계획 4.6). 라벨이 버튼 모양을 맡는다 */}
+        </div>
+        {/* 파일 올리기가 자료 단계의 주 행동이다 (D3a-1, 계획 4.6). 라벨이 버튼 모양을 맡는다. 끌어다 놓는 영역 밖의
+            주 행동 막대에 두어 화면이 길면 창 아래에 붙는다. 막대는 위쪽 끝이 첫 화면 안에 있는 상자의 자식이어야 올라온다
+            (D3a-7 사용자 결정) */}
+        <div className="actions primary-bar">
           <label className="btn-primary"><span aria-hidden="true">파일 선택</span>
             <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
               className="visually-hidden" disabled={uploading}

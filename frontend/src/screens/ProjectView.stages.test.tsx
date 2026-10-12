@@ -192,6 +192,38 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
   });
 });
 
+describe("주 행동 막대 (D3a-7 사용자 결정, 계획 6절 배치)", () => {
+  // 막대는 창 아래에 붙는 영역이다. 막대가 위로 올라오려면 위쪽 끝이 첫 화면 안에 있는 상자(화면, 첫 영역, 입력 묶음)의
+  // 바로 안에 있어야 한다. 실제 위치는 브라우저 측정(layout.cjs)이 재고, 이 시험은 구조를 지킨다
+  const BAR_PARENTS = ".purpose-screen > section, .sources-screen > section, .structure-controls, .structure-controls > section, .review-screen";
+  for (const name of ["보고 목적", "자료", "구성", "검토와 내보내기"]) {
+    it(`${name}: 주 행동이 막대 하나 안에 있고 막대는 화면 상자 바로 안에 있다`, async () => {
+      vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [] }, slides: [] });
+      await openProject();
+      if (name !== "보고 목적") await userEvent.click(stageButton(name));
+      await waitFor(() => expect(document.querySelectorAll(".stage-body .btn-primary")).toHaveLength(1));
+      const bars = document.querySelectorAll(".stage-body .primary-bar");
+      expect(bars).toHaveLength(1);
+      expect(bars[0].querySelector(".btn-primary")).not.toBeNull();
+      expect(bars[0].parentElement!.matches(BAR_PARENTS)).toBe(true);
+    });
+  }
+
+  it("구성: 유효한 초안이면 승인과 지울 장 수 주의가 막대에 있고 구조안 생성은 막대 밖에 있다", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] }] } });
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    const approve = await screen.findByRole("button", { name: "승인하고 내용 생성" });
+    await waitFor(() => expect(approve).toHaveClass("btn-primary"));
+    const bar = approve.closest(".primary-bar")!;
+    expect(bar).not.toBeNull();
+    expect(bar.parentElement).toHaveClass("structure-controls");
+    expect(screen.getByRole("button", { name: /다시 생성|구조안 생성/ }).closest(".primary-bar")).toBeNull();
+    expect(document.querySelectorAll(".stage-body .primary-bar")).toHaveLength(1);
+  });
+});
+
 describe("보존 건수와 복구 화면 (C18, C24)", () => {
   const draft = { id: "draft-20261010-100000-000001", saved_at: "2026-10-10T10:00:00+09:00",
     reason: "conflict" as const, source: "editor" as const, base_etag: null };

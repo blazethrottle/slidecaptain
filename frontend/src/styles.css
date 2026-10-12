@@ -169,7 +169,18 @@ main.project-shell { padding: 0; }
   justify-content: space-between; gap: var(--space-3) var(--space-5); padding: var(--space-4) var(--space-6);
   background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
 .topbar-title, .topbar-status, .topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
-.topbar-title h1 { margin: 0; overflow-wrap: anywhere; }
+/* 머리는 모든 폭에서 한 줄이다 (D3a-7 사용자 결정). 저장 상태는 저장한 뒤에 나타나므로(A19) 줄바꿈 배치에서는 폭이
+   모자라면 줄이 바뀌어 본문이 밀렸다(1024×720에서 73px가 125px, D3a-2 리뷰 R9). 칸 배치로 제목 칸이 남는 폭을 받고,
+   제목과 AI 상태 문구는 말줄임으로 줄어든다. 진행 안내와 실패 알림은 그 아래 줄 전체를 쓴다 */
+.project-topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, auto); }
+.topbar-title { flex-wrap: nowrap; }
+.topbar-title h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-status, .topbar-actions { flex-wrap: nowrap; }
+/* 줄어드는 것은 제목과 AI 상태 문구뿐이다. 버튼과 저장 상태는 한글 글자 사이에서 줄을 바꾸지 않는다 */
+.topbar-title > button, .topbar-status > *, .topbar-actions > * { flex-shrink: 0; white-space: nowrap; }
+.topbar-actions > .topbar-ai { flex-shrink: 1; }
+.topbar-ai { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-notices { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
 .topbar-job, .topbar-ai { margin: 0; }
 .topbar-ai { color: var(--color-text-muted); font-size: var(--font-size-small); }
 /* AI 설정은 상단 머리의 드로어다. 내용(계정, 모델, Effort)은 D4가 바꾸고 D3a는 위치만 옮긴다 (계획 4.1) */
@@ -192,6 +203,11 @@ main.project-shell { padding: 0; }
 .stage-body { grid-area: body; min-width: 0; padding: var(--space-5) var(--space-6); container: stage / inline-size; }
 @media (max-width: 1100px) {
   .project-shell { grid-template-columns: var(--width-sidebar-narrow) minmax(0, 1fr); }
+  /* 머리 한 줄에서 제목보다 AI 상태 문구가 먼저 자리를 내준다(1024×720에서 제목이 한 글자로 줄었다). 문구는 화면 낭독기에
+     남고, 같은 정보는 AI 연결 및 모델 드로어에 있다. 512px에서는 저장 상태와 버튼 셋이 폭을 다 써 제목이 줄어든다.
+     제목은 보고 목적 단계의 보고서 제목 칸과 title 속성에 있다 (D3a-7) */
+  .topbar-ai { position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
   .project-topbar { padding: var(--space-4) var(--space-5); }
   .stage-body { padding: var(--space-5); }
 }
@@ -210,6 +226,17 @@ main.project-shell { padding: 0; }
   /* 좁은 띠에서는 단계 상태의 종류(문구와 아이콘)만 보이고 설명은 화면 낭독기에만 남긴다. 설명은 단계 화면에도 있다 */
   .stage-status .status-detail { position: absolute; width: var(--size-hidden); height: var(--size-hidden);
     margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  /* 접기 (D3a-7 사용자 결정): 512×360(1024×720의 200% 확대)에서 머리와 단계 띠가 첫 화면 360px 중 285px를 차지해 본문이
+     보이지 않았다. 머리는 한 줄로, 단계 띠는 번호와 상태 아이콘만으로 접는다. 현재 단계의 이름은 보인다. 숨긴 이름과
+     상태 문구는 화면 낭독기에 남는다(버튼의 접근 이름과 aria-describedby가 그대로다) */
+  .project-topbar { gap: var(--space-2); }
+  .topbar-title h1 { font-size: var(--font-size-section); }
+  .topbar-title, .topbar-status, .topbar-actions { gap: var(--space-2); }
+  .stage-list { flex-wrap: nowrap; justify-content: space-between; gap: var(--space-1); }
+  .stage-button { min-width: 0; padding: var(--space-1) var(--space-2); gap: var(--space-2); }
+  .stage-button:not([aria-current="step"]) .stage-label, .stage-status .status-label, .stage-summary {
+    position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 }
 
 /* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다
@@ -223,6 +250,12 @@ main.project-shell { padding: 0; }
 .field input[type="number"] { width: var(--width-number-input); }
 .hint { color: var(--color-text-muted); font-size: var(--font-size-small); font-weight: normal; }
 .actions { margin-top: var(--space-2); display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+/* 주 행동 막대 (D3a-7 사용자 결정, 계획 6절 배치). 화면이 길면 창 아래에 붙어 주 행동이 첫 화면 안에 남는다. 내용이 짧으면
+   제자리에 있어 뒤의 내용을 가리지 않는다. 위쪽 끝이 첫 화면 안에 있는 상자의 자식일 때만 올라오므로 각 화면이 막대를
+   그런 상자 바로 안에 둔다. 막대 둘이 함께 붙어 겹치지 않도록 화면마다 주 행동 하나에만 쓴다 */
+.primary-bar { position: sticky; bottom: 0; z-index: 1; margin-bottom: 0; padding-block: var(--space-2);
+  background: var(--color-bg); border-top: 1px solid var(--color-border); }
+.primary-bar p { margin: 0; flex-basis: 100%; }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
 
@@ -388,6 +421,11 @@ main.project-shell { padding: 0; }
 .stage-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1);
   padding-inline-start: var(--space-3); font-size: var(--font-size-caption); }
 .stage-status .status-indicator { flex-wrap: wrap; }
+/* 좁은 띠에서는 단계 상태를 번호 옆에 둬 띠가 한 줄이다 (D3a-7 사용자 결정). 위 기본 규칙보다 뒤에 둔다 */
+@media (max-width: 780px) {
+  .stage-list li { display: flex; align-items: center; gap: var(--space-1); flex: 0 1 auto; min-width: 0; }
+  .stage-status { padding-inline-start: 0; flex-wrap: nowrap; }
+}
 .stage-summary { color: var(--color-text-muted); }
 .review-parts { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
 .review-part-name { display: inline-block; min-width: var(--width-part-label); }

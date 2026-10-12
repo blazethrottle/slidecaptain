@@ -550,7 +550,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       <header className="project-topbar">
         <div className="topbar-title">
           <button onClick={goBack} disabled={navLocked} title={navTitle}>목록으로</button>
-          <h1>{deck.meta.title}</h1>
+          {/* 좁으면 말줄임으로 줄어들므로 전체 제목을 title로 둔다 (D3a-7) */}
+          <h1 title={deck.meta.title}>{deck.meta.title}</h1>
         </div>
         <div className="topbar-status">
           {shownSave && (
@@ -562,38 +563,44 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           {draftCount > 0 && (
             <button className="btn-text" onClick={openRecovery} disabled={recoveryLocked} title={recoveryTitle}>보존한 변경 {draftCount}건</button>
           )}
-          {activeJob && (
-            // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
-            <p className="topbar-job">
-              <StatusIndicator kind={activeJob.cancel_requested ? "cancel_requested" : "running"} />{" "}
-              {activeJob.project === project.name
-                ? "이 프로젝트에서 AI 생성이 진행 중입니다."
-                : `다른 프로젝트(${activeJob.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.`}{" "}
-              <button onClick={() => void api.cancelJob(activeJob.project, activeJob.id).then(refreshActiveJob)
-                .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
-            </p>
-          )}
-          {jobProblem && (
-            <p className="topbar-job">
-              <StatusIndicator kind="failed" />{" "}
-              {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계의 AI 생성이{" "}
-              {jobProblem.state === "failed" ? "실패했습니다" : "끝나지 않았습니다"}.{" "}
-              <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked || jobProblem.stage === stage}
-                title={navTitle}>
-                {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>{" "}
-              <button className="btn-text" onClick={() => setJobProblem(null)}>닫기</button>
-            </p>
-          )}
-          {!ledgerAvailable && (
-            // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
-            <p className="topbar-job">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>
-          )}
         </div>
         <div className="topbar-actions">
           <AiStatusLine compact className="topbar-ai" />
           <AISettingsPanel disabled={aiSettingsLocked} />
           <button onClick={openRecovery} disabled={recoveryLocked} title={recoveryTitle}>스냅샷 복구</button>
         </div>
+        {/* 진행 안내와 실패 알림은 문장이라 머리의 한 줄(제목, 저장 상태, 행동) 아래에 따로 둔다. 알림이 없으면 그리지 않아
+            머리 높이가 저장 상태의 유무로 바뀌지 않는다 (D3a-7 사용자 결정, 리뷰 R9) */}
+        {(activeJob || jobProblem || !ledgerAvailable) && (
+          <div className="topbar-notices">
+            {activeJob && (
+              // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
+              <p className="topbar-job">
+                <StatusIndicator kind={activeJob.cancel_requested ? "cancel_requested" : "running"} />{" "}
+                {activeJob.project === project.name
+                  ? "이 프로젝트에서 AI 생성이 진행 중입니다."
+                  : `다른 프로젝트(${activeJob.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.`}{" "}
+                <button onClick={() => void api.cancelJob(activeJob.project, activeJob.id).then(refreshActiveJob)
+                  .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
+              </p>
+            )}
+            {jobProblem && (
+              <p className="topbar-job">
+                <StatusIndicator kind="failed" />{" "}
+                {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계의 AI 생성이{" "}
+                {jobProblem.state === "failed" ? "실패했습니다" : "끝나지 않았습니다"}.{" "}
+                <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked || jobProblem.stage === stage}
+                  title={navTitle}>
+                  {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>{" "}
+                <button className="btn-text" onClick={() => setJobProblem(null)}>닫기</button>
+              </p>
+            )}
+            {!ledgerAvailable && (
+              // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
+              <p className="topbar-job">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>
+            )}
+          </div>
+        )}
       </header>
       <JobAnnouncer />
       <aside className="stage-sidebar">

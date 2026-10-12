@@ -887,7 +887,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               onChange={(e) => setInstructions(e.target.value)} />
           </label>
         </div>
-        <div className="actions">
+        {/* 주 행동일 때만 막대로 둔다. 막대 둘이 함께 창 아래에 붙어 겹치지 않게 한다 (D3a-7 사용자 결정) */}
+        <div className={generatePrimary ? "actions primary-bar" : "actions"}>
           <Button variant={generatePrimary ? "primary" : "secondary"} onClick={generate} disabled={busy || hasDiagrams}>
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
           </Button>
@@ -980,13 +981,19 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               : null;
           })()}
           {questionChanged && <p className="notice">보고 질문이 바뀌었습니다. 구조안을 다시 생성해 주세요.</p>}
+        </section>
+      )}
+      {/* 승인은 장 구성 바로 뒤에 두되 장 구성 영역 밖, 입력 묶음의 자식이다. 막대는 위쪽 끝이 첫 화면 안에 있는 상자 안에서만
+          창 아래로 올라오기 때문이다. 지울 장 수 주의 문구는 누르기 전에 보이도록 버튼과 함께 둔다 (D3a-7 사용자 결정, R13) */}
+      {draft.length > 0 && (
+        <div className={validDraft ? "actions primary-bar" : "actions"}>
           {validDraft && replacedCount > 0 && (
             <p className="notice-warning" id="approve-replace-warning">
               승인하면 기존 장 내용 {replacedCount}개를 지우고 새로 생성합니다.</p>)}
           <Button variant={validDraft ? "primary" : "secondary"} onClick={approve}
             aria-describedby={validDraft && replacedCount > 0 ? "approve-replace-warning" : undefined}
             disabled={busy || draft.length === 0 || questionChanged}>승인하고 내용 생성</Button>
-        </section>
+        </div>
       )}
       </fieldset>
       {deck.structure.story_plan && <StoryRewritePanel projectName={project.name} deck={deck}

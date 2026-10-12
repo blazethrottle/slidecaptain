@@ -147,7 +147,8 @@ export function ReportPurposeScreen({
               onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
           </label>
         </div>
-        <div className="actions">
+        {/* 주 행동 막대: 화면이 길면 창 아래에 붙어 첫 화면 안에 남는다 (D3a-7 사용자 결정, 계획 6절 배치) */}
+        <div className="actions primary-bar">
           <Button variant="primary" onClick={() => void flushMeta()} disabled={locked}>보고 정보 저장</Button>
         </div>
       </section>
