@@ -529,7 +529,9 @@ it("이 프로젝트의 장 생성 묶음이 진행 중이면 다시 열어도 �
   await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
   expect(screen.getByRole("button", { name: "편집" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();
-  expect(dispatchBeforeUnload()).toBe(true);
+  // 다시 씀 (D3a-7 사용자 결정, β 리뷰 B9): 다시 연 탭은 그 묶음을 시작하지 않았으므로 창 닫기를 막지 않는다.
+  // 닫아도 서버의 작업과 결과는 남는다
+  expect(dispatchBeforeUnload()).toBe(false);
 });
 
 it("다른 프로젝트의 AI 작업이 진행 중이면 안내하고 그 작업을 취소할 수 있다 (D2b-5a)", async () => {
@@ -602,7 +604,8 @@ it("진행 중으로 확인한 작업은 조회가 한 번 실패해도 잠금�
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   await waitFor(() => expect(vi.mocked(api.getActiveJob).mock.calls.length).toBeGreaterThanOrEqual(4));
   expect(screen.getByRole("button", { name: "스냅샷 복구" })).toBeDisabled();  // 다시 씀 (D3a-5): 묶음 잠금
-  expect(dispatchBeforeUnload()).toBe(true);
+  // 다시 씀 (D3a-7 사용자 결정, B9): 이 탭이 시작하지 않은 작업이라 창 닫기 경고는 없다. 잠금 유지가 이 시험의 대상이다
+  expect(dispatchBeforeUnload()).toBe(false);
 });
 
 it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", async () => {

@@ -765,6 +765,33 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
   });
 
+  it("다른 탭이 시작한 작업의 실패는 그 단계에 있어도 머리에 알리고, 이 탭이 시작한 작업은 화면 안내에 맡긴다 (D3a-7 사용자 결정, F8)", async () => {
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(stageButton("구성")).toHaveAttribute("aria-current", "step"));
+    // 다른 탭의 작업: 이 탭의 구성 화면은 그 작업을 따라가지 않았으므로 머리가 알린다
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    expect(await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/)).toBeInTheDocument();
+    // 이 탭이 시작한 작업: 새 작업 시작이 지난 알림을 내리고, 그 실패는 구성 화면이 원인별로 보인다
+    await act(async () => notifyProject({ kind: "job_started", project: project.name, jobId: "job-here" }, { broadcast: false }));
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull());
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-here", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+  });
+
+  it("창 닫기 경고는 이 탭이 시작한 작업에만 띄운다 (D3a-7 사용자 결정, B9)", async () => {
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("structure", project.name, "job-other")));
+    await openProject(5);
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    expect(dispatchBeforeUnload()).toBe(false);  // 다른 탭의 작업: 이 탭을 닫아도 서버의 작업과 결과는 남는다
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("structure", project.name, "job-here")));
+    await act(async () => notifyProject({ kind: "job_started", project: project.name, jobId: "job-here" }, { broadcast: false }));
+    await waitFor(() => expect(dispatchBeforeUnload()).toBe(true));
+  });
+
   it("새 작업이 시작되면 지난 실패 알림을 내린다 (F9)", async () => {
     await openProject(60_000);
     await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-x", state: "failed",

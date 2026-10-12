@@ -138,7 +138,9 @@ describe("단계 목록과 현재 단계", () => {
 describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
   it("보고 목적: 폼이 저장본과 다르면 저장됨이 아니다", async () => {
     await openProject();
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+  // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
+    await screen.findByLabelText("보고서 제목");
+    expect(headerStatus()).toBeNull();
     await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
     expect(headerStatus()).toBe("변경사항 있음");
   });
@@ -149,7 +151,7 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
       { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] } });
     await openProject();
     await userEvent.click(stageButton("구성"));
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+  // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
     await userEvent.click(await screen.findByRole("button", { name: "둘째 삭제" }));
     expect(headerStatus()).toBe("변경사항 있음");
     expect(document.querySelector(".header-save-status")).toHaveTextContent("승인 전 초안은 저장되지 않습니다");
@@ -160,10 +162,26 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
     await openProject();
     await userEvent.click(stageButton("편집"));
     const topic = await screen.findByLabelText("장 주제");
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+  // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
+    expect(headerStatus()).toBeNull();
     fireEvent.change(topic, { target: { value: "고침" } });
     fireEvent.blur(topic);
-    await waitFor(() => expect(headerStatus()).not.toBe("저장됨"));
+    await waitFor(() => expect(headerStatus()).toBe("변경사항 있음"));
+  });
+
+  it("저장한 뒤에만 저장됨을 보이고, 다른 단계로 옮기면 다시 숨긴다 (D3a-7 사용자 결정, A19)", async () => {
+    vi.mocked(api.putDeck).mockImplementation(async () => {
+      notifyProject({ kind: "saved", project: project.name });  // 실제 저장 경로처럼 공통 알림을 낸다
+      return { ok: true };
+    });
+    await openProject();
+    await userEvent.type(await screen.findByLabelText("보고서 제목"), " 고침");
+    expect(headerStatus()).toBe("변경사항 있음");
+    await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
+    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    expect(headerStatus()).toBeNull();
   });
 
   it("검토와 내보내기: 검수 기록 폼이 없으면 표시하지 않는다", async () => {
@@ -379,7 +397,8 @@ describe("D3a-2 리뷰 반영", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await userEvent.click(stageButton("자료"));
     confirm.mockRestore();
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+    // 다시 씀 (D3a-7 사용자 결정, A19): 저장 없이 옮긴 단계에는 저장 상태를 보이지 않는다
+    await waitFor(() => expect(headerStatus()).toBeNull());
     expect(document.querySelector(".project-topbar p.visually-hidden[role='status']")).toHaveTextContent("");
   });
 
@@ -387,7 +406,8 @@ describe("D3a-2 리뷰 반영", () => {
     await openProject();
     await userEvent.click(stageButton("구성"));
     await userEvent.click(await screen.findByRole("button", { name: "문서 전체 변경과 근거 이동" }));
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+  // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
+    expect(headerStatus()).toBeNull();
     fireEvent.change(await screen.findByLabelText("문서 후보 JSON"), { target: { value: "{}" } });
     await waitFor(() => expect(headerStatus()).toBe("변경사항 있음"));
     expect(document.querySelector(".header-save-status")).toHaveTextContent("적용하지 않은 입력이 있습니다");
@@ -396,7 +416,8 @@ describe("D3a-2 리뷰 반영", () => {
   it("지금 단계를 다시 고르면 플러시도 저장 상태 지우기도 하지 않는다 (R4)", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
     await openProject();
-    await waitFor(() => expect(headerStatus()).toBe("저장됨"));
+  // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
+    await screen.findByLabelText("보고서 제목");
     await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
     await userEvent.click(stageButton("보고 목적"));
     expect(api.putDeck).not.toHaveBeenCalled();
@@ -430,6 +451,8 @@ describe("D3a-2 리뷰 반영", () => {
     await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));  // 보존할 변경이 없어진다
     await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
     await waitFor(() => expect(document.activeElement).toBe(document.querySelector(".header-save-status")));
+    // 다시 씀 (D3a-7 사용자 결정, A19): 되돌린 화면은 저장본과 같으므로 저장 전이라도 저장됨을 보인다
+    expect(headerStatus()).toBe("저장됨");
   });
 
   it("편집 단계에서 충돌로 변경을 보존하면 머리의 보존 건수가 늘어난다 (R5)", async () => {

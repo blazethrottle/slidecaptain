@@ -200,8 +200,13 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 이 프로젝트를 열 때 이미 묶음이 돌고 있으면 진행 표시가 있는 구성 단계를 연다(위 첫 조회). 그 뒤에 나타난
   // 묶음은 편집 단계의 저장을 거치지 않고 단계를 바꾸지 않도록 안내만 한다 (D2b-5a 리뷰 R3, R18)
   // 이 탭이 등록한 묶음의 작업 ID. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
+  // 같은 탭의 모든 작업 등록 알림도 담는다: 창 닫기 경고와 실패 알림을 이 탭이 시작한 작업으로 가른다
+  // (D3a-7 사용자 결정, β 리뷰 B9, 재리뷰 F8)
   const startedHere = useRef<Set<string>>(new Set());
   const onJobRegistered = useCallback((id: string) => { startedHere.current.add(id); }, []);
+  useEffect(() => onProjectEvent((event) => {
+    if (event.kind === "job_started" && event.jobId) startedHere.current.add(event.jobId);
+  }), []);
   // 묶음이 끝났는데 이 탭이 본 저장본이 서버와 다르면(이 탭의 화면이 따라가지 못했거나 다른 탭의 묶음),
   // 지금 단계가 덱의 미저장 사본을 들고 있으면 덮어쓰지 않도록 충돌 안내로 다시 읽기를 맡기고, 들고 있지
   // 않으면 새 덱으로 다시 마운트한다. 덱을 읽기만 하는 단계는 덱만 다시 읽는다. 단계 화면은 덱을 마운트 때만
@@ -228,14 +233,23 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     if (event.kind !== "job_ended" || !event.state || !event.jobKind) return;
     if (!["failed", "interrupted", "remote_completion_unknown"].includes(event.state)) return;
     const target = JOB_STAGE[event.jobKind];
-    if (!target || (!showRecoveryRef.current && stageRef.current === target)) return;
+    // 그 단계를 보고 있고 이 탭이 시작한 작업이면 그 화면이 결과를 보인다. 다른 탭이 시작한 작업은 이 탭의 화면이
+    // 따라가지 않을 수 있으므로 그 단계에 있어도 알린다 (재리뷰 F8, D3a-7 사용자 결정)
+    const shownOnScreen = !showRecoveryRef.current && stageRef.current === target && !!event.jobId
+      && startedHere.current.has(event.jobId);
+    if (!target || shownOnScreen) return;
     setJobProblem({ stage: target, state: event.state, kind: event.jobKind, target: event.target ?? null });
   }), [project.name]);
   useEffect(() => onRemoteProjectEvent((event) => {
     if (event.project === project.name && event.kind === "job_started") setJobProblem(null);
   }), [project.name]);
+  // 그 단계로 옮겨 화면을 새로 열 때만 지운다. 이미 그 단계에 있는 동안 다른 탭의 실패를 받았으면 화면이 다시 열리지
+  // 않아 원인을 보이지 않으므로 알림을 남긴다 (D3a-7 사용자 결정, F8)
+  const openedView = useRef({ stage, showRecovery });
   useEffect(() => {
-    if (!showRecovery && jobProblem?.stage === stage && REOPEN_SHOWS.has(jobProblem.kind)) setJobProblem(null);
+    const moved = openedView.current.stage !== stage || openedView.current.showRecovery !== showRecovery;
+    openedView.current = { stage, showRecovery };
+    if (moved && !showRecovery && jobProblem?.stage === stage && REOPEN_SHOWS.has(jobProblem.kind)) setJobProblem(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, showRecovery, jobProblem]);
   // 구성 화면이 다시 열려도 이미 보인 실패를 되풀이하지 않는다 (B1)
@@ -280,7 +294,17 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 이 탭의 작업에만 쓴다. 화면이 바뀌면 내려간 화면의 바쁨은 버린다: 언마운트로 조회를 멈춘 화면은 바쁨을 내리지
   // 않았다 (계획 사실 10)
   useEffect(() => { setGenerating(false); setDiagramGenerating(false); setEditorAiBusy(false); }, [stage, screenKey, showRecovery]);
-  const aiRunningHere = thisProjectJob !== null || generating || diagramGenerating || editorAiBusy;
+  // 지금 단계에서 저장이 있었는가. "저장됨"은 저장한 뒤에만 보인다. 새 프로젝트의 빈 단계에 완료색 체크가 붙어
+  // 단계 목록의 "시작 전"과 어긋나게 읽혔다 (D3a-7 사용자 결정, α 묶음 리뷰 A19)
+  const [savedHere, setSavedHere] = useState(false);
+  useEffect(() => { setSavedHere(false); }, [stage, screenKey, showRecovery]);
+  useEffect(() => onProjectEvent((event) => {
+    if (event.kind === "saved" && event.project === project.name) setSavedHere(true);
+  }), [project.name]);
+  // 창 닫기 경고는 이 탭이 시작한 작업에만 띄운다. 다른 탭의 작업은 이 탭을 닫아도 결과가 남는다(계획 4.5,
+  // D3a-7 사용자 결정, β 리뷰 B9)
+  const startedJobRunning = thisProjectJob !== null && startedHere.current.has(thisProjectJob.id);
+  const aiRunningHere = startedJobRunning || generating || diagramGenerating || editorAiBusy;
   const batchTitle = !jobChecked ? "작업 상태를 확인하는 중입니다" : "내용 생성이 끝나면 쓸 수 있습니다";
 
   useEffect(() => {
@@ -299,7 +323,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     return () => { cancelled = true; };
   }, [project.name, project.status, stage, showRecovery, draftsRevision]);
   const onDraftsChanged = useCallback(() => setDraftsRevision((n) => n + 1), []);
-  const focusSaveStatus = useCallback(() => saveStatusRef.current?.focus(), []);
+  // 서버 내용으로 되돌린 직후에는 화면이 저장본과 같으므로 저장 뒤와 같이 "저장됨"을 보이고 그리로 초점을 옮긴다.
+  // 숨겨 둔 상태 칸은 다음 그리기에서 나타나므로 초점은 그린 뒤에 준다 (D3a-7, R5)
+  const focusSaveAfterRender = useRef(false);
+  const focusSaveStatus = useCallback(() => { setSavedHere(true); focusSaveAfterRender.current = true; }, []);
+  useEffect(() => {
+    if (focusSaveAfterRender.current && saveStatusRef.current) {
+      focusSaveAfterRender.current = false;
+      saveStatusRef.current.focus();
+    }
+  });
   useEffect(() => {
     if (!focusStageAfterMove.current || deck === null) return;
     const current = document.querySelector<HTMLButtonElement>(".stage-list [aria-current='step']");
@@ -508,6 +541,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const stageDisabled = (_id: Stage) => navLocked;
   const stageTitle = (_id: Stage) => navTitle;
   const screenKeyValue = `${stage}:${screenKey}`;
+  const shownSave = saveStatus && (saveStatus.kind !== "saved" || savedHere) ? saveStatus : null;
 
   return (
     <ActiveJobContext.Provider value={activeJobState}>
@@ -519,12 +553,12 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           <h1>{deck.meta.title}</h1>
         </div>
         <div className="topbar-status">
-          {saveStatus && (
+          {shownSave && (
             <span className="header-save-status" tabIndex={-1} ref={saveStatusRef}>
-              <StatusIndicator kind={saveStatus.kind} detail={saveStatus.detail} />
+              <StatusIndicator kind={shownSave.kind} detail={shownSave.detail} />
             </span>
           )}
-          <SaveAnnouncer kind={saveStatus?.kind ?? null} />
+          <SaveAnnouncer kind={shownSave?.kind ?? null} />
           {draftCount > 0 && (
             <button className="btn-text" onClick={openRecovery} disabled={recoveryLocked} title={recoveryTitle}>보존한 변경 {draftCount}건</button>
           )}
