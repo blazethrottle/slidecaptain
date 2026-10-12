@@ -161,7 +161,8 @@ function History({ projectName, readOnly = false, busy = false, recordsLockedRea
         <ReviewRecordsPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy || qualificationBusy}
           lockedReason={recordsLockedReason}
           onLeaveReady={registerReviewLeave} onDirtyChange={reportDirty} />
-        <ExportQualificationPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy || !!recordsLockedReason}
+        <ExportQualificationPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy}
+          lockedReason={recordsLockedReason}
           onLeaveReady={registerQualificationLeave} onBusyChange={trackQualificationBusy} onDirtyChange={reportQualificationDirty} />
       </>}
     </section>}

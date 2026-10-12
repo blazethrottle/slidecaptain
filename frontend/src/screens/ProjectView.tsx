@@ -53,6 +53,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 문서 본문으로 빠지기 때문이다 (D3a-2 리뷰 R12)
   const focusStageAfterMove = useRef(false);
   const [generating, setGenerating] = useState(false);  // 구조안 승인 후 장별 순차 생성 진행 중 (쓰기 포크 차단)
+  // 편집 화면을 떠날 수 없는 동안(도식 작성 창이 열려 있음, 템플릿 전환 전 저장) 참이다 (D3a-5 리뷰 R10)
   const [diagramGenerating, setDiagramGenerating] = useState(false);
   const [leaving, setLeaving] = useState(false);        // 화면 이탈 전 플러시 진행 중: 모든 이탈 경로 버튼을 잠근다
   const [dirty, setDirty] = useState(false);            // 현재 화면에 저장하지 않은 변경이 있다 (beforeunload 경고용)
@@ -451,17 +452,17 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
   };
 
-  // 이동 잠금: 업로드(자료 단계 안의 일이라 FC-17), 이탈 전 플러시, 고지 대화 상자. 편집 화면의 작업(도식 작성 창의
-  // AI 호출, 템플릿 전환 전 저장) 중에도 잠근다. 편집 화면의 플러시가 그동안 이탈을 거절하기 때문이다(작성 창의
-  // 입력은 덱이 아니다. 계획 4.4와 다른 점, 구현 기록)
+  // 이동 잠금: 업로드(자료 단계 안의 일이라 FC-17), 이탈 전 플러시, 고지 대화 상자. 편집 화면의 도식 작성 창이 열려
+  // 있거나 템플릿 전환 전 저장 중에도 잠근다. 편집 화면의 플러시가 그동안 이탈을 거절하기 때문이다(작성 창의 입력은
+  // 덱이 아니다). 작성 창을 닫은 뒤 남은 AI 호출은 후보형 작업이라 잠그지 않는다 (계획 4.4, D3a-5 리뷰 R10)
   const navLocked = uploading || leaving || dialogOpen || diagramGenerating;
   const navTitle = uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
-    : diagramGenerating ? "편집 단계의 작업이 끝나면 이동할 수 있습니다" : undefined;
+    : diagramGenerating ? "도식 작성 창을 닫거나 템플릿 전환이 끝나면 이동할 수 있습니다" : undefined;
   // 묶음 중 잠그는 머리 행동(스냅샷 복구, 보존한 변경, 서버 내용 다시 읽기). AI 설정은 어느 작업이든 잠근다:
   // 서버가 생성 중 설정 변경을 409로 거절한다 (계획 4.4)
   const recoveryLocked = navLocked || batchLocked;
   const recoveryTitle = navTitle ?? (batchLocked ? batchTitle : undefined);
-  const aiSettingsLocked = navLocked || activeJob !== null || generating || !jobChecked;
+  const aiSettingsLocked = uploading || leaving || dialogOpen || activeJob !== null || generating || !jobChecked;
   const stageDisabled = (_id: Stage) => navLocked;
   const stageTitle = (_id: Stage) => navTitle;
   const screenKeyValue = `${stage}:${screenKey}`;
@@ -567,6 +568,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {showRecovery && (
           <RecoveryScreen project={project} deck={deck} onConflict={onConflict}
+            restoreLockedReason={batchLocked ? (jobChecked ? "내용 생성이 끝나면 복원할 수 있습니다." : batchTitle) : undefined}
             onOpen={(next, chapterId) => closeRecovery(next, chapterId)}
             onBack={() => closeRecovery()} />
         )}
@@ -578,7 +580,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {!showRecovery && stage === "sources" && (
           <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}
-            batchRunning={batchHere}
+            batchRunning={batchHere} jobChecking={!jobChecked}
             onScreenReady={(f) => { flushScreen.current = f; }}
             onDirtyChange={setDirty} onBusyChange={setUploading} onSaveStatusChange={setSaveStatus} />
         )}
@@ -588,13 +590,14 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
-            limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked} />
+            limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked}
+            readOnlyNotice={batchHere} />
         )}
         {!showRecovery && stage === "editor" && (
           <EditorScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
             onEditorReady={(f) => { flushScreen.current = f; }}
             onConflictHint={() => { justConflicted.current = true; }}
-            onDirtyChange={setDirty} onBusyChange={setDiagramGenerating}
+            onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setGenerating}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
             initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
             readOnly={batchLocked} readOnlyNotice={batchHere} />

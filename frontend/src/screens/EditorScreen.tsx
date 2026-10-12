@@ -15,21 +15,27 @@ import { NumericReviewPanel } from "./NumericReviewPanel";
 import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
-import { BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
+import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
 
 export function EditorScreen({
-  project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, timings,
+  project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, onAiBusyChange, timings,
   onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange, readOnly = false,
   readOnlyNotice = false,
 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
-  onEditorReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 내보내기와 단계 이동 전에 플러시하도록
+  // 부모(ProjectView)가 내보내기와 단계 이동 전에 플러시하도록. "declined"는 사용자가 머물기를 골랐다는 뜻이다
+  onEditorReady?: (flush: (() => Promise<boolean | "declined">) | null) => void;
   onDirtyChange?: (dirty: boolean) => void;  // 저장 대기/저장 중/저장 실패이면 참 (부모의 beforeunload 경고용)
   onConflictHint?: () => void;  // 412 를 만났음을 부모에 알린다. 배너는 이 화면이 직접 띄우므로 부모는 일반 배너만 생략한다
+  // 이 화면을 떠날 수 없는 동안 참이다(도식 작성 창이 열려 있음, 템플릿 전환 전 저장). 부모가 단계 이동을 잠근다.
+  // 작성 창을 닫은 뒤 남은 AI 호출은 덱이 아닌 입력을 들지 않으므로 넣지 않는다 (D3a-5 리뷰 R10)
   onBusyChange?: (busy: boolean) => void;
+  // 도식 AI 호출이 진행 중이면 참이다(작성 창을 닫은 뒤 포함). 서버가 아직 모르는 등록 전후에도 AI 설정을 잠그고
+  // 창 닫기를 경고하게 한다. 단계 이동은 잠그지 않는다 (D3a-5)
+  onAiBusyChange?: (busy: boolean) => void;
   timings?: Timings;
   // 저장 상태는 상단 머리가 보인다 (D3a-2, 계획 4.1). 이 화면은 자동 저장 상태를 올리고, 결과 안내가 없는
   // 되돌리기 뒤에는 머리의 저장 상태로 초점을 옮겨 달라고 부른다(D2a-5 리뷰 R11)
@@ -43,7 +49,10 @@ export function EditorScreen({
   readOnly?: boolean;
   readOnlyNotice?: boolean;
 }) {
-  const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint);
+  // 읽기 전용(장 생성 묶음 중)에는 저장을 멈춘다. 묶음 중 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7)
+  const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint, readOnly);
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const chapters = editor.deck.structure.chapters;
   const [chapterId, setChapterId] = useState<string | null>(
     (initialChapterId && chapters.some((c) => c.id === initialChapterId) ? initialChapterId : chapters[0]?.id) ?? null);
@@ -56,11 +65,16 @@ export function EditorScreen({
   const current = useRef({deck: editor.deck, chapterId, mounted: true});
   current.current = {...current.current, deck: editor.deck, chapterId};
   useEffect(() => { current.current.mounted = true; return () => {current.current.mounted = false;}; }, []);
+  // 떠날 수 없는 상태를 부모에 알린다. 작성 창이 열려 있거나 템플릿 전환 전 저장 중이다
+  const diagramOpen = useRef(false);
+  const reportHolding = useCallback(() => {
+    onBusyChange?.(templateBusyRef.current || diagramOpen.current);
+  }, [onBusyChange]);
   const switchTemplate = async (id: string, to: TemplateName, base: Deck) => {
     if (templateBusyRef.current || editor.conflict || current.current.deck !== base
       || base.structure.chapters.find(c => c.id === id)?.template === to) return;
     templateBusyRef.current = true;
-    setTemplateBusy(true); onBusyChange?.(true);
+    setTemplateBusy(true); reportHolding();
     try {
       if (!await editor.flushSave()) return;
       if (!current.current.mounted || current.current.deck !== base || current.current.chapterId !== id) return;
@@ -69,26 +83,32 @@ export function EditorScreen({
     } finally {
       templateBusyRef.current = false;
       if (current.current.mounted) setTemplateBusy(false);
-      onBusyChange?.(false);
+      reportHolding();
     }
   };
   const diagramCalls = useRef(0);
   const onDiagramBusyChange = useCallback((busy: boolean) => {
     // 닫힌 작성창도 자기 호출이 끝날 때 해제한다. 다른 호출이 있으면 마지막 소유자까지 잠금을 유지한다.
     diagramCalls.current += busy ? 1 : -1;
-    const active = diagramCalls.current > 0;
-    setDiagramBusy(active); onBusyChange?.(active);
-  }, [onBusyChange]);
+    setDiagramBusy(diagramCalls.current > 0);
+    onAiBusyChange?.(diagramCalls.current > 0);
+  }, [onAiBusyChange]);
   const diagramDraftRef = useRef(diagramDraft);
   diagramDraftRef.current = diagramDraft;
+  useEffect(() => { diagramOpen.current = diagramDraft !== null; reportHolding(); }, [diagramDraft, reportHolding]);
 
   // 작성 중인 의미 입력은 아직 Deck이 아니다. 이탈/복원/내보내기로 조용히 버리지 않는다.
-  const flush = useCallback(async () => {
-    if (diagramDraftRef.current || diagramCalls.current > 0 || templateBusyRef.current) return false;
+  // 작성 창을 닫은 뒤 남은 AI 호출은 막지 않는다. 그 결과는 작업 원장에 후보로 남아 복구 화면에 보인다 (리뷰 R10)
+  const flush = useCallback(async (): Promise<boolean | "declined"> => {
+    if (diagramDraftRef.current || templateBusyRef.current) return false;
+    // 읽기 전용이면 저장하지 않는다. 저장하지 않은 편집이 남았으면 버릴지 묻는다 (D3a-5 리뷰 R7)
+    if (readOnlyRef.current && editor.saveState !== "저장됨") {
+      return window.confirm(BATCH_DISCARD_CONFIRM) ? true : "declined";
+    }
     const saved = await editor.flushSave();
     // 저장을 기다리는 동안 새로 연 작성 창도 보호한다. 시작 시점의 상태만 검사하면 입력을 버리고 이동한다.
-    return saved && diagramDraftRef.current === null && diagramCalls.current === 0 && !templateBusyRef.current;
-  }, [editor.flushSave]);
+    return saved && diagramDraftRef.current === null && !templateBusyRef.current;
+  }, [editor.flushSave, editor.saveState]);
 
   useEffect(() => {
     onEditorReady?.(flush);
@@ -170,7 +190,7 @@ export function EditorScreen({
               <button disabled={editor.reloading} onClick={() => void editor.reloadFromServer()}>서버 내용으로 되돌리기</button>
             ) : (
               editor.saveState === "저장 실패" && (
-                <button onClick={() => void editor.retrySave()}>다시 저장</button>
+                <button onClick={() => void editor.retrySave()} disabled={readOnly}>다시 저장</button>
               )
             )}
           </p>

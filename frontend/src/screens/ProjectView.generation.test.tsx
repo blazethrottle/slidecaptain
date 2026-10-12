@@ -320,18 +320,24 @@ describe("실패 안내와 머리 작업 표시 (묶음 리뷰 A10, A11)", () =>
     expect(screen.queryByRole("button", { name: "그 작업 취소" })).toBeNull();
   });
 
+  // 다시 씀 (D3a-5 리뷰 R2): 승인 직전 진행 작업 검사에는 작업이 없고, 등록한 뒤에만 진행 작업에 묶음이 있다.
+  // 종전 시험은 검사에서 멈춰 묶음을 등록하지 않았다
   it("같은 탭이 따라가는 묶음에는 취소 버튼이 하나다 (A11)", async () => {
     vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [CH1] }, slides: [] });
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    vi.mocked(api.startChapters).mockImplementation(async () =>
-      registered(batchView([chapterView("c1", "running")], { state: "running", outcome: null })));
+    vi.mocked(api.startChapters).mockImplementation(async () => {
+      vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapters")));
+      return registered(batchView([chapterView("c1", "running")], { state: "running", outcome: null }));
+    });
     vi.mocked(api.getJob).mockImplementation(async () => batchView([chapterView("c1", "running")], { state: "running", outcome: null }));
     await openProject();
     await userEvent.click(stageButton("구성"));
-    vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapters")));
     await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
     await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    expect(api.startChapters).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/진행 중입니다. 잠시 기다려 주세요/)).toBeInTheDocument();  // 구성 화면이 묶음을 따라간다
     expect(screen.getAllByRole("button", { name: /그 작업 취소|생성 중단/ })).toHaveLength(1);
+    expect(within(header()).getByRole("button", { name: "그 작업 취소" })).toBeInTheDocument();
   });
 });
 
@@ -373,5 +379,117 @@ describe("다른 탭 알림 받기 (D3a-6, 계획 4.5)", () => {
     expect(vi.mocked(api.getDeck).mock.calls.length).toBe(deckReads);
     expect(savedEtag(project.name)).toBe(etag);
     peer.close();
+  });
+});
+
+describe("D3a-5 리뷰 반영", () => {
+  async function batchFromOtherTab() {
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+  }
+
+  it("복구 화면이 열린 채 묶음이 시작되면 복원을 잠그고 이유를 보인다 (R1)", async () => {
+    vi.mocked(api.listSnapshots).mockResolvedValue([{ id: "deck-1", saved_at: "2026-10-12T10:00:00", kind: "auto" }] as never);
+    vi.mocked(api.listDrafts).mockResolvedValue([{ id: "d1", saved_at: "2026-10-12T10:00:00", reason: "conflict",
+      source: "editor" }] as never);
+    await openProject(60_000);
+    await userEvent.click(screen.getByRole("button", { name: "스냅샷 복구" }));
+    const restore = await screen.findByRole("button", { name: "이 시점으로 복원" });
+    expect(restore).toBeEnabled();
+    await batchFromOtherTab();
+    expect(restore).toBeDisabled();
+    expect(screen.getByRole("button", { name: "이 변경으로 복원" })).toBeDisabled();
+    expect(screen.getByText("내용 생성이 끝나면 복원할 수 있습니다.")).toBeInTheDocument();
+  });
+
+  it("다른 탭의 묶음 중 구성 화면은 따라가지 않아도 입력을 잠그고 이유를 보인다 (R5, R12)", async () => {
+    await openProject(60_000);
+    await batchFromOtherTab();
+    await userEvent.click(stageButton("구성"));  // 진행 작업 목록은 비어 있어 이 화면은 묶음을 따라가지 않는다
+    expect(await screen.findByLabelText("목표 장수")).toBeDisabled();
+    expect(screen.getByLabelText("1번 장 주제")).toBeDisabled();
+    expect(screen.getByText(/생성 중인 장은 끝나면 보입니다/)).toBeInTheDocument();
+    expect(screen.queryByText(/진행 중입니다. 잠시 기다려 주세요/)).toBeNull();
+  });
+
+  it("묶음 중 편집 단계는 미리 보기를 편집할 수 없게 그리고, 되돌리기 단축키가 덱을 바꾸지 않는다 (R5)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await screen.findByLabelText("장 주제");
+    await batchFromOtherTab();
+    await waitFor(() => expect(document.querySelector(".preview-canvas")).toHaveClass("stale"));
+    const before = vi.mocked(api.putDeck).mock.calls.length;
+    await userEvent.keyboard("{Control>}z{/Control}");
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(vi.mocked(api.putDeck).mock.calls.length).toBe(before);
+    expect(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }).closest("[inert]")).not.toBeNull();
+  });
+
+  it("묶음 중 편집 단계에 저장하지 않은 편집이 남았으면 떠날 때 버릴지 묻고 저장하지 않는다 (R7)", async () => {
+    vi.mocked(api.putDeck).mockImplementation(() => new Promise(() => {}));  // 묶음 전에 시작한 저장이 끝나지 않는다
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await batchFromOtherTab();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await userEvent.click(stageButton("자료"));
+    expect(confirm.mock.calls[0]?.[0]).toMatch(/내용 생성 중이라 고친 내용을 저장할 수 없습니다/);
+    expect(stageButton("편집")).toHaveAttribute("aria-current", "step");
+    expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    confirm.mockRestore();
+  });
+
+  it("묶음 중 편집 단계는 묶음 전에 고친 내용을 자동 저장하지 않고, 버리고 떠나도 저장하지 않는다 (R7)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");  // 자동 저장(1.2초) 전에 묶음이 시작된다
+    await batchFromOtherTab();
+    await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
+    expect(api.putDeck).not.toHaveBeenCalled();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(api.putDeck).not.toHaveBeenCalled();  // 화면이 내려갈 때의 저장도 하지 않는다
+    confirm.mockRestore();
+  });
+
+  it("묶음 중 자료 업로드와 자료 추가도 바꾸기 전에 묻는다 (R6)", async () => {
+    vi.mocked(api.listSources).mockResolvedValue([]);
+    vi.mocked(api.writeSource).mockResolvedValue(undefined as never);
+    await openProject(60_000);
+    await batchFromOtherTab();
+    await userEvent.click(stageButton("자료"));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await userEvent.type(await screen.findByLabelText("새 자료 이름"), "추가");
+    await userEvent.click(screen.getByRole("button", { name: "자료 추가" }));
+    await userEvent.upload(screen.getByLabelText("자료 파일 선택"), new File(["가"], "메모.md", { type: "text/markdown" }));
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm.mock.calls.every(([text]) => /AI 호출 하나의 결과가 반영되지 않/.test(String(text)))).toBe(true);
+    expect(api.writeSource).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
+  it("진행 작업을 확인하기 전에는 자료를 저장하지 않고 잠시 뒤 다시 시도하라고 알린다 (R11)", async () => {
+    let answer!: (s: ReturnType<typeof status>) => void;
+    vi.mocked(api.getActiveJob).mockReturnValue(new Promise((r) => { answer = r; }));
+    vi.mocked(api.listSources).mockResolvedValue(["메모.md"]);
+    vi.mocked(api.readSource).mockResolvedValue({ text: "원래 내용" } as Awaited<ReturnType<typeof api.readSource>>);
+    vi.mocked(api.writeSource).mockResolvedValue(undefined as never);
+    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    await userEvent.click(await screen.findByRole("button", { name: "자료" }));
+    await userEvent.click(await screen.findByRole("button", { name: "메모.md" }));
+    await userEvent.type(await screen.findByLabelText("자료 내용"), " 추가");
+    await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
+    expect(await screen.findByText("작업 상태를 확인하는 중입니다. 잠시 뒤 다시 시도해 주세요.")).toBeInTheDocument();
+    expect(api.writeSource).not.toHaveBeenCalled();
+    await act(async () => answer(status(null)));
+    await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
+    await waitFor(() => expect(api.writeSource).toHaveBeenCalledTimes(1));
   });
 });

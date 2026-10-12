@@ -14,7 +14,12 @@ export function useDeckEditor(
   onDeckChange: (d: Deck) => void,
   timings: Timings = DEFAULT_TIMINGS,
   onConflict?: () => void,  // 412 를 만난 그 자리에서 동기로 알린다 (부모가 일반 실패 배너를 생략하는 힌트. 묶음 최종 리뷰 2)
+  // 저장을 멈춘다(자동 저장, 플러시, 언마운트 플러시). 장 생성 묶음 중 읽기 전용이 된 편집 화면이 쓴다: 묶음 중
+  // 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7). 풀리면 남은 편집을 지금처럼 자동 저장한다
+  paused = false,
 ) {
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const [state, dispatch] = useReducer(editorReducer, {
     past: [], present: initialDeck, future: [],
   });
@@ -139,9 +144,10 @@ export function useDeckEditor(
     }
     // 충돌 상태에서는 자동 저장을 멈춘다: 사용자가 서버 내용으로 되돌리기 전까지는 다시 시도하지 않는다
     setSaveState("저장 대기");
+    if (paused) return;
     const t = setTimeout(() => { void saveNow(deck); }, timings.saveMs);
     return () => clearTimeout(t);
-  }, [deck, saveNow, timings.saveMs, conflict]);
+  }, [deck, saveNow, timings.saveMs, conflict, paused]);
 
   // 플러시: 진행 중 저장이 끝난 뒤 잔여 편집까지 즉시 저장한다 (결정 1. 내보내기와 화면 이탈 전에 부모가 부른다)
   // 성공 여부를 반환해, 저장 실패 시 내보내기나 이탈을 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
@@ -152,13 +158,13 @@ export function useDeckEditor(
     }
     await saveChain.current;
     if (conflictRef.current) return false;
-    if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
+    if (deckRef.current !== savedDeck.current) return pausedRef.current ? false : saveNow(deckRef.current);
     return true;
   }, [saveNow]);
 
   // 언마운트 플러시: 단계 이동이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
   useEffect(() => () => {
-    if (!conflictRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
+    if (!conflictRef.current && !pausedRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);
 
   const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean }) => {

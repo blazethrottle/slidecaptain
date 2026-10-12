@@ -149,3 +149,17 @@ it("내보내기 중 늦게 열린 검수 화면은 내보내기 실패 후에�
   expect(await screen.findByLabelText("판단 근거")).not.toBeDisabled();
   expect(screen.getByRole("button", { name: "검수 기준 다시 확인" })).not.toBeDisabled();
 });
+
+it("내용 생성 묶음 중에는 검수 기록과 제출본 영역을 잠그고 이유를 보이며, 이력은 볼 수 있다 (D3a-5 리뷰 R4, R18)", async () => {
+  vi.spyOn(api, "getActiveJob").mockResolvedValue({ ledger_available: true, active: { id: "job-1", project: project.name,
+    kind: "chapters", target: null, stage: "running", created_at: "", cancel_requested: false } });
+  render(<ProjectView project={project} onBack={vi.fn()} jobPollMs={60_000} />);
+  await screen.findByText("이 프로젝트에서 AI 생성이 진행 중입니다.", { exact: false });
+  await userEvent.click(await screen.findByRole("button", { name: "검토와 내보내기" }));
+  await userEvent.click(await screen.findByRole("button", { name: "report_v001 상세" }));  // 이력 상세는 열린다
+  await waitFor(() => expect(screen.getByLabelText("판단 근거")).toBeDisabled());
+  // 검수 기록 영역과 제출본 영역이 각자 이유를 보인다
+  expect(screen.getAllByText("내용 생성이 끝나면 검수 기록과 제출본 검수를 쓸 수 있습니다.")).toHaveLength(2);
+  expect(screen.queryByText(/초안 내보내기가 끝나면/)).toBeNull();
+  expect(screen.getByRole("button", { name: "초안 PPTX 내보내기" })).toBeDisabled();
+});

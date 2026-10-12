@@ -22,6 +22,7 @@ export function useHeaderShowsJob(jobId: string | null | undefined): boolean {
 // 다른 작업 진행 중(409)으로 거절됐을 때 그 작업의 지금 상태. 프로젝트 화면 밖이면 "unknown"이다. 안내가 뜬 뒤
 // 진행 작업 조회가 한 번이라도 끝났는데 그 작업이 없으면 끝난 것으로 본다. 안내가 뜰 때 머리가 그 작업을 아직
 // 모를 수 있으므로 바로 다시 조회하게 한다 (A10)
+// 머리에 다른 작업이 진행 중이면 끝났다고 하지 않는다. 다시 시도해도 그 작업 때문에 다시 거절된다 (D3a-5 리뷰 R13)
 export function useActiveJobFate(active: ActiveJob | undefined): "unknown" | "running" | "ended" {
   const ctx = useContext(ActiveJobContext);
   const mountRevision = useRef(ctx?.revision ?? 0);
@@ -32,7 +33,7 @@ export function useActiveJobFate(active: ActiveJob | undefined): "unknown" | "ru
   const activeId = active?.id;
   useEffect(() => { if (activeId) refresh.current?.(); }, [activeId]);
   if (!ctx || !active) return "unknown";
-  if (ctx.active?.id === active.id) return "running";
+  if (ctx.active) return "running";
   return ctx.revision > mountRevision.current ? "ended" : "running";
 }
 

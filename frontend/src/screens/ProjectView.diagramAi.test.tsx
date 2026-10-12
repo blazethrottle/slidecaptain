@@ -77,15 +77,17 @@ it("AI 전송 승인 뒤 응답 대기 중에도 포커스는 살아 있는 도�
     base_etag: '"base"', sources_fingerprint: "sources" }))));
 });
 
-it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델과 화면 이동을 잠근다", async () => {
+// 다시 씀 (D3a-5 리뷰 R10): 작성 창을 닫은 뒤 남은 요청은 후보형 작업이라 화면 이동은 막지 않는다(계획 4.4 첫 행).
+// 모델 변경과 도식 추가는 요청이 끝날 때까지 잠근다
+it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델 변경을 잠그고, 화면 이동은 막지 않는다", async () => {
   const { pending, fetch } = await open();
   await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
   await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "구성" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "목록으로" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "구성" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "목록으로" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeDisabled();
   const deck = fixture.deck as Deck;
   const slide = deck.slides.find(s => s.slots.template === "diagram")!;

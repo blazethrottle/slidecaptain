@@ -402,7 +402,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
             {generating && <p role="status">AI 후보를 기다리고 있습니다. 입력을 바꾸면 이 후보를 사용하지 않습니다. 창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
             {generationFollowError && generating && <p role="status">{generationFollowError}</p>}
             {generationError && <p role="alert">{generationError}</p>}
-            <FailureNotice failure={generationFailure ? describeFailure(generationFailure) : null} />
+            <FailureNotice failure={generationFailure ? describeFailure(generationFailure) : null} inModal />
             {generationNotice && <p className="notice">{generationNotice}</p>}
             {generationResult?.status === "format_error" && <FailureNotice failure={describeAiOutput()}>
               <p>AI 응답 원문</p><pre>{generationResult.raw_text}</pre>

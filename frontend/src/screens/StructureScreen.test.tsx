@@ -1466,6 +1466,7 @@ it("작업 조회가 계속 실패하고 진행 작업에도 없으면 조회를
   expect(await screen.findByText("작업 기록을 읽지 못해 결과를 확인하지 못했습니다. 앱을 다시 시작해 주세요.")).toBeInTheDocument();
   await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
   const calls = batchGetJob.mock.calls.length;
+  expect(calls).toBe(2);  // 처음 한 번과 한 간격 뒤 마지막 한 번 (D3a-5 리뷰 R15)
   await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
   expect(batchGetJob.mock.calls.length).toBe(calls);  // 더 조회하지 않는다
   expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();

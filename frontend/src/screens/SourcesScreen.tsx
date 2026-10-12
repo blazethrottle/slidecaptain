@@ -25,9 +25,11 @@ function otherNotes(notes: string[]): string[] {
 // 자료 단계 (개정판 D3a-2). 보고 정보는 보고 목적 단계(ReportPurposeScreen)로 옮겼다. 이 화면은 덱을 쓰지 않는다
 export function SourcesScreen({
   project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange, limitations = [], batchRunning = false,
+  jobChecking = false,
 }: {
   project: ProjectInfo;
   batchRunning?: boolean;  // 이 프로젝트의 장 생성 묶음이 진행 중이다. 편집은 허용하되 바꾸기 전에 묻는다 (D3a-5)
+  jobChecking?: boolean;  // 진행 작업을 아직 확인하지 못했다. 묶음일 수 있어 확인이 끝날 때까지 바꾸지 않는다 (D3a-5 리뷰 R11)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구. 단계 목록 대신 이 화면의 한계 안내로 보인다 (계획 4.2)
   // 자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
   onDirtyChange?: (dirty: boolean) => void;
@@ -60,7 +62,12 @@ export function SourcesScreen({
   const mountedRef = useRef(true);
   const batchRef = useRef(batchRunning);
   batchRef.current = batchRunning;
-  const confirmDuringBatch = () => !batchRef.current || window.confirm(BATCH_SOURCES_CONFIRM);
+  const checkingRef = useRef(jobChecking);
+  checkingRef.current = jobChecking;
+  const confirmDuringBatch = () => {
+    if (checkingRef.current) { warn("작업 상태를 확인하는 중입니다. 잠시 뒤 다시 시도해 주세요."); return false; }
+    return !batchRef.current || window.confirm(BATCH_SOURCES_CONFIRM);
+  };
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; ++sourceRequest.current; };

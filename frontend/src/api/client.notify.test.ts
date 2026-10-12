@@ -108,3 +108,21 @@ it("등록 응답이 이미 종결이면 조회 없이도 작업 종결을 알�
   await waitJob("p1", done);
   expect(events).toEqual([{ kind: "job_ended", project: "p1", jobId: "job-2", state: "failed", jobKind: "chapters" }]);  // 다시 씀(D3a-4)
 });
+
+it("조회가 실패하고 진행 작업에도 없으면 한 조회 간격을 기다린 뒤 마지막으로 조회한다 (D3a-5 리뷰 R3)", async () => {
+  // 정상 종결 직후 조회가 잠깐(간격보다 짧게) 실패해도 결과를 잃지 않는다
+  const done = { ...batchView([]), id: "job-9", state: "succeeded" } as JobView;
+  const t0 = Date.now();
+  const fetchJob = vi.fn(async () => {
+    if (Date.now() - t0 < 15) throw new Error("잠깐 실패");
+    return done;
+  });
+  await expect(followJob(fetchJob, () => {}, { intervalMs: 30, stillActive: async () => false })).resolves.toEqual(done);
+});
+
+it("마지막 조회도 실패하면 작업 기록을 읽지 못했다고 멈춘다", async () => {
+  const fetchJob = vi.fn(async () => { throw new Error("계속 실패"); });
+  await expect(followJob(fetchJob, () => {}, { intervalMs: 0, stillActive: async () => false }))
+    .rejects.toMatchObject({ code: "job_ledger_unavailable" });
+  expect(fetchJob).toHaveBeenCalledTimes(2);  // 처음 한 번과 마지막 한 번
+});

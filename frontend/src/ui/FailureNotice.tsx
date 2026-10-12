@@ -17,6 +17,9 @@ type Props = {
   actions?: Partial<Record<FailureAction, () => void>>;
   role?: "alert" | "status";  // 같은 사실을 다른 경고가 이미 알리면 status로 낮춘다 (리뷰 R15)
   children?: ReactNode;  // 진단 상세에 더 넣을 것(응답 원문, 사용량)
+  // 초점을 가두는 대화 상자(도식 작성 창) 안의 안내. 머리의 취소 버튼에 키보드로 갈 수 없으므로 안내 안에 취소
+  // 버튼을 둔다 (D3a-5 리뷰 R8)
+  inModal?: boolean;
 };
 
 export function FailureNotice(props: Props) {
@@ -24,10 +27,12 @@ export function FailureNotice(props: Props) {
   return props.failure ? <Notice key={props.failure.active?.id ?? ""} {...props} failure={props.failure} /> : null;
 }
 
-function Notice({ failure: given, lead, actions = {}, role, children }: Props & { failure: FailureDescription }) {
+function Notice({ failure: given, lead, actions = {}, role, children, inModal = false }: Props & { failure: FailureDescription }) {
   // 다른 작업 진행 중(409)은 머리의 진행 작업을 따른다. 그 작업이 끝났으면 끝났다고 바꾸고, 진행 중이면 머리의
-  // 취소를 가리킨다. 같은 작업의 취소 버튼을 두 곳에 두지 않는다 (D3a-5, 묶음 리뷰 A10)
-  const fate = useActiveJobFate(given.active);
+  // 취소를 가리킨다. 같은 작업의 취소 버튼을 두 곳에 두지 않는다 (D3a-5, 묶음 리뷰 A10). 대화 상자 안에서는 진행
+  // 중일 때 안내 안의 취소 버튼을 남긴다
+  const seen = useActiveJobFate(given.active);
+  const fate = inModal && seen === "running" ? "unknown" : seen;
   const failure: FailureDescription = fate === "ended"
     ? { ...given, what: `진행 중이던 다른 AI 작업(${given.active!.project})이 끝났습니다.`, guidance: "다시 시도할 수 있습니다." }
     : fate === "running"
@@ -51,7 +56,6 @@ function Notice({ failure: given, lead, actions = {}, role, children }: Props & 
         ? <>{secondary.text} <Button variant="text" onClick={secondaryHandler}>{actionLabel(secondary.action)}</Button></>
         : secondary.text}</p>}
       {failure.active && fate === "unknown" && <ActiveJobCancel key={failure.active.id} active={failure.active} />}
-      {failure.active && fate === "running" && <p className="notice">진행 중인 작업: {failure.active.project}</p>}
       <Diagnostics fields={diagnostics}>
         {children}
         {/* 실패한 호출의 사용량은 작업 오류에 실리지 않는다. 어디서 보는지 알린다 (리뷰 R21) */}

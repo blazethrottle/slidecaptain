@@ -5,6 +5,7 @@ import { api, ApiError, AiConsentDeclined, type Deck, type StoryRewriteResult } 
 import { batchView, chapterView, jobView } from "../test/jobs";
 import { storyDeck } from "../test/story";
 import { emptyUsage, expectUsageCollapsed } from "../test/usage";
+import { ActiveJobContext } from "../ui/ActiveJobNotice";
 import { StructureScreen } from "./StructureScreen";
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
@@ -259,4 +260,17 @@ it("취소 응답보다 결과가 먼저 끝났으면 취소 예고 문구를 �
   await userEvent.click(await screen.findByRole("button", { name: "실행 중단" }));
   await waitFor(() => expect(api.cancelJob).toHaveBeenCalled());
   expect(screen.queryByText("취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.")).toBeNull();
+});
+
+it("머리가 이 수리 작업을 보이는 동안은 실행 중단을 두지 않는다 (D3a-5, 묶음 리뷰 A11)", async () => {
+  vi.mocked(api.startJob).mockResolvedValueOnce(jobView("repair", { id: "job-r", project: "synthetic",
+    state: "running", candidate_status: "none" }));
+  vi.mocked(api.getJob).mockReturnValue(new Promise(() => {}));
+  const active = { id: "job-r", project: "synthetic", kind: "repair", target: null, stage: "running" as const,
+    created_at: "", cancel_requested: false };
+  render(<ActiveJobContext.Provider value={{ active, revision: 1, refresh: () => {} }}><Harness /></ActiveJobContext.Provider>);
+  await startRepair();
+  await waitFor(() => expect(api.startJob).toHaveBeenCalled());
+  await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+  expect(screen.queryByRole("button", { name: "실행 중단" })).toBeNull();
 });

@@ -215,7 +215,7 @@ it("Ctrl+Z가 직전 편집을 되돌린다", async () => {
 it('템플릿 전환 전에 미저장 내용을 저장하고 다음 저장에서 이전본 스냅샷을 요청한다',async()=>{
  vi.mocked(api.measure).mockResolvedValue(plan);vi.mocked(api.putDeck).mockResolvedValue({ok:true});vi.mocked(api.getPreset).mockResolvedValue(preset);
  const confirm=vi.spyOn(window,'confirm').mockReturnValue(true);
- let flush:(()=>Promise<boolean>)|null=null;
+ let flush:(()=>Promise<boolean|"declined">)|null=null;
  render(<EditorScreen project={project} deck={deck} onDeckChange={()=>{}} onEditorReady={f=>{flush=f;}} timings={{measureMs:0,saveMs:100000}}/>);
  await userEvent.type(screen.getByLabelText('아이브로우'),'새');
  await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');

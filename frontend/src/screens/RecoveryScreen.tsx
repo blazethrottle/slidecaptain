@@ -162,8 +162,11 @@ function JobCandidates({ project, deck, onOpen }: {
   );
 }
 
-export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen }: {
+export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, restoreLockedReason }: {
   project: ProjectInfo;
+  // 복원을 잠그는 이유 (D3a-5 리뷰 R1, 계획 4.4: 장 생성 묶음 중). 복구 화면이 열린 채 다른 탭의 묶음이 시작되면
+  // 복원이 묶음의 사슬을 끊는다. 보기와 보존본 지우기는 덱을 쓰지 않아 잠그지 않는다
+  restoreLockedReason?: string;
   deck?: Deck;  // 장을 순서와 제목으로 보이는 데 쓴다. 덱을 읽지 못하는 프로젝트에서는 없다
   onBack: () => void;
   onConflict?: () => void;  // 복원이 412를 받으면 부모(ProjectView)가 배너를 띄운다
@@ -230,6 +233,7 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen }: {
   return (
     <div className="recovery-screen">
       <h2>스냅샷 복구</h2>
+      {restoreLockedReason && <p role="status">{restoreLockedReason}</p>}
       <p>저장 시점 목록입니다. 복원하면 그 시점의 내용으로 돌아갑니다.</p>
       {error && <p role="alert">{error}</p>}
       {snapshots === null ? (
@@ -242,7 +246,8 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen }: {
             <li key={s.id}>
               {s.saved_at}
               {s.kind === "pre_migration" && <em> (새 형식으로 바꾸기 전)</em>}
-              {" "}<Button variant="danger" onClick={() => restore(s.id)}>이 시점으로 복원</Button>
+              {" "}<Button variant="danger" onClick={() => restore(s.id)} disabled={!!restoreLockedReason}
+                title={restoreLockedReason}>이 시점으로 복원</Button>
             </li>
           ))}
         </ul>
@@ -259,7 +264,8 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen }: {
             {drafts.map((d) => (
               <li key={d.id}>
                 {formatSavedAt(d.saved_at)} {describeDraft(d)}{" "}
-                <Button variant="danger" onClick={() => void restoreDraft(d.id)}>이 변경으로 복원</Button>{" "}
+                <Button variant="danger" onClick={() => void restoreDraft(d.id)} disabled={!!restoreLockedReason}
+                  title={restoreLockedReason}>이 변경으로 복원</Button>{" "}
                 <Button variant="danger" onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</Button>
               </li>
             ))}

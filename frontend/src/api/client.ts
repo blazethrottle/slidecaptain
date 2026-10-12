@@ -262,7 +262,7 @@ export const JOB_RECORD_LOST = "작업 기록을 읽지 못해 결과를 확인�
 // 간격은 인자로 받아 시험에서 바꿀 수 있게 한다
 // 조회 함수는 호출하는 쪽이 넘긴다: 화면이 쓰는 api 객체(시험에서는 모의)로 조회하게 하려는 것이다
 // stillActive: 조회가 실패할 때 그 작업이 아직 진행 중인지 진행 작업 확인(실행기 메모리)으로 묻는다. 진행 중이
-// 아니면 한 번 더 조회해 보고, 그래도 실패하면 작업 기록을 읽지 못한다고 멈춘다. 원장을 읽지 못하는 동안 끝없이
+// 아니면 한 조회 간격 뒤 한 번 더 조회해 보고, 그래도 실패하면 작업 기록을 읽지 못한다고 멈춘다. 원장을 읽지 못하는 동안 끝없이
 // 조회하며 화면을 잠그지 않게 한다. 조회 실패 횟수의 임계값은 근거가 되는 측정값이 없어 두지 않는다
 // (D3a-5, 계획 4.4 β R8, 사실 18). 확인 자체가 실패하면 진행 중으로 보고 계속 조회한다
 export async function followJob(
@@ -286,11 +286,9 @@ export async function followJob(
       if (opts.signal?.aborted) throw error;
       if (lastTry) throw new ApiError(503, JOB_RECORD_LOST, "job_ledger_unavailable");
       opts.onError?.(error);
+      // 한 조회 간격을 기다린 뒤 마지막으로 조회한다. 정상 종결 직후의 짧은 실패를 기록 손실로 보지 않는다 (D3a-5 리뷰 R3)
       const active = opts.stillActive;
-      if (active && !(await Promise.resolve().then(active).catch(() => true))) {
-        lastTry = true;
-        continue;
-      }
+      if (active && !(await Promise.resolve().then(active).catch(() => true))) lastTry = true;
     }
     await pause(intervalMs, opts.signal);
   }

@@ -26,7 +26,7 @@ beforeEach(() => {
 function setup(deck = fresh()) {
   const onDeckChange = vi.fn();
   const onDirtyChange = vi.fn();
-  let flush: (() => Promise<boolean>) | null = null;
+  let flush: (() => Promise<boolean | "declined">) | null = null;
   render(<EditorScreen project={project} deck={deck} onDeckChange={onDeckChange}
     onDirtyChange={onDirtyChange} onEditorReady={fn => { flush = fn; }} timings={{ measureMs: 1, saveMs: 1 }} />);
   return { onDeckChange, onDirtyChange, flush: () => flush!() };
@@ -37,7 +37,7 @@ it("작성 중에는 이탈 플러시를 막고 취소하면 덱을 그대로 �
   await userEvent.click(screen.getByRole("button", { name: "도식 추가" }));
   fireEvent.change(screen.getByLabelText("도식 제목"), { target: { value: "미완성" } });
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-  let ready = true;
+  let ready: boolean | "declined" = true;
   await act(async () => { ready = await flush(); });
   expect(ready).toBe(false);
   expect(api.putDeck).not.toHaveBeenCalled();
