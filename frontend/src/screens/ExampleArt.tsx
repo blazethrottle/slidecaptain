@@ -78,7 +78,7 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
     </>,
   },
   monthly: {
-    page: "월간 목표 대비 실적",
+    page: "목표 대비 실적",
     description: "월간 보고 예시: 핵심 지표 세 개, 월별 매출 추이, 목표 대비 달성률",
     art: <>
       <text x="36" y="35" fontSize="13" fill="var(--example-muted)" fontWeight="600">MONTHLY PERFORMANCE</text>
@@ -152,7 +152,7 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
       <circle cx="471" cy="326" r="6" fill="var(--example-point)" opacity="0.9"/>
       <path d="M97 164 L470 326" stroke="var(--example-blue)" strokeWidth="3" strokeDasharray="7 6" fill="none"/>
       <text x="89" y="378" fontSize="14" fill="var(--example-muted)" fontWeight="400">짧음</text>
-      <text x="426" y="378" fontSize="14" fill="var(--example-muted)" fontWeight="400">응답 시간: 길어짐</text>
+      <text x="330" y="378" fontSize="14" fill="var(--example-muted)" fontWeight="400">응답 시간(길수록 오른쪽)</text>
       <rect x="538" y="127" width="226" height="111" rx="12" fill="var(--example-blue-subtle)"/>
       <text x="556" y="161" fontSize="20" fill="var(--example-blue)" fontWeight="700">관측된 관계</text>
       <text x="556" y="191" fontSize="17" fill="var(--example-ink)" fontWeight="400">응답 시간이 길수록</text>
@@ -165,7 +165,7 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
     </>,
   },
   research: {
-    page: "발견과 근거의 연결",
+    page: "발견과 근거",
     description: "리서치 결과 보고 예시: 핵심 발견, 인터뷰 근거 두 개, 시사점",
     art: <>
       <text x="36" y="35" fontSize="13" fill="var(--example-muted)" fontWeight="600">RESEARCH FINDINGS</text>
@@ -218,11 +218,11 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
       <line x1="483" y1="137" x2="483" y2="344" stroke="var(--example-red)" strokeWidth="3"/>
       <text x="450" y="363" fontSize="14" fill="var(--example-red)" fontWeight="600">현재 시점</text>
       <rect x="36" y="380" width="728" height="40" rx="12" fill="var(--example-amber-subtle)"/>
-      <text x="52" y="406" fontSize="17" fill="var(--example-amber)" fontWeight="600">확인 필요: 검증 환경 준비 지연, 담당 확정과 일정 조정 요청</text>
+      <text x="52" y="406" fontSize="17" fill="var(--example-amber)" fontWeight="600">확인 필요: 검증 환경 준비가 늦어져 담당 확정과 일정 조정을 요청</text>
     </>,
   },
   results: {
-    page: "목표 대비 결과와 교훈",
+    page: "목표 대비 결과",
     description: "결과 보고 예시: 목표와 실제 결과 비교, 잘된 점과 다음에 바꿀 점",
     art: <>
       <text x="36" y="35" fontSize="13" fill="var(--example-muted)" fontWeight="600">RESULTS REVIEW</text>
@@ -283,7 +283,7 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
     </>,
   },
   strategy: {
-    page: "전략 방향과 실행 로드맵",
+    page: "전략과 실행 로드맵",
     description: "전략기획 예시: 전략 방향과 세 단계 실행 로드맵",
     art: <>
       <text x="36" y="35" fontSize="13" fill="var(--example-muted)" fontWeight="600">STRATEGIC ROADMAP</text>
@@ -329,14 +329,15 @@ export const EXAMPLE_PAGES: Record<ReportType, ExamplePage> = {
       <circle cx="609" cy="265" r="5" fill="var(--example-ir-accent)"/>
       <circle cx="679" cy="210" r="5" fill="var(--example-ir-accent)"/>
       <circle cx="759" cy="149" r="5" fill="var(--example-ir-accent)"/>
-      <text x="536" y="340" fontSize="18" fill="var(--example-ir-text-muted)" fontWeight="400">검증, 반복, 성장</text>
+      <text x="536" y="340" fontSize="18" fill="var(--example-ir-text-muted)" fontWeight="400">검증에서 반복, 성장으로</text>
       <text x="36" y="415" fontSize="18" fill="var(--example-ir-accent)" fontWeight="600">NEXT  /  제품 고도화와 시장 검증에 투자</text>
       <text x="537" y="415" fontSize="13" fill="var(--example-ir-text-faint)" fontWeight="400">개념 곡선, 실제 실적 아님</text>
     </>,
   },
 };
 
-// 예시 그림 하나. 모든 그림의 오른쪽 위에 "예시" 표시가 있다. 대체 텍스트는 문장으로 쓴 설명이다 (리뷰 U9)
+// 예시 그림 하나. 모든 그림의 오른쪽 위에 "예시" 표시가 있다. 대체 텍스트는 유형과 그림의 특징을 밝힌 설명이다 (리뷰 U9).
+// 그림 안의 화살표 기호와 중점은 낭독과 글꼴 대체에서 뜻이 흐려지지 않도록 선과 글로 바꿨다 (D3b-6 리뷰 R8)
 export function ExampleArt({ type, className }: { type: ReportType; className?: string }) {
   const { description, art } = EXAMPLE_PAGES[type];
   return (

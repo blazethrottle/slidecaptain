@@ -100,11 +100,15 @@
   --example-amber-bar: #ba7c16;
   --example-amber-line: #b57b16;
   --example-red: #b42318;
-  /* 좁은 폭에서 예시 그림의 높이 상한. 경계(유형 영역 720px)에서 두 열일 때 그림 높이와 같게 둔다: 열 폭 (720 - 16) / 2 = 352px,
-     높이 352 x 450 / 800 = 198px. 경계를 넘을 때 그림 크기가 튀지 않는다 (D3b-6 측정) */
-  --height-example-narrow: 198px;
-  --width-example-large: 960px;     /* 크게 보기 대화 상자의 최대 폭 */
-  --width-example-min: 640px;       /* 크게 보기 그림의 최소 폭. 더 좁은 창에서는 가로로 스크롤한다 */
+  /* 좁은 폭에서 예시 그림의 높이 상한. 경계(유형 영역 720px)에서 두 열일 때 그림 높이와 같게 둔다: 열 폭 (720 - 16) / 2 = 352px에서
+     예시 영역의 안쪽 여백과 테두리 2 x (12 + 1)를 빼면 그림 폭 326px, 높이 326 x 450 / 800 = 183px. 경계를 넘을 때 그림 크기가
+     튀지 않는다 (D3b-6 측정, 리뷰 R1에서 여백을 빼지 않은 산식을 고침) */
+  --height-example-narrow: 183px;
+  /* 크게 보기 대화 상자의 최대 폭: 그림을 시안 원래 크기(800px)로 보이도록 안쪽 여백 2 x 16px를 더한 값 (D3b-6 리뷰 R10) */
+  --width-example-large: 832px;
+  /* 크게 보기 그림의 최소 폭: 그림의 가장 작은 글자(13)가 앱의 가장 작은 글자 토큰(--font-size-caption 12px) 이상이 되는 폭
+     800 x 12 / 13 = 738.5px를 올린 값. 더 좁은 창에서는 그림 영역이 가로로 스크롤된다 (리뷰 R10) */
+  --width-example-min: 739px;
   --shadow-dialog: 0 4px 24px var(--shadow-color);
   --shadow-dialog-wide: 0 8px 32px var(--shadow-color);
 }
@@ -307,15 +311,16 @@ html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 .purpose-composition { margin: 0 0 var(--space-2); padding-inline-start: var(--space-6); }
 .purpose-outcomes { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .type-example { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
-.example-art { display: block; width: 100%; height: auto; font-family: "Noto Sans KR", sans-serif; }
+.example-art { display: block; width: 100%; height: auto; }
 @container purpose-type (max-width: 719px) { .example-art { max-height: var(--height-example-narrow); } }
 .example-overlay { position: fixed; inset: 0; background: var(--color-overlay); display: flex; align-items: center;
   justify-content: center; z-index: 120; }
 .example-dialog { background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-4); box-sizing: border-box;
   width: 100%; max-width: var(--width-example-large); max-height: 100dvh; overflow-y: auto; box-shadow: var(--shadow-dialog); }
 .example-dialog-art { overflow-x: auto; }
-.example-art-large { display: block; width: 100%; min-width: var(--width-example-min); height: auto;
-  font-family: "Noto Sans KR", sans-serif; }
+.example-art-large { display: block; width: 100%; min-width: var(--width-example-min); height: auto; }
+.example-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.example-dialog-head h2 { margin: 0; }
 .example-close { min-height: var(--control-height-primary); }
 .chapter-list .chapter-topic { display: block; }
 .chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }

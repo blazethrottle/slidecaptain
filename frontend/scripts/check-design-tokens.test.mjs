@@ -69,3 +69,34 @@ it("행 번호와 합계를 보고한다", () => {
   expect(out).toMatch(/styles\.css \d+행: 토큰 밖의 직접 크기 12px, 16px/);
   expect(out).toContain("직접 크기 값 합계 2개");
 });
+
+
+describe("보고 유형 예시 그림 파일의 색 (D3b-6 리뷰 R6)", () => {
+  const ROOT_WITH_EXAMPLE = ROOT.replace("--space-2: 8px;", "--space-2: 8px; --example-ink: #172b4d;");
+  function runExample(tsx) {
+    const css = join(dir, `ex-${Math.random().toString(36).slice(2)}.css`);
+    const art = join(dir, `ExampleCase${Math.random().toString(36).slice(2)}.tsx`);
+    writeFileSync(css, ROOT_WITH_EXAMPLE);
+    writeFileSync(art, tsx);
+    const result = spawnSync(process.execPath, [script, css, `--examples=${art}`], { encoding: "utf8" });
+    return { code: result.status, out: result.stdout + result.stderr };
+  }
+
+  it("정의한 예시 토큰과 none만 쓰면 통과한다", () => {
+    const { code, out } = runExample('<rect fill="var(--example-ink)" stroke="none" />');
+    expect(out).toContain("통과");
+    expect(code).toBe(0);
+  });
+
+  it.each([
+    ["hex", '<rect fill="#ffffff" />', "직접 색"],
+    ["이름 색", '<rect fill="red" />', "토큰이 아닌 색"],
+    ["style의 이름 색", '<rect style={{ fill: "black" }} />', "토큰이 아닌 색"],
+    ["정의되지 않은 토큰", '<rect fill="var(--example-nope)" />', "정의되지 않은 토큰"],
+    ["앱 주제 토큰", '<rect fill="var(--color-danger)" />', "예시 토큰이 아닌"],
+  ])("%s는 실패한다", (_, tsx, message) => {
+    const { code, out } = runExample(tsx);
+    expect(out).toContain(message);
+    expect(code).toBe(1);
+  });
+});

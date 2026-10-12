@@ -3,11 +3,12 @@
 // 검사: (1) 대비 계산 자기 검사 (2) 글자 색 대비 4.5:1 (3) 초점선과 컴포넌트 경계 3:1
 // (4) :root 토큰 블록 밖의 hex, rgb(), rgba(), 이름 색 금지 (5) 토큰 블록 밖의 직접 크기 값 금지(D3a-1).
 // 의존성은 쓰지 않는다.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // 검사 대상은 기본으로 src/styles.css다. 첫 인자로 다른 파일을 줄 수 있다(검사 스크립트 자체의 시험용)
-const cssPath = process.argv[2] ?? fileURLToPath(new URL("../src/styles.css", import.meta.url));
+const cssArg = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const cssPath = cssArg ?? fileURLToPath(new URL("../src/styles.css", import.meta.url));
 // 주석을 먼저 지운다: 주석 처리한 토큰을 정의로 읽거나 주석 속 색을 직접 색으로 세지 않게 (D2a-4 리뷰 R4)
 // 줄바꿈은 남겨 오류의 행 번호가 원래 파일과 맞게 한다
 const css = readFileSync(cssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ""));
@@ -111,15 +112,33 @@ sizeScope.split("\n").forEach((line, i) => {
 });
 if (sizeViolations) failures.push(`직접 크기 값 합계 ${sizeViolations}개`);
 
-// (6) 보고 유형 예시 그림 파일의 직접 색 금지 (D3b-6, 계획 4.6, 리뷰 U7). 그림은 예시 토큰(var(--example-*))으로만 칠한다.
-// styles.css를 검사할 때만 함께 본다(검사 스크립트 자체의 시험은 다른 CSS 파일을 준다)
-if (!process.argv[2]) {
-  for (const file of ["ExampleArt.tsx", "ReportTypeExample.tsx"]) {
-    const path = fileURLToPath(new URL(`../src/screens/${file}`, import.meta.url));
-    readFileSync(path, "utf8").split("\n").forEach((line, i) => {
-      if (/#[0-9a-fA-F]{3,8}\b/.test(line) || colorFunction.test(line)) failures.push(`${file} ${i + 1}행: 직접 색 ${line.trim()}`);
-    });
-  }
+// (6) 보고 유형 예시 그림 파일의 색 (D3b-6, 계획 4.6, 리뷰 U7, D3b-6 리뷰 R6). 그림은 :root에 정의한 예시 토큰
+// (var(--example-*))으로만 칠한다. 직접 색(hex, 색 함수, 이름 색), 앱 주제 토큰, 정의되지 않은 토큰(브라우저가 검정으로 칠한다)을
+// 막는다. 대상은 src/screens의 Example*.tsx와 ReportTypeExample.tsx다. "--examples 파일,파일"로 대상을 바꿀 수 있다(계약 시험용).
+// CSS 파일을 인자로 주고 --examples를 주지 않으면 이 검사를 건너뛴다(그 CSS의 계약 시험)
+const examplesArg = process.argv.find((a) => a.startsWith("--examples="));
+const exampleFiles = examplesArg
+  ? examplesArg.slice("--examples=".length).split(",").filter(Boolean)
+  : cssArg ? [] : (() => {
+    const dir = fileURLToPath(new URL("../src/screens/", import.meta.url));
+    return readdirSync(dir).filter((f) => /^Example.*\.tsx$|^ReportTypeExample\.tsx$/.test(f)).map((f) => dir + f);
+  })();
+const PAINT_ALLOWED = new Set(["none", "inherit"]);
+for (const path of exampleFiles) {
+  const file = path.split("/").at(-1);
+  readFileSync(path, "utf8").split("\n").forEach((line, i) => {
+    const where = `${file} ${i + 1}행`;
+    if (/#[0-9a-fA-F]{3,8}\b/.test(line) || colorFunction.test(line)) failures.push(`${where}: 직접 색 ${line.trim()}`);
+    for (const m of line.matchAll(/\b(fill|stroke|color|stopColor|floodColor|background)\s*[=:]\s*\{?\s*["']([^"']+)["']/g)) {
+      const value = m[2].trim();
+      if (value.startsWith("var(") || PAINT_ALLOWED.has(value)) continue;
+      failures.push(`${where}: 토큰이 아닌 색 ${m[1]}=${value}`);
+    }
+    for (const m of line.matchAll(/var\(\s*--([a-z0-9-]+)/g)) {
+      if (!m[1].startsWith("example-")) failures.push(`${where}: 예시 토큰이 아닌 --${m[1]}`);
+      else if (!(m[1] in tokens)) failures.push(`${where}: 정의되지 않은 토큰 --${m[1]}`);
+    }
+  });
 }
 
 if (failures.length) {
