@@ -375,7 +375,9 @@ describe("다른 탭 알림 받기 (D3a-6, 계획 4.5)", () => {
     peer.postMessage({ kind: "job_ended", project: "다른보고", jobId: "job-9" });
     await waitFor(() => expect(within(header()).queryByText(/AI 생성이 진행 중입니다/)).toBeNull());
     // 다른 프로젝트의 알림은 이 프로젝트의 진행 API를 다시 읽지 않는다. 이 프로젝트의 저장 알림은 읽는다
-    expect(vi.mocked(api.getProgress).mock.calls.length).toBe(progressReads + 2);  // 진행 작업이 바뀐 두 번
+    // 진행 작업이 바뀐 두 번. 진행 API 다시 읽기는 머리 안내가 바뀐 뒤 비동기로 나가므로 기다린다(CI에서 머리 안내가 먼저
+    // 사라진 순간에 세어 2회로 실패한 적이 있다, 2026-10-12 실행 38217964227)
+    await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBe(progressReads + 2));
     peer.postMessage({ kind: "saved", project: project.name });
     await waitFor(() => expect(vi.mocked(api.getProgress).mock.calls.length).toBe(progressReads + 3));
     expect(vi.mocked(api.getDeck).mock.calls.length).toBe(deckReads);
