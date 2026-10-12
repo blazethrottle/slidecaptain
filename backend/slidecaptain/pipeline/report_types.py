@@ -55,7 +55,10 @@ def purpose_block(meta, report_type=None) -> str:
     지문과 항상 같은 칸을 본다(재리뷰 RR12). 숨은 입력은 넣지 않는다.
 
     report_type은 지시문이 구성 안내에 쓰는 유형이다. 메타 유형과 다르면 추가 입력 줄을 쓰지 않는다
-    (리뷰 R12. 추가 입력 칸은 메타 유형의 칸이라 다른 유형의 안내와 섞으면 뜻이 맞지 않는다)."""
+    (리뷰 R12. 추가 입력 칸은 메타 유형의 칸이라 다른 유형의 안내와 섞으면 뜻이 맞지 않는다).
+    이 분기는 실제 경로에서 닿지 않는 방어다: 구조안은 brief_mismatch, 재작성과 수리는 rewrite_prompt의 같은 검사,
+    장과 도식은 구성 계획 지문의 유형 검사가 먼저 막는다. 닿으면 판정 해시는 추가 입력을 담지만 지시문에는 없어,
+    후보가 더 쉽게 낡는 안전한 쪽으로 어긋난다 (α 묶음 리뷰 A9)."""
     from slidecaptain.models.report_purpose import REPORT_DETAIL_FIELDS, purpose_prompt_values
 
     values = purpose_prompt_values(meta)

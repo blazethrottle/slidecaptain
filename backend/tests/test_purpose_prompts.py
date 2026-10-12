@@ -275,3 +275,66 @@ def test_numbers_in_the_purpose_values_are_not_unverified():
                          .generate_chapter(deck, "cover", sources, Preset()))
     assert result.status == "ok"
     assert result.unverified_numbers == ["77"]  # 보고 목적 값에 없는 수치는 그대로 잡는다
+
+
+def test_surrounding_whitespace_changes_nothing_downstream():
+    """자동 저장이 입력 중의 끝 공백이나 줄바꿈을 저장해도 지시문, 판정 해시, 구성 계획 지문, 장 관련 입력이
+    그대로다. 같은 내용인데 승인한 계획과 보류 후보가 낡지 않게 한다 (α 묶음 리뷰 A5)."""
+    deck, sources = _purpose_deck(report_type="weekly", key_message=KEY, report_details={"weekly.period": PERIOD})
+    plan = deck.structure.story_plan
+    chapter = deck.structure.chapters[-1]
+
+    def observed(meta: DeckMeta) -> tuple:
+        current = Deck.model_validate({**deck.model_dump(mode="json"), "meta": meta.model_dump(mode="json")})
+        return (build_structure_prompt(meta, sources, brief=plan.brief), structure_relevance(current),
+                story_fingerprint(plan, meta, deck.structure.chapters, sources),
+                build_chapter_prompt(current, chapter, sources, {}, today="2026-10-12"),
+                chapter_relevance(current, chapter.id))
+
+    padded = deck.meta.model_copy(update={"key_message": f"  {KEY}\n", "report_details": {"weekly.period": f" {PERIOD} "}})
+    assert observed(padded) == observed(deck.meta)
+
+
+INVESTMENT = "시리즈 A 30억 원 유치를 설득한다"
+QUOTED = "시리즈 A 30억 원, 43개 기관"  # 30은 보고 목적 값에 있고 43은 없다
+
+
+def _with_key(deck: Deck, sources: dict) -> Deck:
+    deck = Deck.model_validate({**deck.model_dump(mode="json"),
+                                "meta": {**deck.meta.model_dump(mode="json"), "key_message": INVESTMENT}})
+    plan = deck.structure.story_plan
+    if plan is not None:
+        plan.input_fingerprint = story_fingerprint(plan, deck.meta, deck.structure.chapters, sources)
+    return deck
+
+
+class FixedProvider:
+    def __init__(self, payload):
+        self.payload = payload
+
+    async def complete(self, prompt, schema):
+        return ProviderResponse(self.payload, "synthetic")
+
+
+@pytest.mark.parametrize("path", ["structure", "rewrite", "diagram"])
+def test_purpose_numbers_are_allowed_in_every_generation_path(request, path):
+    """구조안, 재작성, 도식의 미검증 수치 검사도 보고 목적 값을 허용한다 (D3b-3 리뷰 R2, α 묶음 리뷰 A2)."""
+    if path == "structure":
+        deck, sources = _purpose_deck()
+        deck = _with_key(deck, sources)
+        payload = {"chapters": [{"topic": "투자 제안", "conclusion": QUOTED, "template": "cover", "source_refs": []}]}
+        run = lambda svc: svc.generate_structure(deck.meta, sources)  # noqa: E731
+    elif path == "rewrite":
+        deck, sources, payload, brief = request.getfixturevalue("rewrite_input")
+        deck = _with_key(deck, sources)
+        payload = {**payload, "unanswered_questions": [f"{QUOTED}의 출처는 무엇인가?"]}
+        run = lambda svc: svc.rewrite_story(deck, brief, sources, "")  # noqa: E731
+    else:
+        deck, sources, payload = request.getfixturevalue("diagram_input")
+        deck = _with_key(deck, sources)
+        payload = json.loads(json.dumps(payload))
+        payload["nodes"][0]["content"] += f" {QUOTED}"
+        run = lambda svc: svc.generate_diagram(deck, GenerateDiagramRequest(**DIAGRAM_REQUEST), sources)  # noqa: E731
+    result = asyncio.run(run(GenerationService(FixedProvider(payload), FontMetrics.load_default())))
+    assert result.status == "ok", result
+    assert result.unverified_numbers == ["43"]

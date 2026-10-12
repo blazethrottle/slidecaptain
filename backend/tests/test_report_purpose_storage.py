@@ -163,6 +163,11 @@ def test_raising_from_two_to_three_is_recorded_but_not_marked_pre_migration(stor
     upgrades = [(m.from_format, m.to_format) for m in _manifest(store).migrations if m.kind == "upgrade"]
     assert upgrades == [(1, 2), (2, 3)]
     assert [s.kind for s in store.list_snapshots("p1")].count("pre_migration") == 1
+    # 요청한 스냅샷은 만들지만 2에서 3 기록에는 남기지 않는다. 중간 빌드가 0.2.0 복구 지점으로 표시하지 않게 한다
+    # (α 묶음 리뷰 A8)
+    [record] = [m for m in _manifest(store).migrations if m.kind == "upgrade" and m.from_format == 2]
+    assert record.snapshot_id is None
+    assert len(store.list_snapshots("p1")) == 2
 
 
 def test_manifest_is_raised_before_the_deck_is_replaced(store, monkeypatch):
@@ -350,6 +355,30 @@ def test_revert_after_a_failed_final_manifest_write_marks_the_newest_content(sto
     assert marked == ["deck-29991231-235959-000001"]
     data = json.loads((store.root / "p1" / "snapshots" / f"{marked[0]}.json").read_text(encoding="utf-8"))
     assert data["meta"]["key_message"] == "마지막 핵심"
+
+
+def test_revert_after_a_failed_deck_replacement_marks_the_previous_deck(store, monkeypatch):
+    """덱 교체 자체가 실패하면 디스크에는 직전 덱이 남는다. 0.2.0이 되돌린 뒤 그 직전 덱이 든 스냅샷에 표시가
+    붙어야 한다(쓰려던 덱의 지문은 디스크 어디에도 없다, α 묶음 리뷰 A1)."""
+    store.create_project("p1")
+    store.save_deck("p1", _deck(key_message="첫 핵심"), snapshot=False)
+    store.save_deck("p1", _deck(key_message="둘째 핵심"), snapshot=False)
+
+    def fail(self, project_dir, deck):
+        raise OSError("덱 교체 실패(시험)")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(FileProjectStore, "_write_deck", fail)
+        with pytest.raises(OSError):
+            store.save_deck("p1", _deck(key_message="셋째 핵심"), snapshot=False)
+    manifest = _manifest(store)
+    assert manifest.last_written_etag and manifest.prior_written_etag
+    pre = next(s for s in store.list_snapshots("p1") if s.kind == "pre_migration")
+    _simulate_legacy_restore(store, pre.id)
+    marked = [s.id for s in store.list_snapshots("p1") if s.kind == "before_revert"]
+    assert marked == ["deck-29991231-235959-000001"]
+    data = json.loads((store.root / "p1" / "snapshots" / f"{marked[0]}.json").read_text(encoding="utf-8"))
+    assert data["meta"]["key_message"] == "둘째 핵심"
 
 
 def test_own_downgrade_with_a_failed_final_write_is_not_marked_as_a_revert(store, monkeypatch):

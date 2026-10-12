@@ -235,6 +235,39 @@ def test_a_settled_job_has_no_step_while_the_lease_is_released(store, manager, m
     assert active is not None and active["step"] is None and active["elapsed_seconds"] is None
 
 
+def test_a_job_whose_ledger_is_final_has_no_step_before_it_is_marked_settled(store, monkeypatch):
+    """원장에 종결을 쓴 뒤 핸들에 정산 표시를 세우기 전의 창에서도 작업 응답은 세 칸을 비운다. 이 창은 원장의
+    종결 상태만 덮는다 (D3b-4 리뷰 R3, α 묶음 리뷰 A3)."""
+    from slidecaptain.server.jobs import JobRunner
+
+    held, hold = threading.Event(), threading.Event()
+    original = JobRunner._settle
+
+    async def settle(self, handle):
+        outcome = await original(self, handle)
+        held.set()
+        await asyncio.to_thread(hold.wait, 5)
+        return outcome
+
+    monkeypatch.setattr(JobRunner, "_settle", settle)
+    _project(store)
+    provider = StepProvider(first_valid=True)
+    provider.release[0].set()
+    app = create_app(store, provider=provider, login_checker=lambda: LoginStatus(logged_in=False))
+    with TestClient(app, headers=HEADERS) as client:
+        job = _register(client).json()
+        try:
+            assert held.wait(5)
+            unsettled = not client.app.state.job_runner._handles[job["id"]].settled
+            view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
+        finally:
+            hold.set()
+        _wait(client, job["id"])
+    assert unsettled  # 정산 표시가 서기 전의 창을 실제로 관측했다
+    assert view["state"] == "succeeded" and view["step"] is None
+    assert view["step_started_at"] is None and view["elapsed_seconds"] is None
+
+
 @pytest.mark.parametrize("first_valid", [True, False])
 def test_structure_jobs_call_generate_then_at_most_one_format_retry(store, monkeypatch, first_valid):
     """단계 이름은 호출 번호로 정한다. 구조안 생성의 호출 목적 순서가 이와 같음을 고정한다 (D3b-4 리뷰 R5)."""

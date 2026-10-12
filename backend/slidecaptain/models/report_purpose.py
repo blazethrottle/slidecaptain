@@ -84,16 +84,17 @@ def deck_level(deck) -> int:
 def purpose_prompt_values(meta) -> dict:
     """지시문이 읽는 보고 목적 값 (D3b-2, 재리뷰 RR12). 지시문 네 곳, 구조안 판정 (가), 장 관련 입력,
     구성 계획 지문이 모두 이 결과를 쓴다. 숨은 입력은 들지 않으므로 숨은 입력을 지워도 계획과 후보가 낡지 않는다.
-    기본값이면 빈 사전이라 기존 지문이 그대로다."""
+    기본값이면 빈 사전이라 기존 지문이 그대로다. 값은 앞뒤 공백을 지운다. 자동 저장이 입력 중의 끝 공백이나
+    줄바꿈을 저장해도 같은 내용이면 계획과 후보가 낡지 않는다(α 묶음 리뷰 A5). 저장값은 입력 그대로다."""
     values: dict = {}
     if not is_blank(meta.key_message):
-        values["key_message"] = meta.key_message
+        values["key_message"] = meta.key_message.strip()
     if meta.desired_outcome is not None:  # None(사용자 미선택)과 명시 선택을 구별한다
         values["desired_outcome"] = meta.desired_outcome
         if meta.desired_outcome == "other" and not is_blank(meta.desired_outcome_other):
-            values["desired_outcome_other"] = meta.desired_outcome_other
+            values["desired_outcome_other"] = meta.desired_outcome_other.strip()
     details = {
-        name: meta.report_details[f"{meta.report_type}.{name}"]
+        name: meta.report_details[f"{meta.report_type}.{name}"].strip()
         for name, _ in REPORT_DETAIL_FIELDS.get(meta.report_type, ())
         if not is_blank(meta.report_details.get(f"{meta.report_type}.{name}"))
     }

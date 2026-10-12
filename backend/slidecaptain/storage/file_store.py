@@ -391,7 +391,8 @@ class FileProjectStore:
         단 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같으면 생략한다: 자동 저장이 같은 등급 1 상태와 등급
         3을 오갈 때 강제 스냅샷이 쌓이지 않게 하고(리뷰 S13), 등급 1에서 무엇이든 바뀌면(이 앱의 편집이든 0.2.0의
         편집이든) 다시 복구 지점을 남긴다(재리뷰 RR2, D3b-1 리뷰 R5). 등급 3 저장은 덱 교체 전에 쓰려는 덱과 직전
-        덱의 지문을 manifest에 남긴다(되돌림 표시, D3b-1 리뷰 R1). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다.
+        덱의 지문을 manifest에 남긴다(되돌림 표시, D3b-1 리뷰 R1). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다
+        (0.2.0도 열지 못하는 깨진 덱에서 오르는 저장은 기록 없이 번호만 먼저 올린다).
         등급 3에서는 manifest 번호가 중간 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
         pending 기록을 옛 번호로 먼저 남기고 덱을 교체한 뒤 번호를 내린다. 끊기면 다음 쓰기가 덱 내용으로
         pending을 마무리한다.
@@ -417,7 +418,12 @@ class FileProjectStore:
                 snapshot_id = self._snapshot_current(project_dir) if (snapshot or not unchanged) else None
                 legacy_ok = project_format.legacy_readable(old_bytes)
             else:
-                snapshot_id = self._snapshot_current(project_dir) if snapshot else None
+                # 화면이 요청한 스냅샷은 만들되 기록에는 남기지 않는다. 이 앱은 등급 1에서 오른 기록만 0.2.0 복구 지점으로
+                # 쓰는데, 중간 빌드는 형식을 보지 않고 모든 완료 기록의 스냅샷을 "새 형식으로 바꾸기 전"으로 표시한다
+                # (α 묶음 리뷰 A8: 0.2.0이 열지 못하는 등급 2 스냅샷이 복구 지점처럼 보였다)
+                if snapshot:
+                    self._snapshot_current(project_dir)
+                snapshot_id = None
                 legacy_ok = True
             if legacy_ok:
                 etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(

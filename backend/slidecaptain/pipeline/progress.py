@@ -98,8 +98,8 @@ def _structure(deck, sources: dict[str, str] | None) -> StageProgress:
         return StageProgress(stage="structure", state="ready", reasons=["plan_missing"])
     if sources is None:
         return StageProgress(stage="structure", state="needs_review", reasons=["sources_unreadable"])
-    # 생성 관문(require_current_story)과 같은 계약이다. 제목, 피보고자, 보고 유형, 장 제목과 결론,
-    # 자료가 바뀌면 낡은 것으로 본다
+    # 생성 관문(require_current_story)과 같은 계약이다. 제목, 피보고자, 보고 유형, 지시문이 읽는 보고 목적 값
+    # (D3b-2), 장 제목과 결론, 자료가 바뀌면 낡은 것으로 본다
     if plan.input_fingerprint != story_fingerprint(plan, deck.meta, chapters, sources):
         return StageProgress(stage="structure", state="needs_review", reasons=["stale_story_plan"])
     return StageProgress(stage="structure", state="ready")

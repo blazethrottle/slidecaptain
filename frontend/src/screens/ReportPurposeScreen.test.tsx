@@ -42,6 +42,21 @@ it.each([
 });
 
 
+it("확인되지 않은 기본 유형을 다른 유형에 들렀다가 다시 골라도 확인으로 저장한다 (α 묶음 리뷰 A4)", async () => {
+  // 유형은 처음과 같고 확인 표시만 달라진다. 저장본 비교가 확인 표시를 보지 않으면 저장할 것이 없다고 판단한다
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  const onDeckChange = vi.fn();
+  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={onDeckChange} />);
+  const select = screen.getByLabelText("보고 유형");
+  await userEvent.selectOptions(select, screen.getByRole("option", { name: "승인요청" }));
+  await userEvent.selectOptions(select, screen.getByRole("option", { name: "리서치 결과 보고" }));
+  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
+  expect(saved.meta.report_type).toBe("research");
+  expect(saved.meta.report_type_confirmed).toBe(true);
+});
+
 it("보고 정보를 저장하면 덱이 갱신된다", async () => {
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const onDeckChange = vi.fn();
