@@ -65,6 +65,9 @@ function registered<T extends { id: string }>(view: T): T {
 async function openProject(pollMs = 5) {
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={pollMs} />);
   await waitFor(() => expect(stageButton("편집")).toBeEnabled());
+  // 진행 작업 확인이 끝날 때까지 기다린다. 단계 버튼은 확인 전에도 열려 있으므로 그것으로는 알 수 없다 (D3a-5)
+  await waitFor(() => expect(screen.getByRole("button", { name: "스냅샷 복구" }))
+    .not.toHaveAttribute("title", "작업 상태를 확인하는 중입니다"));
 }
 
 describe("진행 작업 갱신 (사실 11, D3a-3 리뷰 R9)", () => {

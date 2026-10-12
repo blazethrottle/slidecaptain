@@ -47,6 +47,9 @@ beforeEach(() => {
 async function openProject() {
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   await waitFor(() => expect(stageButton("편집")).toBeEnabled());
+  // 진행 작업 확인이 끝날 때까지 기다린다. 단계 버튼은 확인 전에도 열려 있으므로 그것으로는 알 수 없다 (D3a-5)
+  await waitFor(() => expect(screen.getByRole("button", { name: "스냅샷 복구" }))
+    .not.toHaveAttribute("title", "작업 상태를 확인하는 중입니다"));
 }
 
 // 다른 탭이 이 프로젝트의 장 생성 묶음을 시작했다가 끝낸다. 서버의 저장본은 이 탭이 본 것과 달라졌다(기준 조회 412)
