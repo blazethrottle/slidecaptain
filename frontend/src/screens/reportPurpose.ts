@@ -75,7 +75,13 @@ export const OUTCOMES: ReadonlyArray<readonly [DesiredOutcome, string]> = [
   ["other", "기타 (직접 입력)"],
 ];
 
-export const isBlank = (value: string | null | undefined) => !value || !value.trim();
+// 서버(Python str.strip, str.isspace)와 같은 공백 문자 집합. JavaScript trim()은 U+FEFF를 공백으로 보고 U+001C~U+001F와
+// U+0085는 보지 않아, 빈 값 판정이 서버와 갈렸다 (D3b-5 리뷰 R5)
+const PY_SPACE = "\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+const BLANK = new RegExp(`^[${PY_SPACE}]*$`);
+const EDGE_SPACE = new RegExp(`^[${PY_SPACE}]+|[${PY_SPACE}]+$`, "g");
+export const isBlank = (value: string | null | undefined) => !value || BLANK.test(value);
+const pyStrip = (value: string) => value.replace(EDGE_SPACE, "");
 
 // 유형이 확인됐는가. 서버의 진행 판정과 같다(확인 표시가 있거나 기본 유형이 아님)
 export const typeConfirmed = (meta: Meta) => !!meta.report_type_confirmed || meta.report_type !== "research";
@@ -84,18 +90,24 @@ export const typeConfirmed = (meta: Meta) => !!meta.report_type_confirmed || met
 // 이 값이 바뀌면 저장된 구성 계획이 낡는다 (계획 4.5 미리 알림, α 묶음 리뷰 A5, A6)
 export function purposePromptValues(meta: Meta): Record<string, string> {
   const values: Record<string, string> = {};
-  if (!isBlank(meta.key_message)) values.key_message = meta.key_message!.trim();
+  if (!isBlank(meta.key_message)) values.key_message = pyStrip(meta.key_message!);
   if (meta.desired_outcome) {
     values.desired_outcome = meta.desired_outcome;
     if (meta.desired_outcome === "other" && !isBlank(meta.desired_outcome_other)) {
-      values.desired_outcome_other = meta.desired_outcome_other!.trim();
+      values.desired_outcome_other = pyStrip(meta.desired_outcome_other!);
     }
   }
   for (const [name] of REPORT_DETAIL_FIELDS[meta.report_type]) {
     const value = meta.report_details?.[`${meta.report_type}.${name}`];
-    if (!isBlank(value)) values[`detail.${name}`] = value!.trim();
+    if (!isBlank(value)) values[`detail.${name}`] = pyStrip(value!);
   }
   return values;
+}
+
+// 저장된 구성 계획을 낡게 하는 메타 값. 서버 story_fingerprint가 담는 메타 칸(제목, 피보고자, 보고 유형)과 지시문이 읽는
+// 보고 목적 값이다. 이 값이 바뀌면 미리 알린다 (D3b-5 리뷰 R1, R2)
+export function planInputValues(meta: Meta): string {
+  return JSON.stringify([meta.title, meta.audience ?? "", meta.report_type, purposePromptValues(meta)]);
 }
 
 // 생성에 쓰지 않는 입력(숨은 입력): 다른 유형의 추가 입력과, 기타가 아닐 때의 기타 설명

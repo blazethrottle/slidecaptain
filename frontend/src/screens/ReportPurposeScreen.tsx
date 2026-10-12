@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type ProjectInfo } from "../api/client";
+import { api, ApiError, messageOf, onProjectEvent, onRemoteProjectEvent, TERMINAL_JOB_STATES, type Deck, type ProjectInfo } from "../api/client";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { Button } from "../ui/Button";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import type { SaveStatus } from "../ui/StatusIndicator";
 import {
   DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, OUTCOMES, REPORT_DETAIL_FIELDS, REPORT_TYPE_GUIDES, hiddenInputs,
-  purposeMetaEqual, purposePromptValues, REPORT_TYPES, typeConfirmed, type DesiredOutcome, type ReportType,
+  planInputValues, purposeMetaEqual, REPORT_TYPES, typeConfirmed, type DesiredOutcome, type ReportType,
 } from "./reportPurpose";
 import { ReportTypeExample } from "./ReportTypeExample";
 
@@ -22,7 +22,7 @@ export type PurposePreserveResult = { kind: "none" } | { kind: "preserved"; save
 export function ReportPurposeScreen({
   project, deck, onDeckChange, onDirtyChange, onScreenReady, onPreserveReady, onConflict, onSaveStatusChange,
   readOnly = false, readOnlyNotice = false, conflictSignal = 0, onNext, nextDisabled = false, nextTitle,
-  saveDelayMs = 1200, limitations = [],
+  saveDelayMs = 1200, limitations = [], planStale = false, startInConflict = false,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -45,6 +45,9 @@ export function ReportPurposeScreen({
   nextTitle?: string;
   saveDelayMs?: number;  // 자동 저장 지연. 편집 화면과 같은 1,200ms (계획 4.5, 사실 10)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구(핵심 내용 없음 등). 이 화면의 한계 안내로 보인다 (D3b-1 리뷰 R7)
+  planStale?: boolean;  // 진행 API가 구성 계획을 낡았다고 판정했다 (D3b-5 리뷰 R6)
+  // 부모의 충돌 안내가 떠 있는 채로 열렸다. 그 안내가 해소되기 전에는 자동 저장하지 않는다 (D3b-5 리뷰 R3)
+  startInConflict?: boolean;
 }) {
   const [meta, setMeta] = useState(deck.meta);
   const metaRef = useRef(meta);
@@ -55,12 +58,12 @@ export function ReportPurposeScreen({
   const [saved, setSaved] = useState(deck.meta);  // 마지막으로 서버에 실제 반영된 보고 정보
   const savedRef = useRef(saved);
   const [saving, setSaving] = useState(false);
-  const [lastSave, setLastSave] = useState<"ok" | "failed" | "conflict">("ok");
+  const [lastSave, setLastSave] = useState<"ok" | "failed" | "conflict">(startInConflict ? "conflict" : "ok");
   const [notice, setNotice] = useState("");
   // 충돌(412)이나 묶음 종결 신호를 받으면 "서버 내용 다시 읽기" 전까지 자동 저장을 멈춘다. 응답 직후 이어지는
   // 저장도 막도록 React 상태를 기다리지 않는 ref를 함께 둔다
-  const [conflict, setConflict] = useState(false);
-  const conflictRef = useRef(false);
+  const [conflict, setConflict] = useState(startInConflict);
+  const conflictRef = useRef(startInConflict);
   const pausedRef = useRef(readOnly);
   pausedRef.current = readOnly;
   const firstSave = useRef(true);  // 화면을 연 뒤 첫 저장은 스냅샷을 요청한다 (재리뷰 RR2)
@@ -71,20 +74,32 @@ export function ReportPurposeScreen({
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
   const dirty = !purposeMetaEqual(meta, saved);
-  // 구성 계획에 쓰인 보고 목적 값을 고치면 미리 알린다. 화면을 연 때의 값과 비교한다 (계획 4.5, α 묶음 리뷰 A6)
-  const [openedValues] = useState(() => JSON.stringify(purposePromptValues(deck.meta)));
-  const planWillBeStale = !!deck.structure.story_plan && JSON.stringify(purposePromptValues(meta)) !== openedValues;
-  // 처분하지 않은 구조안 후보나 진행 중인 후보형 작업이 있으면 고치기 전에 알린다 (리뷰 U21, V19)
-  const [candidatesPending, setCandidatesPending] = useState(false);
+  // 저장된 구성 계획을 낡게 하는 값(서버 계획 지문의 메타 칸과 보고 목적 값)을 고치면 미리 알린다. 저장 전 입력은 화면을 연
+  // 때의 값과 비교하고, 이미 저장해 낡은 계획은 진행 API의 판정(planStale)으로 알린다 (계획 4.5, D3b-5 리뷰 R1, R2, R6)
+  const [openedValues] = useState(() => planInputValues(deck.meta));
+  const planWillBeStale = !!deck.structure.story_plan && (planStale || planInputValues(meta) !== openedValues);
+  // 반영하지 않은 생성 후보나 진행 중인 생성 작업이 있으면 고치기 전에 알린다. 작업이 시작하거나 끝나면 다시 읽는다
+  // (리뷰 U21, V19, D3b-5 리뷰 R7)
+  const [candidates, setCandidates] = useState<{ held: boolean; running: boolean }>({ held: false, running: false });
+  const [jobsRevision, setJobsRevision] = useState(0);
+  useEffect(() => {
+    const bump = (event: { project: string; kind: string }) => {
+      if (event.project === project.name && (event.kind === "job_started" || event.kind === "job_ended")) setJobsRevision((n) => n + 1);
+    };
+    const offLocal = onProjectEvent(bump);
+    const offRemote = onRemoteProjectEvent(bump);
+    return () => { offLocal(); offRemote(); };
+  }, [project.name]);
   useEffect(() => {
     let live = true;
     api.listJobs(project.name).then((jobs) => {
       if (!live) return;
-      setCandidatesPending(jobs.some((job) => (job.kind === "structure" && job.candidate_status === "held")
-        || (CANDIDATE_KINDS.has(job.kind) && !TERMINAL_JOB_STATES.has(job.state))));
+      const kinds = jobs.filter((job) => CANDIDATE_KINDS.has(job.kind));
+      setCandidates({ held: kinds.some((job) => TERMINAL_JOB_STATES.has(job.state) && job.candidate_status === "held"),
+        running: kinds.some((job) => !TERMINAL_JOB_STATES.has(job.state)) });
     }).catch(() => {});
     return () => { live = false; };
-  }, [project.name]);
+  }, [project.name, jobsRevision]);
 
   useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   useEffect(() => {
@@ -114,8 +129,9 @@ export function ReportPurposeScreen({
       firstSave.current = false;
       savedRef.current = target;
       setSaved(target);
-      deckRef.current = updated;
-      onDeckChangeRef.current(updated);
+      // 착지한 동안 부모 덱이 바뀌었을 수 있으므로 최신 덱에 보고 정보만 얹는다 (D3b-5 리뷰 R8)
+      deckRef.current = { ...deckRef.current, meta: target };
+      onDeckChangeRef.current(deckRef.current);
       setNotice("");
       setLastSave("ok");
       // 저장하는 동안 이어 친 입력은 이어서 저장한다. 입력을 잠그지 않으므로 이 경로가 없으면 글자가 남지 않는다
@@ -181,6 +197,9 @@ export function ReportPurposeScreen({
 
   // 충돌 해소 전 보존 (B9, 리뷰 U4). 보존에 실패하면 복사 상자를 보인다
   const preserve = useCallback(async (): Promise<PurposePreserveResult> => {
+    // 다시 읽기로 이 화면을 버리므로 저장을 멈춘다. 멈추지 않으면 다시 마운트할 때 언마운트 저장이 버린 입력을 보낸다
+    // (D3b-5 리뷰 R3)
+    conflictRef.current = true;
     await saveChain.current;
     const unsaved = metaRef.current;
     if (purposeMetaEqual(unsaved, savedRef.current)) return { kind: "none" };
@@ -229,12 +248,12 @@ export function ReportPurposeScreen({
         <p role="alert">{notice} <Button onClick={retry} disabled={locked || saving}>다시 저장</Button></p>
       )}
       {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
-      {candidatesPending && (
-        <p className="notice">고치면 구성 단계의 구조안 후보가 이전 입력 기준이 될 수 있습니다.</p>
-      )}
-      {planWillBeStale && (
-        <p className="notice">보고 목적을 바꿨습니다. 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>
-      )}
+      {/* 미리 알림은 늘 있는 상태 알림 안에 둔다. 입력 중 나타날 때 한 번 낭독되고 같은 문장을 되풀이하지 않는다 (D3b-5 리뷰 R10) */}
+      <div role="status" className="purpose-notices">
+        {candidates.running && <p className="notice">진행 중인 AI 생성이 있습니다. 보고 정보를 고치면 그 결과가 이전 입력 기준이 될 수 있습니다.</p>}
+        {candidates.held && <p className="notice">반영하지 않은 생성 후보가 있습니다. 보고 정보를 고치면 그 후보가 이전 입력 기준이 될 수 있습니다.</p>}
+        {planWillBeStale && <p className="notice">보고 정보가 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>}
+      </div>
       {backup && (
         <div role="alert">
           <p>보고 정보를 보존하지 못했습니다. 서버 내용을 다시 읽기 전에 아래 내용을 복사해 보관해 주세요.</p>
@@ -264,7 +283,7 @@ export function ReportPurposeScreen({
         </div>
         <div className="field">
           <label>이 보고서에서 전달할 핵심 내용
-            <textarea aria-label="핵심 내용" aria-describedby="key-message-count" value={meta.key_message ?? ""}
+            <textarea aria-describedby="key-message-count" value={meta.key_message ?? ""}
               maxLength={KEY_MESSAGE_MAX} disabled={locked} onChange={(e) => update({ key_message: e.target.value })} />
           </label>
           <p id="key-message-count" className="hint">{keyLength.toLocaleString("ko-KR")} / {KEY_MESSAGE_MAX.toLocaleString("ko-KR")}자</p>
@@ -298,14 +317,16 @@ export function ReportPurposeScreen({
             {confirmed && REPORT_DETAIL_FIELDS[type].map(([name, label]) => (
               <div className="field" key={`${type}.${name}`}>
                 <label>{label} <span className="hint">(선택)</span>
-                  <input aria-label={label} value={meta.report_details?.[`${type}.${name}`] ?? ""} maxLength={DETAIL_MAX}
+                  <input value={meta.report_details?.[`${type}.${name}`] ?? ""} maxLength={DETAIL_MAX}
                     disabled={locked} onChange={(e) => setDetail(name, e.target.value)} />
                 </label>
               </div>
             ))}
             {hiddenCount > 0 && (
-              <p className="hint">다른 유형에서 입력한 내용 {hiddenCount}개가 남아 있습니다. 생성에는 쓰지 않습니다.{" "}
-                <Button onClick={clearHidden} disabled={locked}>지우기</Button></p>
+              <p className="hint">지금 쓰지 않는 입력 {hiddenCount}개(다른 유형의 추가 입력, 원하는 결과가 기타가 아닐 때의 기타 설명)가
+                남아 있습니다. 생성에는 쓰지 않습니다.{" "}
+                <Button onClick={() => { if (window.confirm(`쓰지 않는 입력 ${hiddenCount}개를 지울까요?`)) clearHidden(); }}
+                  disabled={locked}>쓰지 않는 입력 지우기</Button></p>
             )}
           </div>
           <ReportTypeExample selected={confirmed ? type : null} />
@@ -315,6 +336,11 @@ export function ReportPurposeScreen({
         <h2 id="purpose-outcome">원하는 결과</h2>
         <fieldset className="purpose-outcomes" disabled={locked}>
           <legend className="visually-hidden">원하는 결과</legend>
+          {/* 고르지 않음은 사용자 미선택(None)이다. 한 번 고른 뒤에도 되돌릴 수 있다 (D3b-5 리뷰 R9) */}
+          <label>
+            <input type="radio" name="desired-outcome" value="" checked={!meta.desired_outcome}
+              onChange={() => update({ desired_outcome: null })} /> 고르지 않음 (보고 유형의 구성을 따름)
+          </label>
           {OUTCOMES.map(([value, label]) => (
             <label key={value}>
               <input type="radio" name="desired-outcome" value={value} checked={meta.desired_outcome === value}
@@ -325,14 +351,15 @@ export function ReportPurposeScreen({
         {meta.desired_outcome === "other" && (
           <div className="field">
             <label>기타 목적 설명
-              <textarea aria-label="기타 목적 설명" aria-describedby={otherBlank ? "outcome-other-blank" : undefined}
+              <textarea aria-describedby={otherBlank ? "outcome-other-count outcome-other-blank" : "outcome-other-count"}
                 value={meta.desired_outcome_other ?? ""} maxLength={OUTCOME_OTHER_MAX} disabled={locked}
                 onChange={(e) => update({ desired_outcome_other: e.target.value })} />
             </label>
+            <p id="outcome-other-count" className="hint">
+              {(meta.desired_outcome_other ?? "").length.toLocaleString("ko-KR")} / {OUTCOME_OTHER_MAX.toLocaleString("ko-KR")}자</p>
             {otherBlank && <p id="outcome-other-blank" className="hint">기타 목적의 설명이 비어 있습니다.</p>}
           </div>
         )}
-        {!meta.desired_outcome && <p className="hint">고르지 않으면 보고 유형의 구성을 따릅니다.</p>}
       </section>
       {/* 주 행동 막대: 화면이 길면 창 아래에 붙어 첫 화면 안에 남는다 (D3a-7 사용자 결정, 계획 6절 배치).
           보고 정보는 자동 저장하므로 주 행동은 다음 단계로 옮기는 것이다 (D3b-5, Q2) */}

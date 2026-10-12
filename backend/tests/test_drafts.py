@@ -219,3 +219,22 @@ def test_api_accepts_purpose_drafts_with_report_purpose_values(client):
     restored = client.post(f"/api/projects/p1/drafts/{r.json()['id']}/restore", headers={"If-Match": etag})
     assert restored.status_code == 200
     assert restored.json()["meta"]["key_message"] == "보존할 핵심 내용"
+
+
+
+def test_purpose_draft_restores_only_the_report_info_onto_the_current_deck(client):
+    """보고 목적 보존본은 보고 정보만 되찾고, 그 사이 다른 곳에서 바뀐 장은 그대로 둔다 (D3b-5 리뷰 R15)."""
+    client.post("/api/projects", json={"name": "p1"})
+    seen = client.get("/api/projects/p1/deck").json()
+    seen["meta"]["key_message"] = "보존할 핵심 내용"
+    draft_id = client.post("/api/projects/p1/drafts",
+                           json={"reason": "conflict", "source": "purpose", "deck": seen}).json()["id"]
+    newer = client.get("/api/projects/p1/deck")
+    body = newer.json()
+    body["structure"]["chapters"] = [{"id": "c9", "topic": "다른 곳에서 만든 장", "conclusion": "", "template": "bullet_box",
+                                      "source_refs": []}]
+    put = client.put("/api/projects/p1/deck", json=body, headers={"If-Match": newer.headers["ETag"]})
+    assert put.status_code == 200, put.text
+    restored = client.post(f"/api/projects/p1/drafts/{draft_id}/restore").json()
+    assert restored["meta"]["key_message"] == "보존할 핵심 내용"
+    assert [c["id"] for c in restored["structure"]["chapters"]] == ["c9"]

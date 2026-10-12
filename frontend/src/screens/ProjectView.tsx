@@ -543,7 +543,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
 
   // 구성, 보고 목적, 복구 화면의 412는 전용 UI 없이 이 안내의 "서버 내용 다시 읽기"로 회복한다.
   // 편집 단계의 충돌은 EditorScreen 자체의 되돌리기 버튼이 처리하므로 onConflict를 넘기지 않는다
-  const onConflict = () => { justConflicted.current = true; setConflict("other"); };
+  // 이미 떠 있는 안내의 원인(이 탭의 묶음 종결)을 덮지 않는다. 충돌 중에 단계를 떠나려 하면 화면이 다시 알리는데, 그때
+  // 문구가 "다른 창이나 프로그램"으로 바뀌었다 (D3b-5 리뷰 R16)
+  const onConflict = () => { justConflicted.current = true; setConflict((c) => c ?? "other"); };
   // AI 전송 고지 대화 상자가 열린 동안은 leaving과 같은 조건으로 내비게이션을 잠근다 (계획서 B3)
   const dialogOpen = consentResolve !== null;
   const reloadDeck = async () => {
@@ -727,7 +729,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onPreserveReady={(f) => { preserveScreen.current = f; }} saveDelayMs={purposeSaveMs}
             onSaveStatusChange={setSaveStatus} onNext={() => void switchStage("sources")}
             nextDisabled={navLocked} nextTitle={navTitle}
-            limitations={progressFailed ? [] : stageLimitations(progress, "purpose")} />
+            limitations={progressFailed ? [] : stageLimitations(progress, "purpose")}
+            planStale={!progressFailed && !!stageProgress(progress, "structure")?.reasons.includes("stale_story_plan")}
+            startInConflict={conflict !== null} />
         )}
         {!showRecovery && stage === "sources" && (
           <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}

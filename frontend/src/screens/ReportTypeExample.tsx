@@ -14,7 +14,9 @@ export function ReportTypeExample({ selected }: { selected: ReportType | null })
   useEffect(() => { setShown(selected); }, [selected]);
   const index = shown === null ? -1 : REPORT_TYPES.findIndex(([value]) => value === shown);
   const move = (step: number) => {
-    const next = (index + step + REPORT_TYPES.length) % REPORT_TYPES.length;
+    // 아직 아무 예시도 보이지 않으면 "다음"은 처음, "이전"은 마지막 유형이다 (D3b-5 리뷰 R12)
+    const from = index < 0 ? (step > 0 ? -1 : 0) : index;
+    const next = (from + step + REPORT_TYPES.length) % REPORT_TYPES.length;
     setShown(REPORT_TYPES[next][0]);
   };
   const label = index >= 0 ? REPORT_TYPES[index][1] : "";

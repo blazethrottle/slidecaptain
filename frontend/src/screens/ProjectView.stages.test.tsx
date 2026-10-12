@@ -296,6 +296,18 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     expect(api.putDeck).not.toHaveBeenCalled();
   });
 
+  it("이 탭의 묶음 종결 안내 뒤 자료 단계로를 눌러도 원인 문구가 다른 창으로 바뀌지 않는다 (D3b-5 리뷰 R16)", async () => {
+    await openProject(60_000);
+    await act(async () => notifyProject({ kind: "job_started", project: project.name, jobId: "job-1" }, { broadcast: false }));
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await otherTabBatchEnds(batchDeck);
+    expect(await screen.findByText(/생성한 장이 문서에 반영되었습니다/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeEnabled());
+    await userEvent.click(screen.getByRole("button", { name: "자료 단계로" }));
+    expect(screen.getByText(/생성한 장이 문서에 반영되었습니다/)).toBeInTheDocument();
+    expect(screen.queryByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).toBeNull();
+  });
+
   it("보고 목적 폼이 저장본과 같으면 새 덱으로 다시 마운트하고 충돌로 알리지 않는다", async () => {
     await openProject();
     await otherTabBatchEnds({ ...batchDeck, meta: { ...batchDeck.meta, title: "묶음 뒤 제목" } });
@@ -315,6 +327,19 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads + 1));
     expect(screen.queryByText("먼저 저장되었습니다", { exact: false })).toBeNull();
     expect(screen.getByLabelText("자료 내용")).toHaveValue("원문 고침");  // 자료 화면은 다시 마운트하지 않는다
+  });
+});
+
+describe("주 행동 자료 단계로 (D3b-5, Q2, 리뷰 R17 변형 M41)", () => {
+  it("남은 입력을 플러시한 뒤 자료 단계로 옮기고 초점을 새 현재 단계 버튼에 둔다", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    expect(api.putDeck).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "자료 단계로" }));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    expect(vi.mocked(api.putDeck).mock.calls.at(-1)![1].meta.title).toBe("제목 고침");
+    await waitFor(() => expect(stageButton("자료")).toHaveFocus());
   });
 });
 

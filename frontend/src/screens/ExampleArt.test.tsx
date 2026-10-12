@@ -159,3 +159,9 @@ test("좁은 창에서 확대한 그림 영역은 화살표와 End로 가로 스
   await userEvent.keyboard("{Home}");
   expect(art.scrollLeft).toBe(0);
 });
+
+test("아무 예시도 보이지 않을 때 이전 예시는 마지막 유형이다 (D3b-5 리뷰 R12)", async () => {
+  render(<ReportTypeExample selected={null} />);
+  await userEvent.click(screen.getByRole("button", { name: "이전 예시" }));
+  expect(screen.getByText(/IR Pitch Deck 예시/)).toBeInTheDocument();
+});

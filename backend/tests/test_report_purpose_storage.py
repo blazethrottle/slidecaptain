@@ -483,3 +483,11 @@ def test_report_purpose_fields_match_the_fixture_the_screen_uses():
     if os.environ.get("SLIDECAPTAIN_UPDATE_FIXTURES") == "1":
         DETAIL_FIXTURE.write_text(text, encoding="utf-8")
     assert DETAIL_FIXTURE.read_text(encoding="utf-8") == text, "보고 목적 칸 표가 바뀌었습니다. 고정 파일을 다시 써 주세요"
+
+
+def test_is_blank_matches_the_screen():
+    """화면 isBlank와 같은 표다 (D3b-5 리뷰 R5, frontend reportPurpose.test.ts)."""
+    assert is_blank("﻿") is False
+    assert is_blank("\x1f") is True
+    assert is_blank("\x85") is True
+    assert is_blank(" \t\n　") is True

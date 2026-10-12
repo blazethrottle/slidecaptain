@@ -769,6 +769,15 @@ class FileProjectStore:
                     "보존한 변경을 덱으로 읽지 못해 복원하지 않았습니다. 현재 저장본은 바뀌지 않았습니다. "
                     f"원인: {e}"
                 ) from e
+            if envelope.get("source") == "purpose":
+                # 보고 목적 화면은 본문을 고치지 않으므로 보고 정보만 되찾는다. 덱 전체를 쓰면 그 탭이 본 옛 장과
+                # 슬라이드가 다른 곳의 변경을 되돌린다 (D3b-5 리뷰 R15). 지금 덱을 읽지 못하면 보존본 전체로 복원한다
+                try:
+                    current = self.load_deck(name)
+                except StorageError:
+                    current = None
+                if current is not None:
+                    deck = Deck.model_validate({**current.model_dump(mode="json"), "meta": deck.meta.model_dump(mode="json")})
             etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
 

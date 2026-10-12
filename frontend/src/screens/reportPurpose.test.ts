@@ -3,7 +3,7 @@
 import fixture from "../../../backend/tests/fixtures/report-purpose-fields.json";
 import type { Deck } from "../api/client";
 import {
-  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, REPORT_DETAIL_FIELDS, REPORT_TYPES, hiddenInputs, purposeMetaEqual,
+  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, REPORT_DETAIL_FIELDS, REPORT_TYPES, hiddenInputs, isBlank, purposeMetaEqual,
   purposePromptValues,
 } from "./reportPurpose";
 
@@ -38,4 +38,13 @@ test("저장 비교는 빈 문자열과 없는 칸, 공백만 있는 추가 입�
   expect(purposeMetaEqual(base, { ...base, report_type_confirmed: true })).toBe(false);
   expect(purposeMetaEqual(base, { ...base, key_message: "핵심" })).toBe(false);
   expect(purposeMetaEqual(base, { ...base, report_details: { "ir.investment_stage": "시드" } })).toBe(false);
+});
+
+test("빈 값 판정은 서버(Python str.isspace)와 같은 공백 문자 집합을 쓴다 (D3b-5 리뷰 R5)", () => {
+  // 서버 시험 test_is_blank_matches_the_screen과 같은 표다
+  expect(isBlank("﻿")).toBe(false);
+  expect(isBlank("\x1f")).toBe(true);
+  expect(isBlank("\x85")).toBe(true);
+  expect(isBlank(" \t\n　")).toBe(true);
+  expect(purposePromptValues({ ...base, key_message: "\x1f핵심\x85" }).key_message).toBe("핵심");
 });
