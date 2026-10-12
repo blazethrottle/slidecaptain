@@ -144,3 +144,11 @@ it("dirty 콜백 변경으로 입력 상태를 초기화하지 않고 이탈 확
   expect(register).toHaveBeenLastCalledWith(null);
   await act(async () => pending.resolve(exportReviews()));
 });
+
+it("내보내기 밖의 이유로 잠그면 그 이유를 보이고 입력을 잠근다 (D3a-5, 장 생성 묶음 중)", async () => {
+  render(<ReviewRecordsPanel projectName="p1" exportId="report_v001" lockedReason="내용 생성이 끝나면 검수 기록과 제출본 검수를 쓸 수 있습니다." />);
+  expect(await screen.findByText("내용 생성이 끝나면 검수 기록과 제출본 검수를 쓸 수 있습니다.")).toBeInTheDocument();
+  expect(screen.queryByText(/초안 내보내기가 끝나면/)).toBeNull();
+  await waitFor(() => expect(screen.getByLabelText("검수자")).toBeDisabled());
+  expect(screen.getByRole("button", { name: "검수 기록 저장" })).toBeDisabled();
+});

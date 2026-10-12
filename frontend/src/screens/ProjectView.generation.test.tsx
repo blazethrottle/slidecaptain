@@ -219,6 +219,25 @@ describe("장 생성 묶음 중 (계획 4.4 표 둘째 행, 사용자 결정 Q1�
   });
 });
 
+describe("묶음 중 읽기 전용이 된 보고 정보의 미저장 입력", () => {
+  it("떠나기 전에 버릴지 묻고, 머물면 실패 안내 없이 머문다. 저장하지 않는다", async () => {
+    await openProject(5);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeDisabled());
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await userEvent.click(stageButton("자료"));
+    expect(confirm.mock.calls[0][0]).toMatch(/내용 생성 중이라 고친 내용을 저장할 수 없습니다/);
+    expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step");
+    expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    expect(api.putDeck).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+});
+
 describe("다른 프로젝트의 작업 중 (계획 4.4 표 셋째 행)", () => {
   it("AI 설정만 잠그고 나머지는 허용한다", async () => {
     vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapters", "다른보고", "job-9")));
@@ -247,12 +266,38 @@ describe("구성 초안 이탈 확인 (C16)", () => {
   });
 });
 
+describe("구성 초안 이탈 확인: 고치지 않은 구조안 후보", () => {
+  it("구조안 후보를 고치지 않고 떠나면 묻지 않고, 돌아오면 그 후보를 다시 불러온다", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [] }, slides: [] });
+    const candidate = jobView("structure", { id: "job-s", result: structureResult([CH1]) });
+    vi.mocked(api.startJob).mockImplementation(async () => registered(candidate));
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "구조안 생성" }));
+    await screen.findByLabelText("1번 장 주제");
+    const confirm = vi.spyOn(window, "confirm");
+    await userEvent.click(stageButton("자료"));
+    await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
+    expect(confirm).not.toHaveBeenCalled();
+    vi.mocked(api.listJobs).mockResolvedValue([candidate]);
+    await userEvent.click(stageButton("구성"));
+    expect(await screen.findByLabelText("1번 장 주제")).toHaveValue("첫 장");
+    // 후보를 고치면 떠날 때 묻는다
+    confirm.mockReturnValueOnce(false);
+    await userEvent.type(screen.getByLabelText("1번 장 주제"), " 고침");
+    await userEvent.click(stageButton("자료"));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(stageButton("구성")).toHaveAttribute("aria-current", "step");
+    confirm.mockRestore();
+  });
+});
+
 describe("실패 안내와 머리 작업 표시 (묶음 리뷰 A10, A11)", () => {
   it("다른 작업 진행 중 안내는 머리의 취소를 가리키고, 그 작업이 끝나면 끝났다고 바뀐다 (A10)", async () => {
     vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [] }, slides: [] });
     const other = activeOf("chapters", "다른보고", "job-9");
     vi.mocked(api.startJob).mockRejectedValue(new ApiError(409, "다른 AI 생성이 진행 중입니다.", "generation_active", other));
-    await openProject();
+    await openProject(60_000);
     await userEvent.click(stageButton("구성"));
     vi.mocked(api.getActiveJob).mockResolvedValue(status(other));
     await userEvent.click(await screen.findByRole("button", { name: "구조안 생성" }));
@@ -261,7 +306,12 @@ describe("실패 안내와 머리 작업 표시 (묶음 리뷰 A10, A11)", () =>
     expect(screen.getAllByRole("button", { name: "그 작업 취소" })).toHaveLength(1);  // 머리의 것 하나
     expect(within(notice).queryByRole("button", { name: "그 작업 취소" })).toBeNull();
     expect(notice).toHaveTextContent(/화면 위쪽의 '그 작업 취소'/);
+    // 안내가 떠 있는 동안 진행 작업 조회를 되풀이하지 않는다(안내가 뜰 때 한 번, 그 뒤는 조회 간격대로)
+    const calls = vi.mocked(api.getActiveJob).mock.calls.length;
+    await act(async () => { await new Promise((r) => setTimeout(r, 100)); });
+    expect(vi.mocked(api.getActiveJob).mock.calls.length - calls).toBeLessThanOrEqual(2);
     vi.mocked(api.getActiveJob).mockResolvedValue(status(null));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
     await waitFor(() => expect(document.querySelector(".failure-notice")).toHaveTextContent(
       /진행 중이던 다른 AI 작업\(다른보고\)이 끝났습니다.*다시 시도할 수 있습니다/));
     expect(screen.queryByRole("button", { name: "그 작업 취소" })).toBeNull();

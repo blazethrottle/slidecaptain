@@ -155,6 +155,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 지금 초안에 올린 구조안 후보와 불러오지 않은 이전 입력 기준 후보 (D2b-5b, 처분)
   const structureJob = useRef<string | null>(null);
   const staleStructure = useRef<string | null>(null);
+  // 지금 초안에 올린 구조안 후보의 장 구성과 보고 질문. 고치지 않은 후보는 처분하지 않는 한 다시 열 때 불러오므로
+  // 떠날 때 묻지 않는다 (D3a-5, C16)
+  const loadedCandidate = useRef<{ chapters: Chapter[]; question: string } | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const questionRef = useRef(decisionQuestion);
+  questionRef.current = decisionQuestion;
   const [earlierNotice, setEarlierNotice] = useState("");
   const [staleApproval, setStaleApproval] = useState("");  // 승인 직전 재조회가 찾은 낡음 이유 문구 (D3a-5)
   const registerRewrite = useCallback((guard:()=>Promise<boolean>)=>{rewriteLeave.current=guard;},[]);
@@ -164,7 +171,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 경우 초안의 미저장 표시가 꺼진 채 남았다 (리뷰 R9)
   useEffect(()=>{onScreenReady?.(async()=>{
     if(dirtyParts.current.backup&&!window.confirm(UNSAVED_RESULT_CONFIRM))return "declined";
-    if(dirtyParts.current.draft&&!dirtyParts.current.backup&&!window.confirm(DRAFT_LEAVE_CONFIRM))return "declined";
+    const candidate=loadedCandidate.current;
+    const untouchedCandidate=candidate!==null&&structureJob.current!==null
+      &&JSON.stringify(draftRef.current)===JSON.stringify(candidate.chapters)&&questionRef.current===candidate.question;
+    if(dirtyParts.current.draft&&!dirtyParts.current.backup&&!untouchedCandidate&&!window.confirm(DRAFT_LEAVE_CONFIRM))return "declined";
     const ok=await documentLeave.current() && await rewriteLeave.current();
     queueMicrotask(reportDirty);
     return ok;
@@ -277,9 +287,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       setStructureUsage(result.usage);  // C-1 리뷰 반영: usage는 상태와 무관하게 항상 채워진다
     } else if (result.structure) {
       structureJob.current = view.id;
+      const question = result.structure.story_plan?.brief.decision_question ?? decisionQuestion;
+      loadedCandidate.current = { chapters: result.structure.chapters, question };
       setDraft(result.structure.chapters);
       setStoryPlan(result.structure.story_plan ?? null);
-      setDecisionQuestion(result.structure.story_plan?.brief.decision_question ?? decisionQuestion);
+      setDecisionQuestion(question);
       setDraftGenerated(true);
       setNumbers(result.unverified_numbers);
       setStructureUsage(result.usage);

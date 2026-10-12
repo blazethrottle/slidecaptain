@@ -100,7 +100,7 @@ describe("보고 정보 플러시와 충돌 (A5)", () => {
 
   it("저장 버튼 없이 부모가 플러시를 부르면 최신 입력을 저장한다", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    let flush: (() => Promise<boolean>) | null = null;
+    let flush: (() => Promise<boolean | "declined">) | null = null;
     render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
       onScreenReady={(f) => { flush = f; }} />);
     await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
@@ -112,7 +112,7 @@ describe("보고 정보 플러시와 충돌 (A5)", () => {
   });
 
   it("입력을 바꾸지 않았으면 플러시를 불러도 PUT이 없다", async () => {
-    let flush: (() => Promise<boolean>) | null = null;
+    let flush: (() => Promise<boolean | "declined">) | null = null;
     render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
       onScreenReady={(f) => { flush = f; }} />);
     await waitFor(() => expect(flush).not.toBeNull());
@@ -138,7 +138,7 @@ describe("보고 정보 플러시와 충돌 (A5)", () => {
 
   it("저장 버튼 클릭 직후 부모가 플러시를 불러도 PUT은 1회다 (직렬화)", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    let flush: (() => Promise<boolean>) | null = null;
+    let flush: (() => Promise<boolean | "declined">) | null = null;
     render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
       onScreenReady={(f) => { flush = f; }} />);
     await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");

@@ -30,6 +30,8 @@ type Props = {
   projectName: string;
   readOnly?: boolean;
   busy?: boolean;
+  // 검수 기록과 제출본 영역만 잠그는 이유 (D3a-5, 계획 4.4: 장 생성 묶음 중). 이력 목록은 볼 수 있다
+  recordsLockedReason?: string;
   onScreenReady?: (guard: ReviewLeaveGuard | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
 };
@@ -39,7 +41,7 @@ export function ExportHistoryPanel(props: Props) {
   return <History key={props.projectName} {...props} />;
 }
 
-function History({ projectName, readOnly = false, busy = false, onScreenReady, onDirtyChange }: Props) {
+function History({ projectName, readOnly = false, busy = false, recordsLockedReason, onScreenReady, onDirtyChange }: Props) {
   const [page, setPage] = useState<ExportHistoryPage | null>(null);
   const [detail, setDetail] = useState<ExportHistoryDetail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -157,8 +159,9 @@ function History({ projectName, readOnly = false, busy = false, onScreenReady, o
           <PublishedQualityChecks quality={detail.quality} />
         </section> : <p>저장 당시 점검 결과를 표시할 수 없습니다. 기존 파일은 그대로 보존됩니다.</p>}
         <ReviewRecordsPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy || qualificationBusy}
+          lockedReason={recordsLockedReason}
           onLeaveReady={registerReviewLeave} onDirtyChange={reportDirty} />
-        <ExportQualificationPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy}
+        <ExportQualificationPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy || !!recordsLockedReason}
           onLeaveReady={registerQualificationLeave} onBusyChange={trackQualificationBusy} onDirtyChange={reportQualificationDirty} />
       </>}
     </section>}

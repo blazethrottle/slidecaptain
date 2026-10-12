@@ -73,7 +73,9 @@ export function ReviewScreen({
         </div>
         {exportResult && <ExportQualitySummary result={exportResult} />}
       </section>
-      <ExportHistoryPanel key={historyRevision} projectName={projectName} busy={exporting || recordsLocked}
+      <ExportHistoryPanel key={historyRevision} projectName={projectName} busy={exporting}
+        recordsLockedReason={!recordsLocked ? undefined : batchRunning
+          ? "내용 생성이 끝나면 검수 기록과 제출본 검수를 쓸 수 있습니다." : "작업 상태를 확인하는 중입니다."}
         onScreenReady={onScreenReady} onDirtyChange={onDirtyChange} />
     </div>
   );

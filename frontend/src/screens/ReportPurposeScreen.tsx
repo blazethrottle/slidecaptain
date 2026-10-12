@@ -33,7 +33,8 @@ export function ReportPurposeScreen({
   deck: Deck;
   onDeckChange: (d: Deck) => void;
   onDirtyChange?: (dirty: boolean) => void;  // 보고 정보가 저장본과 다르면 참 (창 닫기 경고, 묶음 종결 분기)
-  onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모가 단계를 옮기기 전에 플러시하도록
+  // 부모가 단계를 옮기기 전에 플러시하도록. "declined"는 사용자가 머물기를 골랐다는 뜻이다 (D3a-5)
+  onScreenReady?: (flush: (() => Promise<boolean | "declined">) | null) => void;
   onConflict?: () => void;  // 저장이 412를 받으면 부모가 충돌 안내를 띄운다
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 보고 정보를 고치지 않는다. readOnlyNotice는 묶음을
@@ -87,24 +88,30 @@ export function ReportPurposeScreen({
   }, [project.name, deck, onDeckChange, onDirtyChange, onConflict]);
 
   // 진행 중 저장 뒤에 이어 붙는다: 버튼 클릭 직후 단계를 옮겨도 같은 내용을 낡은 ETag로 다시 보내지 않는다
-  // 읽기 전용이면 저장하지 않는다. 묶음 중 저장은 묶음의 사슬을 끊는다. 고친 입력이 남았으면 버릴지 묻는다
-  const readOnlyRef = useRef(readOnly);
-  readOnlyRef.current = readOnly;
   const flushMeta = useCallback((): Promise<boolean> => {
     const next = saveChain.current.then(() => {
       if (metaEqual(metaRef.current, savedMeta.current)) return true;  // 저장할 것이 없다
-      if (readOnlyRef.current) return window.confirm(BATCH_DISCARD_CONFIRM);
       return doSaveMeta(metaRef.current);
     });
     saveChain.current = next.catch(() => false);
     return next;
   }, [doSaveMeta]);
+  // 떠나기 전 확인. 읽기 전용이면 저장하지 않는다(묶음 중 저장은 묶음의 사슬을 끊는다). 고친 입력이 남았으면 버릴지
+  // 묻고, 머물기를 고르면 부모가 실패 안내를 띄우지 않게 "declined"를 돌려준다
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const leaveGuard = useCallback(async (): Promise<boolean | "declined"> => {
+    if (readOnlyRef.current && !metaEqual(metaRef.current, savedMeta.current)) {
+      return window.confirm(BATCH_DISCARD_CONFIRM) ? true : "declined";
+    }
+    return flushMeta();
+  }, [flushMeta]);
   const locked = saving || readOnly;
 
   useEffect(() => {
-    onScreenReady?.(flushMeta);
+    onScreenReady?.(leaveGuard);
     return () => onScreenReady?.(null);  // 다음 화면이 이 화면의 낡은 플러시를 들고 있지 않게 한다
-  }, [onScreenReady, flushMeta]);
+  }, [onScreenReady, leaveGuard]);
 
   return (
     <div className="purpose-screen">

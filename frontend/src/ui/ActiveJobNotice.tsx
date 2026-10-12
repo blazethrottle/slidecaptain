@@ -25,9 +25,12 @@ export function useHeaderShowsJob(jobId: string | null | undefined): boolean {
 export function useActiveJobFate(active: ActiveJob | undefined): "unknown" | "running" | "ended" {
   const ctx = useContext(ActiveJobContext);
   const mountRevision = useRef(ctx?.revision ?? 0);
-  const refresh = ctx?.refresh;
+  // 다시 조회는 거절의 원인 작업이 정해질 때 한 번만 한다. 조회가 끝나면 상태가 바뀌어 다시 그려지므로,
+  // 조회 함수를 효과의 조건에 넣으면 조회가 되풀이된다
+  const refresh = useRef(ctx?.refresh);
+  refresh.current = ctx?.refresh;
   const activeId = active?.id;
-  useEffect(() => { if (activeId) refresh?.(); }, [activeId, refresh]);
+  useEffect(() => { if (activeId) refresh.current?.(); }, [activeId]);
   if (!ctx || !active) return "unknown";
   if (ctx.active?.id === active.id) return "running";
   return ctx.revision > mountRevision.current ? "ended" : "running";

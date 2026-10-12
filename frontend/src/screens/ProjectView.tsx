@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
 import { api, ApiError, messageOf, notifyProject, onProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
 import { ActiveJobContext, type ActiveJobState } from "../ui/ActiveJobNotice";
@@ -120,6 +120,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   useEffect(() => onProjectEvent((event) => {
     if (event.kind === "job_started" || event.kind === "job_ended") void refreshActiveJob();
   }), [refreshActiveJob]);
+  // 실패 안내와 화면 안 취소 버튼이 읽는 머리의 진행 작업. 그릴 때마다 새 객체를 만들면 그것을 듣는 부품의
+  // 효과가 매번 다시 돌아 진행 작업 조회를 되풀이한다 (D3a-5)
+  const activeJobState = useMemo<ActiveJobState>(() => ({ active: activeJob, revision: activeRevision,
+    refresh: () => void refreshActiveJob() }), [activeJob, activeRevision, refreshActiveJob]);
   // 진행 작업에서 사라진 작업은 원장에서 결과를 읽어 종결을 알린다. 그 작업을 조회하던 화면이 내려갔으면 종결
   // 알림을 낼 곳이 없고, 진행 작업의 사라짐만으로는 결과를 몰라 "끝났습니다"와 결과 문구를 두 번 알렸다
   // (D3a-5, 묶음 리뷰 A12). 결과를 읽지 못하면 상태 없이 알린다(알림 쪽이 끝났다고만 말한다)
@@ -441,11 +445,12 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
   };
 
-  // 이동 잠금: 업로드(자료 단계 안의 일이라 FC-17), 이탈 전 플러시, 고지 대화 상자. 도식 작성 창의 AI 호출 중에도
-  // 잠근다. 작성 창의 입력은 덱이 아니어서 편집 화면의 플러시가 이탈을 거절하기 때문이다(계획 4.4와 다른 점, 구현 기록)
+  // 이동 잠금: 업로드(자료 단계 안의 일이라 FC-17), 이탈 전 플러시, 고지 대화 상자. 편집 화면의 작업(도식 작성 창의
+  // AI 호출, 템플릿 전환 전 저장) 중에도 잠근다. 편집 화면의 플러시가 그동안 이탈을 거절하기 때문이다(작성 창의
+  // 입력은 덱이 아니다. 계획 4.4와 다른 점, 구현 기록)
   const navLocked = uploading || leaving || dialogOpen || diagramGenerating;
   const navTitle = uploading ? "자료 업로드가 끝나면 이동할 수 있습니다"
-    : diagramGenerating ? "도식 생성이 끝나면 이동할 수 있습니다" : undefined;
+    : diagramGenerating ? "편집 단계의 작업이 끝나면 이동할 수 있습니다" : undefined;
   // 묶음 중 잠그는 머리 행동(스냅샷 복구, 보존한 변경, 서버 내용 다시 읽기). AI 설정은 어느 작업이든 잠근다:
   // 서버가 생성 중 설정 변경을 409로 거절한다 (계획 4.4)
   const recoveryLocked = navLocked || batchLocked;
@@ -454,7 +459,6 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const stageDisabled = (_id: Stage) => navLocked;
   const stageTitle = (_id: Stage) => navTitle;
   const screenKeyValue = `${stage}:${screenKey}`;
-  const activeJobState: ActiveJobState = { active: activeJob, revision: activeRevision, refresh: () => void refreshActiveJob() };
 
   return (
     <ActiveJobContext.Provider value={activeJobState}>
