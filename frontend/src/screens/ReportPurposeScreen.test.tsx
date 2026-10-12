@@ -1,15 +1,15 @@
-// 보고 목적 단계 (D3a-2). 옛 SourcesScreen.test.tsx의 보고 정보 시험을 옮겼다(옮김). 저장 계약은 같다:
-// 저장 순간의 deck prop에 보고 정보만 바꿔 덱 전체를 PUT한다
-import { render, screen, waitFor } from "@testing-library/react";
+// 보고 목적 단계 (D3a-2, D3b-5). 저장 계약: 저장 순간의 최신 덱에 보고 정보만 바꿔 덱 전체를 PUT한다.
+// D3b-5부터 저장 버튼 없이 입력이 멈추면 자동 저장한다. 옛 "보고 정보 저장" 클릭 시험의 대응은 계획 D3b-5 구현 기록의 표다
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, type Deck } from "../api/client";
-import { ReportPurposeScreen } from "./ReportPurposeScreen";
+import { ReportPurposeScreen, type PurposePreserveResult } from "./ReportPurposeScreen";
 import type { SaveStatus } from "../ui/StatusIndicator";
 import { deferred } from "../test/fixtures";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, putDeck: vi.fn() } };
+  return { ...mod, api: { ...mod.api, putDeck: vi.fn(), saveDraft: vi.fn() } };
 });
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -20,201 +20,295 @@ const deck: Deck = {
   slides: [],
 };
 
+const FAST = 20;  // 시험의 자동 저장 지연(ms)
+const SLOW = 60_000;  // 자동 저장이 끼어들지 않게 할 때
+type Props = Partial<Parameters<typeof ReportPurposeScreen>[0]>;
+function renderScreen(props: Props = {}) {
+  return render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={FAST} {...props} />);
+}
+const puts = () => vi.mocked(api.putDeck).mock.calls;
+const pause = (ms: number) => act(() => new Promise((r) => setTimeout(r, ms)));
+
 it.each([
   ["weekly", "주간 업무 보고"], ["business", "일반 업무 보고"], ["monthly", "월간 보고"],
   ["data", "데이터 설명 보고"], ["research", "리서치 결과 보고"],
   ["project", "프로젝트 보고"], ["results", "결과 보고"],
   ["approval", "승인요청"], ["strategy", "전략기획"], ["ir", "IR Pitch Deck"],
-])("보고 유형 %s를 선택해 저장하고 다시 연다", async (value, label) => {
+])("보고 유형 %s를 골라 자동 저장하고 다시 연다", async (value, label) => {
+  // 다시 씀(D3b-5): 저장 버튼 클릭 대신 자동 저장을 기다린다
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const onDeckChange = vi.fn();
   const initial: Deck = { ...deck, meta: { ...deck.meta, report_type: value === "research" ? "approval" : "research" } };
-  const view = render(<ReportPurposeScreen project={project} deck={initial} onDeckChange={onDeckChange} />);
+  const view = renderScreen({ deck: initial, onDeckChange });
   await userEvent.selectOptions(screen.getByLabelText("보고 유형"), screen.getByRole("option", { name: label }));
-  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
   await waitFor(() => expect(onDeckChange).toHaveBeenCalled());
-  const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
+  const saved = puts().at(-1)![1];
   expect(saved.meta.report_type).toBe(value);
   expect(saved.meta.report_type_confirmed).toBe(true);  // 직접 고른 유형은 확인된 유형이다 (D3b-1 리뷰 R4)
   view.unmount();
-  render(<ReportPurposeScreen project={project} deck={saved} onDeckChange={onDeckChange} />);
+  renderScreen({ deck: saved, onDeckChange });
   expect(screen.getByLabelText("보고 유형")).toHaveValue(value);
 });
-
 
 it("확인되지 않은 기본 유형을 다른 유형에 들렀다가 다시 골라도 확인으로 저장한다 (α 묶음 리뷰 A4)", async () => {
   // 유형은 처음과 같고 확인 표시만 달라진다. 저장본 비교가 확인 표시를 보지 않으면 저장할 것이 없다고 판단한다
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  const onDeckChange = vi.fn();
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={onDeckChange} />);
+  let flush: (() => Promise<boolean | "declined">) | null = null;
+  renderScreen({ saveDelayMs: SLOW, onScreenReady: (f) => { flush = f; } });
   const select = screen.getByLabelText("보고 유형");
   await userEvent.selectOptions(select, screen.getByRole("option", { name: "승인요청" }));
   await userEvent.selectOptions(select, screen.getByRole("option", { name: "리서치 결과 보고" }));
-  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
-  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
+  expect(await flush!()).toBe(true);
+  const saved = puts().at(-1)![1];
   expect(saved.meta.report_type).toBe("research");
   expect(saved.meta.report_type_confirmed).toBe(true);
 });
 
-it("보고 정보를 저장하면 덱이 갱신된다", async () => {
+it("입력이 멈추면 한 번 자동 저장하고, 화면을 연 뒤 첫 저장은 스냅샷을 요청한다 (D3b-5, 재리뷰 RR2)", async () => {
+  // 다시 씀(D3b-5): 옛 "보고 정보를 저장하면 덱이 갱신된다"
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const onDeckChange = vi.fn();
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={onDeckChange} />);
+  renderScreen({ onDeckChange });
   const title = screen.getByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
-  expect(api.putDeck).toHaveBeenCalledWith(
-    "p1", expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }), false);
+  await waitFor(() => expect(puts()).toHaveLength(1));
+  expect(puts()[0]).toEqual(["p1", expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }), true]);
   expect(onDeckChange).toHaveBeenCalled();
+  await userEvent.type(title, "2");
+  await waitFor(() => expect(puts()).toHaveLength(2));
+  expect(puts()[1][2]).toBe(false);  // 둘째 저장부터는 스냅샷을 요청하지 않는다
+  await pause(FAST * 3);
+  expect(puts()).toHaveLength(2);
 });
 
-
 it("보고 정보의 입력 항목이 각각 한 줄을 차지한다", async () => {
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} />);
+  renderScreen();
   const fields = ["보고서 제목", "보고 유형", "보고자", "피보고자"].map((l) => screen.getByLabelText(l).closest(".field"));
   fields.forEach((f) => expect(f).not.toBeNull());
   expect(new Set(fields).size).toBe(fields.length);
 });
 
-
-it("보고자를 입력해 저장하면 meta.presenter로 반영되고 피보고자 안내가 보인다", async () => {
+it("보고자를 입력하면 meta.presenter로 자동 저장되고 피보고자 안내가 보인다", async () => {
+  // 다시 씀(D3b-5): 저장 버튼 클릭 대신 자동 저장을 기다린다
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const onDeckChange = vi.fn();
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={onDeckChange} />);
+  renderScreen({ onDeckChange });
   await userEvent.type(screen.getByLabelText("보고자"), "사업개발팀");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
-  expect(onDeckChange).toHaveBeenCalledWith(expect.objectContaining({
+  await waitFor(() => expect(onDeckChange).toHaveBeenCalledWith(expect.objectContaining({
     meta: expect.objectContaining({ presenter: "사업개발팀" }),
-  }));
+  })));
   expect(screen.getByText(/문서에 적히지 않고/)).toBeInTheDocument();
 });
 
 
-describe("보고 정보 플러시와 충돌 (A5)", () => {
-  it("마운트 시 저장됨(false)을 알리고, 입력을 바꾸면 true를, 저장하면 다시 false를 알린다", async () => {
+describe("자동 저장, 플러시와 충돌 (A5, D3b-5)", () => {
+  it("마운트 시 저장됨(false)을 알리고, 입력을 바꾸면 true를, 자동 저장되면 다시 false를 알린다", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
     const onDirtyChange = vi.fn();
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onDirtyChange={onDirtyChange} />);
+    renderScreen({ onDirtyChange });
     await waitFor(() => expect(onDirtyChange).toHaveBeenCalledWith(false));
     await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
-    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
-    await userEvent.click(screen.getByText("보고 정보 저장"));
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
   });
 
   it("부모에 플러시 함수를 등록하고, 언마운트 시 등록을 해제한다", async () => {
     const onScreenReady = vi.fn();
-    const { unmount } = render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onScreenReady={onScreenReady} />);
+    const { unmount } = renderScreen({ onScreenReady });
     await waitFor(() => expect(onScreenReady).toHaveBeenCalledWith(expect.any(Function)));
     unmount();
     expect(onScreenReady).toHaveBeenLastCalledWith(null);
   });
 
-  it("저장 버튼 없이 부모가 플러시를 부르면 최신 입력을 저장한다", async () => {
+  it("자동 저장 전에 부모가 플러시를 부르면 최신 입력을 바로 저장한다", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
     let flush: (() => Promise<boolean | "declined">) | null = null;
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onScreenReady={(f) => { flush = f; }} />);
+    renderScreen({ saveDelayMs: SLOW, onScreenReady: (f) => { flush = f; } });
     await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
     expect(api.putDeck).not.toHaveBeenCalled();
-    const ok = await flush!();
-    expect(ok).toBe(true);
+    expect(await flush!()).toBe(true);
     expect(api.putDeck).toHaveBeenCalledWith(
-      "p1", expect.objectContaining({ meta: expect.objectContaining({ title: "제목고침" }) }), false);
+      "p1", expect.objectContaining({ meta: expect.objectContaining({ title: "제목고침" }) }), true);
   });
 
   it("입력을 바꾸지 않았으면 플러시를 불러도 PUT이 없다", async () => {
     let flush: (() => Promise<boolean | "declined">) | null = null;
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onScreenReady={(f) => { flush = f; }} />);
+    renderScreen({ onScreenReady: (f) => { flush = f; } });
     await waitFor(() => expect(flush).not.toBeNull());
     expect(await flush!()).toBe(true);
     expect(api.putDeck).not.toHaveBeenCalled();
   });
 
-  it("저장 중에는 입력과 저장 버튼을 잠근다", async () => {
-    const { promise, resolve } = (() => {
-      let r!: (v: { ok: boolean }) => void;
-      const p = new Promise<{ ok: boolean }>((res) => { r = res; });
-      return { promise: p, resolve: r };
-    })();
-    vi.mocked(api.putDeck).mockReturnValue(promise);
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} />);
-    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
-    await userEvent.click(screen.getByText("보고 정보 저장"));
-    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeDisabled());
-    expect(screen.getByText("보고 정보 저장")).toBeDisabled();
-    resolve({ ok: true });
-    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).not.toBeDisabled());
+  it("저장 중에도 입력을 잠그지 않고, 이어 친 글자를 저장이 끝난 뒤 이어서 저장한다 (리뷰 U1)", async () => {
+    // 다시 씀(D3b-5): 옛 "저장 중에는 입력과 저장 버튼을 잠근다". 잠그면 초점이 빠지고 이어 친 글자가 사라진다
+    const first = deferred<{ ok: boolean }>();
+    vi.mocked(api.putDeck).mockReturnValueOnce(first.promise).mockResolvedValue({ ok: true });
+    renderScreen();
+    const title = screen.getByLabelText("보고서 제목");
+    await userEvent.type(title, "가");
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(title).not.toBeDisabled();
+    await userEvent.type(title, "나");
+    first.resolve({ ok: true });
+    await waitFor(() => expect(puts()).toHaveLength(2));
+    expect(puts()[1][1].meta.title).toBe("제목가나");
+    expect(title).toHaveValue("제목가나");
   });
 
-  it("저장 버튼 클릭 직후 부모가 플러시를 불러도 PUT은 1회다 (직렬화)", async () => {
-    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  it("자동 저장이 날아가는 중에 부모가 플러시를 불러도 PUT은 1회다 (직렬화)", async () => {
+    // 다시 씀(D3b-5): 옛 "저장 버튼 클릭 직후 부모가 플러시를 불러도 PUT은 1회다"
+    const first = deferred<{ ok: boolean }>();
+    vi.mocked(api.putDeck).mockReturnValueOnce(first.promise);
     let flush: (() => Promise<boolean | "declined">) | null = null;
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onScreenReady={(f) => { flush = f; }} />);
+    renderScreen({ onScreenReady: (f) => { flush = f; } });
     await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
-    await userEvent.click(screen.getByText("보고 정보 저장"));
-    const flushed = await flush!();  // 버튼 저장이 아직 착지하기 전에 곧장 플러시를 부른다
-    expect(flushed).toBe(true);
-    await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    const flushed = flush!();
+    first.resolve({ ok: true });
+    expect(await flushed).toBe(true);
+    expect(puts()).toHaveLength(1);
   });
 
-  it("저장이 412면 onConflict를 부른다", async () => {
+  it("저장이 412면 onConflict를 부르고, 그 뒤 입력 세 번에도 다시 저장하지 않는다 (리뷰 U3)", async () => {
     vi.mocked(api.putDeck).mockRejectedValue(
       new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
     const onConflict = vi.fn();
-    render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}}
-      onConflict={onConflict} />);
-    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
-    await userEvent.click(screen.getByText("보고 정보 저장"));
+    renderScreen({ onConflict });
+    const title = screen.getByLabelText("보고서 제목");
+    await userEvent.type(title, "고침");
     await waitFor(() => expect(onConflict).toHaveBeenCalled());
+    for (const text of ["1", "2", "3"]) {
+      await userEvent.type(title, text);
+      await pause(FAST * 2);
+    }
+    expect(puts()).toHaveLength(1);
+  });
+
+  it("읽기 전용이 되면 예약된 저장이 나가지 않고, 풀리면 남은 입력을 저장한다 (리뷰 U2)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const view = renderScreen({ saveDelayMs: 100 });
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={100} readOnly />);
+    await pause(200);
+    expect(api.putDeck).not.toHaveBeenCalled();
+    view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} saveDelayMs={100} />);
+    await waitFor(() => expect(puts()).toHaveLength(1));
+  });
+
+  it("마운트 뒤 충돌 신호가 오면 자동 저장을 멈춘다. 마운트 때 이미 늘어난 값은 신호가 아니다 (F1)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const props = { project, deck, onDeckChange: () => {}, saveDelayMs: 100 };
+    const view = render(<ReportPurposeScreen {...props} conflictSignal={3} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "가");
+    await waitFor(() => expect(puts()).toHaveLength(1));  // 마운트 때의 3은 충돌이 아니다
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "나");
+    view.rerender(<ReportPurposeScreen {...props} conflictSignal={4} />);
+    await pause(200);
+    expect(puts()).toHaveLength(1);
+  });
+
+  it("412가 아닌 실패에는 다시 저장을 둔다 (리뷰 U14)", async () => {
+    vi.mocked(api.putDeck).mockRejectedValueOnce(new Error("서버 중단")).mockResolvedValue({ ok: true });
+    renderScreen();
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    const retry = await screen.findByRole("button", { name: "다시 저장" });
+    await userEvent.click(retry);
+    await waitFor(() => expect(puts()).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "다시 저장" })).toBeNull());
+  });
+
+  it("유형 드롭다운은 초점이 떠나면 지연을 기다리지 않고 저장한다", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    renderScreen({ saveDelayMs: SLOW });
+    await userEvent.selectOptions(screen.getByLabelText("보고 유형"), screen.getByRole("option", { name: "승인요청" }));
+    expect(api.putDeck).not.toHaveBeenCalled();
+    await userEvent.tab();
+    await waitFor(() => expect(puts()).toHaveLength(1));
+  });
+});
+
+describe("충돌 해소 전 보존 (B9, 리뷰 U4)", () => {
+  it("미저장 보고 정보를 출처 purpose로 보존한다", async () => {
+    vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "먼저 저장되었습니다."));
+    vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00",
+      reason: "conflict", source: "purpose", base_etag: null });
+    let preserve: (() => Promise<PurposePreserveResult>) | null = null;
+    renderScreen({ onPreserveReady: (f) => { preserve = f; } });
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    const result = await act(() => preserve!());
+    expect(result).toEqual({ kind: "preserved", savedAt: "2026-10-12T10:00:00+09:00" });
+    expect(api.saveDraft).toHaveBeenCalledWith("p1", expect.objectContaining({ reason: "conflict", source: "purpose",
+      deck: expect.objectContaining({ meta: expect.objectContaining({ title: "제목고침" }) }) }));
+  });
+
+  it("보존에 실패하면 복사 상자를 보인다", async () => {
+    vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "먼저 저장되었습니다."));
+    vi.mocked(api.saveDraft).mockRejectedValue(new Error("디스크 오류"));
+    let preserve: (() => Promise<PurposePreserveResult>) | null = null;
+    renderScreen({ onPreserveReady: (f) => { preserve = f; } });
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await waitFor(() => expect(puts()).toHaveLength(1));
+    expect(await act(() => preserve!())).toEqual({ kind: "failed" });
+    expect(screen.getByText(/보고 정보를 보존하지 못했습니다/)).toBeInTheDocument();
+    expect(screen.getByText("저장하지 못한 보고 정보")).toBeInTheDocument();
+    expect((screen.getByLabelText("보관용 변경 내용") as HTMLTextAreaElement).value).toContain("제목고침");
+  });
+
+  it("미저장 입력이 없으면 보존하지 않는다", async () => {
+    let preserve: (() => Promise<PurposePreserveResult>) | null = null;
+    renderScreen({ onPreserveReady: (f) => { preserve = f; } });
+    await waitFor(() => expect(preserve).not.toBeNull());
+    expect(await act(() => preserve!())).toEqual({ kind: "none" });
+    expect(api.saveDraft).not.toHaveBeenCalled();
   });
 });
 
 
-it("저장 성공 안내는 오류 알림이 아니고, 화면 낭독기 알림은 상단 머리의 저장 상태 하나다 (D2a-4, D3a 묶음 리뷰 A2)", async () => {
-  // 다시 씀(A2): 종전에는 이 글이 role=status라 머리의 "저장됨"과 같은 저장을 두 번 알렸다
+it("저장이 끝나도 성공 문장을 따로 보이지 않는다. 알림은 상단 머리의 저장 상태 하나다 (리뷰 U15, D3a 묶음 리뷰 A2)", async () => {
+  // 다시 씀(D3b-5): 옛 시험은 성공 문장이 role 없이 보이는지 봤다. 자동 저장에서는 문장을 없앴다
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} />);
-  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");  // 변경이 있어야 저장한다
-  await userEvent.click(screen.getByText("보고 정보 저장"));
-  const notice = await screen.findByText("보고 정보를 저장했습니다.");
-  expect(notice).not.toHaveAttribute("role");
+  renderScreen();
+  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
+  await waitFor(() => expect(puts()).toHaveLength(1));
+  expect(screen.queryByText("보고 정보를 저장했습니다.")).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-
-
-it("주 행동은 보고 정보 저장 하나다 (D3a-1, 계획 4.6)", () => {
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} />);
+it("주 행동은 자료 단계로 하나다 (D3a-1, 계획 4.6, Q2)", async () => {
+  const onNext = vi.fn();
+  const view = renderScreen({ onNext });
   const primaries = document.querySelectorAll(".btn-primary");
   expect(primaries).toHaveLength(1);
-  expect(primaries[0]).toHaveTextContent("보고 정보 저장");
+  expect(primaries[0]).toHaveTextContent("자료 단계로");
+  await userEvent.click(screen.getByRole("button", { name: "자료 단계로" }));
+  expect(onNext).toHaveBeenCalledTimes(1);
+  view.rerender(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} onNext={onNext} nextDisabled />);
+  expect(screen.getByRole("button", { name: "자료 단계로" })).toBeDisabled();
 });
 
 it("상단 머리의 저장 상태: 고치면 변경사항 있음, 저장 중, 저장됨, 실패와 충돌은 그 저장의 결과 (D3a-2, 계획 4.1)", async () => {
+  // 다시 씀(D3b-5): 저장 버튼 대신 부모의 플러시와 "다시 저장"으로 저장을 일으킨다
   const statuses: SaveStatus[] = [];
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.putDeck).mockReturnValueOnce(pending.promise)
     .mockRejectedValueOnce(new Error("서버 중단"))
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<ReportPurposeScreen project={project} deck={deck} onDeckChange={() => {}} onSaveStatusChange={(s) => statuses.push(s)} />);
+  let flush: (() => Promise<boolean | "declined">) | null = null;
+  renderScreen({ saveDelayMs: SLOW, onSaveStatusChange: (st) => statuses.push(st), onScreenReady: (f) => { flush = f; } });
   const last = () => statuses.at(-1)?.kind;
   expect(last()).toBe("saved");
   await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
   expect(last()).toBe("unsaved");  // 폼이 저장본과 다르면 저장됨이 아니다 (R01 완료 기준)
-  await userEvent.click(screen.getByText("보고 정보 저장"));
+  const first = flush!();
   await waitFor(() => expect(last()).toBe("saving"));
   pending.resolve({ ok: true });
+  await first;
   await waitFor(() => expect(last()).toBe("saved"));
   await userEvent.type(screen.getByLabelText("보고서 제목"), "2");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
+  await act(() => flush!());
   await waitFor(() => expect(last()).toBe("save_failed"));
-  await userEvent.click(screen.getByText("보고 정보 저장"));
+  await userEvent.click(screen.getByRole("button", { name: "다시 저장" }));
   await waitFor(() => expect(last()).toBe("conflict"));
 });

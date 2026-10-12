@@ -7,7 +7,8 @@ import { AiConsentDialog } from "./AiConsentDialog";
 import { EditorScreen } from "./EditorScreen";
 import { ExportHistoryPanel } from "./ExportHistoryPanel";
 import { RecoveryScreen } from "./RecoveryScreen";
-import { ReportPurposeScreen } from "./ReportPurposeScreen";
+import { ReportPurposeScreen, type PurposePreserveResult } from "./ReportPurposeScreen";
+import { formatSavedAt } from "../api/time";
 import { ReviewScreen } from "./ReviewScreen";
 import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
@@ -30,8 +31,9 @@ export const STAGES: ReadonlyArray<{ id: Stage; label: string }> = [
 const DECK_COPY_STAGES: ReadonlySet<Stage> = new Set(["purpose", "structure", "editor"]);
 type Conflict = null | "other" | "batch_here";
 
-export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
+export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }: {
   project: ProjectInfo; onBack: () => void; jobPollMs?: number;
+  purposeSaveMs?: number;  // 보고 목적 자동 저장 지연. 시험이 줄인다 (D3b-5)
 }) {
   const [deck, setDeck] = useState<Deck | null>(null);
   // 처음 여는 단계는 보고 목적이다. 제품 설계에 첫 화면 지정이 없어 단계 순서의 첫 단계를 골랐다 (D3a-2 구현 기록)
@@ -61,7 +63,12 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 생성 중에는 잠그지 않는 예외가 있는데, 업로드는 자료 단계 안의 일이라 구성 단계까지 잠가야 FC-17이 막힌다
   const [uploading, setUploading] = useState(false);
   const [conflict, setConflict] = useState<Conflict>(null);  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
-  const [editorConflictSignal, setEditorConflictSignal] = useState(0);  // 늘리면 편집 화면이 충돌 처리로 들어간다 (B2)
+  // 늘리면 편집 화면과 보고 목적 화면이 충돌 처리로 들어간다 (B2, D3b-5: 보고 목적은 자동 저장을 멈춘다)
+  const [conflictSignal, setConflictSignal] = useState(0);
+  // 보고 목적 화면의 충돌 보존. 실패한 뒤 다시 누르면 복사 상자를 본 것으로 보고 버리기 확인으로 넘어간다 (B9)
+  const preserveScreen = useRef<null | (() => Promise<PurposePreserveResult>)>(null);
+  const preserveFailed = useRef(false);
+  const [preservedNotice, setPreservedNotice] = useState("");
   // 이 화면을 연 시각. 다시 연 단계 화면은 이 시각 뒤에 끝난 작업의 실패만 보인다(새로고침마다 오래된 실패를
   // 되풀이하지 않는다, D3a-β 재리뷰 F2)
   const [openedAt] = useState(() => Date.now());
@@ -273,7 +280,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           if (holdsCopy && dirtyRef.current) {
             // 편집 단계는 자기 충돌 처리(보존 뒤 서버 내용으로 되돌리기)로 보낸다. 여기서 다시 읽기 안내를 겹쳐 띄우면
             // 보존하지 않는 버튼이 하나 더 생겼다 (D3a-β 리뷰 B2)
-            if (stageRef.current === "editor") { setEditorConflictSignal((n) => n + 1); return; }
+            if (stageRef.current === "editor") { setConflictSignal((n) => n + 1); return; }
+            // 보고 목적은 자동 저장을 멈춰야 다음 저장의 412가 원인 문구를 "다른 창이나 프로그램"으로 바꾸지 않는다 (리뷰 U3)
+            if (stageRef.current === "purpose") setConflictSignal((n) => n + 1);
             setConflict(endedJob !== null && startedHere.current.has(endedJob) ? "batch_here" : "other");
             return;
           }
@@ -298,6 +307,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 단계 목록의 "시작 전"과 어긋나게 읽혔다 (D3a-7 사용자 결정, α 묶음 리뷰 A19)
   const [savedHere, setSavedHere] = useState(false);
   useEffect(() => { setSavedHere(false); }, [stage, screenKey, showRecovery]);
+  // 보존 안내와 보존 실패 기록은 그 단계에서만 뜻이 있다 (D3b-5)
+  useEffect(() => { setPreservedNotice(""); preserveFailed.current = false; }, [stage, showRecovery]);
   useEffect(() => onProjectEvent((event) => {
     if (event.kind === "saved" && event.project === project.name) setSavedHere(true);
   }), [project.name]);
@@ -519,11 +530,26 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const dialogOpen = consentResolve !== null;
   const reloadDeck = async () => {
     if (stage === "review" && !(await leaveScreen("다시 읽기를"))) return;
-    // 보고 목적과 구성 화면의 폼 입력은 덱이 아니어서 보존하지 않는다. 버리기 전에 확인한다 (D2a-2)
-    if (dirty && !window.confirm("저장하지 않은 입력이 사라집니다. 필요한 내용은 먼저 복사해 두세요. 서버 내용을 다시 읽을까요?")) return;
+    // 보고 목적의 미저장 입력은 보존본으로 남긴다 (D3b-5, B9). 보존에 실패하면 화면이 복사 상자를 보이고, 다시 누르면
+    // 버리기 확인으로 넘어간다. 구성 화면의 폼 입력은 덱이 아니어서 보존하지 않고 버리기 전에 확인한다 (D2a-2)
+    let kept = false;
+    if (dirty && stage === "purpose" && preserveScreen.current && !preserveFailed.current) {
+      const result = await preserveScreen.current();
+      if (result.kind === "failed") { preserveFailed.current = true; return; }
+      if (result.kind === "preserved") {
+        kept = true;
+        onDraftsChanged();
+        setPreservedNotice(`저장하지 못한 보고 정보를 보존했습니다(${formatSavedAt(result.savedAt)}). 스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원할 수 있습니다.`);
+      }
+    }
+    if (dirty && !kept && !window.confirm("저장하지 않은 입력이 사라집니다. 필요한 내용은 먼저 복사해 두세요. 서버 내용을 다시 읽을까요?")) return;
+    preserveFailed.current = false;
     setConflict(null);
     setDirty(false);  // 서버 내용으로 자식 화면을 다시 마운트하므로 미저장 변경이 없다
     setDeck(null);
+    // 화면 열쇠도 바꿔 반드시 다시 마운트한다. 보존을 기다린 뒤에는 클릭 처리 밖이라 덱 비우기와 새 덱 넣기가 한 번의
+    // 렌더로 묶일 수 있고, 그러면 화면이 옛 입력을 든 채 남는다 (D3b-5)
+    setScreenKey((k) => k + 1);
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
   };
 
@@ -644,6 +670,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         {error && (
           <p role="alert">{error} <button onClick={() => setError("")}>닫기</button></p>
         )}
+        {preservedNotice && <p role="status">{preservedNotice}</p>}
         {conflict && (
           <p role="alert">
             {conflict === "batch_here"
@@ -668,9 +695,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
         )}
         {!showRecovery && stage === "purpose" && (
           <ReportPurposeScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
-            readOnly={batchLocked} readOnlyNotice={batchHere}
+            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={conflictSignal}
             onScreenReady={(f) => { flushScreen.current = f; }} onDirtyChange={setDirty} onConflict={onConflict}
-            onSaveStatusChange={setSaveStatus} />
+            onPreserveReady={(f) => { preserveScreen.current = f; }} saveDelayMs={purposeSaveMs}
+            onSaveStatusChange={setSaveStatus} onNext={() => void switchStage("sources")}
+            nextDisabled={navLocked} nextTitle={navTitle} />
         )}
         {!showRecovery && stage === "sources" && (
           <SourcesScreen key={screenKeyValue} project={project} limitations={progressFailed ? [] : stageLimitations(progress, "sources")}
@@ -695,7 +724,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setEditorAiBusy}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
             initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
-            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={editorConflictSignal}
+            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={conflictSignal}
             seenJobFailures={seenJobFailures.current} failuresSince={openedAt} />
         )}
         {!showRecovery && stage === "review" && (

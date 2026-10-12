@@ -181,7 +181,8 @@ describe("장 생성 묶음 중 (계획 4.4 표 둘째 행, 사용자 결정 Q1�
     await batchRunning();
     await userEvent.click(stageButton("보고 목적"));
     expect(await screen.findByLabelText("보고서 제목")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "보고 정보 저장" })).toBeDisabled();
+    // 다시 씀(D3b-5): 저장 버튼 대신 주 행동 "자료 단계로". 단계 이동이라 묶음 중에도 열려 있다 (계획 4.5)
+    expect(screen.getByRole("button", { name: "자료 단계로" })).toBeEnabled();
     expect(screen.getByText(/생성 중인 장은 끝나면 보입니다/)).toBeInTheDocument();
   });
 

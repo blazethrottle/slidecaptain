@@ -14,7 +14,7 @@ function describeDraft(d: DraftInfo): string {
   }
   const reason = ({ conflict: "다른 곳의 저장과 충돌한 편집", generation_unsaved: "저장하지 못한 생성 결과" } as
     Record<string, string>)[d.reason] ?? `알 수 없는 사유(${d.reason})`;
-  const source = ({ editor: "편집 화면", structure_approval: "구조안 승인" } as Record<string, string>)[d.source]
+  const source = ({ editor: "편집 화면", structure_approval: "구조안 승인", purpose: "보고 목적" } as Record<string, string>)[d.source]
     ?? d.source;
   return `${reason} (${source})`;
 }

@@ -204,3 +204,18 @@ def test_size_is_measured_on_compact_json_and_after_project_checks(store):
     compact = len(json.dumps(big, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
     assert compact <= DRAFT_MAX_BYTES
     store.save_draft("p1", deck=big, reason="conflict", source="editor", base_etag=None)
+
+
+def test_api_accepts_purpose_drafts_with_report_purpose_values(client):
+    """보고 목적 화면의 충돌 보존 (D3b-5, B9). 보고 목적 값이 든 덱을 그대로 보존하고 복원한다."""
+    client.post("/api/projects", json={"name": "p1"})
+    deck = client.get("/api/projects/p1/deck").json()
+    etag = client.get("/api/projects/p1/deck").headers["ETag"]
+    deck["meta"]["key_message"] = "보존할 핵심 내용"
+    r = client.post("/api/projects/p1/drafts",
+                    json={"reason": "conflict", "source": "purpose", "base_etag": etag, "deck": deck})
+    assert r.status_code == 201, r.text
+    assert r.json()["source"] == "purpose"
+    restored = client.post(f"/api/projects/p1/drafts/{r.json()['id']}/restore", headers={"If-Match": etag})
+    assert restored.status_code == 200
+    assert restored.json()["meta"]["key_message"] == "보존할 핵심 내용"

@@ -44,8 +44,8 @@ beforeEach(() => {
   vi.mocked(api.getProgress).mockResolvedValue(PROGRESS);
 });
 
-async function openProject() {
-  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
+async function openProject(purposeSaveMs?: number) {
+  render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} purposeSaveMs={purposeSaveMs} />);
   await waitFor(() => expect(stageButton("편집")).toBeEnabled());
   // 진행 작업 확인이 끝날 때까지 기다린다. 단계 버튼은 확인 전에도 열려 있으므로 그것으로는 알 수 없다 (D3a-5)
   await waitFor(() => expect(screen.getByRole("button", { name: "스냅샷 복구" }))
@@ -108,8 +108,9 @@ describe("단계 목록과 현재 단계", () => {
 
   it("단계마다 누를 수 있는 주 행동이 정확히 1개다. 편집 단계는 0개다 (계획 4.6, D3a-1 R17)", async () => {
     await openProject();
+    // 다시 씀(D3b-5, Q2): 보고 목적의 주 행동은 "자료 단계로"다
     const expected: Record<string, string[]> = {
-      "보고 목적": ["보고 정보 저장"], "자료": ["파일 선택"], "구성": ["승인하고 내용 생성"], "편집": [],
+      "보고 목적": ["자료 단계로"], "자료": ["파일 선택"], "구성": ["승인하고 내용 생성"], "편집": [],
       "검토와 내보내기": ["초안 PPTX 내보내기"] };
     for (const name of STAGES) {
       await userEvent.click(stageButton(name));
@@ -174,10 +175,10 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
       notifyProject({ kind: "saved", project: project.name });  // 실제 저장 경로처럼 공통 알림을 낸다
       return { ok: true };
     });
-    await openProject();
+    // 다시 씀(D3b-5): 저장 버튼 대신 자동 저장을 기다린다
+    await openProject(30);
     await userEvent.type(await screen.findByLabelText("보고서 제목"), " 고침");
     expect(headerStatus()).toBe("변경사항 있음");
-    await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
     await waitFor(() => expect(headerStatus()).toBe("저장됨"));
     await userEvent.click(stageButton("자료"));
     await waitFor(() => expect(stageButton("자료")).toHaveAttribute("aria-current", "step"));
@@ -279,6 +280,19 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목 고침");  // 입력은 그대로다
   });
 
+  it("묶음 종결의 충돌 안내 뒤에는 보고 목적의 예약된 자동 저장이 나가지 않는다 (D3b-5, 리뷰 U3)", async () => {
+    // 나가면 서버가 412로 거절하고 안내의 원인 문구가 "다른 창이나 프로그램"으로 바뀐다. 모의 저장은 거절하지 않으므로
+    // PUT이 없는 것으로 확인한다
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(200);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await otherTabBatchEnds(batchDeck);
+    expect(await screen.findByText("먼저 저장되었습니다", { exact: false })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeEnabled());  // 묶음이 끝나 읽기 전용이 풀렸다
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(api.putDeck).not.toHaveBeenCalled();
+  });
+
   it("보고 목적 폼이 저장본과 같으면 새 덱으로 다시 마운트하고 충돌로 알리지 않는다", async () => {
     await openProject();
     await otherTabBatchEnds({ ...batchDeck, meta: { ...batchDeck.meta, title: "묶음 뒤 제목" } });
@@ -304,7 +318,7 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
 describe("순서 시나리오 (계획 5절 D3a-2)", () => {
   it("자료 단계에서 묶음이 끝난 뒤 보고 목적으로 옮겨 저장하면 묶음의 장이 남는다", async () => {
     vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-    await openProject();
+    await openProject(30);
     await userEvent.click(stageButton("자료"));
     await screen.findByLabelText("자료 파일 선택");
     const reads = vi.mocked(api.getDeck).mock.calls.length;
@@ -312,8 +326,7 @@ describe("순서 시나리오 (계획 5절 D3a-2)", () => {
     await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads + 1));
     await userEvent.click(stageButton("보고 목적"));
     await userEvent.type(await screen.findByLabelText("보고자"), "사업개발팀");
-    await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
-    await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+    await waitFor(() => expect(api.putDeck).toHaveBeenCalled());  // 다시 씀(D3b-5): 자동 저장
     const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
     expect(saved.structure.chapters[0].topic).toBe("묶음이 만든 장");
     expect(saved.slides[0].slots).toMatchObject({ bullets: [{ text: "묶음이 만든 내용" }] });

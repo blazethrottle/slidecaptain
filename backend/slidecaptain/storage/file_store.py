@@ -130,7 +130,7 @@ class DraftInfo(BaseModel):
     # 저장 요청은 아래 값만 받는다(SaveDraftRequest). 목록은 이후 버전이 늘린 값도 그대로 보인다
     # (리뷰 R5: 모르는 값 때문에 보존본이 목록에서 사라지거나 다음 보존이 실패하지 않게)
     reason: str  # conflict | generation_unsaved
-    source: str  # editor | structure_approval
+    source: str  # editor | structure_approval | purpose
     base_etag: str | None = None  # 이 편집이 기준으로 삼은 저장본. 서버 쪽 변경과 비교할 때 쓴다
 
 

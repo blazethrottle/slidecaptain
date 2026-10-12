@@ -3576,7 +3576,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "editor" | "structure_approval";
+            source: "editor" | "structure_approval" | "purpose";
             /** Base Etag */
             base_etag?: string | null;
             /** Deck */

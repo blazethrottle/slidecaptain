@@ -192,7 +192,7 @@ class SaveDraftRequest(BaseModel):
     복원할 때 검증한다."""
 
     reason: Literal["conflict", "generation_unsaved"]
-    source: Literal["editor", "structure_approval"]
+    source: Literal["editor", "structure_approval", "purpose"]  # purpose: 보고 목적 화면의 충돌 보존 (D3b-5, B9)
     base_etag: str | None = None
     deck: dict[str, Any]
 

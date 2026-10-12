@@ -410,13 +410,13 @@ it("자료 업로드 진행 중에는 다시 읽기 버튼도 잠긴다 (F-1)", 
   const upload = deferred<UploadResult>();
   vi.mocked(api.uploadSource).mockReturnValue(upload.promise);
   vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={10} />);
 
   // 다시 씀(D3a-2): 보고 정보는 보고 목적 단계에 있어 업로드 중에는 고칠 수 없다. 먼저 보고 정보 저장의 412로
-  // 충돌 안내를 띄우고, 입력을 되돌려 미저장이 없게 한 뒤 자료 단계로 옮겨 업로드를 시작한다
+  // 충돌 안내를 띄우고, 입력을 되돌려 미저장이 없게 한 뒤 자료 단계로 옮겨 업로드를 시작한다.
+  // 다시 씀(D3b-5): 412는 자동 저장이 받는다
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.type(title, " 고침");
-  await userEvent.click(screen.getByRole("button", { name: "보고 정보 저장" }));
   const reloadBtn = await screen.findByRole("button", { name: "서버 내용 다시 읽기" });
   await userEvent.clear(title);
   await userEvent.type(title, "제목");

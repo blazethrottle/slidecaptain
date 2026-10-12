@@ -18,11 +18,17 @@ vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
-    listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn() } };
+    listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn(),
+    saveDraft: vi.fn(), listDrafts: vi.fn() } };
 });
 
 // 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
-beforeEach(() => { vi.mocked(api.getProgress).mockResolvedValue(defaultProgress()); });
+beforeEach(() => {
+  vi.mocked(api.getProgress).mockResolvedValue(defaultProgress());
+  vi.mocked(api.listDrafts).mockResolvedValue([]);
+});
+const SLOW = 60_000;  // 보고 목적 자동 저장이 끼어들지 않게 한다 (D3b-5)
+const FAST = 10;
 
 // App.tsx 와 같은 구조: 목록으로 돌아가면 ProjectView 가 언마운트된다
 function Shell() {
@@ -124,18 +130,19 @@ it("검수 이력: 저장하지 않은 자료 본문을 보존하고 저장 후 
 
 it("보고 정보 저장이 착지하기 전에는 다음 단계로 옮기지 않는다", async () => {
   // 다시 씀(D3a-2): 옛 시험은 보고 정보 저장 중 같은 화면의 자료 본문이 바뀌는 경합을 지켰다. 보고 정보와
-  // 자료가 다른 단계로 나뉘어 그 경합은 생기지 않으므로, 남는 계약(저장 착지 전 이동 금지)을 지킨다
+  // 자료가 다른 단계로 나뉘어 그 경합은 생기지 않으므로, 남는 계약(저장 착지 전 이동 금지)을 지킨다.
+  // 다시 씀(D3b-5): 저장 중에도 입력을 잠그지 않는다(리뷰 U1)
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockReturnValue(pending.promise);
   vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
     checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
-  render(<ProjectView project={project} onBack={() => {}} />);
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={SLOW} />);
   await userEvent.type(await screen.findByLabelText("보고서 제목"), " 수정");
   await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  expect(screen.getByLabelText("보고서 제목")).toBeDisabled();
+  expect(screen.getByLabelText("보고서 제목")).not.toBeDisabled();
   expect(api.listExports).not.toHaveBeenCalled();
   await act(async () => pending.resolve({ ok: true }));
   expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
@@ -197,21 +204,27 @@ it("보고 목적 단계에서 보고 정보를 고치고 저장하지 않으면
 
 // 충돌 배너 (2026-09-03 A5): 구조안, 자료, 복구 화면의 412는 ProjectView 배너의
 // "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 단계 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
-it("보고 목적 단계 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+it("보고 목적 단계 자동 저장이 412면 배너가 뜨고, 다시 읽기는 미저장 입력을 보존한 뒤 최신 덱으로 다시 마운트한다 (A5, B9)", async () => {
+  // 다시 씀(D3b-5): 저장 버튼 대신 자동 저장의 412. 다시 읽기는 버리기 확인 대신 보존본을 남긴다
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWith(["하나"])).mockResolvedValue(deckWith(["서버본"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict",
+    source: "purpose", base_etag: null });
+  const confirm = vi.spyOn(window, "confirm");
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
-  vi.spyOn(window, "confirm").mockReturnValueOnce(true);  // D2a-2: 미저장 입력이 있으면 확인을 받는다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  expect(confirm).not.toHaveBeenCalled();  // 보존했으므로 버리기 확인이 없다
+  expect(vi.mocked(api.saveDraft).mock.calls[0][1]).toEqual(expect.objectContaining({ source: "purpose",
+    deck: expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }) }));
+  expect(screen.getByText(/저장하지 못한 보고 정보를 보존했습니다/)).toBeInTheDocument();
   // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
   await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
 });
@@ -234,21 +247,22 @@ it("보고 목적 단계에서 저장 버튼 없이 단계를 옮겨 412를 받�
   expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 단계는 바뀌지 않았다 (다시 씀(D3a-2): 보고 정보는 보고 목적 단계)
 });
 
-it("보고 목적 단계 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
-  // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다
+it("보고 목적 단계 자동 저장의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
+  // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다.
+  // 다시 씀(D3b-5): leaveScreen 밖의 저장은 이제 자동 저장이다
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck)
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."))
     .mockRejectedValue(new Error("서버 중단"));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict",
+    source: "purpose", base_etag: null });
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
-  await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));  // 412: leaveScreen 을 거치지 않는 경로
+  await userEvent.type(title, "새 제목");  // 자동 저장의 412: leaveScreen 을 거치지 않는 경로
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
-  vi.spyOn(window, "confirm").mockReturnValueOnce(true);  // D2a-2: 미저장 입력이 있으면 확인을 받는다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
   const title2 = await screen.findByLabelText("보고서 제목");
@@ -272,18 +286,22 @@ it("편집 단계이 충돌 상태면 이탈 시 편집기 자체 안내만 남�
 });
 
 
-it("미저장 입력이 있으면 다시 읽기 전에 확인을 받고, 취소하면 입력을 유지한다 (D2a-2)", async () => {
+it("보존에 실패하면 복사 상자를 먼저 보이고, 다시 누르면 확인을 받으며, 취소하면 입력을 유지한다 (D2a-2, B9)", async () => {
+  // 다시 씀(D3b-5): 보존이 먼저다. 보존에 실패했을 때만 옛 버리기 확인으로 넘어간다
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  vi.mocked(api.saveDraft).mockRejectedValue(new Error("디스크 오류"));
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
   await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
   const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(await screen.findByText(/보고 정보를 보존하지 못했습니다/)).toBeInTheDocument();
+  expect(confirm).not.toHaveBeenCalled();  // 복사 상자를 볼 기회를 먼저 준다
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   expect(confirm.mock.calls[0][0]).toContain("저장하지 않은 입력이 사라집니다");
   expect(api.getDeck).toHaveBeenCalledTimes(1);
