@@ -115,7 +115,7 @@ def test_chapter_hash_keeps_three_parts_with_the_marker_in_the_first():
 
 def test_structure_prompt_reads_exactly_the_hashed_meta_fields():
     """칸 하나씩 바꿔 지시문이 바뀌는 칸의 집합과 해시 (가)가 바뀌는 칸의 집합을 맞춘다 (가정 2의 검증 수단).
-    보고 목적 칸은 D3b-3이 지시문에 넣으면서 이 표에 더한다."""
+    보고 목적 칸의 표는 test_purpose_prompts.py에 있다(D3b-3이 지시문에 넣었다)."""
     base = DeckMeta(title="보고", report_type="approval", audience="임원")
     edits = {"title": "다른 제목", "report_type": "strategy", "audience": "팀장", "presenter": "보고자",
              "preset_overrides": {"accent": "#000000"}, "report_type_confirmed": True}

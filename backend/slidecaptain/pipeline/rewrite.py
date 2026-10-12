@@ -5,6 +5,7 @@ import json
 
 from pydantic import Field
 
+from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.deck import Deck
 from slidecaptain.models.story import (
     Claim, Evidence, EvidenceSelection, Identifier, ReportBrief, RewriteReview,
@@ -13,7 +14,7 @@ from slidecaptain.models.story import (
 from slidecaptain.models.comparison import EvidenceComparison
 from slidecaptain.models.derivation import Derivation
 from slidecaptain.pipeline.normalize import normalize_text
-from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES, REPORT_TYPE_RULES
+from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES, REPORT_TYPE_RULES, purpose_block
 from slidecaptain.pipeline.story import (
     StaleStoryPlan, _require_current_evidence, require_current_story, story_fingerprint, story_input_block,
 )
@@ -89,7 +90,9 @@ def rewrite_prompt(deck: Deck, brief: ReportBrief, sources: dict[str, str], inst
         raise ValueError("입력 자료가 없습니다. 자료를 추가한 뒤 다시 작성해 주세요.")
     if brief.audience != deck.meta.audience or brief.report_type != deck.meta.report_type:
         raise ValueError("보고 대상과 유형은 현재 보고 정보와 같아야 합니다.")
-    context = json.dumps({"deck": deck.model_dump(mode="json"), "protected": protected}, ensure_ascii=False)
+    # 보고 목적 값은 지시 부분에 한 번 넣고 문맥 덤프에서는 뺀다. 같은 값이 지시와 데이터 두 자리에 다른 지위로
+    # 들어가지 않게 하고, 긴 핵심 내용이 6만 자 한도를 직접 소모하지 않게 한다 (D3b-3, 리뷰 V12, V13)
+    context = json.dumps({"deck": output_dump(deck), "protected": protected}, ensure_ascii=False)
     if len(context) > 60_000 or len(instructions) > 8_000:
         raise ValueError("기존 편집 내용이나 지시사항이 너무 커 재작성할 수 없습니다. 내용을 줄여 주세요.")
     return (
@@ -110,6 +113,7 @@ def rewrite_prompt(deck: Deck, brief: ReportBrief, sources: dict[str, str], inst
         "핵심 답변은 answer 장에 연결하고 현재 장 구성으로 답할 수 없는 질문은 unanswered_questions에 남기세요. "
         "사실/추정/제안/미확인과 비교 조건, 가정, 한계를 구분하세요. 엠대시와 중점은 생성 문구에 쓰지 마세요.\n"
         + "보고 유형: " + REPORT_TYPE_GUIDES[brief.report_type] + "\n" + REPORT_TYPE_RULES + "\n"
+        + "보고 목적:\n" + purpose_block(deck.meta) + "\n"
         + "유형별 구성보다 기존 장과 편집의 보존 계약을 우선한다. 기존 장에서 다루지 못하는 내용은 확인할 질문으로 남긴다.\n"
         + story_input_block(brief, sources, preserve_chapter_ids=True) + "\n기존 편집과 보존 계약:\n" + context
         + "\n사용자 지시사항:\n" + instructions
