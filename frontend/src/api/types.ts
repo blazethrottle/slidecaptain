@@ -885,6 +885,12 @@ export interface components {
             created_at: string;
             /** Cancel Requested */
             cancel_requested: boolean;
+            /** Step */
+            step?: ("connecting" | "generating" | "retrying_format") | null;
+            /** Step Started At */
+            step_started_at?: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds?: number | null;
         };
         /** ActiveJobStatus */
         ActiveJobStatus: {
@@ -2776,6 +2782,12 @@ export interface components {
             } | null;
             /** Chapters */
             chapters: components["schemas"]["ChapterView"][];
+            /** Step */
+            step?: ("connecting" | "generating" | "retrying_format") | null;
+            /** Step Started At */
+            step_started_at?: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds?: number | null;
         };
         /** LoginAttempt */
         LoginAttempt: {

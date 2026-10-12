@@ -163,6 +163,12 @@ class JobHandle:
         self.cancel_sent = False
         self.sent = False  # 제공자를 실제로 불렀는가. 원격 호출 시각은 이때 남긴다 (D2b-3 리뷰 R6)
         self.stage = "queued"  # 메모리의 단계. 진행 중 작업 요약에 쓴다 (α 묶음 리뷰 A7)
+        # 구조안의 실행 단계 (D3b-4, 계획 4.8). 시간이 드는 경계만 둔다: 연결 확인(임대 대기, 로그인 확인, 재비교),
+        # 첫 AI 호출, 형식 재시도 호출. 메모리에만 두고 원장 형식은 바꾸지 않는다
+        self.step: str | None = "connecting" if spec is not None and spec.kind == "structure" else None
+        self.step_started_at = _now()
+        self.started_mono = time.monotonic()
+        self.calls = 0
         self.current_chapter: str | None = None  # 묶음에서 지금 생성하는 장
         self.sent_chapters: set[str] = set()
         self.created_at = _now()
@@ -297,7 +303,8 @@ class JobRunner:
         spec = handle.spec
         return {"id": handle.job_id, "project": spec.project, "kind": spec.kind, "target": spec.target,
                 "stage": "cancel_requested" if handle.cancel_requested else handle.stage,
-                "created_at": handle.created_at, "cancel_requested": handle.cancel_requested}
+                "created_at": handle.created_at, "cancel_requested": handle.cancel_requested,
+                **self._step_fields(handle)}
 
     def cancel_requested(self, job_id: str) -> bool:
         with self._lock:
@@ -354,7 +361,7 @@ class JobRunner:
         try:
             try:
                 service, release = await asyncio.to_thread(self._acquire, spec.selection_id,
-                                                           lambda: self._mark_sent(handle))
+                                                           lambda: self._on_call(handle))
             except Exception as exc:
                 outcome = Outcome(self._end_before_run(handle, exc, cancelled=handle.cancel_requested))
                 return
@@ -394,6 +401,30 @@ class JobRunner:
             if outcome is None:
                 outcome = Outcome(self._read(job_id), self._memory_result(handle))
             handle._finish(outcome)
+
+    def _on_call(self, handle: JobHandle) -> None:
+        """제공자 호출 직전. 구조안은 첫 호출이 구성 생성, 둘째 호출이 형식 재시도다(구조안 생성은 형식 게이트를 한 번
+        거친다, pipeline/service.py). 그다음 원격 호출 시각을 남긴다."""
+        handle.calls += 1
+        if handle.spec.kind == "structure":
+            handle.step = "generating" if handle.calls == 1 else "retrying_format"
+            handle.step_started_at = _now()
+        self._mark_sent(handle)
+
+    def step_fields(self, job_id: str) -> dict:
+        """작업 응답의 실행 단계 칸. 이 실행기가 돌리는 끝나지 않은 작업만 경과 초가 있고, 단계는 구조안만 있다.
+        취소 요청 중에는 단계를 비운다(화면은 취소 표시를 우선한다)."""
+        with self._lock:
+            handle = self._handles.get(job_id)
+        if handle is None or handle.done:
+            return {"step": None, "step_started_at": None, "elapsed_seconds": None}
+        return self._step_fields(handle)
+
+    @staticmethod
+    def _step_fields(handle: JobHandle) -> dict:
+        step = None if handle.cancel_requested else handle.step
+        return {"step": step, "step_started_at": handle.step_started_at if step else None,
+                "elapsed_seconds": int(time.monotonic() - handle.started_mono)}
 
     def _mark_sent(self, handle: JobHandle) -> None:
         """제공자 호출 직전에 작업 루프에서 불린다. 첫 호출 때만 원격 호출 시각을 남긴다.

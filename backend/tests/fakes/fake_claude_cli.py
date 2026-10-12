@@ -10,7 +10,8 @@ assistant 메시지와 structured_output이 든 result 메시지.
 - FAKE_CLAUDE_MODE: respond(기본), gate(관문 파일이 생길 때까지 기다린 뒤 응답), hang(stdin을 읽지 않고 잔다),
   error(오류 결과 메시지, D3a-4), exit(결과 없이 0이 아닌 종료 코드로 끝남, D3a-4)
 - FAKE_CLAUDE_API_STATUS: error 모드의 결과에 싣는 api_error_status(정수). 비우면 싣지 않는다
-- FAKE_CLAUDE_GATE: gate 모드의 관문 파일 경로
+- FAKE_CLAUDE_GATE: gate 모드의 관문 파일 경로. "{index}"가 있으면 호출 번호(0부터)로 바꿔 호출마다 따로 연다(D3b-4)
+- FAKE_CLAUDE_STATUS_DELAY: auth status 응답 전에 기다리는 초. 연결 확인 단계를 관측할 때 쓴다(D3b-4)
 - FAKE_CLAUDE_RESPONSES: 응답 JSON 목록 파일. 호출 순서대로 꺼내고, 다 쓰면 마지막 것을 되풀이한다
 - FAKE_CLAUDE_LOGGED_IN: 0이면 로그아웃 상태로 답한다
 """
@@ -71,6 +72,7 @@ def main(argv: list[str]) -> int:
         print(FAKE_VERSION)
         return 0
     if argv[:2] == ["auth", "status"]:
+        time.sleep(float(os.environ.get("FAKE_CLAUDE_STATUS_DELAY", "0") or 0))
         logged_in = os.environ.get("FAKE_CLAUDE_LOGGED_IN", "1") != "0"
         print(json.dumps({"loggedIn": logged_in, "authMethod": "claude.ai" if logged_in else None,
                           "email": "fake@example.invalid" if logged_in else None}))
@@ -97,7 +99,7 @@ def main(argv: list[str]) -> int:
             index = len(calls.read_text(encoding="utf-8").splitlines()) if calls.exists() else 0
             _append("calls.log", f"{index} {os.getpid()}")
             if mode == "gate":
-                gate = Path(os.environ["FAKE_CLAUDE_GATE"])
+                gate = Path(os.environ["FAKE_CLAUDE_GATE"].replace("{index}", str(index)))
                 if not _wait_while_parent(parent, gate.exists):
                     return 0
             if mode == "exit":

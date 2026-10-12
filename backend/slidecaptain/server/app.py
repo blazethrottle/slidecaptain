@@ -718,7 +718,7 @@ def create_app(
                 created_at=row.created_at, started_at=row.started_at, finished_at=row.finished_at,
                 provider=row.provider, model=row.model, base_etag=row.base_etag, current_etag=current_etag,
                 relevance_hash=row.relevance_hash, stale_reasons=reasons,
-                cancel_requested=runner.cancel_requested(row.id), error=error,
+                cancel_requested=runner.cancel_requested(row.id), error=error, **runner.step_fields(row.id),
                 result=row.result if isinstance(row.result, dict) else None,
                 chapters=[ChapterView(
                     chapter_id=c.chapter_id, position=c.position, state=c.state, candidate_status=c.candidate_status,

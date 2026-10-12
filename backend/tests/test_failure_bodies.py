@@ -98,6 +98,10 @@ def _collect(tmp_path_factory) -> dict:
         busy = _register(client, request_id="req-00000002")
         body = busy.json()
         body["active"] = {**body["active"], "id": "job-1", "created_at": "2026-10-10T10:00:00+09:00"}  # 매번 다른 값
+        if body["active"].get("step_started_at"):  # 실행 단계의 시각과 경과 초도 매번 다르다 (D3b-4)
+            body["active"]["step_started_at"] = "2026-10-10T10:00:00+09:00"
+        if body["active"].get("elapsed_seconds") is not None:
+            body["active"]["elapsed_seconds"] = 0
         http["generation_active"] = {"status": busy.status_code, "body": body}
         gate.release.set()
         _wait(client, first.json()["id"])
