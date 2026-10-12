@@ -59,6 +59,7 @@ from slidecaptain.pipeline.auth_status import LoginStatus, check_login
 from slidecaptain.pipeline.connections import AIConnections, AISelection, AISettings, ConnectionConflict, LoginAttempt, ProviderId
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
+from slidecaptain.pipeline.relevance import chapter_relevance, structure_parts, structure_relevance
 from slidecaptain.models.quality import QualityReport
 from slidecaptain.pipeline.service import ChapterResult, DiagramGenerationResult, DiagramGenerationUnsupported, GenerationService, StructureResult, StoryRewriteResult
 from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest, diagram_prompt
@@ -535,24 +536,13 @@ def create_app(
                 raise error
         return recheck
 
-    def _chapter_relevance(deck: Deck, chapter_id: str) -> str:
-        """장 재생성과 축약의 관련 입력 (계획서 5.8): "템플릿|장 정의 해시|구성 계획과 보고 정보 해시".
+    def _chapter_relevance(deck: Deck, chapter_id: str, legacy: bool = False) -> str:
+        """장 재생성과 축약의 관련 입력 (계획서 5.8, D3b-2): "c1:템플릿|장 정의 해시|구성 계획과 보고 정보 해시".
 
-        템플릿을 따로 두어 조회 때도 템플릿 변경을 구별한다(D2b-3 리뷰 R4). 보고 정보(meta)는 생성 입력이라
-        구성 계획 쪽에 함께 둔다(리뷰 R14). 전역 프리셋은 넣지 않는다.
+        템플릿을 따로 두어 조회 때도 템플릿 변경을 구별한다(D2b-3 리뷰 R4). 보고 정보는 장 지시문이 읽는 값만
+        넣는다(보고자 제외, 리뷰 V7). legacy는 표지 없는 옛 행과 비교할 때의 옛 계산식이다 (pipeline/relevance.py).
         """
-        chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
-        plan = deck.structure.story_plan
-
-        def digest(value) -> str:
-            text = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-            return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-        return "|".join([
-            chapter.template if chapter else "",
-            digest(chapter.model_dump(mode="json") if chapter else None),
-            digest({"plan": plan.model_dump(mode="json") if plan else None, "meta": deck.meta.model_dump(mode="json")}),
-        ])
+        return chapter_relevance(deck, chapter_id, legacy=legacy)
 
     def _chapter_basis(name: str):
         """덱, ETag, 자료 fingerprint를 한 잠금 안에서 한 번 읽는다. 덱을 읽지 못하면 (None, None, 자료)."""
@@ -569,7 +559,8 @@ def create_app(
         if deck is None:
             return ["unknown_deck"]
         template, fixed_chapter, fixed_report = relevance.split("|")
-        now_template, now_chapter, now_report = _chapter_relevance(deck, chapter_id).split("|")
+        legacy = not template.startswith("c1:") and template != ""  # 표지 없는 행은 이전 빌드가 쓴 것이다
+        now_template, now_chapter, now_report = _chapter_relevance(deck, chapter_id, legacy=legacy).split("|")
         reasons = []
         if not now_template:
             reasons.append("chapter_missing")
@@ -604,6 +595,52 @@ def create_app(
                                 "sources_changed")
             raise JobFailed(412, "생성을 시작하기 전에 이 장의 입력이 바뀌었습니다. 최신 내용을 확인한 뒤 다시 생성해 주세요.",
                             "base_changed")
+        return recheck
+
+    def _structure_reasons(relevance: str | None, etag: str | None, revision: str | None, basis) -> list[str]:
+        """구조안 후보의 낡음 (D3b-2, 계획 4.3). 해시가 있으면 (가) 지시문 입력과 (나) 반영 기준으로 판정하고,
+        덱 ETag만 다르면 알리기만 한다. 표지가 없는 이전 빌드의 행은 지금처럼 ETag로 판정한다."""
+        deck, current_etag, current_revision = basis
+        parts = structure_parts(relevance)
+        reasons: list[str] = []
+        if deck is None or current_etag is None:
+            reasons.append("unknown_deck")
+        elif parts is None:
+            if current_etag != etag:
+                reasons.append("deck_changed")
+        else:
+            now_input, now_basis = structure_parts(structure_relevance(deck))
+            if now_input != parts[0]:
+                reasons.append("structure_input_changed")
+            if now_basis != parts[1]:
+                reasons.append("structure_applied_basis_changed")
+        if current_revision is None:
+            reasons.append("unknown_sources")
+        elif current_revision != revision:
+            reasons.append("sources_changed")
+        if parts is not None and not reasons and current_etag != etag:
+            reasons.append("deck_changed_elsewhere")  # 알리기만 하고 반영을 막지 않는다
+        return reasons
+
+    def _structure_recheck(name: str, relevance: str | None, etag: str | None, revision: str | None):
+        """임대 직후 재비교 (계획서 5.4, D3b-2). 덱 ETag만 다르면 통과한다(재리뷰 RR13)."""
+        def recheck() -> None:
+            basis = _chapter_basis(name)
+            reasons = _structure_reasons(relevance, etag, revision, basis)
+            # 덱과 자료를 읽지 못한 것은 등록 때 값과 직접 비교한다(종전 재비교와 같다). 자료가 상한을 넘으면 등록 때와
+            # 지금 모두 지문이 없어 같으므로 통과하고, 생성 단계가 종전처럼 422로 거절한다
+            if basis[1] != etag and (basis[0] is None or "deck_changed" in reasons):
+                raise JobFailed(412, "생성을 시작하기 전에 저장본이 바뀌었습니다. 최신 내용을 확인한 뒤 다시 생성해 주세요.",
+                                "base_changed")
+            if "structure_input_changed" in reasons:
+                raise JobFailed(412, "생성을 시작하기 전에 보고 정보가 바뀌었습니다. 최신 내용을 확인한 뒤 다시 생성해 주세요.",
+                                "base_changed")
+            if "structure_applied_basis_changed" in reasons:
+                raise JobFailed(412, "생성을 시작하기 전에 문서 구성이나 슬라이드가 바뀌었습니다. 최신 내용을 확인한 뒤 다시 "
+                                "생성해 주세요.", "base_changed")
+            if basis[2] != revision:
+                raise JobFailed(409, "생성을 시작하기 전에 자료가 바뀌었습니다. 현재 자료로 다시 생성해 주세요.",
+                                "sources_changed")
         return recheck
 
     async def _run_wrapped(build_spec: Callable[[], JobSpec]):
@@ -661,6 +698,9 @@ def create_app(
                 if row.kind in ("chapter", "condense") and row.relevance_hash:
                     reasons = _chapter_reasons(row.params.get("chapter_id", ""), row.relevance_hash, row.base_etag,
                                                row.sources_fingerprint, basis[row.project])
+                elif row.kind == "structure":
+                    reasons = _structure_reasons(row.relevance_hash, row.base_etag, row.sources_fingerprint,
+                                                 basis[row.project])
                 else:
                     reasons = ["unknown_deck"] if current_etag is None else (
                         ["deck_changed"] if current_etag != row.base_etag else [])
@@ -1662,11 +1702,16 @@ def create_app(
         deck, etag = store.load_deck_with_etag(name)
         if any(ch.template == "diagram" for ch in deck.structure.chapters):
             raise DiagramGenerationUnsupported()
+        # 지시문은 요청 brief의 유형과 피보고자를 읽고 판정 해시는 메타를 본다. 다르면 재작성처럼 거절한다 (D3b-2, 리뷰 V20)
+        if req.brief is not None and (req.brief.report_type != deck.meta.report_type
+                                      or req.brief.audience != deck.meta.audience):
+            raise HTTPException(422, "보고 대상과 유형은 현재 보고 정보와 같아야 합니다.")
         _require_current_selection(selection_id)
         if strict:  # 작업 API는 자료 422를 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
             _load_sources(name)
         revision = _sources_revision(name)
         provider_id, model = _fixed_selection()
+        relevance = structure_relevance(deck)  # 지시문에 넘기는 바로 그 덱에서 계산한다 (리뷰 V18)
 
         async def run(svc, _ctx):
             # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다(래퍼)
@@ -1678,8 +1723,9 @@ def create_app(
 
         return JobSpec(kind="structure", project=name, request_id=request_id,
                        params=req.model_dump(mode="json"), selection_id=selection_id,
-                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
-                       run=run, recheck=_base_recheck(name, etag, revision), judge=_base_judge(name, etag, revision))
+                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance),
+                       run=run, recheck=_structure_recheck(name, relevance, etag, revision),
+                       judge=lambda _result: _structure_reasons(relevance, etag, revision, _chapter_basis(name)))
 
     def _merge_existing(name: str, kind: str, request_id: str, params: dict) -> JobRow | None:
         """같은 요청 ID 병합을 등록 검사보다 먼저 판정한다 (계획서 5.9, D2b-2 리뷰 R10)."""

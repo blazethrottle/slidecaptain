@@ -126,8 +126,13 @@ export async function settle(name: string, jobId: string, action: "applied" | "d
   }
 }
 
-// 낡음 이유의 화면 문구 (계획서 5.8)
-export const STALE_REASON_LABELS: Record<string, string> = {
+// 낡음 이유의 화면 문구 (계획서 5.8). 서버의 고정 목록(StaleReason)과 화면이 만드는 둘을 모두 덮는지 타입 검사가
+// 지킨다. 새 사유가 생겼는데 문구가 없으면 화면에 영문 코드가 나왔다 (D3b-2, 리뷰 V9)
+type ServerStaleReason = JobView["stale_reasons"][number];
+export const STALE_REASON_LABELS = {
+  structure_input_changed: "보고 정보가 바뀌었습니다",
+  structure_applied_basis_changed: "문서 구성이나 슬라이드가 바뀌었습니다",
+  deck_changed_elsewhere: "다른 곳에서 저장본이 바뀌었습니다",
   chapter_missing: "이 장이 구조안에서 빠졌습니다",
   template_changed: "이 장의 템플릿이 바뀌었습니다",
   chapter_changed: "이 장의 주제나 결론이 바뀌었습니다",
@@ -138,10 +143,11 @@ export const STALE_REASON_LABELS: Record<string, string> = {
   deck_changed: "저장본이 바뀌었습니다",
   unknown_deck: "저장본을 확인하지 못했습니다",
   candidate_stale: "만드는 동안 입력이 바뀌었던 후보입니다",
-};
+} as const satisfies Record<ServerStaleReason | "slots_changed" | "candidate_stale", string>;
 
 export function reasonText(reasons: string[]): string {
-  return reasons.map((r) => STALE_REASON_LABELS[r] ?? r).join(", ");
+  const labels: Record<string, string> = STALE_REASON_LABELS;
+  return reasons.map((r) => labels[r] ?? r).join(", ");
 }
 
 // 후보 슬롯의 글자만 모아 보인다. 사용자가 반영 여부를 판단하는 데는 구조보다 내용이 필요하다

@@ -9,6 +9,7 @@ import json
 
 from slidecaptain.models.deck import Deck
 from slidecaptain.models.preset import Preset
+from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.quality import QualityCheck, QualityReport
 from slidecaptain.models.render import RenderPlan
 from slidecaptain.pipeline.numeric_review import assess_numeric_review
@@ -46,7 +47,7 @@ def assess_quality(
             slide.pop("diagram", None)
     payload = {
         "gate_version": "preflight-v2",
-        "deck": deck.model_dump(mode="json"),
+        "deck": output_dump(deck),  # 보고 목적 칸을 뺀다 (D3b-2, 재리뷰 RR4)
         "preset": preset.model_dump(mode="json"),
         "render_plan": render_input,
         "numeric_review_fingerprint": numeric.input_fingerprint,

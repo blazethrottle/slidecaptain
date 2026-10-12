@@ -314,7 +314,8 @@ def test_stale_reasons_after_the_deck_changes(store):
         client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]})
         view = client.get(f"/api/projects/p1/jobs/{job['id']}").json()
         progress = client.get("/api/projects/p1/progress").json()
-    assert view["stale_reasons"] == ["deck_changed"] and view["current_etag"] != view["base_etag"]
+    # 다시 씀 (D3b-2, 계획 4.3): 구조안 후보는 지시문 입력과 반영 기준으로 판정한다. 제목은 지시문 입력이다
+    assert view["stale_reasons"] == ["structure_input_changed"] and view["current_etag"] != view["base_etag"]
     assert [j["id"] for j in progress["jobs"]] == [job["id"]]
 
 
@@ -490,7 +491,7 @@ def test_deck_saved_during_generation_makes_a_stale_candidate(store):
         view = _wait(client, job["id"])
         status = client.get("/api/status").json()
     assert view["state"] == "succeeded" and view["candidate_status"] == "stale"
-    assert view["stale_reasons"] == ["deck_changed"]
+    assert view["stale_reasons"] == ["structure_input_changed"]  # 다시 씀 (D3b-2): 제목은 구조안 지시문 입력이다
     assert status["last_generation_at"] is None  # 낡은 결과는 성공 시각을 갱신하지 않는다
 
 

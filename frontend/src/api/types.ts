@@ -2766,7 +2766,7 @@ export interface components {
             /** Relevance Hash */
             relevance_hash: string | null;
             /** Stale Reasons */
-            stale_reasons: string[];
+            stale_reasons: ("unknown_deck" | "deck_changed" | "unknown_sources" | "sources_changed" | "chapter_missing" | "template_changed" | "chapter_changed" | "story_plan_changed" | "structure_input_changed" | "structure_applied_basis_changed" | "deck_changed_elsewhere")[];
             /** Cancel Requested */
             cancel_requested: boolean;
             error: components["schemas"]["JobError"] | null;

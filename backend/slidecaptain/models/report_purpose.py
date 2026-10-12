@@ -79,3 +79,36 @@ def deck_level(deck) -> int:
     if deck.structure.story_plan is not None:
         values.append(deck.structure.story_plan.brief.report_type)
     return level_of(values, has_purpose_content(deck.meta))
+
+
+def purpose_prompt_values(meta) -> dict:
+    """지시문이 읽는 보고 목적 값 (D3b-2, 재리뷰 RR12). 지시문 네 곳, 구조안 판정 (가), 장 관련 입력,
+    구성 계획 지문이 모두 이 결과를 쓴다. 숨은 입력은 들지 않으므로 숨은 입력을 지워도 계획과 후보가 낡지 않는다.
+    기본값이면 빈 사전이라 기존 지문이 그대로다."""
+    values: dict = {}
+    if not is_blank(meta.key_message):
+        values["key_message"] = meta.key_message
+    if meta.desired_outcome is not None:  # None(사용자 미선택)과 명시 선택을 구별한다
+        values["desired_outcome"] = meta.desired_outcome
+        if meta.desired_outcome == "other" and not is_blank(meta.desired_outcome_other):
+            values["desired_outcome_other"] = meta.desired_outcome_other
+    details = {
+        name: meta.report_details[f"{meta.report_type}.{name}"]
+        for name, _ in REPORT_DETAIL_FIELDS.get(meta.report_type, ())
+        if not is_blank(meta.report_details.get(f"{meta.report_type}.{name}"))
+    }
+    if details:
+        values["report_details"] = details
+    return values
+
+
+def output_dump(deck) -> dict:
+    """출력 지문(내보내기, 수치 검토, 의미 검토)에 넣는 덱 덤프 (D3b-2, 재리뷰 RR4).
+
+    보고 목적 다섯 칸은 PPTX에 나오지 않는 생성 입력이라 뺀다. schema_version은 보고 목적 값으로 정해지므로
+    1로 고정한다(빼면 기존 덱의 지문이 바뀐다). 기존 덱의 덤프는 그대로다."""
+    raw = deck.model_dump(mode="json")
+    raw["schema_version"] = 1
+    for name in PURPOSE_DEFAULTS:
+        raw["meta"].pop(name, None)
+    return raw

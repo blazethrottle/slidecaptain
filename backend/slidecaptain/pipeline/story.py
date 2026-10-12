@@ -5,6 +5,7 @@ import json
 
 from pydantic import Field
 
+from slidecaptain.models.report_purpose import purpose_prompt_values
 from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Structure, GeneratedTemplateName
 from slidecaptain.models.comparison import EvidenceComparison
 from slidecaptain.models.derivation import Derivation
@@ -61,6 +62,10 @@ def story_fingerprint(
         "chapters": [ch.model_dump(mode="json") for ch in chapters],
         "sources": {name: _text_hash(text) for name, text in sources.items()},
     }
+    # 보고 목적 값은 지시문이 읽는 것만 넣고, 비어 있으면 넣지 않아 기존 계획의 지문이 그대로다 (D3b-2, 리뷰 V5, S8)
+    purpose = purpose_prompt_values(meta)
+    if purpose:
+        payload["purpose"] = purpose
     return _text_hash(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 

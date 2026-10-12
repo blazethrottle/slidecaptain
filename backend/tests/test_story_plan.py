@@ -187,6 +187,11 @@ def prepare_api(store, payloads):
     client = TestClient(create_app(store, provider=provider), headers=HEADERS)
     assert client.post("/api/projects", json={"name": "synthetic", "title": "합성 보고"}).status_code == 201
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": TEXT}).status_code == 200
+    # 다시 씀 (D3b-2, 리뷰 V20): 구조안 등록은 요청 brief의 유형과 피보고자가 보고 정보와 같아야 한다. 화면은 늘
+    # 보고 정보를 brief에 복사해 보낸다. 시험도 보고 정보를 BRIEF에 맞춘 뒤 생성한다
+    deck = client.get("/api/projects/synthetic/deck").json()
+    deck["meta"].update(audience=BRIEF["audience"], report_type=BRIEF["report_type"])
+    assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     return client, provider
 
 

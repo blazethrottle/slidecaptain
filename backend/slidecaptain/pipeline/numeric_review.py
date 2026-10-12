@@ -12,6 +12,7 @@ from collections.abc import Iterator
 
 from slidecaptain.models.deck import Chapter, Deck
 from slidecaptain.models.numeric_review import NumericExpression, NumericReviewItem, NumericReviewReport
+from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.story import StoryPlan
 
 
@@ -107,7 +108,7 @@ def assess_numeric_review(deck: Deck, sources: dict[str, str]) -> NumericReviewR
     from slidecaptain.pipeline.story import StaleStoryPlan, require_current_story
 
     fingerprint = hashlib.sha256(json.dumps({
-        "rule_version": "q2d-v1", "deck": deck.model_dump(mode="json"),
+        "rule_version": "q2d-v1", "deck": output_dump(deck),  # 보고 목적 칸을 뺀다 (D3b-2)
         "sources": {key: hashlib.sha256(text.encode("utf-8")).hexdigest() for key, text in sources.items()},
     }, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
     fields = list(_numeric_fields(deck))

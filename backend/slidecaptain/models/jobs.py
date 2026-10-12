@@ -20,6 +20,13 @@ _ERROR_CLASSES = frozenset(get_args(ErrorClass))
 REQUEST_ID_PATTERN = r"^[A-Za-z0-9_-]{8,64}$"
 
 
+# 후보의 낡음 사유. deck_changed_elsewhere는 알리기만 하고 반영을 막지 않는다(server/jobs.py의 NOTICE_REASONS)
+StaleReason = Literal[
+    "unknown_deck", "deck_changed", "unknown_sources", "sources_changed",
+    "chapter_missing", "template_changed", "chapter_changed", "story_plan_changed",
+    "structure_input_changed", "structure_applied_basis_changed", "deck_changed_elsewhere",
+]
+
 class StructureJobParams(BaseModel):
     target_chapters: int | None = Field(default=None, ge=1)
     instructions: str = ""
@@ -145,10 +152,12 @@ class JobView(BaseModel):
     model: str | None
     base_etag: str | None
     current_etag: str | None
-    # 장 재생성과 축약의 관련 입력 "템플릿|장 정의|구성 계획과 보고 정보"(계획서 5.8). 축약의 슬롯 비교는 화면이 한다
+    # 관련 입력 해시 (pipeline/relevance.py). 장과 축약은 "c1:템플릿|장 정의|구성 계획과 보고 정보", 구조안은
+    # "s1:지시문 입력|반영 기준"(D3b-2). 표지가 없으면 이전 빌드가 쓴 행이다. 축약의 슬롯 비교는 화면이 한다
     relevance_hash: str | None
-    # 결과가 있는 종결 작업에만 조회 때 계산한다. 덱이나 자료를 읽을 수 없으면 unknown_deck, unknown_sources
-    stale_reasons: list[str]
+    # 결과가 있는 종결 작업에만 조회 때 계산한다. 덱이나 자료를 읽을 수 없으면 unknown_deck, unknown_sources.
+    # 고정 목록이라 화면의 문구 표가 모든 값을 덮는지 타입 검사가 지킨다 (D3b-2, 리뷰 V9)
+    stale_reasons: list[StaleReason]
     # 취소 요청을 받았는지. 임대 획득 중에는 상태가 아직 queued라 이 값으로 접수를 알린다 (D2b-2 리뷰 R4)
     cancel_requested: bool
     error: JobError | None
