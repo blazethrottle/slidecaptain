@@ -17,6 +17,9 @@ import { StatusIndicator } from "../ui/StatusIndicator";
 import { BATCH_READ_ONLY_NOTICE, useHeaderShowsJob } from "../ui/ActiveJobNotice";
 import { SELECTABLE_TEMPLATES, TEMPLATE_LABELS } from "../editor/labels";
 import { StoryPlanView } from "./StoryPlanView";
+import { GenerationSteps } from "./GenerationSteps";
+import { KeyMessageSummary } from "./KeyMessageSummary";
+import { typeConfirmed } from "./reportPurpose";
 import { batchSummary } from "./stageStatus";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { StoryRewritePanel } from "./StoryRewritePanel";
@@ -98,9 +101,26 @@ function nextChapterId(chapters: Chapter[]): string {
 export type StructureBrief = { instructions: string; targetChapters: string };
 export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "" };
 
+// 장의 역할 이름 (구성 계획의 ChapterRole, D3b-7)
+const CHAPTER_ROLE_LABELS: Record<NonNullable<StoryPlan["chapters"][number]["role"]>, string> = {
+  answer: "핵심 답변", context: "배경", evidence: "근거", risk: "위험", action: "실행", cover: "표지", divider: "간지",
+};
+
+// 카드의 근거 표시 (계획 4.7). 구성 계획이 있으면 그 장의 주장에 연결된 근거(자료 이름과 발췌), 없으면 장의 자료 이름이다
+function chapterEvidence(plan: StoryPlan | null, chapter: Chapter): { kind: "plan" | "sources"; items: { key: string; text: string }[] } {
+  const assignment = plan?.chapters.find((a) => a.chapter_id === chapter.id);
+  if (!plan || !assignment) {
+    return { kind: plan ? "plan" : "sources", items: plan ? [] : chapter.source_refs.map((name) => ({ key: name, text: name })) };
+  }
+  const ids = new Set(plan.claims.filter((claim) => assignment.claim_ids.includes(claim.id)).flatMap((claim) => claim.evidence_ids));
+  return { kind: "plan", items: plan.evidence.filter((item) => ids.has(item.id))
+    .map((item) => ({ key: item.id, text: `${item.source_id}: ${item.excerpt}` })) };
+}
+
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
   onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
-  readOnlyNotice = false, registeredJobs, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000 }: {
+  readOnlyNotice = false, registeredJobs, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000, onEditPurpose,
+  editPurposeDisabled = false }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -114,6 +134,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
   focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구(보고 계획 없음 등). 이 화면의 한계 안내로 보인다 (A3)
+  // 핵심 내용 요약 줄의 "보고 목적에서 고치기". 부모의 단계 이동(초안 이탈 확인과 플러시)을 거친다 (D3b-7, 리뷰 U17)
+  onEditPurpose?: () => void;
+  editPurposeDisabled?: boolean;
   // 이 프로젝트의 장 생성 묶음 중(또는 진행 작업 확인 전)에는 장 구성과 구성 적용을 잠근다 (D3a-5, 계획 4.4).
   // readOnlyNotice는 묶음을 확인했을 때만 안내한다. 이 화면이 그 묶음을 따라가는 중이면 진행 표시가 대신한다
   readOnly?: boolean;
@@ -133,6 +156,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
 }) {
   const [draft, setDraft] = useState<Chapter[]>(deck.structure.chapters);
   const [storyPlan, setStoryPlan] = useState<StoryPlan | null>(deck.structure.story_plan ?? null);
+  // 진행 중인 구조안 작업의 마지막 응답. 실행 단계와 경과 시간을 보인다 (D3b-7, 계획 4.7)
+  const [stepView, setStepView] = useState<JobView | null>(null);
   const [decisionQuestion, setDecisionQuestion] = useState(deck.structure.story_plan?.brief.decision_question ?? "");
   const [draftGenerated, setDraftGenerated] = useState(false);  // AI 재생성 초안 여부 (결정 15: 승인 시 전면 교체)
   const [localBrief, setLocalBrief] = useState<StructureBrief>(EMPTY_BRIEF);
@@ -248,11 +273,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       : draftDirty || questionChanged ? { kind: "unsaved", detail: "승인 전 초안은 저장되지 않습니다" }
       : pendingParts.panels ? { kind: "unsaved", detail: "적용하지 않은 입력이 있습니다" } : { kind: "saved" });
   }, [draftDirty, questionChanged, pendingParts, onSaveStatusChange]);
-  const tableRef = useRef<HTMLTableSectionElement | null>(null);
+  const cardsRef = useRef<HTMLOListElement | null>(null);
   useEffect(() => {
     if (!focusChapterId) return;
-    const row = [...(tableRef.current?.rows ?? [])].find((r) => r.dataset.chapterId === focusChapterId);
-    row?.querySelector("input")?.focus();
+    const card = [...(cardsRef.current?.children ?? [])].find((r) => (r as HTMLElement).dataset.chapterId === focusChapterId);
+    card?.querySelector("input")?.focus();
   }, [focusChapterId]);
   useEffect(()=>{
     dirtyParts.current.draft=draftDirty||questionChanged;
@@ -361,7 +386,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         } } : {}),
       }, { intervalMs: pollIntervalMs, signal: controller.signal,
         onError: () => setFollowError(JOB_FOLLOW_ERROR),  // 리뷰 R11
-        onStarted: () => {
+        onUpdate: setStepView,
+        onStarted: (view) => {
+          setStepView(view);
           previous.forEach((id) => void settle(project.name, id, "dismissed"));
           structureJob.current = null;
           staleStructure.current = null;
@@ -379,7 +406,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       else showFailure(e);  // 다른 작업이 진행 중이면 실패 안내가 그 작업 취소 버튼을 보인다 (리뷰 R12)
     } finally {
       if (followAbort.current === controller) followAbort.current = null;
-      if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
+      if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); setStepView(null); }
     }
   };
 
@@ -524,16 +551,17 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         onBusyChange?.(true);
         const controller = new AbortController();
         followAbort.current = controller;
+        setStepView(runningStructure);
         try {
           const final = await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
-            onError: () => setFollowError(JOB_FOLLOW_ERROR) });
+            onError: () => setFollowError(JOB_FOLLOW_ERROR), onUpdate: setStepView });
           showStructure(final);
           noteStaleInputs(final);
           setFollowError("");
         } catch (e) {
           if (!controller.signal.aborted) { setFollowError(""); showFailure(e); }
         } finally {
-          if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); }
+          if (!controller.signal.aborted) { setBusy(false); onBusyChange?.(false); setStepView(null); }
         }
       } else {
         const earlier = pendingCandidate(jobs, ["structure"]);
@@ -820,6 +848,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {busy && job && !TERMINAL_JOB_STATES.has(job.state) && !headerShowsJob && (
         <p><button onClick={cancelGeneration} disabled={job.state === "cancel_requested" || job.cancel_requested}>생성 중단</button></p>
       )}
+      <KeyMessageSummary text={deck.meta.key_message ?? ""} onEdit={onEditPurpose} editDisabled={editPurposeDisabled} />
       <fieldset className="structure-controls" disabled={busy || rewriteActive || documentActive || readOnly}>
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
@@ -895,8 +924,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
           </Button>
           {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
-          {busy && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
+          {busy && !stepView && <span> 진행 중입니다. 잠시 기다려 주세요...</span>}
         </div>
+        {busy && stepView && stepView.kind === "structure" && <GenerationSteps key={stepView.id} view={stepView} />}
+        {/* 확인되지 않은 유형으로 만들 때 알린다 (계획 4.5, 리뷰 U10) */}
+        {!typeConfirmed(deck.meta) && <p className="hint">보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.</p>}
         {hasDiagrams && <div className="notice">
           <p>저장된 도식을 보존하기 위해 전체 구조안 다시 생성은 아직 지원하지 않습니다. 편집 단계에서 ‘도식 수정’으로 내용을 고칠 수 있으며 여기서는 장 순서를 바꿀 수 있습니다.</p>
           {!storyStale && <details><summary>자료나 보고 계획이 달라졌다면</summary>
@@ -908,39 +940,52 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {draft.length > 0 && (
         <section>
           <h2>장 구성</h2>
-          <div className="structure-table-scroll" role="region" aria-label="장 구성표" tabIndex={0}>
-          <table>
-            <thead>
-              <tr><th>순서</th><th>주제</th><th>결론 한 줄</th><th>템플릿</th><th></th></tr>
-            </thead>
-            <tbody ref={tableRef}>
-              {draft.map((c, i) => (
-                <tr key={c.id} data-chapter-id={c.id}>
-                  <td>
-                    <button aria-label={`${c.topic} 위로`} onClick={() => move(i, -1)}>위</button>
-                    <button aria-label={`${c.topic} 아래로`} onClick={() => move(i, 1)}>아래</button>
-                  </td>
-                  <td><input aria-label={`${i + 1}번 장 주제`} value={c.topic} readOnly={c.template === "diagram"}
-                    onChange={(e) => update(i, { topic: e.target.value })} /></td>
-                  <td><input aria-label={`${i + 1}번 장 결론`} value={c.conclusion ?? ""} readOnly={c.template === "diagram"}
-                    onChange={(e) => update(i, { conclusion: e.target.value })} /></td>
-                  <td>
-                    <select aria-label={`${i + 1}번 장 템플릿`} value={c.template}
-                      disabled={c.template === "diagram"}
+          {/* 카드 목록 (D3b-7, 계획 4.7). 카드는 가로로 넘치지 않으므로 초점 가능한 스크롤 상자를 두지 않는다. 버튼의 접근
+              이름은 모두 "N번 장 ..."이다(주제가 비거나 같아도 겹치지 않는다, 리뷰 U16) */}
+          <ol className="chapter-cards" ref={cardsRef}>
+            {draft.map((c, i) => {
+              const n = i + 1;
+              const locked = c.template === "diagram";
+              const role = storyPlan?.chapters.find((a) => a.chapter_id === c.id)?.role;
+              const evidence = chapterEvidence(storyPlan, c);
+              return (
+                <li key={c.id} data-chapter-id={c.id} className="chapter-card">
+                  <div className="chapter-card-head">
+                    <strong>{n}번 장</strong>
+                    {role && <span className="hint">{CHAPTER_ROLE_LABELS[role]}</span>}
+                    <span className="chapter-card-moves">
+                      <button aria-label={`${n}번 장 위로`} onClick={() => move(i, -1)} disabled={i === 0}>위로</button>
+                      <button aria-label={`${n}번 장 아래로`} onClick={() => move(i, 1)} disabled={i === draft.length - 1}>아래로</button>
+                      <button aria-label={`${n}번 장 삭제`} disabled={locked} onClick={() => remove(i)}>삭제</button>
+                    </span>
+                  </div>
+                  <div className="field"><label>주제
+                    <input aria-label={`${n}번 장 주제`} value={c.topic} readOnly={locked}
+                      onChange={(e) => update(i, { topic: e.target.value })} /></label></div>
+                  <div className="field"><label>결론 한 줄
+                    <input aria-label={`${n}번 장 결론`} value={c.conclusion ?? ""} readOnly={locked}
+                      onChange={(e) => update(i, { conclusion: e.target.value })} /></label></div>
+                  <div className="field"><label>템플릿
+                    <select aria-label={`${n}번 장 템플릿`} value={c.template} disabled={locked}
                       onChange={(e) => update(i, { template: e.target.value as TemplateName })}>
                       {SELECTABLE_TEMPLATES.map((v) => (
                         <option key={v} value={v}>{TEMPLATE_LABELS[v]}</option>
                       ))}
-                      {c.template === "diagram" && <option value="diagram">{TEMPLATE_LABELS.diagram}</option>}
-                    </select>
-                  </td>
-                  <td>
-                    <button aria-label={`${c.topic} 삭제`} disabled={c.template === "diagram"} onClick={() => remove(i)}>삭제</button>
-                    {progress[c.id] === "취소 요청됨" ? <> <StatusIndicator kind="cancel_requested" /></>
-                      : progress[c.id] === "완료 여부 확인 필요" ? <> <StatusIndicator kind="completion_unknown" /></>
-                        : progress[c.id] && <span> {progress[c.id]}</span>}
+                      {locked && <option value="diagram">{TEMPLATE_LABELS.diagram}</option>}
+                    </select></label></div>
+                  {locked && <p className="hint">도식 장은 주제와 결론을 편집 단계의 도식 수정에서 고칩니다.</p>}
+                  {role === "cover" || role === "divider" ? null : evidence.items.length > 0 ? (
+                    <details className="chapter-evidence">
+                      <summary>{evidence.kind === "plan" ? `근거 ${evidence.items.length}개` : `자료 ${evidence.items.length}개`}</summary>
+                      <ul>{evidence.items.map((item) => <li key={item.key}>{item.text}</li>)}</ul>
+                    </details>
+                  ) : <p className="hint">{evidence.kind === "plan" ? "연결된 근거 없음" : "연결된 자료 없음"}</p>}
+                  <div className="actions">
+                    {progress[c.id] === "취소 요청됨" ? <StatusIndicator kind="cancel_requested" />
+                      : progress[c.id] === "완료 여부 확인 필요" ? <StatusIndicator kind="completion_unknown" />
+                        : progress[c.id] && <span>{progress[c.id]}</span>}
                     {chapterRow(c.id) && (
-                      <button aria-label={`${i + 1}번 장 다시 생성`} aria-describedby="chapter-regenerate-hint"
+                      <button aria-label={`${n}번 장 다시 생성`} aria-describedby="chapter-regenerate-hint"
                         onClick={() => void regenerateChapter(c.id)}>
                         {["stale", "held"].includes(chapterRow(c.id)!.candidate_status) ? "현재 입력으로 다시 생성" : "이 장 다시 생성"}</button>
                     )}
@@ -948,14 +993,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                       {candidateText(chapterRow(c.id)!) && (
                         <details><summary>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
                       )}
-                      <Button variant="danger" aria-label={`${i + 1}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
+                      <Button variant="danger" aria-label={`${n}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
                     </>)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
           {/* 구성 단계의 장 다시 생성은 묶음이라 덱을 읽기 전용으로 만든다. 편집 단계의 같은 이름 버튼(후보형)과
               다르다는 것을 알린다 (D3a-5, 계획 4.4) */}
           {draft.some((c) => chapterRow(c.id)) && (

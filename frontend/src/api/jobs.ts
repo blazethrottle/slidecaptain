@@ -64,6 +64,7 @@ export function waitJob(name: string, view: JobView, opts: {
 // 등록부터 결과까지. onStarted로 작업 ID를 알려 화면이 취소와 후보 처분에 쓰게 한다
 export async function runJob<T>(name: string, kind: JobKind, params: unknown, opts: {
   intervalMs?: number; signal?: AbortSignal; onStarted?: (view: JobView) => void; onError?: (error: unknown) => void;
+  onUpdate?: (view: JobView) => void;  // 조회할 때마다 받은 작업 응답 (실행 단계 표시, D3b-7)
 } = {}): Promise<{ result: T; job: JobView }> {
   const started = await startJob(name, kind, params);
   opts.onStarted?.(started);

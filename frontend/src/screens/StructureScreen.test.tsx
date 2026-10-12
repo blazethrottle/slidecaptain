@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type Deck, type GenerationUsage, type JobView, type StructureResult } from "../api/client";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { emptyUsage, expectUsageCollapsed } from "../test/usage";
+import { storyDeck } from "../test/story";
+import { deferred } from "../test/fixtures";
 import { StructureScreen } from "./StructureScreen";
 
 // 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
@@ -180,7 +182,7 @@ it("기존 슬라이드가 사라지는 승인은 확인을 거친다", async ()
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
   render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);
-  await userEvent.click(screen.getByLabelText("본문 삭제"));
+  await userEvent.click(screen.getByLabelText("2번 장 삭제"));  // 다시 씀(D3b-7): 접근 이름 통일
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   expect(confirmSpy).toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();  // 취소했으므로 반영 없음
@@ -243,8 +245,8 @@ it("다른 저장으로 사슬이 끊기면 그 장은 이전 입력 기준으�
   await screen.findByDisplayValue("본문");
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
-  const row1 = screen.getByLabelText("1번 장 주제").closest("tr")!;
-  const row2 = screen.getByLabelText("2번 장 주제").closest("tr")!;
+  const row1 = screen.getByLabelText("1번 장 주제").closest("li")!;
+  const row2 = screen.getByLabelText("2번 장 주제").closest("li")!;
   expect(within(row1).getByText("이전 입력 기준", { exact: false })).toBeInTheDocument();
   expect(within(row2).getByText("중단", { exact: false })).toBeInTheDocument();
   expect(onDone).not.toHaveBeenCalled();
@@ -547,7 +549,7 @@ it("완료 여부를 확인하지 못한 장을 다시 생성하기 전에 확�
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
   await screen.findByDisplayValue("본문");
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
-  const row2 = await waitFor(() => screen.getByLabelText("2번 장 주제").closest("tr")!);
+  const row2 = await waitFor(() => screen.getByLabelText("2번 장 주제").closest("li")!);
   await waitFor(() => expect(within(row2).getByText("완료 여부 확인 필요", { exact: false })).toBeInTheDocument());
   const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
@@ -582,7 +584,7 @@ it("끝난 지난 묶음은 실패 요약을 보인다 (D2b-5a)", async () => {
     chapterView("c2", "failed", { error: FAILED_503 })], { state: "failed", outcome: "partial" })]);
   render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);
   expect(await screen.findByText(/장 구성 2장 가운데 1장에 아직 내용이 없습니다/)).toBeInTheDocument();
-  const row2 = screen.getByLabelText("2번 장 주제").closest("tr")!;
+  const row2 = screen.getByLabelText("2번 장 주제").closest("li")!;
   expect(within(row2).getByText("실패", { exact: false })).toBeInTheDocument();
 });
 
@@ -994,7 +996,7 @@ it("장별 상태 문구: 취소 요청됨, 검증 중은 생성 중, 슬라이�
   vi.mocked(batchGetJob).mockResolvedValueOnce(view).mockImplementation(() => new Promise(() => {}));
   render(<StructureScreen project={project} deck={deckWith([CH1, CH2, CH3], [{ chapter_id: "c3", slots: BODY }])}
     onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={0} />);
-  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("tr")!;
+  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("li")!;
   await waitFor(() => expect(within(row(1)).getByText("취소 요청됨", { exact: false })).toBeInTheDocument());
   expect(within(row(2)).getByText("생성 중", { exact: false })).toBeInTheDocument();
   expect(within(row(3)).getByText("완료", { exact: false })).toBeInTheDocument();
@@ -1012,7 +1014,7 @@ it("취소 요청을 받은 묶음은 중단 버튼을 잠그고, 취소로 끝�
     pollIntervalMs={0} />);
   await userEvent.click(await screen.findByRole("button", { name: "생성 중단" }));
   expect(screen.getByRole("button", { name: "생성 중단" })).toBeDisabled();
-  const row = screen.getByLabelText("1번 장 주제").closest("tr")!;
+  const row = screen.getByLabelText("1번 장 주제").closest("li")!;
   expect(within(row).getByText("취소 요청됨", { exact: false })).toBeInTheDocument();
   await act(async () => finish(batchView([chapterView("c1", "cancelled")], { state: "cancelled", outcome: "cancelled" })));
   await waitFor(() => expect(screen.queryByText("취소를 요청했습니다. AI가 응답을 멈추면 취소됨으로 바뀝니다.")).toBeNull());
@@ -1155,7 +1157,7 @@ it("장 표의 취소 요청됨과 완료 여부 확인 필요는 상태 표시(
   vi.mocked(batchGetJob).mockResolvedValueOnce(view).mockImplementation(() => new Promise(() => {}));
   render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}}
     pollIntervalMs={0} />);
-  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("tr")!;
+  const row = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("li")!;
   await waitFor(() => expect(within(row(1)).getByRole("img", { name: "취소 대기" })).toBeInTheDocument());
   expect(within(row(2)).getByRole("img", { name: "결과 불명" })).toBeInTheDocument();
 });
@@ -1324,7 +1326,7 @@ describe("구성 단계의 주 행동은 상태마다 정확히 1개다 (D3a-1, 
       { chapter_id: "c2", slots: BODY }])} onDeckChange={() => {}} onDone={() => {}} />);
     const approve = await screen.findByRole("button", { name: "승인하고 내용 생성" });
     expect(screen.queryByText(/기존 장 내용/)).toBeNull();  // 지울 내용이 없으면 알리지 않는다
-    await userEvent.click(screen.getByRole("button", { name: "본문 삭제" }));
+    await userEvent.click(screen.getByRole("button", { name: "2번 장 삭제" }));  // 다시 씀(D3b-7)
     const warning = screen.getByText("승인하면 기존 장 내용 1개를 지우고 새로 생성합니다.");
     expect(approve).toHaveAttribute("aria-describedby", warning.id);
     expect(primaries()).toEqual(["승인하고 내용 생성"]);
@@ -1503,4 +1505,100 @@ it("구성 단계의 장 다시 생성 버튼은 다시 생성하는 동안 문�
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
   const button = await screen.findByRole("button", { name: "1번 장 다시 생성" });
   expect(button).toHaveAccessibleDescription("장을 다시 생성하는 동안 문서 편집이 잠깁니다.");
+});
+
+
+describe("장 카드 목록 (D3b-7, 계획 4.7)", () => {
+  it("버튼의 접근 이름은 모두 N번 장으로 시작하고, 주제가 같거나 비어도 겹치지 않는다 (리뷰 U16)", () => {
+    const same = { ...CH2, id: "c3" };
+    const blank = { ...CH2, id: "c4", topic: "" };
+    render(<StructureScreen project={project} deck={deckWith([CH2, same, blank], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    const names = screen.getAllByRole("listitem").filter((li) => li.classList.contains("chapter-card"))
+      .flatMap((card) => within(card).getAllByRole("button").map((b) => b.getAttribute("aria-label")));
+    expect(names).toEqual(["1번 장 위로", "1번 장 아래로", "1번 장 삭제", "2번 장 위로", "2번 장 아래로", "2번 장 삭제",
+      "3번 장 위로", "3번 장 아래로", "3번 장 삭제"]);
+    expect(screen.queryByRole("region", { name: "장 구성표" })).toBeNull();  // 초점 가능한 스크롤 상자를 없앴다
+  });
+
+  it("처음 장의 위로와 마지막 장의 아래로는 잠긴다", () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.getByRole("button", { name: "1번 장 위로" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "2번 장 아래로" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "1번 장 아래로" })).toBeEnabled();
+  });
+
+  it("구성 계획이 없으면 장의 자료 이름 수를, 펼치면 자료 이름을 보인다", async () => {
+    const withRefs = { ...CH2, source_refs: ["매출.md", "고객.md"] };
+    render(<StructureScreen project={project} deck={deckWith([withRefs], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await userEvent.click(screen.getByText("자료 2개"));
+    expect(screen.getByText("매출.md")).toBeVisible();
+    expect(screen.getByText("고객.md")).toBeVisible();
+  });
+
+  it("구성 계획이 있으면 역할과 그 장의 주장에 연결된 근거(자료 이름과 발췌)를 보인다", async () => {
+    render(<StructureScreen project={project} deck={storyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+    const card = screen.getByLabelText("1번 장 주제").closest("li")!;
+    expect(within(card).getByText("핵심 답변")).toBeInTheDocument();
+    await userEvent.click(within(card).getByText("근거 1개"));
+    expect(within(card).getByText("합성.md: 확대 비용 미확인")).toBeVisible();
+  });
+});
+
+
+describe("핵심 내용 요약 줄과 실행 단계 (D3b-7, 계획 4.7)", () => {
+  it("핵심 내용을 읽기 전용으로 보이고, 세 줄을 넘으면 더 보기로 펼치며, 보고 목적에서 고치기는 부모의 이동을 부른다", async () => {
+    const onEditPurpose = vi.fn();
+    const deck = { ...emptyDeck(), meta: { ...emptyDeck().meta, key_message: "첫째 줄\n둘째 줄\n셋째 줄\n넷째 줄" } };
+    render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} onEditPurpose={onEditPurpose} />);
+    const summary = screen.getByRole("region", { name: "전달할 핵심 내용" });
+    expect(within(summary).getByText(/넷째 줄/)).toBeInTheDocument();
+    expect(within(summary).queryByRole("textbox")).toBeNull();  // 다시 입력하게 하지 않는다
+    const more = within(summary).getByRole("button", { name: "더 보기" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(more);
+    expect(within(summary).getByRole("button", { name: "접기" })).toHaveAttribute("aria-expanded", "true");
+    await userEvent.click(within(summary).getByRole("button", { name: "보고 목적에서 고치기" }));
+    expect(onEditPurpose).toHaveBeenCalledTimes(1);
+  });
+
+  it("핵심 내용이 비어 있으면 그렇게 알린다", () => {
+    render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.getByText("보고 목적에 핵심 내용이 없습니다.")).toBeInTheDocument();
+  });
+
+  it("보고 유형을 고르지 않았으면 리서치 결과 보고로 만든다고 알린다 (리뷰 U10)", () => {
+    const view = render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.getByText("보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.")).toBeInTheDocument();
+    view.unmount();
+    const confirmed = { ...emptyDeck(), meta: { ...emptyDeck().meta, report_type_confirmed: true } };
+    render(<StructureScreen project={project} deck={confirmed} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.queryByText("보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.")).toBeNull();
+  });
+
+  it("구조안 생성 중에는 실행 단계를 차례로 보이고 재시도는 단계를 하나 더하며, 끝나면 단계 표시를 내린다", async () => {
+    const at = "2026-10-12T10:00:00+09:00";
+    const running = (step: "generating" | "retrying_format") => jobView("structure", { id: "job-run", state: "running",
+      candidate_status: "none", result: null, step, step_started_at: at, elapsed_seconds: 3 });
+    vi.mocked(api.startJob).mockResolvedValueOnce(jobView("structure", { id: "job-run", state: "queued",
+      candidate_status: "none", result: null, step: "connecting", step_started_at: at, elapsed_seconds: 0 }));
+    const second = deferred<JobView>(), third = deferred<JobView>(), done = deferred<JobView>();
+    batchGetJob.mockReturnValueOnce(second.promise).mockReturnValueOnce(third.promise).mockReturnValueOnce(done.promise);
+    render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={0} />);
+    await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
+    const list = await screen.findByRole("list", { name: "구조안 생성 단계" });
+    expect(list).toHaveTextContent("AI 연결 확인 중");
+    expect(screen.getByText("경과 시간 0초")).toBeInTheDocument();
+    second.resolve(running("generating"));
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(2));
+    third.resolve(running("retrying_format"));
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
+    const items = within(list).getAllByRole("listitem");
+    expect(items.map((li) => li.textContent)).toEqual(["AI 연결 확인 중 (지남)", "구성 생성 중 (지남)", "형식 다시 맞추는 중"]);
+    expect(items[2]).toHaveAttribute("aria-current", "step");
+    expect(screen.getAllByRole("status").some((el) => el.textContent === "형식 다시 맞추는 중")).toBe(true);
+    done.resolve(jobView("structure", { id: "job-run", state: "succeeded", candidate_status: "held",
+      result: { status: "ok", structure: { chapters: [CH1, CH2] }, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
+        format_retried: true } }));
+    await waitFor(() => expect(screen.queryByRole("list", { name: "구조안 생성 단계" })).toBeNull());
+  });
 });

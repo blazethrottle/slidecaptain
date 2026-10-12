@@ -84,7 +84,7 @@ it("구조안 재생성과 도식 수정은 막고 기존 도식을 유지해 �
   expect(screen.getByLabelText("2번 장 템플릿")).toBeDisabled();
   expect(screen.getByLabelText("2번 장 템플릿")).toHaveValue("diagram");
   expect(screen.getByLabelText("2번 장 주제")).toHaveAttribute("readonly");
-  expect(screen.getByRole("button", { name: "요청 처리 흐름 삭제" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "2번 장 삭제" })).toBeDisabled();  // 다시 씀(D3b-7): 접근 이름 통일
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   expect(api.putDeck).toHaveBeenCalledWith(project.name, deck, true);

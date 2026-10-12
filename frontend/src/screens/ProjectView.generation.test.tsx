@@ -785,6 +785,30 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
   });
 
+  it("그 단계에 있는 탭이 다른 탭의 실패를 받으면 결과 다시 보기로 화면을 다시 연다 (B8, 리뷰 U19)", async () => {
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(stageButton("구성")).toHaveAttribute("aria-current", "step"));
+    const reads = vi.mocked(api.listJobs).mock.calls.length;
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/);
+    expect(within(header()).queryByRole("button", { name: "구성 단계로 이동" })).toBeNull();
+    await userEvent.click(within(header()).getByRole("button", { name: "결과 다시 보기" }));
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull());
+    await waitFor(() => expect(vi.mocked(api.listJobs).mock.calls.length).toBeGreaterThan(reads));  // 화면을 다시 열었다
+  });
+
+  it("다시 연 화면에 원인이 남지 않는 작업 종류는 결과 다시 보기를 보이지 않는다 (B8)", async () => {
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(stageButton("구성")).toHaveAttribute("aria-current", "step"));
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "rewrite" }, { broadcast: false }));
+    await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/);
+    expect(within(header()).queryByRole("button", { name: "결과 다시 보기" })).toBeNull();
+  });
+
   it("창 닫기 경고는 이 탭이 시작한 작업에만 띄운다 (D3a-7 사용자 결정, B9)", async () => {
     vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("structure", project.name, "job-other")));
     await openProject(5);

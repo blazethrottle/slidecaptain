@@ -759,7 +759,7 @@ it("구성 초안을 고친 채 다른 탭의 묶음이 끝나면 덱을 몰래 
   const structureTab = await screen.findByRole("button", { name: /^(구조안|구성)$/ });
   await waitFor(() => expect(structureTab).toBeEnabled());
   await userEvent.click(structureTab);
-  await userEvent.click(await screen.findByRole("button", { name: "둘째 삭제" }));  // 초안이 저장본과 달라진다
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 삭제" }));  // 초안이 저장본과 달라진다. 다시 씀(D3b-7)
   const reads = vi.mocked(api.getDeck).mock.calls.length;
   vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive(project.name))
     .mockImplementation(async () => ({ active: null, ledger_available: true }));

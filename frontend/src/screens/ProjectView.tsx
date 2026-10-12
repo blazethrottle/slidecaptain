@@ -498,6 +498,14 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
       setStage(next);
     }
   };
+  // 지금 단계의 화면을 다시 연다(결과 다시 보기). 화면이 다시 열리며 지난 실패를 원인별로 보인다 (B8)
+  const reopenStage = async () => {
+    if (!(await leaveScreen("다시 열기를"))) return;
+    setError("");
+    setSaveStatus(null);
+    setJobProblem(null);
+    setScreenKey((k) => k + 1);
+  };
   const goBack = async () => {
     if (await leaveScreen("이동을")) onBack();
   };
@@ -615,9 +623,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
                 <StatusIndicator kind="failed" />{" "}
                 {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계의 AI 생성이{" "}
                 {jobProblem.state === "failed" ? "실패했습니다" : "끝나지 않았습니다"}.{" "}
-                <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked || jobProblem.stage === stage}
-                  title={navTitle}>
-                  {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>{" "}
+                {jobProblem.stage === stage && !showRecovery ? (
+                  // 그 단계에 있는 탭이 받은 다른 탭의 실패: 다시 연 화면에 원인이 남는 종류만 다시 연다. 단계 이탈과 같은
+                  // 확인(초안 이탈 확인과 편집 플러시)을 거친다 (B8, 리뷰 U19)
+                  REOPEN_SHOWS.has(jobProblem.kind) && (
+                    <button onClick={() => void reopenStage()} disabled={navLocked} title={navTitle}>결과 다시 보기</button>)
+                ) : (
+                  <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked}
+                    title={navTitle}>
+                    {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>
+                )}{" "}
                 <button className="btn-text" onClick={() => setJobProblem(null)}>닫기</button>
               </p>
             )}
@@ -716,7 +731,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
             registeredJobs={startedHere.current} seenJobFailures={seenJobFailures.current} failuresSince={openedAt}
             limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked}
-            readOnlyNotice={batchHere} />
+            readOnlyNotice={batchHere} onEditPurpose={() => void switchStage("purpose")} editPurposeDisabled={navLocked} />
         )}
         {!showRecovery && stage === "editor" && (
           <EditorScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}

@@ -153,7 +153,7 @@ describe("상단 머리의 저장 상태 출처 (계획 4.1 표)", () => {
     await openProject();
     await userEvent.click(stageButton("구성"));
   // 다시 씀 (D3a-7 사용자 결정, A19): 이 단계에서 저장하기 전에는 머리에 저장 상태를 보이지 않는다
-    await userEvent.click(await screen.findByRole("button", { name: "둘째 삭제" }));
+    await userEvent.click(await screen.findByRole("button", { name: "2번 장 삭제" }));  // 다시 씀(D3b-7): 접근 이름 통일
     expect(headerStatus()).toBe("변경사항 있음");
     expect(document.querySelector(".header-save-status")).toHaveTextContent("승인 전 초안은 저장되지 않습니다");
   });
@@ -439,7 +439,7 @@ describe("D3a-2 리뷰 반영", () => {
     vi.mocked(api.getDeck).mockResolvedValue(twoChapters());
     await openProject();
     await userEvent.click(stageButton("구성"));
-    await userEvent.click(await screen.findByRole("button", { name: "둘째 장 삭제" }));
+    await userEvent.click(await screen.findByRole("button", { name: "2번 장 삭제" }));  // 다시 씀(D3b-7)
     expect(headerStatus()).toBe("변경사항 있음");
     // 다시 씀 (D3a-5 C16): 고친 장 구성 초안을 두고 떠나면 묻는다. 종전에는 앞 시험이 남긴 확인 창 모의에 기대어 통과했다
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
