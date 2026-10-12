@@ -52,7 +52,8 @@ export const UNKNOWN_REASON_TEXT = "이 화면이 알지 못하는 상태입니�
 
 // 준비됨에 붙는 사유. 단계 목록에는 보이지 않고 그 단계 화면의 한계 안내로 보인다 (계획 4.2)
 export const READY_LIMITATIONS: ReadonlySet<string> = new Set<ProgressReason>(
-  ["extraction_review_unavailable", "draft_checks_only", "manual_pass_not_final", "plan_missing"]);
+  ["extraction_review_unavailable", "draft_checks_only", "manual_pass_not_final", "plan_missing",
+    "key_message_missing"]);  // 핵심 내용은 필수가 아니다. 보일 자리는 D3b-5, D3b-7 (D3b-1 리뷰 R7)
 
 const SERVER_STAGE: Record<Stage, StageProgress["stage"]> = {
   purpose: "purpose", sources: "sources", structure: "structure", editor: "editing", review: "review",

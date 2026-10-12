@@ -350,9 +350,13 @@ class FileProjectStore:
         if state == "unreadable":
             raise ProjectManifestUnreadable(_UNREADABLE_MANIFEST_MESSAGE)
 
+    @staticmethod
+    def _deck_bytes(deck: Deck) -> bytes:
+        return deck.model_dump_json(indent=2).encode("utf-8")
+
     def _write_deck(self, project_dir: Path, deck: Deck) -> str:
         """deck.json을 원자적으로 쓰고 그 바이트의 SHA-256 16진수(ETag)를 돌려준다."""
-        data = deck.model_dump_json(indent=2).encode("utf-8")
+        data = self._deck_bytes(deck)
         self._atomic_write(project_dir, "deck.json", data, prefix=".deck-", suffix=".tmp")
         return hashlib.sha256(data).hexdigest()
 
@@ -384,9 +388,10 @@ class FileProjectStore:
         """덱을 쓰고 형식 기록을 덱 내용 등급에 맞춘다 (D2a-1, D3b-1).
 
         디스크의 덱이 등급 1이고 새 덱이 2 이상이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을 남긴다.
-        단 디스크 덱이 이 앱이 마지막으로 쓴 덱 그대로면 생략한다: 자동 저장이 등급을 오갈 때 강제 스냅샷이
-        쌓이지 않게 하고(리뷰 S13), 0.2.0이 manifest를 모른 채 덱을 고친 경우에는 다시 복구 지점을 남긴다
-        (재리뷰 RR2). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다.
+        단 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같으면 생략한다: 자동 저장이 같은 등급 1 상태와 등급
+        3을 오갈 때 강제 스냅샷이 쌓이지 않게 하고(리뷰 S13), 등급 1에서 무엇이든 바뀌면(이 앱의 편집이든 0.2.0의
+        편집이든) 다시 복구 지점을 남긴다(재리뷰 RR2, D3b-1 리뷰 R5). 등급 3 저장은 덱 교체 전에 쓰려는 덱과 직전
+        덱의 지문을 manifest에 남긴다(되돌림 표시, D3b-1 리뷰 R1). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다.
         등급 3에서는 manifest 번호가 중간 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
         pending 기록을 옛 번호로 먼저 남기고 덱을 교체한 뒤 번호를 내린다. 끊기면 다음 쓰기가 덱 내용으로
         pending을 마무리한다.
@@ -399,16 +404,17 @@ class FileProjectStore:
         revert_id = project_format.find_revert_snapshot(project_dir, prior)
         manifest = project_format.reconcile(prior, old, revert_snapshot_id=revert_id)
         old_etag = hashlib.sha256(old_bytes).hexdigest() if old_bytes is not None else None
+        if new == 3:
+            # 덱 교체 전에 남긴다. 아래의 pending 기록이나 미리 쓰기가 이 값을 함께 쓴다 (D3b-1 리뷰 R1)
+            manifest.last_written_etag = hashlib.sha256(self._deck_bytes(deck)).hexdigest()
+            manifest.prior_written_etag = old_etag
         if old is not None and new > old:
             if old == 1:
-                # 생략은 0.2.0 복구 지점(등급 1에서 오른 완료 기록의 스냅샷)이 이미 있고 디스크 덱이 이 앱이 쓴
-                # 그대로일 때만이다. 첫 올림은 언제나 복구 지점을 남긴다
-                ours = (manifest.last_written_etag is not None and manifest.last_written_etag == old_etag
-                        and any(m.kind == "upgrade" and m.from_format == 1 and m.status == "done" and m.snapshot_id
-                                for m in manifest.migrations))
-                # 등급 1에서 오르는 저장의 복구 지점을 "새 형식으로 바꾸기 전"(0.2.0으로 되돌릴 지점)으로 기록하는
-                # 것은 0.2.0이 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외, 최종 리뷰 F16)
-                snapshot_id = self._snapshot_current(project_dir) if (snapshot or not ours) else None
+                # 생략은 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같을 때만이다(첫 올림은 복구 지점이 없어
+                # 언제나 남긴다). 등급 1에서 오르는 저장의 복구 지점을 "새 형식으로 바꾸기 전"으로 기록하는 것은 0.2.0이
+                # 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외, 최종 리뷰 F16)
+                unchanged = project_format.latest_restore_point(project_dir, manifest) == old_bytes
+                snapshot_id = self._snapshot_current(project_dir) if (snapshot or not unchanged) else None
                 legacy_ok = project_format.legacy_readable(old_bytes)
             else:
                 snapshot_id = self._snapshot_current(project_dir) if snapshot else None
@@ -434,13 +440,14 @@ class FileProjectStore:
         else:
             if snapshot:
                 self._snapshot_current(project_dir)
+            if new == 3:
+                project_format.write_manifest(project_dir, manifest, self._atomic_write)  # 쓰려는 덱의 지문을 먼저
             etag = self._write_deck(project_dir, deck)
         manifest.format_version = new
-        # 마지막 쓰기 ETag는 쓰이는 때만 남긴다: 등급 3(되돌림 표시, 재리뷰 RR3)과, 0.2.0 복구 지점이 이미 있는
-        # 등급 1(강제 스냅샷 생략 판정, RR2). 그 밖에는 비워 둬 일반 저장이 manifest를 다시 쓰지 않게 한다
-        has_restore_point = any(m.kind == "upgrade" and m.from_format == 1 and m.status == "done" and m.snapshot_id
-                                for m in manifest.migrations)
-        manifest.last_written_etag = etag if new == 3 or (new == 1 and has_restore_point) else None
+        # 덱 교체가 끝났다: 직전 덱의 지문을 지운다. 등급 3이 아니면 두 값 모두 쓰이지 않으므로 비워 일반 저장이
+        # manifest를 다시 쓰지 않게 한다
+        manifest.prior_written_etag = None
+        manifest.last_written_etag = etag if new == 3 else None
         try:
             project_format.write_manifest(project_dir, manifest, self._atomic_write)
         except OSError:
@@ -596,6 +603,10 @@ class FileProjectStore:
 
     def list_snapshots(self, name: str) -> list[SnapshotInfo]:
         name = _nfc(name)
+        with self.locked(name):  # 쓰기 도중의 manifest와 덱을 섞어 읽지 않는다 (D3b-1 리뷰 R9)
+            return self._list_snapshots(name)
+
+    def _list_snapshots(self, name: str) -> list[SnapshotInfo]:
         d = self._project_dir_any(name)
         pre_migration = project_format.pre_migration_snapshot_ids(d)
         before_revert = project_format.revert_snapshot_ids(d)  # 쓰기 전이어도 읽기만으로 감지한다 (재리뷰 RR3)

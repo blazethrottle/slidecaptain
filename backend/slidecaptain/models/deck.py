@@ -264,13 +264,29 @@ class DeckMeta(BaseModel):
     # 스키마에서 기본값 표기를 뺀다: 기본값이면 응답에 키가 없으므로 화면 타입(openapi-typescript)이 "없을 수 있음"으로
     # 만들어야 한다. 기본값을 적어 두면 생성기가 항상 있는 값으로 만든다
     report_type_confirmed: bool = Field(default=False, json_schema_extra=_omittable)  # 형식 등급에는 넣지 않는다
-    key_message: str = Field(default="", max_length=KEY_MESSAGE_MAX, json_schema_extra=_omittable)  # 핵심 내용
+    key_message: str = Field(default="", json_schema_extra=_omittable)  # 핵심 내용
     # None은 사용자가 고르지 않음(화면의 기본 표시: 사실 및 데이터 중심)
     desired_outcome: DesiredOutcome | None = Field(default=None, json_schema_extra=_omittable)
     # 기타를 고르지 않아도 지우지 않는다(제품 설계 6절)
-    desired_outcome_other: str = Field(default="", max_length=OUTCOME_OTHER_MAX, json_schema_extra=_omittable)
+    desired_outcome_other: str = Field(default="", json_schema_extra=_omittable)
     # 유형별 추가 입력. 키는 "유형.칸"(models/report_purpose.py)
     report_details: dict[str, str] = Field(default_factory=dict, json_schema_extra=_omittable)
+
+    # 길이 상한은 문구를 직접 낸다. 기본 문구("입력 형식이 맞지 않습니다")로는 자동 저장의 422 원인을 알 수 없다
+    # (D3b-1 리뷰 R12)
+    @field_validator("key_message")
+    @classmethod
+    def _key_message_length(cls, value: str) -> str:
+        if len(value) > KEY_MESSAGE_MAX:
+            raise ValueError(f"핵심 내용은 {KEY_MESSAGE_MAX:,}자까지입니다")
+        return value
+
+    @field_validator("desired_outcome_other")
+    @classmethod
+    def _other_length(cls, value: str) -> str:
+        if len(value) > OUTCOME_OTHER_MAX:
+            raise ValueError(f"기타 설명은 {OUTCOME_OTHER_MAX:,}자까지입니다")
+        return value
 
     @field_validator("report_details")
     @classmethod

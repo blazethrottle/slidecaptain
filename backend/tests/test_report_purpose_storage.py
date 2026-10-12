@@ -83,7 +83,10 @@ def test_blank_values_do_not_raise_the_level():
 def test_hidden_inputs_still_count_for_the_level():
     """지금 유형이 아닌 유형의 추가 입력과 기타가 아닐 때의 기타 설명도 데이터라 센다 (계획 4.2, 리뷰 S7)."""
     assert deck_format(_deck(report_type="research", report_details={"weekly.period": "10월 둘째 주"})) == 3
-    assert deck_format(_deck(report_type="research", desired_outcome="facts", desired_outcome_other="옛 설명")) == 3
+    # 원하는 결과 선택이 없을 때의 기타 설명만으로도 등급 3이다 (D3b-1 리뷰 R6, M18)
+    assert deck_format(_deck(report_type="research", desired_outcome_other="옛 설명")) == 3
+    # 원하는 결과를 고른 것만으로도 사용자 입력이다 (M17)
+    assert deck_format(_deck(report_type="research", desired_outcome="facts")) == 3
 
 
 def test_schema_version_input_is_ignored_and_decided_by_content():
@@ -207,12 +210,57 @@ def test_lowering_writes_the_deck_before_lowering_the_manifest(store):
 
 
 def test_own_round_trips_do_not_pile_up_forced_snapshots(store):
-    """이 앱이 마지막으로 쓴 덱이 디스크에 그대로면 강제 스냅샷을 다시 만들지 않는다 (리뷰 S13)."""
+    """디스크 덱이 가장 최근 0.2.0 복구 지점과 같으면 강제 스냅샷을 다시 만들지 않는다 (리뷰 S13).
+    다시 씀 (D3b-1 리뷰 R5): 기준을 "마지막 쓰기 그대로"에서 "복구 지점과 바이트가 같음"으로 바꿨다"""
     store.create_project("p1")
+    store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
+    store.save_deck("p1", _deck(), snapshot=False)
+    store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
+    count = len(store.list_snapshots("p1"))
     for _ in range(3):
-        store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
         store.save_deck("p1", _deck(), snapshot=False)
-    assert len(store.list_snapshots("p1")) == 1
+        store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
+    assert len(store.list_snapshots("p1")) == count
+
+
+@pytest.mark.parametrize("raised", [{"key_message": "핵심"}, {"report_type": "weekly"}])
+def test_own_edit_at_level_one_becomes_a_new_restore_point(store, raised):
+    """이 앱이 등급 1로 내린 뒤 고친 상태도 다음 올림의 0.2.0 복구 지점이 된다. 1에서 2로 오르는 저장도 같다
+    (D3b-1 리뷰 R5: 마지막 쓰기 기준이면 이 편집을 0.2.0에서 되찾을 수 없었다)"""
+    store.create_project("p1")
+    store.save_deck("p1", _deck(**raised), snapshot=False)
+    store.save_deck("p1", _deck(title="등급 1에서 오래 편집한 상태"), snapshot=False)
+    store.save_deck("p1", _deck(title="등급 1에서 오래 편집한 상태", **raised), snapshot=False)
+    titles = []
+    for snap in store.list_snapshots("p1"):
+        data = json.loads((store.root / "p1" / "snapshots" / f"{snap.id}.json").read_text(encoding="utf-8"))
+        titles.append((snap.kind, data["meta"]["title"]))
+    assert ("pre_migration", "등급 1에서 오래 편집한 상태") in titles
+
+
+def test_raising_from_two_to_three_without_a_snapshot_request_makes_no_snapshot(store):
+    """강제 스냅샷은 디스크 등급이 1일 때만이다. 주간 보고 덱의 자동 저장마다 쌓이지 않는다 (D3b-1 리뷰 R6, M31)."""
+    store.create_project("p1")
+    store.save_deck("p1", _deck(report_type="weekly"), snapshot=False)
+    count = len(store.list_snapshots("p1"))
+    store.save_deck("p1", _deck(report_type="weekly", key_message="핵심"), snapshot=False)
+    store.save_deck("p1", _deck(report_type="weekly"), snapshot=False)
+    assert len(store.list_snapshots("p1")) == count
+
+
+def test_broken_legacy_deck_raise_still_puts_the_manifest_first(store, monkeypatch):
+    """0.2.0도 못 여는 깨진 덱에서 오르는 저장도 manifest 번호를 먼저 올린다 (D3b-1 리뷰 R6, M26)."""
+    store.create_project("p1")
+    (store.root / "p1" / "deck.json").write_text(
+        '{"schema_version": 1, "meta": {"title": "x", "report_type": "research"}, "slides": 5}', encoding="utf-8")
+
+    def failing(project_dir, deck):
+        raise OSError("디스크 오류")
+
+    monkeypatch.setattr(store, "_write_deck", failing)
+    with pytest.raises(OSError):
+        store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
+    assert _manifest(store).format_version == 3
 
 
 def test_a_foreign_edit_at_level_one_forces_a_new_snapshot(store):
@@ -226,6 +274,30 @@ def test_a_foreign_edit_at_level_one_forces_a_new_snapshot(store):
     snapshots = sorted((store.root / "p1" / "snapshots").glob("deck-*.json"))
     assert snapshots[-1].read_bytes() == foreign
     assert [s.kind for s in store.list_snapshots("p1")].count("pre_migration") == 2
+
+
+def _fail_manifest_after_deck(store, monkeypatch):
+    """덱을 교체한 뒤의 manifest 쓰기만 실패시킨다. 몇 번째 쓰기인지에 기대지 않는다."""
+    original_write, original_deck = project_format.write_manifest, store._write_deck
+    state = {"deck_written": False}
+
+    def deck_then_flag(project_dir, deck):
+        etag = original_deck(project_dir, deck)
+        state["deck_written"] = True
+        return etag
+
+    def fail_after_deck(project_dir, manifest, atomic_write):
+        if state["deck_written"]:
+            raise OSError("기록 실패")
+        return original_write(project_dir, manifest, atomic_write)
+
+    monkeypatch.setattr(store, "_write_deck", deck_then_flag)
+    monkeypatch.setattr(project_format, "write_manifest", fail_after_deck)
+
+    def restore():
+        monkeypatch.setattr(store, "_write_deck", original_deck)
+        monkeypatch.setattr(project_format, "write_manifest", original_write)
+    return restore
 
 
 # -- 0.2.0 되돌림 표시 ------------------------------------------------------------------
@@ -263,6 +335,33 @@ def test_revert_mark_survives_a_later_old_app_save_and_is_recorded_on_write(stor
     assert {s.id: s.kind for s in store.list_snapshots("p1")}["deck-29991231-235959-000001"] == "before_revert"
 
 
+@pytest.mark.parametrize("snapshot", [True, False])
+def test_revert_after_a_failed_final_manifest_write_marks_the_newest_content(store, monkeypatch, snapshot):
+    """마지막 기록이 실패해도 쓰려던 덱의 지문이 덱 교체 전에 남아, 0.2.0이 되돌린 뒤 최신 내용이 든 스냅샷에
+    표시가 붙는다. 옛 스냅샷에 붙으면 표시를 따라 복원한 사용자가 마지막 편집을 잃는다 (D3b-1 리뷰 R1)."""
+    store.create_project("p1")
+    store.save_deck("p1", _deck(key_message="첫 핵심"), snapshot=False)
+    restore = _fail_manifest_after_deck(store, monkeypatch)
+    store.save_deck("p1", _deck(key_message="마지막 핵심"), snapshot=snapshot)
+    restore()
+    pre = next(s for s in store.list_snapshots("p1") if s.kind == "pre_migration")
+    _simulate_legacy_restore(store, pre.id)
+    marked = [s.id for s in store.list_snapshots("p1") if s.kind == "before_revert"]
+    assert marked == ["deck-29991231-235959-000001"]
+    data = json.loads((store.root / "p1" / "snapshots" / f"{marked[0]}.json").read_text(encoding="utf-8"))
+    assert data["meta"]["key_message"] == "마지막 핵심"
+
+
+def test_own_downgrade_with_a_failed_final_write_is_not_marked_as_a_revert(store, monkeypatch):
+    """이 앱이 등급 3에서 1로 내리며 마지막 기록이 실패해도 자기 스냅샷을 되돌림으로 표시하지 않는다 (리뷰 R6, M11)."""
+    store.create_project("p1")
+    store.save_deck("p1", _deck(key_message="핵심"), snapshot=False)
+    restore = _fail_manifest_after_deck(store, monkeypatch)
+    store.save_deck("p1", _deck(), snapshot=True)
+    restore()
+    assert "before_revert" not in {s.kind for s in store.list_snapshots("p1")}
+
+
 def test_revert_from_level_two_does_not_mark_an_old_level_three_snapshot(store):
     store.create_project("p1")
     store.save_deck("p1", _deck(report_type="weekly", key_message="핵심"), snapshot=True)
@@ -286,3 +385,52 @@ def test_purpose_is_ready_once_the_type_is_confirmed_or_not_the_default():
     assert (chosen.state, chosen.reasons) == ("ready", ["key_message_missing"])
     blank = _purpose(_deck(report_type_confirmed=True, key_message="  "))
     assert blank.reasons == ["key_message_missing"]
+
+
+
+def test_report_type_tables_cover_every_report_type():
+    """열거와 그 열거를 키로 쓰는 표가 어긋나면 그 유형의 생성이 KeyError로 끝난다 (D3b-1 리뷰 R2)."""
+    from typing import get_args
+
+    from slidecaptain.models.story import ReportType
+    from slidecaptain.pipeline.report_types import REPORT_TYPE_GUIDES
+
+    assert set(REPORT_TYPE_GUIDES) == set(get_args(ReportType)) == set(REPORT_DETAIL_FIELDS)
+
+
+def test_legacy_readable_checks_the_raw_schema_version():
+    """원문 버전이 정수 1이 아니면 0.2.0이 열지 못한다. 손 편집한 "2" 문자열도 마찬가지다 (D3b-1 리뷰 R10)."""
+    data = json.loads(_deck().model_dump_json())
+    assert project_format.legacy_readable(json.dumps(data).encode("utf-8"))
+    data["schema_version"] = "2"
+    assert not project_format.legacy_readable(json.dumps(data).encode("utf-8"))
+
+
+def test_too_long_purpose_text_has_a_readable_message():
+    """자동 저장의 422가 원인을 알려 준다 (D3b-1 리뷰 R12)."""
+    with pytest.raises(ValidationError, match="핵심 내용은 8,000자까지입니다"):
+        _deck(key_message="x" * 8001)
+    with pytest.raises(ValidationError, match="기타 설명은 8,000자까지입니다"):
+        _deck(desired_outcome_other="x" * 8001)
+
+
+def test_put_of_a_version_one_deck_with_purpose_content_writes_version_two(store):
+    """화면은 받은 덱을 그대로 돌려보낸다. 버전 1 덱에 핵심 내용을 넣은 PUT도 디스크는 버전 2, manifest 3이다
+    (D3b-1 리뷰 R16)."""
+    from fastapi.testclient import TestClient
+
+    from slidecaptain.server.app import create_app
+
+    store.create_project("p1")
+    with TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"}) as client:
+        deck = client.get("/api/projects/p1/deck")
+        body = deck.json()
+        assert body["schema_version"] == 1
+        body["meta"]["key_message"] = "핵심"
+        assert client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]}).status_code == 200
+        assert json.loads(_deck_bytes(store))["schema_version"] == 2 and _manifest(store).format_version == 3
+        deck = client.get("/api/projects/p1/deck")
+        body = deck.json()
+        body["meta"]["key_message"] = ""
+        assert client.put("/api/projects/p1/deck", json=body, headers={"If-Match": deck.headers["etag"]}).status_code == 200
+    assert json.loads(_deck_bytes(store))["schema_version"] == 1 and _manifest(store).format_version == 1

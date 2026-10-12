@@ -5072,7 +5072,6 @@
           },
           "key_message": {
             "type": "string",
-            "maxLength": 8000,
             "title": "Key Message"
           },
           "desired_outcome": {
@@ -5094,7 +5093,6 @@
           },
           "desired_outcome_other": {
             "type": "string",
-            "maxLength": 8000,
             "title": "Desired Outcome Other"
           },
           "report_details": {

@@ -24,7 +24,7 @@ it.each([
   ["weekly", "주간 업무 보고"], ["business", "일반 업무 보고"], ["monthly", "월간 보고"],
   ["data", "데이터 설명 보고"], ["research", "리서치 결과 보고"],
   ["project", "프로젝트 보고"], ["results", "결과 보고"],
-  ["approval", "승인요청"], ["strategy", "전략기획"],
+  ["approval", "승인요청"], ["strategy", "전략기획"], ["ir", "IR Pitch Deck"],
 ])("보고 유형 %s를 선택해 저장하고 다시 연다", async (value, label) => {
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   const onDeckChange = vi.fn();
@@ -35,6 +35,7 @@ it.each([
   await waitFor(() => expect(onDeckChange).toHaveBeenCalled());
   const saved = vi.mocked(api.putDeck).mock.calls.at(-1)![1];
   expect(saved.meta.report_type).toBe(value);
+  expect(saved.meta.report_type_confirmed).toBe(true);  // 직접 고른 유형은 확인된 유형이다 (D3b-1 리뷰 R4)
   view.unmount();
   render(<ReportPurposeScreen project={project} deck={saved} onDeckChange={onDeckChange} />);
   expect(screen.getByLabelText("보고 유형")).toHaveValue(value);

@@ -35,7 +35,7 @@ REPORT_TYPE_LOCATIONS = frozenset({("DeckMeta", "report_type"), ("ReportBrief", 
 # 덱 스키마, 유형별 추가 입력 칸 표, 길이 상한을 함께 해시한 SHA-256 (D3b-1, 재리뷰 RR7). 바뀌면
 # test_project_format이 실패해 형식 판정과 manifest 형식 번호를 다시 검토하게 한다 (모르는 필드를 버리는
 # 이전 앱이 새 필드를 경고 없이 지우지 않게, 이전 빌드가 읽지 못하는 덱을 복원으로 덮지 않게).
-PINNED_DECK_SCHEMA_SHA256 = "1fff1564f5ba9b2de8f822d2a13b9e01422ed71240c309a519f7ddca46347725"
+PINNED_DECK_SCHEMA_SHA256 = "7c3e1c4fac93f529ab36aa6200e964304ba29d0a1f7b8ff0fc83c2b34ea460ee"
 
 ManifestState = Literal["missing", "ok", "newer", "unreadable"]
 
@@ -61,9 +61,11 @@ class ProjectManifest(BaseModel):
     format_version: int
     written_by: str = __version__  # 진단용. 판정에 쓰지 않는다
     migrations: list[MigrationRecord] = []
-    # 이 앱이 마지막으로 쓴 deck.json의 ETag (D3b-1). 디스크 덱이 이 값과 다르면 다른 앱이 바꾼 것이다:
-    # 등급 1에서 오르는 저장의 강제 스냅샷 생략 판정(재리뷰 RR2)과 되돌림 표시(RR3)가 쓴다
+    # 이 앱이 등급 3 덱으로 쓴(또는 쓰려는) deck.json의 ETag와 그 직전 덱의 ETag (D3b-1). 되돌림 표시(재리뷰 RR3)가
+    # 쓴다. 등급 3 저장은 덱 교체 전에 두 값을 함께 남기고 교체 뒤 직전 값을 지운다. 마지막 기록이 실패해도 쓰려던
+    # 덱의 지문이 남아 표시가 옛 스냅샷에 붙지 않는다(D3b-1 리뷰 R1). 등급 3이 아니면 비운다
     last_written_etag: str | None = None
+    prior_written_etag: str | None = None
 
 
 def _report_types_of_payload(payload: object) -> list[object] | None:
@@ -109,11 +111,18 @@ def deck_format_of_bytes(data: bytes) -> int | None:
 def legacy_readable(data: bytes) -> bool:
     """0.2.0이 이 바이트를 덱으로 열 수 있는가. 이전 전 복사본 표시의 조건이다.
 
-    현재 모델의 검증을 통과하고 등급이 1이면 0.2.0도 연다(등급 1에는 새 유형도 새 항목도 없다).
+    원문의 schema_version이 정수 1(또는 없음)이고, 현재 모델의 검증을 통과하고, 등급이 1이면 0.2.0도 연다(등급 1에는
+    새 유형도 새 항목도 없다). 원문 버전을 직접 보는 것은 손 편집한 "2" 같은 값을 걸러 내기 위해서다(D3b-1 리뷰 R10).
     복구 필요 상태의 깨진 덱은 형식 판정이 1이어도 0.2.0이 열지 못하므로 제외한다.
     """
     from slidecaptain.models.deck import Deck  # 순환 import 회피: 모델 모듈은 저장소를 모른다
 
+    try:
+        version = json.loads(data).get("schema_version", 1)
+    except (ValueError, AttributeError):
+        return False
+    if version != 1 or isinstance(version, bool):
+        return False
     try:
         deck = Deck.model_validate_json(data)
     except (ValueError, ValidationError):
@@ -229,6 +238,7 @@ def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) ->
     """
     if manifest is None or manifest.format_version != 3 or not manifest.last_written_etag:
         return None
+    # 이 앱의 쓰기가 끝나지 않은 동안(pending)은 디스크 등급이 낮아도 되돌림이 아니다(이 앱의 내림)
     if any(r.status == "pending" for r in manifest.migrations):
         return None
     deck_path = project_dir / "deck.json"
@@ -238,13 +248,20 @@ def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) ->
         return None
     if disk is None or disk >= 3:
         return None
+    # 쓰려던 덱(last)을 먼저 찾고, 없으면 직전 덱(prior)을 찾는다. 마지막 기록이 실패한 저장은 두 값을 모두 남기는데,
+    # 덱 교체가 됐으면 0.2.0의 스냅샷은 쓰려던 덱이고 안 됐으면 직전 덱이다
+    snapshots = []
     for path in sorted((project_dir / "snapshots").glob("deck-*.json"), reverse=True):
         try:
-            data = path.read_bytes()
+            snapshots.append((path.stem, path.read_bytes()))
         except OSError:
             continue
-        if hashlib.sha256(data).hexdigest() == manifest.last_written_etag and deck_format_of_bytes(data) == 3:
-            return path.stem
+    for target in (manifest.last_written_etag, manifest.prior_written_etag):
+        if not target:
+            continue
+        for stem, data in snapshots:
+            if hashlib.sha256(data).hexdigest() == target and deck_format_of_bytes(data) == 3:
+                return stem
     return None
 
 
@@ -261,3 +278,16 @@ def revert_snapshot_ids(project_dir: Path) -> set[str]:
     if found:
         ids.add(found)
     return ids
+
+
+def latest_restore_point(project_dir: Path, manifest: ProjectManifest | None) -> bytes | None:
+    """가장 최근 0.2.0 복구 지점(등급 1에서 오른 완료 기록의 스냅샷)의 바이트. 없거나 읽지 못하면 None."""
+    if manifest is None:
+        return None
+    for record in reversed(manifest.migrations):
+        if record.kind == "upgrade" and record.status == "done" and record.from_format == 1 and record.snapshot_id:
+            try:
+                return (project_dir / "snapshots" / f"{record.snapshot_id}.json").read_bytes()
+            except OSError:
+                return None
+    return None

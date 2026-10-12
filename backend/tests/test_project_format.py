@@ -277,7 +277,9 @@ def test_deck_json_schema_is_pinned_to_the_supported_format():
     그 필드를 경고 없이 지운다. 스키마를 바꿨다면 형식 판정을 갱신한 뒤 아래 해시를 바꾼다.
     """
     # 다시 씀 (D3b-1, 재리뷰 RR7): 유형별 추가 입력 칸과 길이 상한은 스키마에 드러나지 않으므로 함께 해시한다.
-    # 칸이나 상한을 바꾸면 이전 빌드가 그 덱을 읽지 못하므로 manifest 형식 번호를 올려야 한다
+    # 칸이나 상한을 바꾸면 이전 빌드가 그 덱을 읽지 못하므로(모르는 칸과 상한 초과는 읽기에서도 거절된다) manifest
+    # 형식 번호를 올려야 한다. 그 태스크는 등급 4의 판정(models/report_purpose.level_of)과 MAX_SUPPORTED_FORMAT을
+    # 함께 정한다 (D3b-1 리뷰 R18)
     from slidecaptain.models import report_purpose as rp
 
     contract = {

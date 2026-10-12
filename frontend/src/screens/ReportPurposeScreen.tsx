@@ -16,13 +16,20 @@ export const REPORT_TYPES = [
   ["results", "결과 보고"],
   ["approval", "승인요청"],
   ["strategy", "전략기획"],
+  ["ir", "IR Pitch Deck"],
 ] as const satisfies ReadonlyArray<readonly [Deck["meta"]["report_type"], string]>;
+// 빠진 유형이 있으면 타입 검사가 실패한다. 없는 옵션의 값은 브라우저가 첫 옵션으로 보여 사용자가 보는 유형과
+// 저장된 유형이 달라진다 (D3b-1 리뷰 R3)
+type MissingReportType = Exclude<Deck["meta"]["report_type"], (typeof REPORT_TYPES)[number][0]>;
+const reportTypesComplete: [MissingReportType] extends [never] ? true : never = true;
+void reportTypesComplete;
 
 // 보고 정보 4필드만 비교한다: preset_overrides는 이 화면이 건드리지 않는 필드라 비교에 넣으면
 // 다른 단계가 남긴 변경과 무관하게 흔들릴 수 있다
 function metaEqual(a: Deck["meta"], b: Deck["meta"]): boolean {
   return a.title === b.title && a.report_type === b.report_type
-    && a.presenter === b.presenter && a.audience === b.audience;
+    && a.presenter === b.presenter && a.audience === b.audience
+    && !!a.report_type_confirmed === !!b.report_type_confirmed;  // 확인 표시도 저장할 값이다 (D3b-1 리뷰 R4)
 }
 
 export function ReportPurposeScreen({
@@ -130,7 +137,10 @@ export function ReportPurposeScreen({
         <div className="field">
           <label>보고 유형
             <select aria-label="보고 유형" value={meta.report_type} disabled={locked}
-              onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
+              // 유형을 직접 고르면 확인 표시를 함께 저장한다. 단계 목록의 "아직 고르지 않았습니다"가 사실과 맞게
+              // 한다 (D3b-1 리뷰 R4). 보고 목적 화면을 다시 짜는 D3b-5가 확인 경로를 정리한다
+              onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"],
+                report_type_confirmed: true })}>
               {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
           </label>
