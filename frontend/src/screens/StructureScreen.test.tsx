@@ -7,6 +7,7 @@ import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { storyDeck } from "../test/story";
 import { deferred } from "../test/fixtures";
 import { StructureScreen } from "./StructureScreen";
+import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 
 // 계측값이 채워진 사용량 (미확인이 아님을 확인하는 테스트용, 단계 5A 묶음 C4)
 function measuredUsage(overrides: Partial<GenerationUsage> = {}): GenerationUsage {
@@ -1539,7 +1540,7 @@ describe("장 카드 목록 (D3b-7, 계획 4.7)", () => {
     render(<StructureScreen project={project} deck={storyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
     const card = screen.getByLabelText("1번 장 주제").closest("li")!;
     expect(within(card).getByText("핵심 답변")).toBeInTheDocument();
-    await userEvent.click(within(card).getByText("근거 1개"));
+    await userEvent.click(within(card).getByText("연결된 근거 1개"));
     expect(within(card).getByText("합성.md: 확대 비용 미확인")).toBeVisible();
   });
 });
@@ -1593,12 +1594,70 @@ describe("핵심 내용 요약 줄과 실행 단계 (D3b-7, 계획 4.7)", () => 
     third.resolve(running("retrying_format"));
     await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(3));
     const items = within(list).getAllByRole("listitem");
-    expect(items.map((li) => li.textContent)).toEqual(["AI 연결 확인 중 (지남)", "구성 생성 중 (지남)", "형식 다시 맞추는 중"]);
+    expect(items.map((li) => li.textContent)).toEqual(["AI 연결 확인 (지남)", "구성 생성 (지남)", "형식 다시 맞추는 중"]);
     expect(items[2]).toHaveAttribute("aria-current", "step");
-    expect(screen.getAllByRole("status").some((el) => el.textContent === "형식 다시 맞추는 중")).toBe(true);
+    await waitFor(() => expect(screen.getAllByRole("status").some((el) => el.textContent === "형식 다시 맞추는 중")).toBe(true));
     done.resolve(jobView("structure", { id: "job-run", state: "succeeded", candidate_status: "held",
       result: { status: "ok", structure: { chapters: [CH1, CH2] }, usage: emptyUsage(), raw_text: "", unverified_numbers: [],
         format_retried: true } }));
     await waitFor(() => expect(screen.queryByRole("list", { name: "구조안 생성 단계" })).toBeNull());
   });
+});
+
+
+describe("장 카드 목록 리뷰 반영 (D3b-7 리뷰)", () => {
+  const CH3 = { ...CH2, id: "c3", topic: "셋째" };
+
+  it("처음으로 옮긴 장의 위로가 잠기면 같은 카드의 아래로에 초점을 둔다. 삭제 뒤에는 같은 자리의 카드로 옮긴다 (R2)", async () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2, CH3], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "2번 장 위로" }));
+    expect(screen.getByLabelText("1번 장 주제")).toHaveValue("본문");
+    expect(screen.getByRole("button", { name: "1번 장 아래로" })).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "3번 장 삭제" }));
+    expect(screen.getByRole("button", { name: "2번 장 위로" })).toHaveFocus();  // 마지막 카드를 지우면 앞 카드
+  });
+
+  it("카드 안 펼침 요약의 이름에 장 번호가 붙는다 (R10)", () => {
+    const withRefs = { ...CH2, source_refs: ["매출.md"] };
+    render(<StructureScreen project={project} deck={deckWith([withRefs, { ...withRefs, id: "c3" }], [])}
+      onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.getByText("자료 1개", { selector: "[aria-label='1번 장 자료 1개']" })).toBeInTheDocument();
+    expect(screen.getByText("자료 1개", { selector: "[aria-label='2번 장 자료 1개']" })).toBeInTheDocument();
+  });
+
+  it("근거는 그 장의 주장에 연결된 것만 보이고, 표지 장에는 근거 표시가 없다 (R12)", async () => {
+    const deck = storyDeck();
+    const plan = deck.structure.story_plan!;
+    plan.evidence.push({ ...plan.evidence[0], id: "e2", excerpt: "둘째 장 발췌" });
+    plan.claims.push({ id: "k2", statement: "둘째 주장", kind: "fact", evidence_ids: ["e2"], caveats: [] });
+    deck.structure.chapters = [{ id: "c0", topic: "표지", conclusion: "", template: "cover", source_refs: [] },
+      ...deck.structure.chapters, { id: "c2", topic: "둘째", conclusion: "", template: "summary", source_refs: [] }];
+    plan.chapters = [{ chapter_id: "c0", role: "cover", claim_ids: [] }, ...plan.chapters,
+      { chapter_id: "c2", role: "evidence", claim_ids: ["k2"] }];
+    render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);
+    const card = (n: number) => screen.getByLabelText(`${n}번 장 주제`).closest("li")!;
+    expect(within(card(1)).queryByText(/근거/)).toBeNull();  // 표지
+    await userEvent.click(within(card(3)).getByText("연결된 근거 1개"));
+    expect(within(card(3)).getByText("합성.md: 둘째 장 발췌")).toBeVisible();
+    expect(within(card(3)).queryByText(/확대 비용 미확인/)).toBeNull();  // 다른 장의 근거
+  });
+
+  it("복구 화면에서 옮긴 장의 주제 입력으로 초점을 옮긴다 (R13, C24)", () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}}
+      focusChapterId="c2" />);
+    expect(screen.getByLabelText("2번 장 주제")).toHaveFocus();
+  });
+
+  it("유형 미확인 안내는 생성 버튼의 설명으로 이어진다 (R19)", () => {
+    render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(screen.getByRole("button", { name: "구조안 생성" }))
+      .toHaveAccessibleDescription("보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.");
+  });
+});
+
+
+it("낡은 계획 복구 안내는 보고 목적 원인과 장 내용을 지키는 재작성 경로를 알린다 (α 묶음 리뷰 A6, D3b-7 리뷰 R15)", () => {
+  render(<StoryPlanRecoveryGuidance hasDiagrams={false} />);
+  expect(screen.getByText(/보고 정보\(보고 목적 포함\)/)).toBeInTheDocument();
+  expect(screen.getByText(/장 내용을 지키려면 구성 단계의 ‘기존 편집을 보존하며 계획 재작성’/)).toBeInTheDocument();
 });

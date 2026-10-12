@@ -9,6 +9,7 @@ import { ExportHistoryPanel } from "./ExportHistoryPanel";
 import { RecoveryScreen } from "./RecoveryScreen";
 import { ReportPurposeScreen, type PurposePreserveResult } from "./ReportPurposeScreen";
 import { formatSavedAt } from "../api/time";
+import { STEP_LABELS } from "./GenerationSteps";
 import { ReviewScreen } from "./ReviewScreen";
 import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
@@ -211,6 +212,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   // (D3a-7 사용자 결정, β 리뷰 B9, 재리뷰 F8)
   const startedHere = useRef<Set<string>>(new Set());
   const onJobRegistered = useCallback((id: string) => { startedHere.current.add(id); }, []);
+  // 이 탭의 화면이 따라가기 시작한 작업. 그 실패는 화면이 원인별로 보이므로 머리에 다시 알리지 않는다 (D3b-7 리뷰 R1)
+  const followedHere = useRef<Set<string>>(new Set());
+  const onJobFollowed = useCallback((id: string) => { followedHere.current.add(id); }, []);
   useEffect(() => onProjectEvent((event) => {
     if (event.kind === "job_started" && event.jobId) startedHere.current.add(event.jobId);
   }), []);
@@ -232,7 +236,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   // 다시 연 화면이 지난 실패를 원인별로 보이는 작업 종류(구성 화면과 편집 단계의 생성 패널). 그 밖(도식, 재작성,
   // 수리)은 다시 연 화면에 실패가 남지 않으므로 알림을 그 단계에 가도 지우지 않는다 (재리뷰 F3)
   const REOPEN_SHOWS = new Set(["structure", "chapters", "chapter", "condense"]);
-  const [jobProblem, setJobProblem] = useState<{ stage: Stage; state: string; kind: string; target: string | null } | null>(null);
+  const [jobProblem, setJobProblem] = useState<{ stage: Stage; state: string; kind: string; target: string | null;
+    jobId: string | null } | null>(null);
   useEffect(() => onProjectEvent((event) => {
     if (event.project !== project.name) return;
     // 같은 프로젝트에서 새 작업이 시작되면 지난 실패 알림을 내린다 (재리뷰 F9)
@@ -242,10 +247,12 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
     const target = JOB_STAGE[event.jobKind];
     // 그 단계를 보고 있고 이 탭이 시작한 작업이면 그 화면이 결과를 보인다. 다른 탭이 시작한 작업은 이 탭의 화면이
     // 따라가지 않을 수 있으므로 그 단계에 있어도 알린다 (재리뷰 F8, D3a-7 사용자 결정)
+    // 이 탭의 화면이 따라가던 작업(다른 탭이 시작해 다시 연 화면이 이어서 조회한 작업)도 화면이 결과를 보인다 (D3b-7 리뷰 R1)
     const shownOnScreen = !showRecoveryRef.current && stageRef.current === target && !!event.jobId
-      && startedHere.current.has(event.jobId);
+      && (startedHere.current.has(event.jobId) || followedHere.current.has(event.jobId));
     if (!target || shownOnScreen) return;
-    setJobProblem({ stage: target, state: event.state, kind: event.jobKind, target: event.target ?? null });
+    setJobProblem({ stage: target, state: event.state, kind: event.jobKind, target: event.target ?? null,
+      jobId: event.jobId ?? null });
   }), [project.name]);
   useEffect(() => onRemoteProjectEvent((event) => {
     if (event.project === project.name && event.kind === "job_started") setJobProblem(null);
@@ -503,7 +510,10 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
     if (!(await leaveScreen("다시 열기를"))) return;
     setError("");
     setSaveStatus(null);
+    // 편집 단계는 실패한 장(없으면 고르던 장)을 다시 고르고, 다시 연 뒤 초점은 지금 단계 버튼으로 옮긴다 (리뷰 R7, R9)
+    if (stage === "editor") setFocusChapter(jobProblem?.target ?? editorChapter.current);
     setJobProblem(null);
+    focusStageAfterMove.current = true;
     setScreenKey((k) => k + 1);
   };
   const goBack = async () => {
@@ -612,7 +622,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
               <p className="topbar-job">
                 <StatusIndicator kind={activeJob.cancel_requested ? "cancel_requested" : "running"} />{" "}
                 {activeJob.project === project.name
-                  ? "이 프로젝트에서 AI 생성이 진행 중입니다."
+                  // 구조안이면 실행 단계 이름을 덧붙인다. 시간은 쓰지 않는다 (계획 4.7, D3b-7 리뷰 R14, R16)
+                  ? `이 프로젝트에서 AI 생성이 진행 중입니다${activeJob.step ? `(${STEP_LABELS[activeJob.step]})` : ""}.`
                   : `다른 프로젝트(${activeJob.project})에서 AI 생성이 진행 중입니다. 끝난 뒤 생성할 수 있습니다.`}{" "}
                 <button onClick={() => void api.cancelJob(activeJob.project, activeJob.id).then(refreshActiveJob)
                   .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
@@ -626,7 +637,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
                 {jobProblem.stage === stage && !showRecovery ? (
                   // 그 단계에 있는 탭이 받은 다른 탭의 실패: 다시 연 화면에 원인이 남는 종류만 다시 연다. 단계 이탈과 같은
                   // 확인(초안 이탈 확인과 편집 플러시)을 거친다 (B8, 리뷰 U19)
-                  REOPEN_SHOWS.has(jobProblem.kind) && (
+                  // 이 화면이 이미 보인 실패는 다시 열어도 보이지 않으므로 버튼을 두지 않는다 (D3b-7 리뷰 R1)
+                  REOPEN_SHOWS.has(jobProblem.kind) && !(jobProblem.jobId && seenJobFailures.current.has(jobProblem.jobId)) && (
                     <button onClick={() => void reopenStage()} disabled={navLocked} title={navTitle}>결과 다시 보기</button>)
                 ) : (
                   <button onClick={() => void switchStage(jobProblem.stage, jobProblem.target)} disabled={navLocked}
@@ -728,7 +740,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onDone={() => { setError(""); setSaveStatus(null); setFocusChapter(null); setStage("editor"); }}
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
-            onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
+            onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} onJobFollowed={onJobFollowed}
+            focusChapterId={focusChapter}
             registeredJobs={startedHere.current} seenJobFailures={seenJobFailures.current} failuresSince={openedAt}
             limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked}
             readOnlyNotice={batchHere} onEditPurpose={() => void switchStage("purpose")} editPurposeDisabled={navLocked} />

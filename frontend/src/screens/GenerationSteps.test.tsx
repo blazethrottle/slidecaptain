@@ -21,15 +21,29 @@ test("경과 시간은 서버 값에서 브라우저가 이어 세고, 다음 �
 test("경과 시간은 라이브 영역 밖이고 알림은 단계 이름만 담는다 (리뷰 U18)", () => {
   render(<GenerationSteps view={view()} />);
   const status = screen.getByRole("status");
-  expect(status).toHaveTextContent("구성 생성 중");
+  expect(status).toHaveTextContent("구성 생성 중");  // 효과가 채운 뒤
   expect(status).not.toHaveTextContent("초");
   expect(screen.getByText("경과 시간 5초").closest("[role=status], [aria-live]")).toBeNull();
 });
 
-test("취소 요청 중에는 단계를 보이지 않고 취소 요청됨을 알린다", () => {
-  render(<GenerationSteps view={view({ step: null, cancel_requested: true, state: "cancel_requested" })} />);
+test("단계가 쌓인 뒤 취소를 요청하면 목록 끝에 취소 요청됨을 보이고 알린다 (D3b-7 리뷰 R5)", () => {
+  const { rerender } = render(<GenerationSteps view={view()} />);
+  rerender(<GenerationSteps view={view({ step: null, cancel_requested: true, state: "cancel_requested" })} />);
+  const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+  expect(items).toEqual(["AI 연결 확인 (지남)", "구성 생성 (지남)", "취소 요청됨"]);
   expect(screen.getByRole("status")).toHaveTextContent("취소 요청됨");
-  expect(screen.queryByRole("listitem")).toBeNull();
+});
+
+test("다시 연 화면은 지금 단계까지의 지난 단계를 되살린다 (D3b-7 리뷰 R4)", () => {
+  render(<GenerationSteps view={view({ step: "retrying_format" })} />);
+  expect(screen.getAllByRole("listitem").map((li) => li.textContent))
+    .toEqual(["AI 연결 확인 (지남)", "구성 생성 (지남)", "형식 다시 맞추는 중"]);
+});
+
+test("상태 알림은 빈 채로 생긴 뒤 단계 이름을 채운다 (D3b-7 리뷰 R17)", async () => {
+  render(<GenerationSteps view={view()} />);
+  // 마운트 직후의 첫 그림은 비어 있고, 효과가 단계 이름을 채운다(낭독기는 생긴 뒤의 변경을 읽는다)
+  expect(await screen.findByRole("status")).toHaveTextContent("구성 생성 중");
 });
 
 test("경과 시간 표기", () => {

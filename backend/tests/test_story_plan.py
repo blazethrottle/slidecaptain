@@ -295,3 +295,19 @@ def test_snapshot_restore_preserves_binding_and_detects_later_source_changes(sto
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": TEXT + "\n조건 변경"}).status_code == 200
     assert client.post("/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 409
     assert len(provider.calls) == 2
+
+
+
+def test_stale_plan_message_names_purpose_values_and_the_rewrite_route():
+    """낡은 계획 안내는 보고 목적 값도 원인일 수 있음과 장 내용을 지키는 재작성 경로를 함께 알린다 (α 묶음 리뷰 A6, D3b-7 리뷰 R15)."""
+    import json
+    from pathlib import Path
+
+    from slidecaptain.pipeline.story import StaleStoryPlan, require_current_story
+    deck = Deck.model_validate(json.loads((Path(__file__).parent / "fixtures/q3b-project.json").read_text("utf-8"))["deck"])
+    deck.structure.story_plan.input_fingerprint = "0" * 64
+    with pytest.raises(StaleStoryPlan) as caught:
+        require_current_story(deck, {})
+    message = str(caught.value)
+    assert "보고 목적 포함" in message and "기존 편집을 보존하며 계획 재작성" in message
+    assert "보고 질문으로 구조안을 다시 생성" in message

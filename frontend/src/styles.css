@@ -456,15 +456,20 @@ html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 }
 .structure-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
 /* 구성 화면의 핵심 내용 요약 줄과 실행 단계 (D3b-7, 계획 4.7). 요약은 세 줄 뒤 접는다 */
-.key-message-summary { margin-bottom: var(--space-4); }
-.key-message-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.key-message-summary { margin-bottom: var(--space-3); }
+.key-message-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.key-message-head h2 { margin: 0; margin-inline-end: auto; }
+.key-message-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--space-1) 0 0; }
 .key-message-text.clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* 낮은 창(512x360 등)에서는 한 줄 뒤 접어 주 행동 막대가 첫 화면 안에 남게 한다 (D3b-7 리뷰 R3) */
+@media (max-height: 480px) { .key-message-text.clamped { -webkit-line-clamp: 1; } }
 .generation-step-list { margin: var(--space-2) 0; padding-inline-start: var(--space-6); }
 .generation-step-list li[aria-current="step"] { font-weight: 600; }
 /* 장 카드 목록 (D3b-7, 계획 4.7). 카드는 가로로 넘치지 않는다. 작은 버튼은 좁은 창에서 한 글자씩 끊기지 않게 한다 (D3a-1 리뷰 R16) */
 .chapter-cards { list-style: none; padding: 0; margin: 0 0 var(--space-3); display: grid; gap: var(--space-3); }
 .chapter-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); min-width: 0; }
 .chapter-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.chapter-card-title { margin: 0; font-size: var(--font-size-body); }
 .chapter-card-moves { margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .chapter-card button { white-space: nowrap; word-break: keep-all; min-height: var(--control-height-compact);
   padding-inline: var(--space-2); }

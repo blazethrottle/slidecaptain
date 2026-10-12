@@ -118,7 +118,7 @@ function chapterEvidence(plan: StoryPlan | null, chapter: Chapter): { kind: "pla
 }
 
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
-  onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
+  onSaveStatusChange, onJobRegistered, onJobFollowed, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
   readOnlyNotice = false, registeredJobs, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000, onEditPurpose,
   editPurposeDisabled = false }: {
   project: ProjectInfo;
@@ -132,6 +132,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onDirtyChange?: (dirty: boolean) => void;
   onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
   onJobRegistered?: (jobId: string) => void;  // 장 생성 묶음을 등록했다. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
+  // 다시 연 화면이 진행 중인 작업을 이어서 조회하기 시작했다. 그 실패는 이 화면이 보이므로 머리가 다시 알리지 않는다 (D3b-7 리뷰 R1)
+  onJobFollowed?: (jobId: string) => void;
   focusChapterId?: string | null;  // 복구 화면에서 옮긴 장. 마운트 때 그 장의 주제 입력으로 초점을 옮긴다 (C24)
   limitations?: string[];  // 준비됨에 붙은 사유의 문구(보고 계획 없음 등). 이 화면의 한계 안내로 보인다 (A3)
   // 핵심 내용 요약 줄의 "보고 목적에서 고치기". 부모의 단계 이동(초안 이탈 확인과 플러시)을 거친다 (D3b-7, 리뷰 U17)
@@ -274,6 +276,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       : pendingParts.panels ? { kind: "unsaved", detail: "적용하지 않은 입력이 있습니다" } : { kind: "saved" });
   }, [draftDirty, questionChanged, pendingParts, onSaveStatusChange]);
   const cardsRef = useRef<HTMLOListElement | null>(null);
+  const addRef = useRef<HTMLButtonElement | null>(null);
+  // 이동이나 삭제 뒤 초점을 둘 곳. 처음 장의 위로와 마지막 장의 아래로는 잠기므로, 누른 버튼이 잠기면 짝 버튼으로,
+  // 삭제 뒤에는 같은 자리의 카드(없으면 앞 카드, 그것도 없으면 장 추가)로 옮긴다 (D3b-7 리뷰 R2)
+  const pendingFocus = useRef<{ id: string; which: "up" | "down" } | { removedAt: number } | null>(null);
   useEffect(() => {
     if (!focusChapterId) return;
     const card = [...(cardsRef.current?.children ?? [])].find((r) => (r as HTMLElement).dataset.chapterId === focusChapterId);
@@ -421,6 +427,21 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setDraft(next);
   };
   const remove = (i: number) => setDraft(draft.filter((_, j) => j !== i));
+  useEffect(() => {
+    const want = pendingFocus.current;
+    if (!want) return;
+    pendingFocus.current = null;
+    const cards = [...(cardsRef.current?.children ?? [])] as HTMLElement[];
+    if ("removedAt" in want) {
+      const card = cards[Math.min(want.removedAt, cards.length - 1)];
+      (card?.querySelector<HTMLButtonElement>(".chapter-card-moves button:not(:disabled)") ?? addRef.current)?.focus();
+      return;
+    }
+    const card = cards.find((c) => c.dataset.chapterId === want.id);
+    const [up, down] = [...(card?.querySelectorAll<HTMLButtonElement>(".chapter-card-moves button") ?? [])];
+    const [first, other] = want.which === "up" ? [up, down] : [down, up];
+    (first && !first.disabled ? first : other)?.focus();
+  }, [draft]);
   const add = () => {
     setDraft([...draft, {
       id: nextChapterId(draft), topic: "새 장", conclusion: "",
@@ -490,6 +511,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
 
   // 묶음을 끝까지 조회한다. 장이 적용될 때마다 덱과 저장 ETag를 다시 읽는다 (D2b-5a, 계획서 F1)
   const follow = async (jobId: string, registeredHere: boolean) => {
+    if (!registeredHere) onJobFollowed?.(jobId);  // 다시 연 화면이 이어서 조회하는 묶음 (D3b-7 리뷰 R1)
     setBusy(true);
     onBusyChange?.(true);
     setShowJob(true);
@@ -552,6 +574,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         const controller = new AbortController();
         followAbort.current = controller;
         setStepView(runningStructure);
+        onJobFollowed?.(runningStructure.id);
         try {
           const final = await waitJob(project.name, runningStructure, { intervalMs: pollIntervalMs, signal: controller.signal,
             onError: () => setFollowError(JOB_FOLLOW_ERROR), onUpdate: setStepView });
@@ -920,7 +943,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         </div>
         {/* 주 행동일 때만 막대로 둔다. 막대 둘이 함께 창 아래에 붙어 겹치지 않게 한다 (D3a-7 사용자 결정) */}
         <div className={generatePrimary ? "actions primary-bar" : "actions"}>
-          <Button variant={generatePrimary ? "primary" : "secondary"} onClick={generate} disabled={busy || hasDiagrams}>
+          <Button variant={generatePrimary ? "primary" : "secondary"} onClick={generate} disabled={busy || hasDiagrams}
+            aria-describedby={!typeConfirmed(deck.meta) && !hasDiagrams ? "unconfirmed-type-notice" : undefined}>
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}
           </Button>
           {draft.length === 0 && !busy && <span> 자료를 먼저 넣고 눌러 주세요.</span>}
@@ -928,7 +952,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         </div>
         {busy && stepView && stepView.kind === "structure" && <GenerationSteps key={stepView.id} view={stepView} />}
         {/* 확인되지 않은 유형으로 만들 때 알린다 (계획 4.5, 리뷰 U10) */}
-        {!typeConfirmed(deck.meta) && <p className="hint">보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.</p>}
+        {!typeConfirmed(deck.meta) && !hasDiagrams && (
+          <p className="hint" id="unconfirmed-type-notice">보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.</p>)}
         {hasDiagrams && <div className="notice">
           <p>저장된 도식을 보존하기 위해 전체 구조안 다시 생성은 아직 지원하지 않습니다. 편집 단계에서 ‘도식 수정’으로 내용을 고칠 수 있으며 여기서는 장 순서를 바꿀 수 있습니다.</p>
           {!storyStale && <details><summary>자료나 보고 계획이 달라졌다면</summary>
@@ -951,12 +976,15 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               return (
                 <li key={c.id} data-chapter-id={c.id} className="chapter-card">
                   <div className="chapter-card-head">
-                    <strong>{n}번 장</strong>
+                    <h3 className="chapter-card-title">{n}번 장</h3>
                     {role && <span className="hint">{CHAPTER_ROLE_LABELS[role]}</span>}
                     <span className="chapter-card-moves">
-                      <button aria-label={`${n}번 장 위로`} onClick={() => move(i, -1)} disabled={i === 0}>위로</button>
-                      <button aria-label={`${n}번 장 아래로`} onClick={() => move(i, 1)} disabled={i === draft.length - 1}>아래로</button>
-                      <button aria-label={`${n}번 장 삭제`} disabled={locked} onClick={() => remove(i)}>삭제</button>
+                      <button aria-label={`${n}번 장 위로`} disabled={i === 0}
+                        onClick={() => { pendingFocus.current = { id: c.id, which: "up" }; move(i, -1); }}>위로</button>
+                      <button aria-label={`${n}번 장 아래로`} disabled={i === draft.length - 1}
+                        onClick={() => { pendingFocus.current = { id: c.id, which: "down" }; move(i, 1); }}>아래로</button>
+                      <button aria-label={`${n}번 장 삭제`} disabled={locked}
+                        onClick={() => { pendingFocus.current = { removedAt: i }; remove(i); }}>삭제</button>
                     </span>
                   </div>
                   <div className="field"><label>주제
@@ -976,7 +1004,9 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                   {locked && <p className="hint">도식 장은 주제와 결론을 편집 단계의 도식 수정에서 고칩니다.</p>}
                   {role === "cover" || role === "divider" ? null : evidence.items.length > 0 ? (
                     <details className="chapter-evidence">
-                      <summary>{evidence.kind === "plan" ? `근거 ${evidence.items.length}개` : `자료 ${evidence.items.length}개`}</summary>
+                      {/* 펼침 요약도 장 번호로 이름을 지어 장 사이에서 겹치지 않게 한다 (D3b-7 리뷰 R10) */}
+                      <summary aria-label={`${n}번 장 ${evidence.kind === "plan" ? "연결된 근거" : "자료"} ${evidence.items.length}개`}>
+                        {evidence.kind === "plan" ? `연결된 근거 ${evidence.items.length}개` : `자료 ${evidence.items.length}개`}</summary>
                       <ul>{evidence.items.map((item) => <li key={item.key}>{item.text}</li>)}</ul>
                     </details>
                   ) : <p className="hint">{evidence.kind === "plan" ? "연결된 근거 없음" : "연결된 자료 없음"}</p>}
@@ -991,7 +1021,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                     )}
                     {["stale", "held"].includes(chapterRow(c.id)?.candidate_status ?? "") && (<>
                       {candidateText(chapterRow(c.id)!) && (
-                        <details><summary>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
+                        <details><summary aria-label={`${n}번 장 후보 보기`}>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
                       )}
                       <Button variant="danger" aria-label={`${n}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
                     </>)}
@@ -1004,7 +1034,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
               다르다는 것을 알린다 (D3a-5, 계획 4.4) */}
           {draft.some((c) => chapterRow(c.id)) && (
             <p className="hint" id="chapter-regenerate-hint">장을 다시 생성하는 동안 문서 편집이 잠깁니다.</p>)}
-          <button onClick={add}>장 추가</button>
+          <button ref={addRef} onClick={add}>장 추가</button>
           {/* F2 리뷰 반영: 성공한 장이 하나도 없어도(전부 실패) 실패 단서만은 표시한다.
               chapterUsageSummary만 조건으로 두면 성공분이 0건일 때 이 문단 자체가 사라졌다 */}
           {(chapterUsageSummary || chapterUsageHadUnaccountedFailure) && <Diagnostics>

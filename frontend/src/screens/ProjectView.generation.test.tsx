@@ -809,6 +809,68 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     expect(within(header()).queryByRole("button", { name: "결과 다시 보기" })).toBeNull();
   });
 
+  it("다시 연 화면이 따라가던 다른 탭의 구조안 작업이 실패하면 머리에 다시 알리지 않고 화면의 안내가 남는다 (D3b-7 리뷰 R1)", async () => {
+    const running = jobView("structure", { id: "job-other", state: "running", candidate_status: "none", result: null,
+      step: "generating", step_started_at: "2026-10-12T10:00:00+09:00", elapsed_seconds: 1 });
+    vi.mocked(api.listJobs).mockResolvedValue([running]);
+    let finish!: (view: ReturnType<typeof jobView>) => void;
+    vi.mocked(api.getJob).mockReturnValue(new Promise((r) => { finish = r; }));
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await screen.findByRole("list", { name: "구조안 생성 단계" });
+    await act(async () => finish(jobView("structure", { id: "job-other", state: "failed", candidate_status: "none",
+      result: null, error: { error_class: "connection", status: 503, detail: "AI 연결에 실패했습니다.", code: "provider_failed" } })));
+    await waitFor(() => expect(screen.queryByRole("list", { name: "구조안 생성 단계" })).toBeNull());
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+    expect(within(header()).queryByRole("button", { name: "결과 다시 보기" })).toBeNull();
+  });
+
+  it("결과 다시 보기는 초안을 고쳤으면 이탈 확인을 거치고, 다시 연 뒤 초점은 지금 단계 버튼이다 (D3b-7 리뷰 R7, R8)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [
+      { id: "c1", topic: "첫째", conclusion: "", template: "bullet_box", source_refs: [] },
+      { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] } });
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "2번 장 삭제" }));  // 초안이 저장본과 달라진다
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    const reopen = await within(header()).findByRole("button", { name: "결과 다시 보기" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    const reads = vi.mocked(api.listJobs).mock.calls.length;
+    await userEvent.click(reopen);
+    expect(confirm).toHaveBeenCalled();
+    expect(vi.mocked(api.listJobs).mock.calls.length).toBe(reads);  // 머물기를 고르면 다시 열지 않는다
+    expect(within(header()).getByText(/구성 단계의 AI 생성이 실패했습니다/)).toBeInTheDocument();
+    confirm.mockReturnValueOnce(true);
+    await userEvent.click(within(header()).getByRole("button", { name: "결과 다시 보기" }));
+    await waitFor(() => expect(vi.mocked(api.listJobs).mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(stageButton("구성")).toHaveFocus());
+  });
+
+  it("보고 목적에서 고치기는 프로젝트 화면의 단계 이동을 거쳐 고친 초안의 이탈을 확인한다 (D3b-7 리뷰 R11)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [
+      { id: "c1", topic: "첫째", conclusion: "", template: "bullet_box", source_refs: [] },
+      { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] } });
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "2번 장 삭제" }));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+    await userEvent.click(screen.getByRole("button", { name: "보고 목적에서 고치기" }));
+    expect(confirm).toHaveBeenCalled();
+    expect(stageButton("구성")).toHaveAttribute("aria-current", "step");  // 머물기를 골랐다
+    confirm.mockReturnValueOnce(true);
+    await userEvent.click(screen.getByRole("button", { name: "보고 목적에서 고치기" }));
+    await waitFor(() => expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step"));
+  });
+
+  it("머리의 진행 안내에 구조안의 실행 단계 이름을 덧붙인다 (D3b-7 리뷰 R14, R16)", async () => {
+    vi.mocked(api.getActiveJob).mockResolvedValue(status({ ...activeOf("structure"), step: "generating",
+      step_started_at: "2026-10-12T10:00:00+09:00", elapsed_seconds: 4 }));
+    await openProject(60_000);
+    expect(await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다\(구성 생성 중\)\./)).toBeInTheDocument();
+  });
+
   it("창 닫기 경고는 이 탭이 시작한 작업에만 띄운다 (D3a-7 사용자 결정, B9)", async () => {
     vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("structure", project.name, "job-other")));
     await openProject(5);
