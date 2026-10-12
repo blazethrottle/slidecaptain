@@ -139,11 +139,15 @@ export function onProjectEvent(listener: (event: ProjectEvent) => void): () => v
   return () => { projectListeners.delete(listener); };
 }
 
-export function notifyProject(event: ProjectEvent): void {
+// broadcast: 거짓이면 같은 탭에만 낸다. 진행 작업에서 사라진 작업에 대해 프로젝트 화면이 내는 종결 알림이 쓴다:
+// 그 작업을 아는 탭은 모두 스스로 진행 작업을 조회하므로 다시 퍼뜨리면 탭 수만큼 되울린다 (D3a-6 리뷰 S2)
+export function notifyProject(event: ProjectEvent, opts: { broadcast?: boolean } = {}): void {
   for (const listener of [...projectListeners]) {
     try { listener(event); } catch { /* 듣는 쪽의 오류가 요청을 실패로 만들지 않게 한다 */ }
   }
-  try { projectChannel()?.postMessage(event); } catch { /* 다른 탭 알림이 실패해도 이 탭의 일은 계속한다 */ }
+  if (opts.broadcast === false) return;
+  // 받는 쪽은 내용을 믿지 않으므로 종류와 프로젝트만 보낸다 (D3a-6 리뷰 S11)
+  try { projectChannel()?.postMessage({ kind: event.kind, project: event.project }); } catch { /* 다른 탭 알림이 실패해도 이 탭의 일은 계속한다 */ }
 }
 
 // 다른 탭 알림 (개정판 D3a-6, 계획 4.5, β R15). 같은 출처의 탭 사이에 위 이벤트를 BroadcastChannel로 알린다. 채널
@@ -163,8 +167,6 @@ function projectChannel(): BroadcastChannel | null {
     channel = null;
   }
   if (channel) {
-    // Node(시험 환경)의 채널은 열려 있는 동안 프로세스를 붙잡는다. 브라우저에는 이 함수가 없다
-    (channel as unknown as { unref?: () => void }).unref?.();
     channel.onmessage = (message: MessageEvent) => {
       const data = message.data as Partial<ProjectEvent> | null;
       if (!data || typeof data.project !== "string" || !EVENT_KINDS.has(data.kind as string)) return;
@@ -177,7 +179,13 @@ function projectChannel(): BroadcastChannel | null {
   return channel;
 }
 
-// 다른 탭이 낸 알림을 듣는다. 받는 알림에는 종류와 프로젝트 이름만 싣는다
+// 시험용: 채널을 닫고 다음 사용 때 새로 만든다. 시험이 남긴 채널이 다른 시험의 메시지를 받지 않게 한다 (D3a-6 리뷰 S5)
+export function closeProjectChannel(): void {
+  channel?.close();
+  channel = undefined;
+}
+
+// 다른 탭이 낸 알림을 듣는다. 받은 메시지에서 종류와 프로젝트 이름만 꺼낸다
 export function onRemoteProjectEvent(listener: (event: ProjectEvent) => void): () => void {
   projectChannel();
   remoteListeners.add(listener);

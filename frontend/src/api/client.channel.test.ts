@@ -15,10 +15,13 @@ function otherTab() {
 }
 const settle = () => new Promise((r) => setTimeout(r, 30));  // 채널 메시지는 비동기로 도착한다
 
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.resetModules(); });
+// 시험마다 새 모듈을 부르므로, 그 모듈의 채널을 닫아 다음 시험의 메시지를 받지 않게 한다 (D3a-6 리뷰 S5)
+let loaded: typeof import("./client") | null = null;
+async function client() { loaded = await import("./client"); return loaded; }
+afterEach(() => { loaded?.closeProjectChannel(); loaded = null; vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.resetModules(); });
 
 it("저장과 작업 등록 알림을 다른 탭에 보내되, 등록은 응답을 받은 뒤에만 보낸다", async () => {
-  const { api } = await import("./client");
+  const { api } = await client();
   const { received, peer } = otherTab();
   let resolve!: (r: Response) => void;
   vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(new Promise<Response>((r) => { resolve = r; }))
@@ -30,12 +33,13 @@ it("저장과 작업 등록 알림을 다른 탭에 보내되, 등록은 응답�
   await pending;
   await api.writeSource("p1", "a.md", "본문");
   await settle();
-  expect(received).toEqual([{ kind: "job_started", project: "p1", jobId: "job-9" }, { kind: "saved", project: "p1" }]);
+  // 받는 쪽은 내용을 믿지 않으므로 종류와 프로젝트만 보낸다 (D3a-6 리뷰 S11)
+  expect(received).toEqual([{ kind: "job_started", project: "p1" }, { kind: "saved", project: "p1" }]);
   peer.close();
 });
 
 it("다른 탭의 메시지를 받으면 듣는 쪽을 부르고, 같은 탭의 알림은 다른 탭 듣는 쪽으로 오지 않는다", async () => {
-  const { notifyProject, onProjectEvent, onRemoteProjectEvent } = await import("./client");
+  const { notifyProject, onProjectEvent, onRemoteProjectEvent } = await client();
   const remote: unknown[] = [];
   const local: unknown[] = [];
   const offRemote = onRemoteProjectEvent((e) => remote.push(e));
@@ -51,7 +55,7 @@ it("다른 탭의 메시지를 받으면 듣는 쪽을 부르고, 같은 탭의 
 });
 
 it("형식이 맞지 않는 메시지는 버린다", async () => {
-  const { onRemoteProjectEvent } = await import("./client");
+  const { onRemoteProjectEvent } = await client();
   const remote: unknown[] = [];
   const off = onRemoteProjectEvent((e) => remote.push(e));
   const { peer } = otherTab();
@@ -72,7 +76,7 @@ it("채널 객체는 탭마다 하나만 만든다", async () => {
     close() {}
   }
   vi.stubGlobal("BroadcastChannel", CountingChannel);
-  const { notifyProject, onRemoteProjectEvent } = await import("./client");
+  const { notifyProject, onRemoteProjectEvent } = await client();
   const offA = onRemoteProjectEvent(() => {});
   const offB = onRemoteProjectEvent(() => {});
   notifyProject({ kind: "saved", project: "p1" });
@@ -83,11 +87,36 @@ it("채널 객체는 탭마다 하나만 만든다", async () => {
 
 it("채널이 없는 환경에서도 같은 탭 알림은 그대로 돌고 다른 탭 듣기는 아무 일도 하지 않는다", async () => {
   vi.stubGlobal("BroadcastChannel", undefined);
-  const { notifyProject, onProjectEvent, onRemoteProjectEvent } = await import("./client");
+  const { notifyProject, onProjectEvent, onRemoteProjectEvent } = await client();
   const local: unknown[] = [];
   const off = onProjectEvent((e) => local.push(e));
   const offRemote = onRemoteProjectEvent(() => { throw new Error("불리면 안 된다"); });
   expect(() => notifyProject({ kind: "saved", project: "p1" })).not.toThrow();
   expect(local).toEqual([{ kind: "saved", project: "p1" }]);
   off(); offRemote();
+});
+
+it("같은 탭에만 내는 알림은 다른 탭에 보내지 않는다 (D3a-6 리뷰 S2)", async () => {
+  const { notifyProject } = await client();
+  const { received, peer } = otherTab();
+  notifyProject({ kind: "job_ended", project: "p1", jobId: "job-9" }, { broadcast: false });
+  notifyProject({ kind: "saved", project: "p1" });
+  await settle();
+  expect(received).toEqual([{ kind: "saved", project: "p1" }]);
+  peer.close();
+});
+
+it("다른 탭의 메시지를 받아도 저장 ETag는 그대로다 (D3a-6 리뷰 S4)", async () => {
+  const { api, savedEtag, onRemoteProjectEvent } = await client();
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ok({ schema_version: 1 }, '"e1"')));
+  await api.getDeck("p1");
+  expect(savedEtag("p1")).toBe('"e1"');
+  const off = onRemoteProjectEvent(() => {});
+  const { peer } = otherTab();
+  peer.postMessage({ kind: "job_started", project: "p1" });
+  peer.postMessage({ kind: "saved", project: "p1" });
+  peer.postMessage({ kind: "job_ended", project: "p1" });
+  await settle();
+  expect(savedEtag("p1")).toBe('"e1"');
+  off(); peer.close();
 });

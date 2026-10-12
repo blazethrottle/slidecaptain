@@ -1,6 +1,6 @@
 // 상태 표시 컴포넌트 (개정판 D2a-5). 색 없이도 문구와 아이콘으로 상태를 구별한다.
-import { act, render, screen } from "@testing-library/react";
-import { notifyProject } from "../api/client";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { closeProjectChannel, notifyProject } from "../api/client";
 import { JobAnnouncer, SaveAnnouncer, STATUS_KINDS, StatusIndicator, saveStatusKind } from "./StatusIndicator";
 
 it("상태 15종(작업 상태 2종, 단계 상태 3종 포함)은 문구와 아이콘의 접근 가능한 이름이 모두 다르다", () => {
@@ -179,4 +179,18 @@ it("같은 결과의 작업이 연달아 끝나도 작업 종류가 글에 들�
   expect(status()).toBe("구조안 생성이 끝났습니다(보고 E)");
   act(() => notifyProject({ kind: "job_ended", project: "보고 E", jobId: "job-c", state: "succeeded", jobKind: "chapters" }));
   expect(status()).toBe("내용 생성이 끝났습니다(보고 E)");
+});
+
+it("다른 탭의 작업 시작 메시지도 글을 비워, 받는 탭의 같은 글 두 번째 종결을 다시 읽게 한다 (D3a-6 리뷰 S9)", async () => {
+  const { container } = render(<JobAnnouncer />);
+  const status = () => container.querySelector('[role="status"]')!.textContent;
+  act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: "job-1", state: "succeeded", jobKind: "chapters" }, { broadcast: false }));
+  expect(status()).toBe("내용 생성이 끝났습니다(보고 A)");
+  const peer = new BroadcastChannel("slidecaptain-project-events");
+  peer.postMessage({ kind: "job_started", project: "보고 A" });
+  await waitFor(() => expect(status()).toBe(""));
+  act(() => notifyProject({ kind: "job_ended", project: "보고 A", jobId: "job-2", state: "succeeded", jobKind: "chapters" }, { broadcast: false }));
+  expect(status()).toBe("내용 생성이 끝났습니다(보고 A)");
+  peer.close();
+  closeProjectChannel();
 });

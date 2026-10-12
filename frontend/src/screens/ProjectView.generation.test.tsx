@@ -3,7 +3,7 @@
 // 실패 안내와 머리 작업 표시의 이음매(묶음 리뷰 A10, A11)를 지킨다
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError, notifyProject, savedEtag, type ActiveJob, type Deck } from "../api/client";
+import { api, ApiError, closeProjectChannel, notifyProject, savedEtag, type ActiveJob, type Deck } from "../api/client";
 import { deckWith, planWith, preset, project } from "../test/fixtures";
 import { batchView, chapterView, jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
@@ -61,6 +61,8 @@ function registered<T extends { id: string }>(view: T): T {
   notifyProject({ kind: "job_started", project: project.name, jobId: view.id });
   return view;
 }
+
+afterEach(() => { closeProjectChannel(); });  // 이 파일의 시험끼리 채널 메시지가 건너가지 않게 한다 (D3a-6 리뷰 S5)
 
 async function openProject(pollMs = 5) {
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={pollMs} />);
@@ -491,5 +493,47 @@ describe("D3a-5 리뷰 반영", () => {
     await act(async () => answer(status(null)));
     await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
     await waitFor(() => expect(api.writeSource).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe("D3a-6 리뷰 반영", () => {
+  function peerTab() {
+    const sent: unknown[] = [];
+    const peer = new BroadcastChannel("slidecaptain-project-events");
+    peer.onmessage = (m) => sent.push(m.data);
+    return { peer, sent };
+  }
+
+  it("같은 프로젝트의 묶음 메시지를 받으면 읽기 전용이 되고, 종결 뒤 저장본 확인을 한 번 하며, 이 탭은 채널로 아무것도 보내지 않는다 (S2, S4, S6)", async () => {
+    vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: savedEtag(project.name) } as never);
+    await openProject(60_000);
+    const { peer, sent } = peerTab();
+    const before = vi.mocked(api.getActiveJob).mock.calls.length;
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    peer.postMessage({ kind: "job_started", project: project.name });
+    expect(await screen.findByText(/생성 중인 장은 끝나면 보입니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText("보고서 제목")).toBeDisabled();
+    expect(vi.mocked(api.getActiveJob).mock.calls.length).toBe(before + 1);  // 메시지 하나에 한 번
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(null));
+    peer.postMessage({ kind: "job_ended", project: project.name });
+    await waitFor(() => expect(screen.queryByText(/생성 중인 장은 끝나면 보입니다/)).toBeNull());
+    await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalledTimes(1));
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(sent).toEqual([]);  // 사라진 작업의 종결 알림은 같은 탭에만 낸다
+    peer.close();
+  });
+
+  it("편집 직후 다른 탭의 묶음 시작 메시지를 받으면 예약된 자동 저장을 보내지 않는다 (S1)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    const { peer } = peerTab();
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    peer.postMessage({ kind: "job_started", project: project.name });
+    await screen.findByText(/생성 중인 장은 끝나면 보입니다/);
+    await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
+    expect(api.putDeck).not.toHaveBeenCalled();
+    peer.close();
   });
 });

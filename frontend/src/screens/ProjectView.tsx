@@ -142,7 +142,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
       .then((view) => (TERMINAL_JOB_STATES.has(view.state) ? view : null))
       .catch(() => null)
       .then((view) => notifyProject({ kind: "job_ended", project: before.project, jobId: before.id,
-        state: view?.state, jobKind: view?.kind ?? before.kind }));
+        state: view?.state, jobKind: view?.kind ?? before.kind }, { broadcast: false }));
   }, [activeJob]);
   // 잠금은 화면이 보고하는 바쁨이 아니라 서버의 진행 작업으로 정한다 (D3a-5, 계획 4.4 표). 이 프로젝트의 장 생성
   // 묶음 중에는 덱 편집을 읽기 전용으로, 내보내기와 복구와 다시 읽기와 검수 기록을 잠그고, 단계 이동은 막지

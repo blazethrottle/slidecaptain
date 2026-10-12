@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { onProjectEvent, type JobView } from "../api/client";
+import { onProjectEvent, onRemoteProjectEvent, type JobView } from "../api/client";
 import type { SaveState } from "../state/useDeckEditor";
 
 // 상태 표시 (개정판 D2a-5, 제품 설계 4절). 색만으로 구별하지 않도록 상태마다 문구와 아이콘을 함께 둔다.
@@ -104,6 +104,9 @@ export function JobAnnouncer() {
   const announced = useRef<{ id: string; known: boolean } | null>(null);  // 마지막으로 알린 작업과 결과를 알았는지
   const seen = useRef(new Set<string>());  // 이미 알린 작업 ID
   const [message, setMessage] = useState("");
+  // 다른 탭의 작업 시작도 글을 비운다. 이 탭도 그 작업의 종결을 알리므로, 같은 글의 두 번째 종결을 다시 읽게 한다
+  // (D3a-6 리뷰 S9)
+  useEffect(() => onRemoteProjectEvent((event) => { if (event.kind === "job_started") setMessage(""); }), []);
   useEffect(() => onProjectEvent((event) => {
     if (event.kind === "job_started") { setMessage(""); return; }
     if (event.kind !== "job_ended" || !event.jobId) return;
