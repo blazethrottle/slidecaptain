@@ -642,7 +642,8 @@ it("편집 단계에 미저장 변경이 없으면 다른 탭의 묶음이 끝�
   expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
 });
 
-it("편집 단계에 미저장 변경이 있으면 다른 탭의 묶음이 끝나도 덱을 덮지 않고 충돌 안내로 다시 읽기를 맡긴다 (β 리뷰 R1, D3a-2)", async () => {
+// 다시 씀 (D3a-β 리뷰 B2): 편집 단계는 프로젝트 화면의 다시 읽기 안내 대신 편집 화면의 충돌 처리(보존 뒤 되돌리기)로 보낸다
+it("편집 단계에 미저장 변경이 있으면 다른 탭의 묶음이 끝나도 덱을 덮지 않고 편집 화면의 충돌 처리로 보낸다 (β 리뷰 R1, D3a-2)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWithSlide);
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
@@ -660,7 +661,9 @@ it("편집 단계에 미저장 변경이 있으면 다른 탭의 묶음이 끝�
   vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive(project.name))
     .mockImplementation(async () => ({ active: null, ledger_available: true }));
   window.dispatchEvent(new Event("focus"));
-  expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeInTheDocument();
+  expect(await screen.findByText(/생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "서버 내용 다시 읽기" })).toBeNull();  // 보존하지 않는 버튼을 겹쳐 두지 않는다
   expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads);  // 저장 ETag를 몰래 새로 읽지 않는다
   expect(screen.getByLabelText("장 주제")).toHaveValue("주제 고침");
 });

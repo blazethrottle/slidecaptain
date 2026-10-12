@@ -93,7 +93,12 @@ export function useDeckEditor(
         return true;
       }
       // 저장이 진행되는 동안 편집이나 되돌리기가 있었다: 그 결과를 이어서 저장한다. 종전에는 이 경로가 없어
-      // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01)
+      // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01). 그사이 저장이 멈췄으면(묶음 중 읽기
+      // 전용) 이어 저장하지 않고 대기로 둔다. 멈춤이 풀리면 자동 저장이 이어 간다 (D3a-β 리뷰 B4)
+      if (pausedRef.current) {
+        setSaveState("저장 대기");
+        return false;
+      }
       return doPut(residual);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {

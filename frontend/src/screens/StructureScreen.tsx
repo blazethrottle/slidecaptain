@@ -100,7 +100,7 @@ export const EMPTY_BRIEF: StructureBrief = { instructions: "", targetChapters: "
 
 export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
   onSaveStatusChange, onJobRegistered, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
-  readOnlyNotice = false, pollIntervalMs = 1000 }: {
+  readOnlyNotice = false, registeredJobs, seenJobFailures, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   onDeckChange: (d: Deck) => void;
@@ -118,6 +118,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // readOnlyNotice는 묶음을 확인했을 때만 안내한다. 이 화면이 그 묶음을 따라가는 중이면 진행 표시가 대신한다
   readOnly?: boolean;
   readOnlyNotice?: boolean;
+  // 이 탭이 등록한 작업 ID(프로젝트 화면이 든다). 생성 중 다른 단계로 갔다 돌아와도 이 탭이 시작한 묶음은 머문 경우와
+  // 같이 원인별 안내와 편집 단계 이동을 한다 (D3a-β 리뷰 B6, B7)
+  registeredJobs?: ReadonlySet<string>;
+  // 이미 보인 생성 실패의 작업 ID. 다시 연 화면이 지난 구조안 실패를 한 번만 보인다 (D3a-β 리뷰 B1)
+  seenJobFailures?: Set<string>;
   // 주안점과 목표 장수. 저장하지 않는 값이라 부모(프로젝트 화면)가 들고 있어 단계 이동과 다시 마운트 사이에
   // 남는다(계획 4.4, 사실 13, D3a-2 리뷰 R6). 넘기지 않으면 이 화면 안에서만 든다
   brief?: StructureBrief;
@@ -188,6 +193,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 원인별 실패 안내 (D3a-4, 계획 4.3). failure: 화면이 받은 오류, formatWhat: 구조안 형식 오류의 문구,
   // batchFailure: 이 화면이 따라간 묶음의 첫 실패 장
   const [failure, setFailure] = useState<FailureDescription | null>(null);
+  const [failureLead, setFailureLead] = useState("");  // 다시 연 화면이 보이는 지난 실패의 앞 문장 (B1)
   const [formatWhat, setFormatWhat] = useState("");
   const formatJob = useRef<JobView | null>(null);  // 형식 오류를 낸 구조안 작업 (진단 상세의 작업 ID)
   // quiet: 같은 사실을 위쪽 충돌 배너가 이미 경고로 알린다. 경고를 두 번 읽지 않게 status로 낮춘다 (리뷰 R15)
@@ -273,13 +279,14 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     setError("");
     setFailure(stale ? null : describeFailure(error));
   };
-  const resetError = () => { setError(""); setFailure(null); setFormatWhat(""); setBatchFailure(null); };
+  const resetError = () => { setError(""); setFailure(null); setFailureLead(""); setFormatWhat(""); setBatchFailure(null); };
 
   // 구조안 작업의 결과를 초안에 올린다. 후보는 항상 AI 재생성 초안으로 보아 승인 때 옛 슬라이드를 계승하지 않는다
   const showStructure = (view: JobView) => {
     const result = jobResult<StructureResult>(view);
     if (result.status === "format_error") {
       formatJob.current = view;
+      seenJobFailures?.add(view.id);
       setFormatWhat(result.format_issue === "answer_not_in_summary"
         ? "AI가 만든 구성에서 핵심 답변을 설명하는 장에 일부 주장이 연결되지 않았습니다."
         : "AI 응답을 형식에 맞게 읽지 못했습니다.");
@@ -362,6 +369,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     } catch (e) {
       if (controller.signal.aborted) return;  // 화면이 내려갔다 (리뷰 R23)
       setFollowError("");  // 조회를 멈췄다. "계속 확인합니다"를 남기지 않는다 (D3a-5, β R8)
+      if (e instanceof ApiError && e.job) seenJobFailures?.add(e.job.id);  // 머문 화면에서 본 실패 (B1)
       if (e instanceof AiConsentDeclined) setCancelNotice(AI_CONSENT_CANCELLED_NOTICE);
       else if (e instanceof JobCancelled) setCancelNotice("구조안 생성이 취소되었습니다.");
       else showFailure(e);  // 다른 작업이 진행 중이면 실패 안내가 그 작업 취소 버튼을 보인다 (리뷰 R12)
@@ -391,7 +399,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
 
   // 장별 결과에서 사용량 합계, 결과 없는 실패, 미검증 숫자, 형식 오류 원문, 구성 계획 낡음을 계산한다
   // live: 이 화면에서 따라간 묶음. 지난 묶음(다시 열기)은 충돌 알림 없이 요약만 보이고, 덱이 완성됐으면 숨긴다 (D2b-5a 리뷰 R2)
-  const summarize = (view: JobView, live = true, current: Deck = deck) => {
+  // rich: 다시 연 화면이지만 이 탭이 등록한 묶음이라 원인별 안내로 보인다(충돌 배너는 띄우지 않는다, B6)
+  const summarize = (view: JobView, live = true, current: Deck = deck, rich = false) => {
     const results = view.chapters.filter((c) => c.result);
     const usages = results.map((c) => (c.result as { usage?: GenerationUsage }).usage).filter(Boolean) as GenerationUsage[];
     setChapterUsageSummary(usages.length > 0 ? sumUsage(usages) : null);
@@ -410,7 +419,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const show = (message: string) => (live ? setError(message) : setPastNotice(`지난 내용 생성: ${message}`));
     // 이 화면이 따라간 묶음은 원인별 실패 안내로 보인다(D3a-4, 계획 4.3, 리뷰 R4). 다시 연 지난 묶음은 글 한 줄이다
     const report = (lead: string, failure: FailureDescription | null, quiet = false) => {
-      if (live && failure) setBatchFailure({ lead, failure, quiet });
+      if ((live || rich) && failure) setBatchFailure({ lead, failure, quiet });
       else show(lead);
     };
     if (view.started_at === null && view.error) {
@@ -438,7 +447,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (malformedOnly) {
         report("일부 장의 AI 응답을 형식에 맞게 읽지 못했습니다. 장 목록에서 실패한 장만 다시 생성해 주세요.",
           failed ? describeJobFailure(view, failed) : null);
-      } else if (live && failed) {
+      } else if ((live || rich) && failed) {
         // 첫 실패 장의 원인으로 안내한다. 남은 장은 "앞 장 때문에 중단"이라 따로 안내하지 않는다 (D3a-4, 계획 4.3)
         report("일부 장을 만들지 못했습니다. 아래 원인을 확인한 뒤 실패한 장만 다시 생성해 주세요.", describeJobFailure(view, failed));
       } else {
@@ -534,6 +543,15 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           staleStructure.current = earlier.id;
           setEarlierNotice(`이전 입력 기준 구조안 후보가 있습니다(${reasonText(reasons)}). 현재 자료로 다시 생성해 주세요.`);
         }
+        // 가장 최근 구조안 작업이 이 화면이 내려간 동안 실패하거나 끝나지 않았으면 원인별 안내로 한 번 보인다.
+        // 생성 중 다른 단계로 갈 수 있게 된 뒤로 이 실패를 볼 곳이 없었다 (D3a-β 리뷰 B1)
+        const last = jobs.find((j) => j.kind === "structure");
+        if (!earlier && last && ["failed", "interrupted", "remote_completion_unknown"].includes(last.state)
+            && !seenJobFailures?.has(last.id)) {
+          seenJobFailures?.add(last.id);
+          if (last.result) showStructure(last);  // 형식 오류: 응답 원문과 함께 형식 오류 안내
+          else { setFailureLead("지난 구조안 생성이 끝나지 않았습니다."); setFailure(describeJobFailure(last)); }
+        }
       }
       } catch (e) {
         // 지난 구조안을 보이지 못해도 아래 장 생성 묶음은 이어서 본다 (D2b-5b 리뷰 R5)
@@ -549,8 +567,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       if (!latest) return;
       if (!TERMINAL_JOB_STATES.has(latest.state)) {
         latest.chapters.filter((c) => c.state === "succeeded").forEach((c) => appliedSeen.current.add(c.chapter_id));
-        void follow(latest.id, false);
-      } else { setJob(latest); summarize(latest, false); }
+        void follow(latest.id, registeredJobs?.has(latest.id) ?? false);
+      } else { setJob(latest); summarize(latest, false, deck, registeredJobs?.has(latest.id) ?? false); }
     }).catch(() => { /* 원장 문제는 생성 버튼을 누를 때 안내한다 */ });
     return () => { live = false; mounted.current = false; followAbort.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -796,7 +814,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
       {error && <p role="alert">{error}</p>}
       {followError && <p role="status">{followError}</p>}
       {/* 저장 충돌은 위쪽 충돌 배너가 이미 경고로 알린다 (리뷰 R15) */}
-      <FailureNotice failure={failure} role={failure?.cause === "deck_conflict" ? "status" : undefined} />
+      <FailureNotice failure={failure} lead={failureLead || undefined}
+        role={failure?.cause === "deck_conflict" ? "status" : undefined} />
       {batchFailure && <FailureNotice failure={batchFailure.failure} lead={batchFailure.lead}
         role={batchFailure.quiet ? "status" : undefined} />}
       {formatWhat && <FailureNotice failure={describeAiOutput(formatJob.current, formatWhat)} actions={busy ? {} : { regenerate: () => void generate() }}>

@@ -270,7 +270,8 @@ describe("순서 시나리오 (계획 5절 D3a-2)", () => {
     expect(saved.slides[0].slots).toMatchObject({ bullets: [{ text: "묶음이 만든 내용" }] });
   });
 
-  it("편집 단계 충돌 안내 뒤 다른 단계로 가려 해도 옛 덱의 저장이 거절되면 떠나지 않고, 다시 읽은 뒤에는 새 덱이다", async () => {
+  // 다시 씀 (D3a-β 리뷰 B2): 충돌 안내는 편집 화면의 것 하나이고, 그 되돌리기는 편집을 보존한 뒤 새 덱을 읽는다
+  it("편집 단계 충돌 안내 뒤 다른 단계로 가려 해도 옛 덱의 저장이 거절되면 떠나지 않고, 보존 뒤 되돌리면 새 덱이다", async () => {
     // 미저장 편집은 이탈 플러시가 옛 저장 ETag로 보낸다. 서버는 412로 거절하므로(If-Match) 옛 덱은 저장되지 않는다.
     // 모의 시험은 If-Match를 흉내 내지 않으므로 실제 서비스 재현은 α 묶음 리뷰의 두 탭 재현이 맡는다
     let rejectSave = false;
@@ -282,14 +283,20 @@ describe("순서 시나리오 (계획 5절 D3a-2)", () => {
     const topic = await screen.findByLabelText("장 주제");
     fireEvent.change(topic, { target: { value: "옛 덱의 편집" } });
     fireEvent.blur(topic);
+    vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00", reason: "conflict",
+      source: "editor" } as Awaited<ReturnType<typeof api.saveDraft>>);
     await otherTabBatchEnds(batchDeck);
-    await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
+    await screen.findByText(/생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다/);
+    expect(screen.queryByRole("button", { name: "서버 내용 다시 읽기" })).toBeNull();
     rejectSave = true;
     await userEvent.click(stageButton("자료"));
     expect(stageButton("편집")).toHaveAttribute("aria-current", "step");  // 떠나지 않았다
-    vi.spyOn(window, "confirm").mockReturnValue(true);
-    await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await userEvent.click(screen.getByRole("button", { name: "서버 내용으로 되돌리기" }));
     await waitFor(() => expect(screen.getByLabelText("장 주제")).toHaveValue("묶음이 만든 장"));
+    expect(api.saveDraft).toHaveBeenCalledTimes(1);  // 고친 내용은 보존본으로 남는다
+    expect(vi.mocked(api.saveDraft).mock.calls[0][1].deck.structure.chapters[0].topic).toBe("옛 덱의 편집");
+    confirm.mockRestore();
   });
 });
 
@@ -370,7 +377,10 @@ describe("D3a-2 리뷰 반영", () => {
     await userEvent.click(stageButton("구성"));
     await userEvent.click(await screen.findByRole("button", { name: "둘째 장 삭제" }));
     expect(headerStatus()).toBe("변경사항 있음");
+    // 다시 씀 (D3a-5 C16): 고친 장 구성 초안을 두고 떠나면 묻는다. 종전에는 앞 시험이 남긴 확인 창 모의에 기대어 통과했다
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await userEvent.click(stageButton("자료"));
+    confirm.mockRestore();
     await waitFor(() => expect(headerStatus()).toBe("저장됨"));
     expect(document.querySelector(".project-topbar p.visually-hidden[role='status']")).toHaveTextContent("");
   });

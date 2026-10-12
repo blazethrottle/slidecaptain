@@ -13,7 +13,7 @@ import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
 import { SourcesScreen } from "./SourcesScreen";
 import { EMPTY_BRIEF, StructureScreen, type StructureBrief } from "./StructureScreen";
-import { batchSummary, stageLimitations, stageProgress, stageStatus, type Stage } from "./stageStatus";
+import { batchSummary, JOB_STAGE, stageLimitations, stageProgress, stageStatus, type Stage } from "./stageStatus";
 
 // 다섯 단계 (개정판 D3a-2, 계획 4.1, 제품 설계 3절). 단계 화면은 전환 때 언마운트한다: 숨긴 채 마운트를
 // 유지하면 화면이 옛 사본을 든 채 전역 저장 ETag만 새로 바뀌는 이음매(계획 사실 14, 15)가 다시 생긴다
@@ -60,7 +60,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   // 자료 단계의 XLSX 업로드가 진행 중이다(계획서 B4 가정 7). generating과 합치지 않는다: 구성 단계는
   // 생성 중에는 잠그지 않는 예외가 있는데, 업로드는 자료 단계 안의 일이라 구성 단계까지 잠가야 FC-17이 막힌다
   const [uploading, setUploading] = useState(false);
-  const [conflict, setConflict] = useState<Conflict>(null);  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
+  const [conflict, setConflict] = useState<Conflict>(null);
+  const [editorConflictSignal, setEditorConflictSignal] = useState(0);  // 늘리면 편집 화면이 충돌 처리로 들어간다 (B2)  // 다른 창이나 프로그램, 또는 묶음이 먼저 저장했다
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(null);  // 상단 머리의 저장 상태 (계획 4.1 출처 표)
   const [draftCount, setDraftCount] = useState(0);  // 충돌로 보존한 변경 건수 (C18)
   const [draftsRevision, setDraftsRevision] = useState(0);
@@ -85,15 +86,24 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const [activeRevision, setActiveRevision] = useState(0);  // 진행 작업 조회가 끝난 횟수 (실패 안내가 작업 종결을 판정한다)
   const checkSeq = useRef(0);
   const checkedOnce = useRef(false);
+  // 처음 연 순간의 묶음 여부. 첫 조회의 답으로만 정한다: 첫 답이 오기 전에 다른 탭의 알림으로 한 조회가 먼저
+  // 끝나면 열고 난 뒤 시작된 묶음을 "열 때 이미 돌던 묶음"으로 잘못 보았다 (D3a-β 리뷰 B8)
+  const openedWithBatch = useRef<boolean | null>(null);
   const refreshActiveJob = useCallback(async () => {
     const seq = ++checkSeq.current;
     try {
       const status = await api.getActiveJob();
+      if (seq === 1 && openedWithBatch.current === null) {
+        const opened = status.active?.project === project.name && status.active.kind === "chapters";
+        openedWithBatch.current = opened;
+        if (opened) setStage("structure");
+      }
       if (seq !== checkSeq.current) return;  // 늦게 온 옛 응답은 버린다 (D2b-5a 리뷰 R18)
       setActiveJob(status.active ?? null);
       setLedgerAvailable(status.ledger_available);
       setActiveRevision((n) => n + 1);
     } catch {
+      if (seq === 1 && openedWithBatch.current === null) openedWithBatch.current = false;
       if (seq !== checkSeq.current) return;
       // 첫 확인이 실패하면 잠그지 않는다(생성 버튼이 원인을 안내한다). 진행 중으로 확인한 작업은 놓지 않고
       // 새 객체로 바꿔 다음 조회를 예약한다 (D2b-5a 리뷰 R4)
@@ -101,7 +111,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     } finally {
       if (seq === checkSeq.current) { setJobChecked(true); checkedOnce.current = true; }
     }
-  }, []);
+  }, [project.name]);
   useEffect(() => {
     void refreshActiveJob();
     const onFocus = () => void refreshActiveJob();
@@ -179,14 +189,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
     if (seenJobId.current !== activeJobId && project.status === "ok") void refreshProgress();
     seenJobId.current = activeJobId;
   }, [activeJobId, project.status, refreshProgress]);
-  // 이 프로젝트를 열 때 이미 묶음이 돌고 있으면 진행 표시가 있는 구성 단계를 연다. 그 뒤에 나타난 묶음은
-  // 편집 단계의 저장을 거치지 않고 단계를 바꾸지 않도록 안내만 한다 (D2b-5a 리뷰 R3, R18)
-  const openedWithBatch = useRef<boolean | null>(null);
-  useEffect(() => {
-    if (!jobChecked || openedWithBatch.current !== null) return;
-    openedWithBatch.current = batchHere;
-    if (batchHere) setStage("structure");
-  }, [jobChecked, batchHere]);
+  // 이 프로젝트를 열 때 이미 묶음이 돌고 있으면 진행 표시가 있는 구성 단계를 연다(위 첫 조회). 그 뒤에 나타난
+  // 묶음은 편집 단계의 저장을 거치지 않고 단계를 바꾸지 않도록 안내만 한다 (D2b-5a 리뷰 R3, R18)
   // 이 탭이 등록한 묶음의 작업 ID. 묶음 종결 뒤 충돌 안내를 사실에 맞게 쓴다 (계획 4.1)
   const startedHere = useRef<Set<string>>(new Set());
   const onJobRegistered = useCallback((id: string) => { startedHere.current.add(id); }, []);
@@ -203,6 +207,19 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   const showRecoveryRef = useRef(showRecovery);
   showRecoveryRef.current = showRecovery;
   const generatingRef = useRef(false);
+  // 다른 단계에 있는 동안 이 프로젝트의 AI 생성이 실패하거나 끝나지 않으면 머리에 보이게 알린다. 종결 낭독은 보이지
+  // 않으므로, 결과를 확인할 단계를 버튼으로 잇는다 (D3a-β 리뷰 B1)
+  const [jobProblem, setJobProblem] = useState<{ stage: Stage; state: string } | null>(null);
+  useEffect(() => onProjectEvent((event) => {
+    if (event.kind !== "job_ended" || event.project !== project.name || !event.state || !event.jobKind) return;
+    if (!["failed", "interrupted", "remote_completion_unknown"].includes(event.state)) return;
+    const target = JOB_STAGE[event.jobKind];
+    if (!target || (!showRecoveryRef.current && stageRef.current === target)) return;
+    setJobProblem({ stage: target, state: event.state });
+  }), [project.name]);
+  useEffect(() => { if (!showRecovery && jobProblem?.stage === stage) setJobProblem(null); }, [stage, showRecovery, jobProblem]);
+  // 구성 화면이 다시 열려도 이미 보인 실패를 되풀이하지 않는다 (B1)
+  const seenJobFailures = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (wasBatchHere.current && !batchHere) {
       const endedJob = lastBatchId.current;
@@ -220,6 +237,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
           // 다시 읽도록 복구 화면을 사본 단계에서 뺀다
           const holdsCopy = !showRecoveryRef.current && DECK_COPY_STAGES.has(stageRef.current);
           if (holdsCopy && dirtyRef.current) {
+            // 편집 단계는 자기 충돌 처리(보존 뒤 서버 내용으로 되돌리기)로 보낸다. 여기서 다시 읽기 안내를 겹쳐 띄우면
+            // 보존하지 않는 버튼이 하나 더 생겼다 (D3a-β 리뷰 B2)
+            if (stageRef.current === "editor") { setEditorConflictSignal((n) => n + 1); return; }
             setConflict(endedJob !== null && startedHere.current.has(endedJob) ? "batch_here" : "other");
             return;
           }
@@ -497,6 +517,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
                 .catch((e) => setError(messageOf(e)))} disabled={activeJob.cancel_requested}>그 작업 취소</button>
             </p>
           )}
+          {jobProblem && (
+            <p className="topbar-job">
+              <StatusIndicator kind="failed" />{" "}
+              {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계의 AI 생성이{" "}
+              {jobProblem.state === "failed" ? "실패했습니다" : "끝나지 않았습니다"}.{" "}
+              <button onClick={() => void switchStage(jobProblem.stage)} disabled={navLocked} title={navTitle}>
+                {STAGES.find((s) => s.id === jobProblem.stage)?.label} 단계로 이동</button>{" "}
+              <button className="btn-text" onClick={() => setJobProblem(null)}>닫기</button>
+            </p>
+          )}
           {!ledgerAvailable && (
             // 원장을 열 수 없으면 AI 생성만 막힌다 (계획서 D2b-5c)
             <p className="topbar-job">작업 기록을 열 수 없어 AI 생성을 쓸 수 없습니다. 편집과 내보내기는 계속할 수 있습니다.</p>
@@ -590,6 +620,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} focusChapterId={focusChapter}
+            registeredJobs={startedHere.current} seenJobFailures={seenJobFailures.current}
             limitations={progressFailed ? [] : stageLimitations(progress, "structure")} readOnly={batchLocked}
             readOnlyNotice={batchHere} />
         )}
@@ -600,7 +631,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
             onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setGenerating}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
             initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
-            readOnly={batchLocked} readOnlyNotice={batchHere} />
+            readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={editorConflictSignal} />
         )}
         {!showRecovery && stage === "review" && (
           <ReviewScreen key={screenKeyValue} projectName={project.name} hasSlides={hasSlides} exporting={exporting}

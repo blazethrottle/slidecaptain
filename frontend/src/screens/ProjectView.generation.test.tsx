@@ -450,6 +450,8 @@ describe("D3a-5 리뷰 반영", () => {
     await openProject(60_000);
     await userEvent.click(stageButton("편집"));
     await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");  // 자동 저장(1.2초) 전에 묶음이 시작된다
+    await userEvent.tab();  // 덱에 반영해 자동 저장을 예약한다 (D3a-β 리뷰 B3)
+    expect(document.querySelector(".header-save-status .status-label")).toHaveTextContent("변경사항 있음");
     await batchFromOtherTab();
     await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
     expect(api.putDeck).not.toHaveBeenCalled();
@@ -528,12 +530,140 @@ describe("D3a-6 리뷰 반영", () => {
     await openProject(60_000);
     await userEvent.click(stageButton("편집"));
     await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await userEvent.tab();  // 속성 패널은 입력을 떠날 때 덱에 반영한다. 그래야 자동 저장이 예약된다 (D3a-β 리뷰 B3)
+    expect(document.querySelector(".header-save-status .status-label")).toHaveTextContent("변경사항 있음");
     const { peer } = peerTab();
     vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
     peer.postMessage({ kind: "job_started", project: project.name });
     await screen.findByText(/생성 중인 장은 끝나면 보입니다/);
     await act(async () => { await new Promise((r) => setTimeout(r, 1500)); });
     expect(api.putDeck).not.toHaveBeenCalled();
+    peer.close();
+  });
+});
+
+describe("D3a-β 묶음 리뷰 반영", () => {
+  async function batchFromOtherTab() {
+    vi.mocked(api.getActiveJob).mockImplementation(async () => status(activeOf("chapters")));
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+  }
+
+  it("진행 중이던 저장의 응답 뒤에도 묶음 중이면 남은 편집을 이어 저장하지 않는다 (B4)", async () => {
+    let land!: () => void;
+    vi.mocked(api.putDeck).mockImplementationOnce(() => new Promise((r) => { land = () => r({ ok: true }); }))
+      .mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    const topic = await screen.findByLabelText("장 주제");
+    await userEvent.type(topic, " 가");
+    await userEvent.tab();
+    await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(1), { timeout: 3000 });  // 첫 저장이 나가 응답을 기다린다
+    await userEvent.type(screen.getByLabelText("장 주제"), " 나");
+    await userEvent.tab();
+    await batchFromOtherTab();
+    await act(async () => { land(); await new Promise((r) => setTimeout(r, 1500)); });
+    expect(api.putDeck).toHaveBeenCalledTimes(1);
+  });
+
+  it("묶음 중 편집 단계에 고친 내용이 있으면 그 결과를 읽기 전용 안내에 적는다 (B2)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    await userEvent.type(await screen.findByLabelText("장 주제"), " 고침");
+    await userEvent.tab();
+    await batchFromOtherTab();
+    expect(screen.getByText(/고친 내용은 생성이 끝난 뒤 다시 저장합니다/)).toBeInTheDocument();
+  });
+
+  it("구조안 생성이 다른 단계에 있는 동안 실패하면 머리에 알리고, 구성으로 돌아오면 원인별 안내를 한 번 보인다 (B1)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [] }, slides: [] });
+    vi.mocked(api.startJob).mockImplementation(async () =>
+      registered(jobView("structure", { id: "job-s", state: "running", candidate_status: "none" })));
+    vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("structure", project.name, "job-s")));
+    await userEvent.click(await screen.findByRole("button", { name: "구조안 생성" }));
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    await userEvent.click(stageButton("자료"));
+    const failed = jobView("structure", { id: "job-s", state: "failed", candidate_status: "none",
+      error: { error_class: "connection", status: 503, detail: "AI 호출이 정상적으로 끝나지 않았습니다.", code: "provider_call_failed" } });
+    vi.mocked(api.getJob).mockResolvedValue(failed);
+    vi.mocked(api.listJobs).mockResolvedValue([failed]);
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(null));
+    expect(await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/)).toBeInTheDocument();
+    await userEvent.click(within(header()).getByRole("button", { name: "구성 단계로 이동" }));
+    await waitFor(() => expect(stageButton("구성")).toHaveAttribute("aria-current", "step"));
+    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+    const notice = (await screen.findByText("지난 구조안 생성이 끝나지 않았습니다.")).closest(".failure-notice")!;
+    expect(notice).toHaveTextContent("AI 호출이 정상적으로 끝나지 않았습니다.");
+    // 한 번 본 실패는 다시 열어도 되풀이하지 않는다
+    await userEvent.click(stageButton("자료"));
+    await userEvent.click(stageButton("구성"));
+    await screen.findByRole("button", { name: "구조안 생성" });
+    expect(screen.queryByText("지난 구조안 생성이 끝나지 않았습니다.")).toBeNull();
+  });
+
+  it("이 탭이 시작한 묶음은 떠났다 돌아와도 실패를 원인별 안내로 보인다 (B6)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [CH1] }, slides: [] });
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    vi.mocked(api.startChapters).mockImplementation(async () => {
+      vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapters")));
+      return registered(batchView([chapterView("c1", "running")], { state: "running", outcome: null }));
+    });
+    vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    await userEvent.click(stageButton("자료"));
+    const failed = batchView([chapterView("c1", "failed", { error: { error_class: "connection", status: 503,
+      detail: "AI 호출이 정상적으로 끝나지 않았습니다.", code: "provider_call_failed" } })], { state: "failed", outcome: "partial" });
+    vi.mocked(api.listJobs).mockResolvedValue([failed]);
+    vi.mocked(api.getJob).mockResolvedValue(failed);
+    vi.mocked(api.getActiveJob).mockResolvedValue(status(null));
+    await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/);
+    await userEvent.click(stageButton("구성"));
+    const notice = (await screen.findByText(/일부 장을 만들지 못했습니다/)).closest(".failure-notice");
+    expect(notice).not.toBeNull();
+    expect(screen.queryByText(/지난 내용 생성/)).toBeNull();
+  });
+
+  it("이 탭이 시작한 묶음을 떠났다 돌아와 따라가면 성공 뒤 편집 단계로 옮긴다 (B7)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith([]), structure: { chapters: [CH1] }, slides: [] });
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const runningView = batchView([chapterView("c1", "running")], { state: "running", outcome: null });
+    vi.mocked(api.startChapters).mockImplementation(async () => {
+      vi.mocked(api.getActiveJob).mockResolvedValue(status(activeOf("chapters")));
+      return registered(runningView);
+    });
+    vi.mocked(api.getJob).mockImplementation(() => new Promise(() => {}));
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    await userEvent.click(stageButton("자료"));
+    vi.mocked(api.listJobs).mockResolvedValue([runningView]);
+    const done = { ...deckWith(["새 내용"]), structure: { chapters: [CH1] } } as Deck;
+    vi.mocked(api.getJob).mockResolvedValue(batchView([chapterView("c1", "succeeded")]));
+    vi.mocked(api.getDeck).mockResolvedValue({ ...done, slides: [{ ...done.slides[0], chapter_id: "c1" }] });
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(stageButton("편집")).toHaveAttribute("aria-current", "step"), { timeout: 3000 });
+  });
+
+  it("첫 진행 작업 확인이 늦는 동안 다른 탭이 묶음을 시작해도 연 단계를 바꾸지 않는다 (B8)", async () => {
+    let first!: (s: ReturnType<typeof status>) => void;
+    vi.mocked(api.getActiveJob).mockReturnValueOnce(new Promise((r) => { first = r; }))
+      .mockImplementation(async () => status(activeOf("chapters")));
+    render(<ProjectView project={project} onBack={() => {}} jobPollMs={60_000} />);
+    await screen.findByLabelText("보고서 제목");
+    const peer = new BroadcastChannel("slidecaptain-project-events");
+    peer.postMessage({ kind: "job_started", project: project.name });
+    await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
+    await act(async () => first(status(null)));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(stageButton("보고 목적")).toHaveAttribute("aria-current", "step");
     peer.close();
   });
 });

@@ -16,12 +16,14 @@ import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
+
+const BATCH_END_CONFLICT = "생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다. '서버 내용으로 되돌리기'를 누르면 고친 내용을 보존한 뒤 새 문서를 읽습니다.";
 import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, onAiBusyChange, timings,
   onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange, readOnly = false,
-  readOnlyNotice = false,
+  readOnlyNotice = false, conflictSignal = 0,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -48,11 +50,18 @@ export function EditorScreen({
   // 묶음이 끝나면 부모가 새 덱으로 다시 마운트한다 (D3a-5, 계획 4.4). readOnlyNotice는 묶음을 확인했을 때만 안내한다
   readOnly?: boolean;
   readOnlyNotice?: boolean;
+  // 늘어나면 충돌 처리로 들어간다. 장 생성 묶음이 끝났을 때 이 화면에 저장하지 않은 편집이 남아 있으면 부모가 보낸다.
+  // 이 화면의 "서버 내용으로 되돌리기"가 편집을 보존한 뒤 새 문서를 읽는다 (D3a-β 리뷰 B2)
+  conflictSignal?: number;
 }) {
   // 읽기 전용(장 생성 묶음 중)에는 저장을 멈춘다. 묶음 중 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7)
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint, readOnly);
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
+  const reportConflict = editor.reportConflict;
+  useEffect(() => {
+    if (conflictSignal > 0) reportConflict(BATCH_END_CONFLICT);
+  }, [conflictSignal, reportConflict]);
   const chapters = editor.deck.structure.chapters;
   const [chapterId, setChapterId] = useState<string | null>(
     (initialChapterId && chapters.some((c) => c.id === initialChapterId) ? initialChapterId : chapters[0]?.id) ?? null);
@@ -101,14 +110,16 @@ export function EditorScreen({
   // 작성 창을 닫은 뒤 남은 AI 호출은 막지 않는다. 그 결과는 작업 원장에 후보로 남아 복구 화면에 보인다 (리뷰 R10)
   const flush = useCallback(async (): Promise<boolean | "declined"> => {
     if (diagramDraftRef.current || templateBusyRef.current) return false;
-    // 읽기 전용이면 저장하지 않는다. 저장하지 않은 편집이 남았으면 버릴지 묻는다 (D3a-5 리뷰 R7)
-    if (readOnlyRef.current && editor.saveState !== "저장됨") {
+    // 읽기 전용이면 저장하지 않는다. 이미 나간 저장은 착지를 기다리고(그 편집은 사라지지 않는다), 그래도
+    // 저장하지 않은 편집이 남았으면 버릴지 묻는다 (D3a-5 리뷰 R7, D3a-β 리뷰 B5)
+    if (readOnlyRef.current) {
+      if (await editor.flushSave()) return true;
       return window.confirm(BATCH_DISCARD_CONFIRM) ? true : "declined";
     }
     const saved = await editor.flushSave();
     // 저장을 기다리는 동안 새로 연 작성 창도 보호한다. 시작 시점의 상태만 검사하면 입력을 버리고 이동한다.
     return saved && diagramDraftRef.current === null && !templateBusyRef.current;
-  }, [editor.flushSave, editor.saveState]);
+  }, [editor.flushSave]);
 
   useEffect(() => {
     onEditorReady?.(flush);
@@ -174,7 +185,9 @@ export function EditorScreen({
     {diagramBusy && !diagramDraft && <p role="status">도식 AI 응답을 기다리고 있습니다. 작성창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
     {templateBusy && <p role="status">전환 전 내용을 저장하고 있습니다.</p>}
     {editor.reloading && <p role="status">변경을 보존하고 서버 내용을 다시 읽고 있습니다.</p>}
-    {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
+    {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}
+      {/* 묶음 전에 고친 내용이 남아 있으면 그 결과를 알린다 (D3a-β 리뷰 B2) */}
+      {editor.saveState !== "저장됨" && " 고친 내용은 생성이 끝난 뒤 다시 저장합니다. 그사이 문서가 바뀌었으면 충돌 안내가 뜨고, 서버 내용으로 되돌릴 때 고친 내용을 보존합니다."}</p>}
     <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
