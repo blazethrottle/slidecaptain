@@ -6,9 +6,12 @@ import { REPORT_TYPE_GUIDES, REPORT_TYPES, type ReportType } from "./reportPurpo
 
 // 보고 유형 예시 영역 (개정판 D3b-5, D3b-6, 계획 4.5와 4.6). 예시 둘러보기는 유형 선택과 분리한다: "이전 예시", "다음 예시"는
 // 이 영역 안의 보기만 바꾸고 저장하지 않는다(리뷰 U11). 이 영역은 라이브 영역이 아니다(리뷰 U9)
-export function ReportTypeExample({ selected }: { selected: ReportType | null }) {
+// closed: 화면이 충돌로 멈추면 크게 보기를 닫는다. 열린 채면 앱 화면이 비활성이라 충돌 안내가 대화 상자 뒤에 가려졌다
+// (β 묶음 리뷰 B7)
+export function ReportTypeExample({ selected, closed = false }: { selected: ReportType | null; closed?: boolean }) {
   const [shown, setShown] = useState<ReportType | null>(selected);
   const [enlarged, setEnlarged] = useState(false);
+  useEffect(() => { if (closed) setEnlarged(false); }, [closed]);
   const enlargeRef = useRef<HTMLButtonElement>(null);
   // 드롭다운에서 유형을 고르면 그 유형의 예시로 돌아온다
   useEffect(() => { setShown(selected); }, [selected]);

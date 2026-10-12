@@ -302,7 +302,7 @@ main.project-shell { padding: 0; }
 html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 /* 보고 목적 화면 (D3b-5, 계획 4.5). 유형 영역이 넓으면 예시를 오른쪽 열에, 좁으면 추가 입력 아래에 둔다. 경계는 유형 영역
    폭 720px다(D3b-6 측정). 창 폭으로는 단계 목록이 옆에 있을 때 약 956px 이상, 단계 띠로 바뀌는 780px 이하에서는 약 752px 이상이
-   두 열이다. 두 열의 그림 높이는 이 경계에서 약 198px이고, 측정한 다섯 크기 모두 가로 넘침이 없고 보고서 제목이 첫 화면 안이다 */
+   두 열이다. 두 열의 그림 높이는 이 경계에서 183px(D3b-6 리뷰 R1, `--height-example-narrow`)이고, 측정한 다섯 크기 모두 가로 넘침이 없고 보고서 제목이 첫 화면 안이다 */
 .purpose-type { container-type: inline-size; container-name: purpose-type; }
 .purpose-type-layout { display: grid; gap: var(--space-4); }
 @container purpose-type (min-width: 720px) {

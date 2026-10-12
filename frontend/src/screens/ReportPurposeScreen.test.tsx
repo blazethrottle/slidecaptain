@@ -458,6 +458,7 @@ describe("D3b-5 리뷰 반영", () => {
   const planned = (meta: Partial<Deck["meta"]> = {}): Deck =>
     ({ ...deck, meta: { ...deck.meta, report_type: "weekly", report_type_confirmed: true, ...meta }, structure: { chapters: [], story_plan: plan } });
   const WARNING = "보고 정보가 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.";
+  const STALE_ELSEWHERE = "자료, 보고 정보 또는 장 구성이 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.";
 
   it("추가 입력이 없는 덱에서 유형만 바꿔도, 제목을 바꿔도 미리 알린다 (R1, R2)", async () => {
     const view = renderScreen({ deck: planned(), saveDelayMs: SLOW });
@@ -475,6 +476,42 @@ describe("D3b-5 리뷰 반영", () => {
     expect(screen.queryByText(WARNING)).toBeNull();
     view.unmount();
     renderScreen({ deck: planned(), planStale: true });
+    expect(screen.getByText(STALE_ELSEWHERE)).toBeInTheDocument();
+  });
+
+  it("이 화면이 바꾸지 않은 낡음은 원인을 보고 정보로 단정하지 않는다 (β 묶음 리뷰 B2)", async () => {
+    renderScreen({ deck: planned(), planStale: true, saveDelayMs: SLOW });
+    expect(screen.getByText(STALE_ELSEWHERE)).toBeInTheDocument();
+    expect(screen.queryByText(WARNING)).toBeNull();
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+    expect(screen.queryByText(STALE_ELSEWHERE)).toBeNull();
+  });
+
+  it("값을 되돌려 저장하면 진행 API의 판정을 기다렸다가 계획이 현재면 안내를 내린다 (β 묶음 리뷰 B1)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const changed = planned({ key_message: "고친 값" });
+    const props = { project, deck: changed, onDeckChange: () => {}, saveDelayMs: FAST };
+    const view = render(<ReportPurposeScreen {...props} planStale />);
+    const field = screen.getByLabelText("이 보고서에서 전달할 핵심 내용");
+    await userEvent.clear(field);
+    await userEvent.type(field, "원래 값");
+    await waitFor(() => expect(puts().at(-1)?.[1].meta.key_message).toBe("원래 값"));
+    // 저장했지만 진행 API를 아직 다시 읽지 않았다. 안내를 유지한다(꺼졌다 켜지지 않는다)
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+    view.rerender(<ReportPurposeScreen {...props} planStale={false} />);
+    expect(screen.queryByText(WARNING)).toBeNull();
+    expect(screen.queryByText(STALE_ELSEWHERE)).toBeNull();
+  });
+
+  it("계획 값을 바꿔 저장하면 진행 API가 아직 낡음을 알리기 전에도 안내가 꺼지지 않는다 (β 묶음 리뷰 B1)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    const props = { project, deck: planned(), onDeckChange: () => {}, saveDelayMs: FAST };
+    const view = render(<ReportPurposeScreen {...props} planStale={false} />);
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    await waitFor(() => expect(puts().length).toBe(1));
+    expect(screen.getByText(WARNING)).toBeInTheDocument();
+    view.rerender(<ReportPurposeScreen {...props} planStale />);
     expect(screen.getByText(WARNING)).toBeInTheDocument();
   });
 
@@ -610,5 +647,63 @@ describe("D3b-5 리뷰 반영", () => {
     first.resolve({ ok: true });
     await pause(FAST * 2);
     expect(statuses.at(-1)?.kind).toBe("conflict");
+  });
+});
+
+
+describe("β 묶음 리뷰 반영 (B5, B7, B8)", () => {
+  const confirmed: Deck = { ...deck, meta: { ...deck.meta, report_type: "weekly", report_type_confirmed: true } };
+
+  it("충돌 안내가 떠 있는 채 열린 화면은 떠나기 확인에서도 저장하지 않는다 (D3b-5 R3, 변형 P2)", async () => {
+    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    let guard: (() => Promise<boolean | "declined">) | null = null;
+    const onConflict = vi.fn();
+    renderScreen({ deck: confirmed, startInConflict: true, onConflict, onScreenReady: (f) => { guard = f; } });
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    await pause(FAST * 3);
+    let left: boolean | "declined" = true;
+    await act(async () => { left = await guard!(); });
+    expect(left).toBe(false);
+    expect(api.putDeck).not.toHaveBeenCalled();
+    expect(onConflict).toHaveBeenCalled();  // 다시 알린다
+  });
+
+  it("다른 탭의 작업 시작 알림에도 작업 목록을 다시 읽는다 (D3b-5 R7, 변형 P10)", async () => {
+    vi.mocked(api.listJobs).mockResolvedValueOnce([])
+      .mockResolvedValue([jobView("rewrite", { state: "running", candidate_status: "none" })]);
+    renderScreen();
+    await waitFor(() => expect(api.listJobs).toHaveBeenCalledTimes(1));
+    const peer = new BroadcastChannel("slidecaptain-project-events");
+    peer.postMessage({ kind: "job_started", project: "p1", jobId: "job-9" });
+    expect(await screen.findByText(/진행 중인 AI 생성이 있습니다/)).toBeInTheDocument();
+    peer.close();
+  });
+
+  it("저장에 성공하면 앞선 저장 실패 안내를 지운다 (변형 P18, M22)", async () => {
+    vi.mocked(api.putDeck).mockRejectedValueOnce(new ApiError(500, "서버가 잠시 응답하지 않습니다."))
+      .mockResolvedValue({ ok: true });
+    renderScreen({ deck: confirmed });
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "고침");
+    expect(await screen.findByText(/서버가 잠시 응답하지 않습니다/)).toBeInTheDocument();
+    // "다시 저장"은 누를 때 안내를 먼저 지우므로, 이어 친 입력의 자동 저장이 성공하는 경로로 본다
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 이어서");
+    await waitFor(() => expect(api.putDeck).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/서버가 잠시 응답하지 않습니다/)).toBeNull());
+  });
+
+  it("화면이 충돌로 멈추면 열린 크게 보기를 닫고 초점을 크게 보기로 돌린다 (B7)", async () => {
+    const props = { project, deck: confirmed, onDeckChange: () => {}, saveDelayMs: SLOW };
+    const view = render(<ReportPurposeScreen {...props} conflictSignal={0} />);
+    await userEvent.click(screen.getByRole("button", { name: "크게 보기" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    view.rerender(<ReportPurposeScreen {...props} conflictSignal={1} />);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByRole("button", { name: "크게 보기" })).toHaveFocus();
+    expect(document.getElementById("root")?.hasAttribute("inert") ?? false).toBe(false);
+  });
+
+  it("기타 설명의 빈 값은 서버와 같은 공백 문자로 판정한다 (B8)", () => {
+    renderScreen({ deck: { ...confirmed, meta: { ...confirmed.meta, desired_outcome: "other", desired_outcome_other: "\u0085" } } });
+    expect(document.getElementById("outcome-other-blank")).not.toBeNull();
   });
 });

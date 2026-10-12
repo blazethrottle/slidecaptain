@@ -5,13 +5,14 @@ import { Button } from "../ui/Button";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import type { SaveStatus } from "../ui/StatusIndicator";
 import {
-  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, OUTCOMES, REPORT_DETAIL_FIELDS, REPORT_TYPE_GUIDES, hiddenInputs,
+  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, OUTCOMES, REPORT_DETAIL_FIELDS, REPORT_TYPE_GUIDES, hiddenInputs, isBlank,
   planInputValues, purposeMetaEqual, REPORT_TYPES, typeConfirmed, type DesiredOutcome, type ReportType,
 } from "./reportPurpose";
 import { ReportTypeExample } from "./ReportTypeExample";
 
-// 보고 목적 단계 (개정판 D3a-2, 계획 4.1). 입력 항목과 저장 계약은 옛 자료 탭의 "보고 정보"와 같다:
-// 저장 순간의 최신 덱에 이 화면의 보고 정보만 바꿔 덱 전체를 PUT한다. 입력이 멈추면 자동 저장한다 (D3b-5).
+// 보고 목적 단계 (개정판 D3a-2, 계획 4.1). 저장 계약은 옛 자료 탭의 "보고 정보"와 같고, 입력 항목은 D3b-5로 아홉 칸이다
+// (서버 PURPOSE_SCREEN_FIELDS): 저장 순간의 최신 덱에 이 화면의 보고 정보만 바꿔 덱 전체를 PUT한다. 입력이 멈추면
+// 자동 저장한다 (D3b-5).
 
 // 후보형 작업 (결과를 사용자가 반영하는 작업). 진행 중이면 보고 목적을 고칠 때 결과가 이전 입력 기준이 될 수 있다
 const CANDIDATE_KINDS = new Set(["structure", "chapter", "condense", "rewrite", "repair", "diagram"]);
@@ -74,10 +75,19 @@ export function ReportPurposeScreen({
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
   const dirty = !purposeMetaEqual(meta, saved);
-  // 저장된 구성 계획을 낡게 하는 값(서버 계획 지문의 메타 칸과 보고 목적 값)을 고치면 미리 알린다. 저장 전 입력은 화면을 연
-  // 때의 값과 비교하고, 이미 저장해 낡은 계획은 진행 API의 판정(planStale)으로 알린다 (계획 4.5, D3b-5 리뷰 R1, R2, R6)
+  // 저장된 구성 계획을 낡게 하는 값(서버 계획 지문의 메타 칸과 보고 목적 값)을 고치면 미리 알린다 (계획 4.5, D3b-5 리뷰 R1,
+  // R2, R6). 저장 전 입력은 저장본과 비교하고, 저장한 뒤에는 진행 API의 판정(planStale)을 따른다. 화면을 연 때의 값과
+  // 비교하면 값을 되돌려 계획이 다시 현재가 돼도 안내가 남았다 (β 묶음 리뷰 B1). 저장이 계획 값을 바꾼 뒤 진행 API를
+  // 다시 읽기 전까지는 판정을 기다리며 안내를 유지한다(안내가 꺼졌다 켜지며 다시 낭독되지 않게 한다). 이 화면이 바꾼
+  // 값이 아니면 원인을 보고 정보로 단정하지 않는다: 자료나 장 구성만 바뀌어도 진행 API는 같은 사유를 낸다 (B2)
+  // 이 화면에서 저장한 값이 연 때와 다르고 진행 API가 낡았다고 하면, 원인은 이 화면의 변경으로 본다
   const [openedValues] = useState(() => planInputValues(deck.meta));
-  const planWillBeStale = !!deck.structure.story_plan && (planStale || planInputValues(meta) !== openedValues);
+  const [verdictPending, setVerdictPending] = useState(false);
+  useEffect(() => { setVerdictPending(false); }, [planStale]);
+  const hasPlan = !!deck.structure.story_plan;
+  const planChangedHere = hasPlan && (planInputValues(meta) !== planInputValues(saved) || verdictPending
+    || (planStale && planInputValues(saved) !== openedValues));
+  const planStaleElsewhere = hasPlan && !planChangedHere && planStale;
   // 반영하지 않은 생성 후보나 진행 중인 생성 작업이 있으면 고치기 전에 알린다. 작업이 시작하거나 끝나면 다시 읽는다
   // (리뷰 U21, V19, D3b-5 리뷰 R7)
   const [candidates, setCandidates] = useState<{ held: boolean; running: boolean }>({ held: false, running: false });
@@ -127,6 +137,7 @@ export function ReportPurposeScreen({
       await api.putDeck(project.name, updated, firstSave.current);
       if (conflictRef.current) return false;  // 다른 경로가 관측한 충돌을 늦은 성공으로 지우지 않는다
       firstSave.current = false;
+      if (planInputValues(target) !== planInputValues(savedRef.current)) setVerdictPending(true);
       savedRef.current = target;
       setSaved(target);
       // 착지한 동안 부모 덱이 바뀌었을 수 있으므로 최신 덱에 보고 정보만 얹는다 (D3b-5 리뷰 R8)
@@ -240,7 +251,7 @@ export function ReportPurposeScreen({
     ...(current.desired_outcome !== "other" ? { desired_outcome_other: "" } : {}),
   }));
   const keyLength = (meta.key_message ?? "").length;
-  const otherBlank = meta.desired_outcome === "other" && !(meta.desired_outcome_other ?? "").trim();
+  const otherBlank = meta.desired_outcome === "other" && isBlank(meta.desired_outcome_other);  // 서버와 같은 빈 값 판정 (B8)
 
   return (
     <div className="purpose-screen">
@@ -252,7 +263,8 @@ export function ReportPurposeScreen({
       <div role="status" className="purpose-notices">
         {candidates.running && <p className="notice">진행 중인 AI 생성이 있습니다. 보고 정보를 고치면 그 결과가 이전 입력 기준이 될 수 있습니다.</p>}
         {candidates.held && <p className="notice">반영하지 않은 생성 후보가 있습니다. 보고 정보를 고치면 그 후보가 이전 입력 기준이 될 수 있습니다.</p>}
-        {planWillBeStale && <p className="notice">보고 정보가 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>}
+        {planChangedHere && <p className="notice">보고 정보가 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>}
+        {planStaleElsewhere && <p className="notice">자료, 보고 정보 또는 장 구성이 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다.</p>}
       </div>
       {backup && (
         <div role="alert">
@@ -329,7 +341,7 @@ export function ReportPurposeScreen({
                   disabled={locked}>쓰지 않는 입력 지우기</Button></p>
             )}
           </div>
-          <ReportTypeExample selected={confirmed ? type : null} />
+          <ReportTypeExample selected={confirmed ? type : null} closed={conflict} />
         </div>
       </section>
       <section aria-labelledby="purpose-outcome">

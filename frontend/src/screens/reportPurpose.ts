@@ -118,6 +118,13 @@ export function hiddenInputs(meta: Meta): { details: string[]; other: boolean } 
   return { details, other: meta.desired_outcome !== "other" && !isBlank(meta.desired_outcome_other) };
 }
 
+// 이 화면이 고치는 메타 칸(보고 정보). 서버 PURPOSE_SCREEN_FIELDS와 같아야 한다: 보고 목적 보존본을 복원하면 서버가 이
+// 칸만 지금 덱에 얹는다 (β 묶음 리뷰 B6). 시험이 아래 저장 비교가 이 칸을 모두 보는지 확인한다
+export const PURPOSE_SCREEN_FIELDS = [
+  "title", "presenter", "audience", "report_type", "report_type_confirmed",
+  "key_message", "desired_outcome", "desired_outcome_other", "report_details",
+] as const;
+
 // 저장할 값이 같은가. 빈 문자열과 없는 칸, 공백만 있는 추가 입력과 없는 칸을 같게 본다(서버가 빈 값을 빼고
 // 기본값을 직렬화하지 않아 다시 읽은 덱과 보낸 값의 모양이 다르다, D3b-1 리뷰 R13)
 export function purposeMetaEqual(a: Meta, b: Meta): boolean {

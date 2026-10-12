@@ -738,15 +738,131 @@ describe("D3a-3 리뷰 반영", () => {
   });
 });
 
-it("초점이 창 아래 주 행동 막대에 가리면 가린 만큼 올린다 (D3b-8 측정, 780x700)", async () => {
-  await openProject();
-  const field = screen.getByLabelText("보고서 제목");
-  const bar = document.querySelector(".stage-body .primary-bar") as HTMLElement;
-  Object.defineProperty(bar, "offsetParent", { get: () => document.body, configurable: true });
-  bar.getBoundingClientRect = () => ({ top: 639, bottom: 700, left: 0, right: 780, width: 780, height: 61, x: 0, y: 639, toJSON: () => ({}) });
-  field.getBoundingClientRect = () => ({ top: 563, bottom: 674, left: 0, right: 500, width: 500, height: 111, x: 0, y: 563, toJSON: () => ({}) });
-  const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => {});
-  field.focus();
-  expect(scrollBy).toHaveBeenCalledWith(0, 35 + 8);
-  scrollBy.mockRestore();
+describe("주 행동 막대에 가린 초점 올리기 (D3b-8, β 묶음 리뷰 B3, B4, B11)", () => {
+  const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 500, width: 500, height: bottom - top, x: 0, y: top,
+    toJSON: () => ({}) });
+  let scrollBy: ReturnType<typeof vi.spyOn>;
+  const height = window.innerHeight;
+  const place = (el: Element, top: number, bottom: number) => { (el as HTMLElement).getBoundingClientRect = () => rect(top, bottom); };
+  const showBar = (top = 639, bottom = 700) => {
+    const bar = document.querySelector(".stage-body .primary-bar") as HTMLElement;
+    Object.defineProperty(bar, "offsetParent", { get: () => document.body, configurable: true });
+    place(bar, top, bottom);
+    return bar;
+  };
+  beforeEach(() => {
+    Object.defineProperty(window, "innerHeight", { value: 700, configurable: true });
+    scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    scrollBy.mockRestore();
+    Object.defineProperty(window, "innerHeight", { value: height, configurable: true });
+  });
+
+  it("창 아래에 붙은 막대에 가리면 가린 만큼 올린다 (780x700 측정)", async () => {
+    await openProject();
+    showBar();
+    const field = screen.getByLabelText("보고서 제목");
+    place(field, 563, 674);
+    field.focus();
+    expect(scrollBy).toHaveBeenCalledWith(0, 35 + 8);
+  });
+
+  it("막대가 창 아래에 붙지 않았거나 요소가 막대 위 끝 아래에서 시작하면 올리지 않는다 (B3)", async () => {
+    await openProject();
+    const bar = showBar(400, 461);  // 막대가 제자리에 있다
+    const field = screen.getByLabelText("보고서 제목");
+    place(field, 380, 470);
+    field.focus();
+    field.blur();
+    showBar();  // 막대가 붙어 있어도 막대 뒤(아래)에서 시작하는 요소와 막대 안의 버튼은 올리지 않는다
+    place(field, 650, 690);
+    field.focus();
+    field.blur();
+    const action = bar.querySelector("button") as HTMLButtonElement;
+    place(action, 648, 690);
+    action.focus();
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("올리는 양은 요소의 위 끝이 창 위로 나가지 않게 제한한다 (B3)", async () => {
+    await openProject();
+    showBar();
+    const field = screen.getByLabelText("보고서 제목");
+    place(field, 20, 690);
+    field.focus();
+    expect(scrollBy).toHaveBeenCalledWith(0, 20);
+  });
+
+  it("마우스를 누르는 동안 생긴 초점은 올리지 않고, 뗀 뒤의 초점은 올린다 (B4)", async () => {
+    await openProject();
+    showBar();
+    const field = screen.getByLabelText("보고서 제목");
+    place(field, 563, 674);
+    fireEvent.mouseDown(field);
+    field.focus();
+    expect(scrollBy).not.toHaveBeenCalled();
+    fireEvent.mouseUp(field);
+    field.blur();
+    field.focus();
+    expect(scrollBy).toHaveBeenCalledWith(0, 43);
+  });
+
+  it("대화 상자 안, 본문 밖의 초점은 올리지 않고 보이는 막대와 비교한다 (B11)", async () => {
+    await openProject();
+    showBar(300, 361);  // 보이는 막대는 제자리에 있다
+    const hidden = document.createElement("div");
+    hidden.className = "primary-bar";
+    place(hidden, 639, 700);  // 숨은 막대는 붙어 있는 자리에 있지만 비교하지 않는다
+    document.querySelector(".stage-body")!.prepend(hidden);
+    const field = screen.getByLabelText("보고서 제목");
+    place(field, 563, 674);
+    field.focus();
+    field.blur();
+    showBar();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const inDialog = document.createElement("button");
+    dialog.append(inDialog);
+    document.querySelector(".stage-body")!.append(dialog);
+    place(inDialog, 563, 674);
+    inDialog.focus();
+    const outside = stageButton("자료");
+    place(outside, 563, 674);
+    outside.focus();
+    expect(scrollBy).not.toHaveBeenCalled();
+    dialog.remove();
+    hidden.remove();
+  });
+});
+
+describe("보고 목적 화면 연결 (β 묶음 리뷰 B5, B7)", () => {
+  const plan = { brief: { decision_question: "질문", audience: "", report_type: "weekly", reading_profile: "미지정",
+    constraints: [] } } as unknown as NonNullable<Deck["structure"]["story_plan"]>;
+  const confirmed = (): Deck => {
+    const base = deckWith(["하나"]);
+    return { ...base, meta: { ...base.meta, report_type: "weekly", report_type_confirmed: true } };
+  };
+
+  it("진행 API의 구성 낡음과 보고 목적 한계 사유를 보고 목적 화면에 넘긴다 (변형 P8, P24)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue({ ...confirmed(), structure: { ...confirmed().structure, story_plan: plan } });
+    vi.mocked(api.getProgress).mockResolvedValue({ ...PROGRESS, stages: PROGRESS.stages!.map((st) =>
+      st.stage === "structure" ? { ...st, state: "needs_review" as const, reasons: ["stale_story_plan"] }
+        : st.stage === "purpose" ? { ...st, state: "ready" as const, reasons: ["key_message_missing"] } : st) });
+    await openProject();
+    expect(await screen.findByText("자료, 보고 정보 또는 장 구성이 바뀌어 구성 단계의 저장된 계획을 다시 확인해야 합니다."))
+      .toBeInTheDocument();
+    expect(within(document.querySelector(".purpose-screen") as HTMLElement).getByText(/전달할 핵심 내용이 비어 있습니다/))
+      .toBeInTheDocument();
+  });
+
+  it("크게 보기가 열린 채 다른 탭의 묶음이 끝나 화면을 다시 마운트하면 초점을 지금 단계 버튼으로 옮긴다 (B7)", async () => {
+    vi.mocked(api.getDeck).mockResolvedValue(confirmed());
+    await openProject();
+    await userEvent.click(await screen.findByRole("button", { name: "크게 보기" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await otherTabBatchEnds(confirmed());
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(stageButton("보고 목적")).toHaveFocus());
+  });
 });

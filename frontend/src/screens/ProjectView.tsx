@@ -293,8 +293,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             setConflict(endedJob !== null && startedHere.current.has(endedJob) ? "batch_here" : "other");
             return;
           }
+          // 다시 마운트되면 초점을 가진 요소(크게 보기 대화 상자 포함)가 사라져 초점이 문서 본문으로 빠진다. 그때는 지금
+          // 단계 버튼으로 옮긴다 (β 묶음 리뷰 B7)
           api.getDeck(project.name).then((fresh) => {
             setDeck(fresh);
+            if (holdsCopy && document.activeElement?.closest(".stage-body, [role='dialog']")) focusStageAfterMove.current = true;
             if (holdsCopy) {
               if (stageRef.current === "editor") setFocusChapter(editorChapter.current);  // 고른 장을 유지한다
               setScreenKey((k) => k + 1);  // 사본까지 새 덱으로 만든다
@@ -346,18 +349,35 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const focusSaveAfterRender = useRef(false);
   const focusSaveStatus = useCallback(() => { setSavedHere(true); focusSaveAfterRender.current = true; }, []);
   // 초점이 창 아래에 붙은 주 행동 막대 뒤에 들어가면 그만큼 올린다. 문서의 scroll-padding은 초점 요소가 창 밖에 있을 때만
-  // 스크롤을 부르고, 창 안에 있지만 막대에 가린 요소는 그대로 둔다(D3b-8 측정: 780x700 구성 화면의 입력 35px 가림)
+  // 스크롤을 부르고, 창 안에 있지만 막대에 가린 요소는 그대로 둔다(D3b-8 측정: 780x700 구성 화면의 입력 35px 가림).
+  // 막대가 창 아래에 붙어 있고 요소가 막대 위에서 시작할 때만 올린다: 제자리에 있거나 지나간 막대 뒤의 요소까지 올리면
+  // 초점 요소가 창 위로 사라졌다. 올리는 양은 요소의 위 끝이 창 위로 나가지 않게 제한한다. 대화 상자 안의 초점은 뒤 화면과
+  // 무관하고, 마우스를 누르는 동안 생긴 초점에서 화면을 움직이면 click이 다른 요소에 간다 (β 묶음 리뷰 B3, B4, B11)
   useEffect(() => {
+    let pressing = false;
+    const onPress = () => { pressing = true; };
+    const onRelease = () => { pressing = false; };
     const onFocusIn = (event: FocusEvent) => {
       const target = event.target as HTMLElement | null;
-      const bar = target?.closest(".stage-body") ? [...document.querySelectorAll<HTMLElement>(".stage-body .primary-bar")]
-        .find((b) => b.offsetParent !== null) : undefined;
-      if (!target || !bar || bar.contains(target)) return;
-      const covered = target.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
-      if (covered > 0) window.scrollBy(0, covered + 8);
+      if (pressing || !target?.closest(".stage-body") || target.closest('[role="dialog"]')) return;
+      const bar = [...document.querySelectorAll<HTMLElement>(".stage-body .primary-bar")].find((b) => b.offsetParent !== null);
+      if (!bar) return;
+      const barRect = bar.getBoundingClientRect();
+      const rect = target.getBoundingClientRect();
+      if (Math.abs(barRect.bottom - window.innerHeight) > 1 || rect.top >= barRect.top) return;
+      const amount = Math.min(rect.bottom - barRect.top + 8, rect.top);
+      if (rect.bottom > barRect.top && amount > 0) window.scrollBy(0, amount);
     };
+    const press = ["pointerdown", "mousedown"] as const;
+    const release = ["pointerup", "pointercancel", "mouseup"] as const;
+    press.forEach((name) => document.addEventListener(name, onPress, true));
+    release.forEach((name) => document.addEventListener(name, onRelease, true));
     document.addEventListener("focusin", onFocusIn);
-    return () => document.removeEventListener("focusin", onFocusIn);
+    return () => {
+      press.forEach((name) => document.removeEventListener(name, onPress, true));
+      release.forEach((name) => document.removeEventListener(name, onRelease, true));
+      document.removeEventListener("focusin", onFocusIn);
+    };
   }, []);
   useEffect(() => {
     if (focusSaveAfterRender.current && saveStatusRef.current) {

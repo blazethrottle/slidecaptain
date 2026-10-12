@@ -212,6 +212,8 @@ it("보고 목적 단계 자동 저장이 412면 배너가 뜨고, 다시 읽기
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict",
     source: "purpose", base_etag: null });
+  vi.mocked(api.listDrafts).mockResolvedValueOnce([]).mockResolvedValue([{ id: "d1", saved_at: "2026-10-12T10:00:00+09:00",
+    reason: "conflict", source: "purpose", base_etag: null }]);
   const confirm = vi.spyOn(window, "confirm");
   render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
@@ -225,6 +227,7 @@ it("보고 목적 단계 자동 저장이 412면 배너가 뜨고, 다시 읽기
   expect(vi.mocked(api.saveDraft).mock.calls[0][1]).toEqual(expect.objectContaining({ source: "purpose",
     deck: expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }) }));
   expect(screen.getByText(/저장하지 못한 보고 정보를 보존했습니다/)).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "보존한 변경 1건" })).toBeInTheDocument();  // 보존 뒤 다시 센다 (변형 P25)
   // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
   await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
 });
@@ -306,4 +309,35 @@ it("보존에 실패하면 복사 상자를 먼저 보이고, 다시 누르면 �
   expect(confirm.mock.calls[0][0]).toContain("저장하지 않은 입력이 사라집니다");
   expect(api.getDeck).toHaveBeenCalledTimes(1);
   expect(screen.getByLabelText("보고서 제목")).toHaveValue("새 제목");
+});
+
+it("충돌 안내가 남은 채 다시 연 보고 목적은 저장하지 않고, 단계를 옮기면 보존 실패 기록을 지운다 (D3b-5 R3, 변형 P4, P22)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.saveDraft).mockRejectedValueOnce(new Error("디스크 오류"))
+    .mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict", source: "purpose", base_etag: null });
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(await screen.findByText(/보고 정보를 보존하지 못했습니다/)).toBeInTheDocument();
+  // 입력을 저장본으로 되돌리면 떠날 수 있다. 충돌 안내는 남는다
+  await userEvent.clear(screen.getByLabelText("보고서 제목"));
+  await userEvent.type(screen.getByLabelText("보고서 제목"), "제목");
+  await userEvent.click(screen.getByRole("button", { name: "자료" }));
+  await screen.findByLabelText("자료 파일 선택");
+  await userEvent.click(screen.getByRole("button", { name: "보고 목적" }));
+  const puts = vi.mocked(api.putDeck).mock.calls.length;
+  await userEvent.type(await screen.findByLabelText("보고서 제목"), " 다시");
+  await act(async () => { await new Promise((r) => setTimeout(r, FAST * 5)); });
+  expect(vi.mocked(api.putDeck).mock.calls.length).toBe(puts);  // 충돌 상태로 시작했다
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.saveDraft).toHaveBeenCalledTimes(2));  // 지난 단계의 보존 실패 기록을 쓰지 않는다
+  expect(confirm).not.toHaveBeenCalled();
+  confirm.mockRestore();
 });

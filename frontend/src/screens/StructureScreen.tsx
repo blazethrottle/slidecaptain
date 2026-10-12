@@ -277,8 +277,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   }, [draftDirty, questionChanged, pendingParts, onSaveStatusChange]);
   const cardsRef = useRef<HTMLOListElement | null>(null);
   const addRef = useRef<HTMLButtonElement | null>(null);
+  const generateRef = useRef<HTMLDivElement | null>(null);
   // 이동이나 삭제 뒤 초점을 둘 곳. 처음 장의 위로와 마지막 장의 아래로는 잠기므로, 누른 버튼이 잠기면 짝 버튼으로,
-  // 삭제 뒤에는 같은 자리의 카드(없으면 앞 카드, 그것도 없으면 장 추가)로 옮긴다 (D3b-7 리뷰 R2)
+  // 삭제 뒤에는 같은 자리의 카드(없으면 앞 카드)로 옮긴다. 남은 장이 없으면 장 목록과 장 추가가 함께 사라지므로 생성
+  // 버튼으로 옮긴다 (D3b-7 리뷰 R2, β 묶음 리뷰 B5)
   const pendingFocus = useRef<{ id: string; which: "up" | "down" } | { removedAt: number } | null>(null);
   useEffect(() => {
     if (!focusChapterId) return;
@@ -434,7 +436,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const cards = [...(cardsRef.current?.children ?? [])] as HTMLElement[];
     if ("removedAt" in want) {
       const card = cards[Math.min(want.removedAt, cards.length - 1)];
-      (card?.querySelector<HTMLButtonElement>(".chapter-card-moves button:not(:disabled)") ?? addRef.current)?.focus();
+      (card?.querySelector<HTMLButtonElement>(".chapter-card-moves button:not(:disabled)") ?? addRef.current
+        ?? generateRef.current?.querySelector("button"))?.focus();
       return;
     }
     const card = cards.find((c) => c.dataset.chapterId === want.id);
@@ -942,7 +945,7 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
           </label>
         </div>
         {/* 주 행동일 때만 막대로 둔다. 막대 둘이 함께 창 아래에 붙어 겹치지 않게 한다 (D3a-7 사용자 결정) */}
-        <div className={generatePrimary ? "actions primary-bar" : "actions"}>
+        <div ref={generateRef} className={generatePrimary ? "actions primary-bar" : "actions"}>
           <Button variant={generatePrimary ? "primary" : "secondary"} onClick={generate} disabled={busy || hasDiagrams}
             aria-describedby={!typeConfirmed(deck.meta) && !hasDiagrams ? "unconfirmed-type-notice" : undefined}>
             {draft.length > 0 || rawText ? "다시 생성" : "구조안 생성"}

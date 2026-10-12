@@ -1,5 +1,6 @@
 // 실행 단계와 경과 시간 (D3b-7, 계획 4.7). 경과 초는 서버 값을 처음 한 번 받아 그 뒤로 브라우저가 센다
 import { act, render, screen } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { jobView } from "../test/jobs";
 import { formatElapsed, GenerationSteps } from "./GenerationSteps";
 
@@ -49,4 +50,9 @@ test("상태 알림은 빈 채로 생긴 뒤 단계 이름을 채운다 (D3b-7 �
 test("경과 시간 표기", () => {
   expect(formatElapsed(9)).toBe("9초");
   expect(formatElapsed(75)).toBe("1분 15초");
+});
+
+test("상태 알림은 처음 그릴 때 비어 있다. 내용을 가진 채 생긴 알림 영역은 낭독되지 않을 수 있다 (D3b-7 리뷰 R17, 변형 S14)", () => {
+  const html = renderToStaticMarkup(<GenerationSteps view={view()} />);
+  expect(html).toContain('<p role="status" class="visually-hidden"></p>');
 });

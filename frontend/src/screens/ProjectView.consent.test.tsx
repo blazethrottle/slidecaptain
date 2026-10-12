@@ -75,6 +75,7 @@ it("첫 구조안 생성 클릭에 대화 상자가 뜨고, 취소하면 요청�
   // 대화 상자가 열린 동안 탭 버튼이 잠긴다 (계획서 B3)
   expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "구성" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "보고 목적에서 고치기" })).toBeDisabled();  // D3b-7 리뷰 R11, 변형 S17
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "자료" })).not.toBeDisabled();

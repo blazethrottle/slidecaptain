@@ -1617,6 +1617,13 @@ describe("장 카드 목록 리뷰 반영 (D3b-7 리뷰)", () => {
     expect(screen.getByRole("button", { name: "2번 장 위로" })).toHaveFocus();  // 마지막 카드를 지우면 앞 카드
   });
 
+  it("남은 장이 없게 지우면 장 목록과 장 추가가 사라지므로 생성 버튼으로 초점을 옮긴다 (R2, β 묶음 리뷰 B5)", async () => {
+    render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    await userEvent.click(screen.getByRole("button", { name: "1번 장 삭제" }));
+    expect(screen.queryByRole("button", { name: "장 추가" })).toBeNull();
+    expect(screen.getByRole("button", { name: "구조안 생성" })).toHaveFocus();
+  });
+
   it("카드 안 펼침 요약의 이름에 장 번호가 붙는다 (R10)", () => {
     const withRefs = { ...CH2, source_refs: ["매출.md"] };
     render(<StructureScreen project={project} deck={deckWith([withRefs, { ...withRefs, id: "c3" }], [])}
@@ -1652,6 +1659,12 @@ describe("장 카드 목록 리뷰 반영 (D3b-7 리뷰)", () => {
     render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} />);
     expect(screen.getByRole("button", { name: "구조안 생성" }))
       .toHaveAccessibleDescription("보고 유형을 고르지 않아 리서치 결과 보고로 만듭니다.");
+  });
+
+  it("도식이 있는 구성에는 유형 미확인 안내를 보이지 않는다 (R19, 변형 S15)", () => {
+    const diagram = { ...CH1, template: "diagram" } as unknown as typeof CH1;
+    render(<StructureScreen project={project} deck={deckWith([diagram], [])} onDeckChange={() => {}} onDone={() => {}} />);
+    expect(document.getElementById("unconfirmed-type-notice")).toBeNull();
   });
 });
 

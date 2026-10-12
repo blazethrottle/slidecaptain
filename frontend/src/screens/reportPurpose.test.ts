@@ -3,8 +3,8 @@
 import fixture from "../../../backend/tests/fixtures/report-purpose-fields.json";
 import type { Deck } from "../api/client";
 import {
-  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, REPORT_DETAIL_FIELDS, REPORT_TYPES, hiddenInputs, isBlank, purposeMetaEqual,
-  purposePromptValues,
+  DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, PURPOSE_SCREEN_FIELDS, REPORT_DETAIL_FIELDS, REPORT_TYPES, hiddenInputs,
+  isBlank, purposeMetaEqual, purposePromptValues, typeConfirmed,
 } from "./reportPurpose";
 
 const base: Deck["meta"] = { title: "제목", report_type: "weekly", audience: "", presenter: "", preset_overrides: {} };
@@ -47,4 +47,26 @@ test("빈 값 판정은 서버(Python str.isspace)와 같은 공백 문자 집�
   expect(isBlank("\x85")).toBe(true);
   expect(isBlank(" \t\n　")).toBe(true);
   expect(purposePromptValues({ ...base, key_message: "\x1f핵심\x85" }).key_message).toBe("핵심");
+});
+
+test("보고 정보 칸 목록은 서버와 같고, 저장 비교는 그 칸을 모두 본다 (β 묶음 리뷰 B6)", () => {
+  expect([...PURPOSE_SCREEN_FIELDS].sort()).toEqual(fixture.screen_fields);
+  const changed: Record<(typeof PURPOSE_SCREEN_FIELDS)[number], Partial<Deck["meta"]>> = {
+    title: { title: "다른 제목" }, presenter: { presenter: "팀" }, audience: { audience: "임원" },
+    report_type: { report_type: "ir" }, report_type_confirmed: { report_type_confirmed: true },
+    key_message: { key_message: "핵심" }, desired_outcome: { desired_outcome: "facts" },
+    desired_outcome_other: { desired_outcome_other: "설명" }, report_details: { report_details: { "weekly.period": "10월" } },
+  };
+  for (const field of PURPOSE_SCREEN_FIELDS) expect(purposeMetaEqual(base, { ...base, ...changed[field] })).toBe(false);
+});
+
+test("저장 비교는 보고자와 피보고자의 없음과 빈 값을 같게 본다 (변형 P20, M34)", () => {
+  const { presenter: _p, audience: _a, ...rest } = base;
+  expect(purposeMetaEqual(rest as Deck["meta"], base)).toBe(true);
+});
+
+test("유형 확인은 확인 표시가 있거나 기본 유형이 아니면 참이다 (변형 P19, M33)", () => {
+  expect(typeConfirmed({ ...base, report_type: "weekly" })).toBe(true);
+  expect(typeConfirmed({ ...base, report_type: "research" })).toBe(false);
+  expect(typeConfirmed({ ...base, report_type: "research", report_type_confirmed: true })).toBe(true);
 });

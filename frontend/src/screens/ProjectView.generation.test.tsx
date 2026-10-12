@@ -826,6 +826,47 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     expect(within(header()).queryByRole("button", { name: "결과 다시 보기" })).toBeNull();
   });
 
+  it("다시 연 구성 화면이 따라가던 다른 탭의 묶음이 실패해도 머리에 다시 알리지 않는다 (D3b-7 리뷰 R1, 변형 S3)", async () => {
+    const running = batchView([chapterView("c1", "running")], { id: "job-other", state: "running", outcome: null });
+    vi.mocked(api.listJobs).mockResolvedValue([running]);
+    vi.mocked(api.getJob).mockReturnValue(new Promise(() => {}));
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    await waitFor(() => expect(api.getJob).toHaveBeenCalled());  // 화면이 묶음을 이어서 조회한다
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "chapters" }, { broadcast: false }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+  });
+
+  it("화면이 이미 보인 실패에는 결과 다시 보기를 두지 않는다 (D3b-7 리뷰 R1, 변형 S4)", async () => {
+    vi.mocked(api.listJobs).mockResolvedValue([jobView("structure", { id: "job-x", state: "failed", candidate_status: "none",
+      result: null, finished_at: new Date(Date.now() + 60_000).toISOString(),
+      error: { error_class: "connection", status: 503, detail: "이미 보인 실패", code: "provider_failed" } })]);
+    await openProject(60_000);
+    await userEvent.click(stageButton("구성"));
+    expect(await screen.findByText(/이미 보인 실패/)).toBeInTheDocument();
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-x", state: "failed",
+      jobKind: "structure" }, { broadcast: false }));
+    await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/);
+    expect(within(header()).queryByRole("button", { name: "결과 다시 보기" })).toBeNull();
+  });
+
+  it("편집 단계의 결과 다시 보기는 실패한 장을 다시 고른다 (D3b-7 리뷰 R9, 변형 S11)", async () => {
+    const two: Deck = { ...deckWith(["하나"]), structure: { chapters: [
+      { id: "c1", topic: "첫째", conclusion: "", template: "bullet_box", source_refs: [] },
+      { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] },
+      slides: [deckWith(["하나"]).slides[0], { ...deckWith(["둘"]).slides[0], chapter_id: "c2" }] };
+    vi.mocked(api.getDeck).mockResolvedValue(two);
+    await openProject(60_000);
+    await userEvent.click(stageButton("편집"));
+    expect(await screen.findByLabelText("장 주제")).toHaveValue("첫째");
+    await act(async () => notifyProject({ kind: "job_ended", project: project.name, jobId: "job-other", state: "failed",
+      jobKind: "chapter", target: "c2" }, { broadcast: false }));
+    await userEvent.click(await within(header()).findByRole("button", { name: "결과 다시 보기" }));
+    await waitFor(() => expect(screen.getByLabelText("장 주제")).toHaveValue("둘째"));
+  });
+
   it("결과 다시 보기는 초안을 고쳤으면 이탈 확인을 거치고, 다시 연 뒤 초점은 지금 단계 버튼이다 (D3b-7 리뷰 R7, R8)", async () => {
     vi.mocked(api.getDeck).mockResolvedValue({ ...deckWith(["하나"]), structure: { chapters: [
       { id: "c1", topic: "첫째", conclusion: "", template: "bullet_box", source_refs: [] },
