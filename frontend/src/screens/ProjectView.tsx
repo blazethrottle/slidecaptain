@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setConsentPrompter } from "../api/aiGate";
-import { api, ApiError, messageOf, notifyProject, onProjectEvent, onRemoteProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
+import { api, messageOf, notifyProject, onProjectEvent, onRemoteProjectEvent, savedEtag, TERMINAL_JOB_STATES, type ActiveJob, type AppStatus, type Deck, type ExportResult, type ProjectInfo, type ProjectProgress } from "../api/client";
 import { ActiveJobContext, type ActiveJobState } from "../ui/ActiveJobNotice";
 import { AISettingsPanel } from "./AISettingsPanel";
 import { AiConsentDialog } from "./AiConsentDialog";
@@ -243,11 +243,11 @@ export function ProjectView({ project, onBack, jobPollMs = 1000 }: {
   useEffect(() => {
     if (wasBatchHere.current && !batchHere) {
       const endedJob = lastBatchId.current;
-      // 기준 조회는 이 탭의 저장 ETag를 If-Match로 보낸다. 같으면 200(이 탭이 이미 따라갔다), 다르면 412다.
-      // 다른 실패는 판정하지 않고 다음 저장의 충돌 검사에 맡긴다 (β 리뷰 R1)
-      api.getDocumentChangeBasis(project.name)
-        .then((basis) => basis.base_etag !== savedEtag(project.name))
-        .catch((e) => e instanceof ApiError && e.status === 412)
+      // 서버 저장본의 ETag를 이 탭의 저장 ETag와 비교한다(이 탭의 값은 바꾸지 않는다). 다르면 이 탭이 따라가지 못했다.
+      // 확인이 실패하면 판정하지 않고 다음 저장의 충돌 검사에 맡긴다 (β 리뷰 R1, D3a-7: 412 콘솔 오류를 내지 않는다)
+      api.peekDeckEtag(project.name)
+        .then((etag) => etag !== null && etag !== savedEtag(project.name))
+        .catch(() => false)
         .then((changed) => {
           if (!changed) return;
           // 구성 화면이 생성 작업을 따라가는 중이면(같은 탭의 묶음) 그 화면이 종결 때 덱을 다시 읽고 편집 단계로

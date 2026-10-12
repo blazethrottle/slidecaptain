@@ -14,7 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(), getActiveJob: vi.fn(),
-    listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
+    listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), peekDeckEtag: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
     getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn(), uploadSource: vi.fn() } };
 });
 
@@ -54,8 +54,7 @@ async function openProject() {
 
 // 다른 탭이 이 프로젝트의 장 생성 묶음을 시작했다가 끝낸다. 서버의 저장본은 이 탭이 본 것과 달라졌다(기준 조회 412)
 async function otherTabBatchEnds(after: Deck) {
-  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(
-    new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+  vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
   vi.mocked(api.getDeck).mockResolvedValue(after);
   vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive())
     .mockImplementation(async () => ({ active: null, ledger_available: true }));
@@ -361,13 +360,12 @@ describe("D3a-2 리뷰 반영", () => {
     await userEvent.click(stageButton("구성"));
     await userEvent.click(await screen.findByRole("button", { name: "승인하고 내용 생성" }));
     await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(1));
-    vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(
-      new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+    vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
     vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive())
       .mockImplementation(async () => ({ active: null, ledger_available: true }));
     vi.mocked(api.getDeck).mockResolvedValue(complete);
     await act(async () => { window.dispatchEvent(new Event("focus")); });
-    await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalled());
+    await waitFor(() => expect(api.peekDeckEtag).toHaveBeenCalled());
     await waitFor(() => expect(stageButton("편집")).toHaveAttribute("aria-current", "step"), { timeout: 3000 });
   });
 

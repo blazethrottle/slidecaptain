@@ -14,7 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
     measure: vi.fn(), putDeck: vi.fn(), listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
     getPreset: vi.fn(), generateChapter: vi.fn(), uploadSource: vi.fn(), listExports: vi.fn(),
     saveDraft: vi.fn(), listDrafts: vi.fn(), getActiveJob: vi.fn(), listJobs: vi.fn(), prepareAi: vi.fn(),
-    startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn(), getDocumentChangeBasis: vi.fn() } };
+    startChapters: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn(), getDocumentChangeBasis: vi.fn(), peekDeckEtag: vi.fn() } };
 });
 
 // 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
@@ -612,7 +612,7 @@ it("이 프로젝트 묶음이 끝나면 덱을 다시 읽는다 (리뷰 R5)", a
   vi.mocked(api.getActiveJob)
     .mockResolvedValueOnce(batchActive(project.name))
     .mockResolvedValue({ active: null, ledger_available: true });
-  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));  // 서버는 저장 ETag가 다르면 412다
+  vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');  // 서버는 저장 ETag가 다르면 412다
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));  // 구성 단계이라 덱을 다시 읽는다
 });
@@ -626,7 +626,7 @@ it("편집 단계에 미저장 변경이 없으면 다른 탭의 묶음이 끝�
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
-  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));  // 서버는 저장 ETag가 다르면 412다
+  vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');  // 서버는 저장 ETag가 다르면 412다
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   const editTab = await screen.findByRole("button", { name: "편집" });
   await waitFor(() => expect(editTab).toBeEnabled());
@@ -649,7 +649,7 @@ it("편집 단계에 미저장 변경이 있으면 다른 탭의 묶음이 끝�
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
   vi.mocked(api.putDeck).mockImplementation(() => new Promise(() => {}));  // 저장이 끝나지 않아 미저장으로 남는다
-  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+  vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   const editTab = await screen.findByRole("button", { name: "편집" });
   await waitFor(() => expect(editTab).toBeEnabled());
@@ -728,8 +728,7 @@ it("이 탭이 이미 따라간 묶음이 끝나면 다시 읽지도 충돌로 �
   vi.mocked(api.getPreset).mockResolvedValue(preset);
   vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [] });
   // If-Match가 서버 저장본과 같으면 기준 조회는 200이고 base_etag는 그 값이다
-  vi.mocked(api.getDocumentChangeBasis).mockImplementation(async (name) => ({ base_etag: savedEtag(name) as string,
-    sources_fingerprint: "s", evidence_fingerprints: {} }));
+  vi.mocked(api.peekDeckEtag).mockImplementation(async (name) => savedEtag(name) ?? null);
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   const editTab = await screen.findByRole("button", { name: "편집" });
   await waitFor(() => expect(editTab).toBeEnabled());
@@ -738,7 +737,7 @@ it("이 탭이 이미 따라간 묶음이 끝나면 다시 읽지도 충돌로 �
   vi.mocked(api.getActiveJob).mockResolvedValueOnce(batchActive(project.name))
     .mockImplementation(async () => ({ active: null, ledger_available: true }));
   window.dispatchEvent(new Event("focus"));
-  await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalled());
+  await waitFor(() => expect(api.peekDeckEtag).toHaveBeenCalled());
   await new Promise((r) => setTimeout(r, 30));
   expect(vi.mocked(api.getDeck).mock.calls.length).toBe(reads);
   expect(screen.queryByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false })).toBeNull();
@@ -752,7 +751,7 @@ it("구성 초안을 고친 채 다른 탭의 묶음이 끝나면 덱을 몰래 
     { id: "c2", topic: "둘째", conclusion: "", template: "bullet_box", source_refs: [] }] } };
   vi.mocked(api.getDeck).mockResolvedValue(twoChapters);
   vi.mocked(api.listSources).mockResolvedValue([]);
-  vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+  vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
   render(<ProjectView project={project} onBack={() => {}} jobPollMs={5} />);
   const structureTab = await screen.findByRole("button", { name: /^(구조안|구성)$/ });
   await waitFor(() => expect(structureTab).toBeEnabled());

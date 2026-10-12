@@ -14,7 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), writeSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(),
     getPreset: vi.fn(), listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(),
-    getActiveJob: vi.fn(), listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(),
+    getActiveJob: vi.fn(), listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), peekDeckEtag: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(),
     startChapters: vi.fn(), startJob: vi.fn(), getJob: vi.fn(), cancelJob: vi.fn(), getAISettings: vi.fn(),
     getProgress: vi.fn(), settleCandidate: vi.fn() } };
 });
@@ -191,7 +191,7 @@ describe("장 생성 묶음 중 (계획 4.4 표 둘째 행, 사용자 결정 Q1�
     expect(await screen.findByText(/생성 중인 장은 끝나면 보입니다/)).toBeInTheDocument();
     expect(document.querySelector(".editor-right")).toHaveAttribute("inert");  // 장을 골라 보는 것은 허용한다
     expect(screen.getByRole("button", { name: "도식 추가" })).toBeDisabled();
-    vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "저장본이 바뀌었습니다."));
+    vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
     const after = deckWith(["묶음이 만든 내용"]);
     vi.mocked(api.getDeck).mockResolvedValue(after);
     vi.mocked(api.measure).mockResolvedValue(planWith(["묶음이 만든 내용"]));
@@ -513,7 +513,7 @@ describe("D3a-6 리뷰 반영", () => {
   }
 
   it("같은 프로젝트의 묶음 메시지를 받으면 읽기 전용이 되고, 종결 뒤 저장본 확인을 한 번 하며, 이 탭은 채널로 아무것도 보내지 않는다 (S2, S4, S6)", async () => {
-    vi.mocked(api.getDocumentChangeBasis).mockResolvedValue({ base_etag: savedEtag(project.name) } as never);
+    vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본"');
     await openProject(60_000);
     const { peer, sent } = peerTab();
     const before = vi.mocked(api.getActiveJob).mock.calls.length;
@@ -525,7 +525,7 @@ describe("D3a-6 리뷰 반영", () => {
     vi.mocked(api.getActiveJob).mockImplementation(async () => status(null));
     peer.postMessage({ kind: "job_ended", project: project.name });
     await waitFor(() => expect(screen.queryByText(/생성 중인 장은 끝나면 보입니다/)).toBeNull());
-    await waitFor(() => expect(api.getDocumentChangeBasis).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.peekDeckEtag).toHaveBeenCalledTimes(1));
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(sent).toEqual([]);  // 사라진 작업의 종결 알림은 같은 탭에만 낸다
     peer.close();
@@ -686,7 +686,7 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     await within(header()).findByText(/이 프로젝트에서 AI 생성이 진행 중입니다/);
   }
   async function batchEnds() {
-    vi.mocked(api.getDocumentChangeBasis).mockRejectedValue(new ApiError(412, "저장본이 바뀌었습니다."));
+    vi.mocked(api.peekDeckEtag).mockResolvedValue('"서버 저장본이 바뀜"');
     vi.mocked(api.getActiveJob).mockImplementation(async () => status(null));
     await act(async () => { window.dispatchEvent(new Event("focus")); });
     await waitFor(() => expect(within(header()).queryByText(/AI 생성이 진행 중입니다/)).toBeNull());

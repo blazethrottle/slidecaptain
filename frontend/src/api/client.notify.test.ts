@@ -127,3 +127,14 @@ it("마지막 조회도 실패하면 작업 기록을 읽지 못했다고 멈춘
     .rejects.toMatchObject({ code: "job_ledger_unavailable" });
   expect(fetchJob).toHaveBeenCalledTimes(2);  // 처음 한 번과 마지막 한 번
 });
+
+it("서버 저장본의 ETag 확인은 이 탭의 저장 ETag를 바꾸지 않고 알리지도 않는다 (D3a-7)", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(ok(deckWith(["하나"]), '"e1"'))
+    .mockResolvedValueOnce(ok(deckWith(["둘"]), '"e2"')));
+  await api.getDeck("p1");
+  const { savedEtag } = await import("./client");
+  expect(savedEtag("p1")).toBe('"e1"');
+  await expect(api.peekDeckEtag("p1")).resolves.toBe('"e2"');
+  expect(savedEtag("p1")).toBe('"e1"');
+  expect(events).toEqual([]);
+});

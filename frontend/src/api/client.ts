@@ -319,6 +319,14 @@ export const api = {
     request<Deck>(`/api/projects/${enc(name)}/story-plan/diagram`, {
       method: "POST", body: JSON.stringify(req),
     }, { etagKey: name, updateEtag: false }),
+  // 서버 저장본의 ETag만 확인한다. 이 탭의 저장 ETag는 바꾸지 않는다. 묶음 종결 뒤 이 탭이 저장본을 따라갔는지
+  // 볼 때 쓴다(계획 4.1 β R1 분기). 종전에는 기준 조회의 If-Match 412로 판정해 브라우저 콘솔에 오류가 찍혔다 (D3a-7)
+  peekDeckEtag: async (name: string): Promise<string | null> => {
+    const r = await appFetch(`/api/projects/${enc(name)}/deck`, { cache: "no-store",
+      headers: { "X-Requested-With": "SlideCaptain" } });
+    await throwIfFailed(r);
+    return r.headers.get("ETag");
+  },
   getDocumentChangeBasis: (name: string) =>
     request<DocumentChangeBasis>(`/api/projects/${enc(name)}/document-changes/basis`, {cache:"no-store"}, {etagKey:name,updateEtag:false}),
   previewDocumentChange: (name: string, req: DocumentChangeRequest, etag: string) =>
