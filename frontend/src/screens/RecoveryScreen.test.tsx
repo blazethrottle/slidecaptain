@@ -2,19 +2,20 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, ApiError } from "../api/client";
 import { batchView, chapterView, jobView } from "../test/jobs";
-import { RecoveryScreen } from "./RecoveryScreen";
+import { draftSummaryText, RecoveryScreen } from "./RecoveryScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, listSnapshots: vi.fn(), restoreSnapshot: vi.fn(),
     listDrafts: vi.fn(), restoreDraft: vi.fn(), deleteDraft: vi.fn(), listJobs: vi.fn(), settleCandidate: vi.fn(),
-    dismissChapterCandidate: vi.fn() } };
+    dismissChapterCandidate: vi.fn(), getDraftSummary: vi.fn() } };
 });
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "needs_recovery" as const };
 
 beforeEach(() => {
   vi.mocked(api.listDrafts).mockResolvedValue([]);
+  vi.mocked(api.getDraftSummary).mockResolvedValue(SAME);
   vi.mocked(api.listJobs).mockResolvedValue([]);
 });
 
@@ -77,6 +78,8 @@ it("0.2.0 같은 다른 앱이 되돌리기 직전의 덱을 구별해 보인다
 });
 
 
+const SAME = { readable: true, purpose_only: false, changed_chapters: [], added_chapters: [], removed_chapters: [],
+  direct_edit_chapters: [], report_info_changed: false, order_changed: false, story_plan_changed: false };
 const draft = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
   reason: "generation_unsaved" as const, source: "structure_approval" as const, base_etag: null };
 
@@ -97,9 +100,35 @@ it("보존한 변경의 복원은 현재 저장본이 스냅샷으로 남는다�
   const onBack = vi.fn();
   render(<RecoveryScreen project={project} onBack={onBack} />);
   await userEvent.click(await screen.findByRole("button", { name: "이 변경으로 복원" }));
+  await waitFor(() => expect(confirm).toHaveBeenCalled());
   expect(confirm.mock.calls[0][0]).toContain("복원 직전 시점의 스냅샷으로 남습니다");
-  expect(api.restoreDraft).toHaveBeenCalledWith("p1", draft.id);
+  await waitFor(() => expect(api.restoreDraft).toHaveBeenCalledWith("p1", draft.id));
   expect(onBack).toHaveBeenCalled();
+  confirm.mockRestore();
+});
+
+it("보존본 복원 확인 창은 저장본과의 차이 요약을 보이고, 취소하면 복원하지 않는다 (D3c-6, E7)", async () => {
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  vi.mocked(api.listDrafts).mockResolvedValue([draft]);
+  vi.mocked(api.getDraftSummary).mockResolvedValue({ ...SAME,
+    changed_chapters: [{ id: "c2", label: "2장 시장 현황" }], removed_chapters: [{ id: "c3", label: "3장 경쟁" }],
+    direct_edit_chapters: [{ id: "c2", label: "2장 시장 현황" }], order_changed: true });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  render(<RecoveryScreen project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "이 변경으로 복원" }));
+  await waitFor(() => expect(confirm).toHaveBeenCalled());
+  expect(confirm.mock.calls[0][0]).toContain("저장본과 다른 점:\n내용이 바뀌는 장: 2장 시장 현황\n사라지는 장: 3장 경쟁\n"
+    + "위치와 서식 수정이 바뀌는 장: 2장 시장 현황\n장 순서가 다릅니다.");
+  expect(api.getDraftSummary).toHaveBeenCalledWith("p1", draft.id);
+  expect(api.restoreDraft).not.toHaveBeenCalled();
+  confirm.mockRestore();
+});
+
+it("차이 요약 문장: 읽을 수 없는 보존본, 보고 목적 보존본, 같은 내용", () => {
+  expect(draftSummaryText({ ...SAME, readable: false })).toBe("이 보존본은 지금 형식으로 읽을 수 없어 차이를 요약하지 못했습니다.");
+  expect(draftSummaryText({ ...SAME, purpose_only: true, report_info_changed: true }))
+    .toBe("보고 정보가 저장본과 다릅니다. 복원하면 보고 정보만 바뀝니다.");
+  expect(draftSummaryText(SAME)).toBe("저장본과 다른 점이 없습니다.");
 });
 
 it("보존한 변경은 확인 뒤 고른 것만 지운다 (D2a-2)", async () => {

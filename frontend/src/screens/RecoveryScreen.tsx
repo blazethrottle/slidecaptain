@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
@@ -162,6 +162,26 @@ function JobCandidates({ project, deck, onOpen }: {
   );
 }
 
+// 보존본 복원 전 차이 요약의 문장 (D3c-6, E7). 바뀌는 것만 줄마다 적는다
+export function draftSummaryText(summary: DraftSummary): string {
+  if (!summary.readable) return "이 보존본은 지금 형식으로 읽을 수 없어 차이를 요약하지 못했습니다.";
+  if (summary.purpose_only) {
+    return summary.report_info_changed ? "보고 정보가 저장본과 다릅니다. 복원하면 보고 정보만 바뀝니다."
+      : "보고 정보가 저장본과 같습니다. 복원해도 바뀌는 것이 없습니다.";
+  }
+  const names = (items: { label: string }[]) => items.map((c) => c.label).join(", ");
+  const lines = [
+    summary.changed_chapters.length > 0 && `내용이 바뀌는 장: ${names(summary.changed_chapters)}`,
+    summary.added_chapters.length > 0 && `생기는 장: ${names(summary.added_chapters)}`,
+    summary.removed_chapters.length > 0 && `사라지는 장: ${names(summary.removed_chapters)}`,
+    summary.direct_edit_chapters.length > 0 && `위치와 서식 수정이 바뀌는 장: ${names(summary.direct_edit_chapters)}`,
+    summary.report_info_changed && "보고 정보가 다릅니다.",
+    summary.order_changed && "장 순서가 다릅니다.",
+    summary.story_plan_changed && "구성 계획이 다릅니다.",
+  ].filter(Boolean);
+  return lines.length > 0 ? `저장본과 다른 점:\n${lines.join("\n")}` : "저장본과 다른 점이 없습니다.";
+}
+
 export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, restoreLockedReason }: {
   project: ProjectInfo;
   // 복원을 잠그는 이유 (D3a-5 리뷰 R1, 계획 4.4: 장 생성 묶음 중). 복구 화면이 열린 채 다른 탭의 묶음이 시작되면
@@ -184,8 +204,11 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
   useEffect(() => { void loadDrafts(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const restoreDraft = async (id: string) => {
+    // 복원 전에 서버 저장본과의 차이를 같은 확인 창에 보인다 (D3c-6, E7). 요약을 받지 못해도 복원은 고를 수 있다
+    const summary = await api.getDraftSummary(project.name, id).then(draftSummaryText,
+      () => "저장본과의 차이를 확인하지 못했습니다.");
     const ok = window.confirm(
-      "이 보존본으로 복원합니다. 복원하면 지금 저장본(다른 곳의 변경 포함)은 복원 직전 시점의 스냅샷으로 남습니다. 계속할까요?",
+      `이 보존본으로 복원합니다. ${summary}\n\n복원하면 지금 저장본(다른 곳의 변경 포함)은 복원 직전 시점의 스냅샷으로 남습니다. 계속할까요?`,
     );
     if (!ok) return;
     try {

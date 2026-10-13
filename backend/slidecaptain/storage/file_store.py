@@ -273,6 +273,7 @@ class ProjectStore(Protocol):
     def restore_draft(
         self, name: str, draft_id: str, expected_etag: str | None = None
     ) -> tuple[Deck, str]: ...
+    def read_draft(self, name: str, draft_id: str) -> dict: ...
     def delete_draft(self, name: str, draft_id: str) -> None: ...
     def list_sources(self, name: str) -> list[str]: ...
     def read_source(self, name: str, filename: str) -> str: ...
@@ -819,6 +820,21 @@ class FileProjectStore:
                     deck = Deck.model_validate({**body, "meta": meta})
             etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
+
+    def read_draft(self, name: str, draft_id: str) -> dict:
+        """보존본의 봉투(정보와 덱 원문)를 검증 없이 읽는다. 복원 전 차이 요약에 쓴다 (D3c-6, E7)."""
+        name = _nfc(name)
+        d = self._project_dir_any(name)
+        path = self._draft_path(d, draft_id)
+        if not path.is_file():
+            raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+        try:
+            envelope = json.loads(path.read_bytes())
+        except (OSError, ValueError) as e:
+            raise StorageError(f"보존한 변경을 읽지 못했습니다. 원인: {e}") from e
+        if not isinstance(envelope, dict):
+            raise StorageError("보존한 변경의 모양이 올바르지 않습니다.")
+        return envelope
 
     def delete_draft(self, name: str, draft_id: str) -> None:
         """사용자가 고른 보존본 하나만 지운다."""

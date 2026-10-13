@@ -1951,6 +1951,55 @@
         }
       }
     },
+    "/api/projects/{name}/drafts/{draft_id}/summary": {
+      "get": {
+        "summary": "Draft Summary",
+        "description": "보존본을 복원하기 전에 서버 저장본과의 차이를 요약한다 (D3c-6, E7). 저장본을 읽지 못하면 모든 장이 더해진다.",
+        "operationId": "draft_summary_api_projects__name__drafts__draft_id__summary_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{name}/drafts/{draft_id}": {
       "delete": {
         "summary": "Delete Draft",
@@ -4483,6 +4532,24 @@
         ],
         "title": "ChapterJobRequest"
       },
+      "ChapterLabel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "ChapterLabel"
+      },
       "ChapterResult": {
         "properties": {
           "status": {
@@ -6674,6 +6741,71 @@
         ],
         "title": "DraftInfo",
         "description": "충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."
+      },
+      "DraftSummary": {
+        "properties": {
+          "readable": {
+            "type": "boolean",
+            "title": "Readable"
+          },
+          "purpose_only": {
+            "type": "boolean",
+            "title": "Purpose Only"
+          },
+          "changed_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Changed Chapters"
+          },
+          "added_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Added Chapters"
+          },
+          "removed_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Removed Chapters"
+          },
+          "direct_edit_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Direct Edit Chapters"
+          },
+          "report_info_changed": {
+            "type": "boolean",
+            "title": "Report Info Changed"
+          },
+          "order_changed": {
+            "type": "boolean",
+            "title": "Order Changed"
+          },
+          "story_plan_changed": {
+            "type": "boolean",
+            "title": "Story Plan Changed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "readable",
+          "purpose_only",
+          "changed_chapters",
+          "added_chapters",
+          "removed_chapters",
+          "direct_edit_chapters",
+          "report_info_changed",
+          "order_changed",
+          "story_plan_changed"
+        ],
+        "title": "DraftSummary"
       },
       "ElementEdit": {
         "properties": {

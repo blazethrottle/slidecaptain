@@ -175,6 +175,12 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/drafts/{draft_id}/summary",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
     "path": "/api/projects/{name}/drafts/{draft_id}",
     "methods": [
       "DELETE"

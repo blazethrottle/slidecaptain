@@ -64,6 +64,7 @@ from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
 from slidecaptain.pipeline.relevance import (
     batch_parts, batch_relevance, chapter_relevance, structure_parts, structure_relevance,
 )
+from slidecaptain.pipeline.draft_summary import DraftSummary, summarize_draft
 from slidecaptain.pipeline.candidate_apply import (
     default_drops, edited_units, length_changed_units, merge_fields, merge_slide, merge_slots, same_slide,
 )
@@ -1516,6 +1517,18 @@ def create_app(
         _reset_baselines(name, before, deck)
         response.headers["ETag"] = f'"{etag}"'
         return deck
+
+    @app.get("/api/projects/{name}/drafts/{draft_id}/summary", response_model=DraftSummary)
+    def draft_summary(name: str, draft_id: str):
+        """보존본을 복원하기 전에 서버 저장본과의 차이를 요약한다 (D3c-6, E7). 저장본을 읽지 못하면 모든 장이 더해진다."""
+        envelope = store.read_draft(name, draft_id)
+        try:
+            current = store.load_deck(name)
+        except ProjectNotFound:
+            raise
+        except (StorageError, OSError):
+            current = None
+        return summarize_draft(current, envelope.get("deck"), str(envelope.get("source")))
 
     @app.delete("/api/projects/{name}/drafts/{draft_id}", response_model=OkResponse)
     def delete_draft(name: str, draft_id: str):

@@ -502,6 +502,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/drafts/{draft_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Draft Summary
+         * @description 보존본을 복원하기 전에 서버 저장본과의 차이를 요약한다 (D3c-6, E7). 저장본을 읽지 못하면 모든 장이 더해진다.
+         */
+        get: operations["draft_summary_api_projects__name__drafts__draft_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{name}/drafts/{draft_id}": {
         parameters: {
             query?: never;
@@ -1308,6 +1328,13 @@ export interface components {
              */
             kind: "chapter";
             params: components["schemas"]["ChapterJobParams"];
+        };
+        /** ChapterLabel */
+        ChapterLabel: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
         };
         /** ChapterResult */
         ChapterResult: {
@@ -2231,6 +2258,27 @@ export interface components {
             source: string;
             /** Base Etag */
             base_etag?: string | null;
+        };
+        /** DraftSummary */
+        DraftSummary: {
+            /** Readable */
+            readable: boolean;
+            /** Purpose Only */
+            purpose_only: boolean;
+            /** Changed Chapters */
+            changed_chapters: components["schemas"]["ChapterLabel"][];
+            /** Added Chapters */
+            added_chapters: components["schemas"]["ChapterLabel"][];
+            /** Removed Chapters */
+            removed_chapters: components["schemas"]["ChapterLabel"][];
+            /** Direct Edit Chapters */
+            direct_edit_chapters: components["schemas"]["ChapterLabel"][];
+            /** Report Info Changed */
+            report_info_changed: boolean;
+            /** Order Changed */
+            order_changed: boolean;
+            /** Story Plan Changed */
+            story_plan_changed: boolean;
         };
         /**
          * ElementEdit
@@ -5756,6 +5804,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_summary_api_projects__name__drafts__draft_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSummary"];
                 };
             };
             /** @description Validation Error */

@@ -16,6 +16,7 @@ export type Preset = components["schemas"]["Preset"];
 export type ProjectInfo = components["schemas"]["ProjectInfo"];
 export type SnapshotInfo = components["schemas"]["SnapshotInfo"];
 export type DraftInfo = components["schemas"]["DraftInfo"];
+export type DraftSummary = components["schemas"]["DraftSummary"];
 export type ProjectProgress = components["schemas"]["ProjectProgress"];
 export type DraftReason = DraftInfo["reason"];
 export type DraftSource = DraftInfo["source"];
@@ -434,6 +435,9 @@ export const api = {
   // 단계 준비 상태 (D2a-6). 화면 연결은 D3에서 한다
   getProgress: (name: string) =>
     request<ProjectProgress>(`/api/projects/${enc(name)}/progress`, { cache: "no-store" }),
+  // 보존본 복원 전 차이 요약 (D3c-6, E7). 저장하지 않는다
+  getDraftSummary: (name: string, id: string) =>
+    request<DraftSummary>(`/api/projects/${enc(name)}/drafts/${enc(id)}/summary`, { cache: "no-store" }),
   restoreDraft: (name: string, id: string) =>
     request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" },
       { etagKey: name, notify: { kind: "saved", project: name } }),
