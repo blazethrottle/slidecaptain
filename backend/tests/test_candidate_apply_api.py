@@ -631,3 +631,32 @@ def test_condense_defaults_to_new_text_even_for_edited_units(store):
     assert preview["blocked_reasons"] == []
     assert preview["edited_units"] == ["conclusion"] and preview["keep_current"] == []
     assert preview["merged"]["slots"]["conclusion"] == "짧게 결론"
+
+
+def test_a_chapter_back_from_another_template_has_no_baseline_from_before_the_switch(store):
+    """템플릿 전환은 덱 PUT이라 기준 무효화를 쓰지 않는다. 불릿 상자 A 반영, 카드 전환, 카드 B 반영, 불릿 상자로 되돌림을 거친
+    장에서 A를 기준으로 삼으면 B를 옮겨 온 지금 문구가 모두 직접 고친 문구가 되어 다음 결과가 통째로 버려진다 (β 재리뷰 T1)."""
+    _project(store)
+    cards = {"template": "cards", "cards": [{"heading": "B 카드1"}, {"heading": "B 카드2"}]}
+    provider = ChapterProvider([_distinct("A"), cards, _distinct("C")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+
+        def switch(template, new_slots):
+            deck = store.load_deck("p1").model_dump(mode="json")
+            next(c for c in deck["structure"]["chapters"] if c["id"] == "c1")["template"] = template
+            next(s for s in deck["slides"] if s["chapter_id"] == "c1")["slots"] = new_slots
+            response = client.put("/api/projects/p1/deck?snapshot=false", json=deck, headers={"If-Match": _etag(store)})
+            assert response.status_code == 200, response.text
+
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        switch("cards", {"template": "cards", "cards": [{"heading": "전환1"}, {"heading": "전환2"}]})
+        b = _job(client, "chapter-0002")
+        assert _apply(client, store, b["id"]).status_code == 200
+        switch("bullet_box", {"template": "bullet_box", "bullets": [{"text": "B 카드1", "level": 0}, {"text": "B 카드2", "level": 0}],
+                              "conclusion": "", "footnote": ""})
+        c = _job(client, "chapter-0003")
+        preview = _preview(client, c["id"]).json()
+        response = _apply(client, store, c["id"])
+    assert preview["edited_units"] is None and preview["keep_current"] == [] and not preview["already_applied"]
+    assert response.status_code == 200 and _slide(store).slots.conclusion == "C 결론"

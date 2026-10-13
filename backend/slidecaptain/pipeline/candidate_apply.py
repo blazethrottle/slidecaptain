@@ -63,10 +63,16 @@ def _list_length(dumped: dict, fields: tuple[str, ...]) -> tuple | None:
 
 
 def edited_units(current: Slots, baselines: list[Slots]) -> list[str] | None:
-    """"직접 고친 문구" 표시: 그 장의 마지막 기준 무효화 뒤에 반영된 AI 결과(baselines) 어느 것과도 지금 슬롯이 다른 단위.
-    반영 뒤 되돌리기로 이전 AI 결과에 돌아간 단위와 반영 때 지금 문구로 남긴 이전 AI 문구는 고친 문구가 아니다(β 묶음 리뷰
-    S2, S3). 같은 템플릿의 기준이 없으면 None(화면은 표시 없이 모두 "새 문구"로 두고 그 사실을 적는다, 계획 4.1)."""
-    bases = [_dump(b) for b in baselines if b.template == current.template]
+    """"직접 고친 문구" 표시: 그 장의 마지막 기준 무효화 뒤에 반영된 AI 결과(baselines, 반영 순서) 어느 것과도 지금 슬롯이
+    다른 단위. 반영 뒤 되돌리기로 이전 AI 결과에 돌아간 단위와 반영 때 지금 문구로 남긴 이전 AI 문구는 고친 문구가 아니다
+    (β 묶음 리뷰 S2, S3). 기준은 마지막 반영부터 거슬러 올라가며 지금과 템플릿이 같은 동안만 모은다. 템플릿을 바꿨다가 돌아온
+    장은 중간의 다른 템플릿 반영 앞의 기록과 비교하지 않는다(β 재리뷰 T1). 마지막 반영의 템플릿이 다르면 None(화면은 표시
+    없이 모두 "새 문구"로 두고 그 사실을 적는다, 계획 4.1)."""
+    bases = []
+    for baseline in reversed(baselines):
+        if baseline.template != current.template:
+            break
+        bases.append(_dump(baseline))
     if not bases:
         return None
     now = _dump(current)

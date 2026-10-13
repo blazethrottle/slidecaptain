@@ -92,6 +92,11 @@ def test_edited_units_compare_with_every_applied_result_since_the_last_reset():
     later = slots("bullet_box", bullets=[{"text": "나"}], conclusion="나중 결론", footnote="")
     assert edited_units(current, [later, baseline]) == ["conclusion"]
     assert edited_units(baseline, [baseline, later]) == []
+    # 템플릿을 바꿨다가 돌아온 장: 중간의 다른 템플릿 반영 앞의 기록은 기준이 아니다 (β 재리뷰 T1)
+    cards = slots("cards", cards=[{"heading": "카드1"}, {"heading": "카드2"}])
+    assert edited_units(current, [baseline, cards]) is None
+    assert edited_units(current, [later, cards, baseline]) == ["conclusion"]
+    assert edited_units(baseline, [baseline, cards, later]) == ["bullets", "conclusion"]
 
 
 def test_list_units_whose_length_changed_drop_their_indexed_edits_by_default():
