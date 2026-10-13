@@ -1,0 +1,2647 @@
+{
+ "_comment": "D3c-1: frame_keys의 결과. 화면의 열쇠 함수(D3c-3)가 같은 결과를 내는지 이 파일로 지킨다. 바꾸려면 test_direct_edits.py로 다시 만든다",
+ "samples": {
+  "cover": {
+   "full": {
+    "title": "제목",
+    "subtitle": "부제",
+    "date": "2026-10-13"
+   },
+   "bare": {
+    "title": "제목"
+   }
+  },
+  "divider": {
+   "full": {
+    "section_no": "1",
+    "section_title": "구분"
+   },
+   "bare": {
+    "section_title": "구분"
+   }
+  },
+  "summary": {
+   "full": {
+    "conclusion": "결론",
+    "points": [
+     {
+      "text": "요점"
+     }
+    ]
+   },
+   "bare": {
+    "conclusion": "결론"
+   }
+  },
+  "bullet_box": {
+   "full": {
+    "bullets": [
+     {
+      "text": "항목"
+     }
+    ],
+    "conclusion": "결론",
+    "footnote": "출처"
+   },
+   "bare": {
+    "conclusion": "결론"
+   }
+  },
+  "table": {
+   "full": {
+    "columns": [
+     "구분",
+     "값"
+    ],
+    "rows": [
+     [
+      "A",
+      "1"
+     ]
+    ],
+    "footnote": "출처"
+   },
+   "bare": {
+    "columns": [
+     "구분"
+    ],
+    "rows": []
+   }
+  },
+  "compare2": {
+   "full": {
+    "conclusion": "결론",
+    "left": {
+     "heading": "A",
+     "bullets": [
+      {
+       "text": "왼쪽"
+      }
+     ]
+    },
+    "right": {
+     "heading": "B",
+     "bullets": [
+      {
+       "text": "오른쪽"
+      }
+     ]
+    }
+   },
+   "bare": {
+    "conclusion": "결론",
+    "left": {
+     "heading": "A"
+    },
+    "right": {
+     "heading": "B"
+    }
+   }
+  },
+  "callout": {
+   "full": {
+    "text": "핵심",
+    "tone": "accent1"
+   },
+   "bare": {
+    "text": "핵심"
+   }
+  },
+  "cards": {
+   "full": {
+    "cards": [
+     {
+      "heading": "A",
+      "badge": "1",
+      "tail": "끝",
+      "emphasis": true
+     },
+     {
+      "heading": "B",
+      "bullets": [
+       {
+        "text": "항목"
+       }
+      ]
+     },
+     {
+      "heading": "C"
+     },
+     {
+      "heading": "D"
+     }
+    ]
+   },
+   "bare": {
+    "cards": [
+     {
+      "heading": "A"
+     },
+     {
+      "heading": "B"
+     }
+    ]
+   }
+  },
+  "process": {
+   "full": {
+    "steps": [
+     {
+      "heading": "단계0",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계1",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계2",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계3",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계4",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계5",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     }
+    ]
+   },
+   "bare": {
+    "steps": [
+     {
+      "heading": "단계0"
+     },
+     {
+      "heading": "단계1"
+     },
+     {
+      "heading": "단계2"
+     }
+    ]
+   }
+  },
+  "matrix": {
+   "full": {
+    "rows": [
+     {
+      "category": "분류0",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류1",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류2",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류3",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류4",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류5",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     }
+    ]
+   },
+   "bare": {
+    "rows": [
+     {
+      "category": "분류0"
+     },
+     {
+      "category": "분류1"
+     },
+     {
+      "category": "분류2"
+     }
+    ]
+   }
+  }
+ },
+ "cases": [
+  {
+   "template": "cover",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "points": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "points": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "bullets": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "bullets": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card0": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card0": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step3_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step3_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step4_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step4": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step4_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step5_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step5": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step5_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step3_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step3_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step4_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step4": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step4_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step5_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step5": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step5_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row3_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row4_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row5_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle"
+    }
+   }
+  }
+ ]
+}

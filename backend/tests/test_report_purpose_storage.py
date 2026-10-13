@@ -98,7 +98,9 @@ def test_schema_version_input_is_ignored_and_decided_by_content():
     rich = _deck(key_message="핵심").model_dump(mode="json")
     rich["schema_version"] = 1
     assert Deck.model_validate(rich).schema_version == 2
-    plain["schema_version"] = 3
+    plain["schema_version"] = 3  # 다시 씀 (D3c-1): 3은 직접 수정이 있는 덱의 버전이다. 내용으로 1이 된다
+    assert Deck.model_validate(plain).schema_version == 1
+    plain["schema_version"] = 4
     with pytest.raises(ValidationError, match="앱을 업데이트해 주세요"):
         Deck.model_validate(plain)
 
@@ -125,7 +127,7 @@ def test_every_report_type_has_detail_fields_including_ir():
 # -- 형식 등급 ---------------------------------------------------------------------
 
 def test_levels_follow_which_app_can_read_the_deck():
-    assert MAX_SUPPORTED_FORMAT == 3
+    assert MAX_SUPPORTED_FORMAT == 4  # 다시 씀 (D3c-1)
     for legacy in ("research", "approval", "strategy"):
         assert deck_format(_deck(report_type=legacy)) == 1
     for interim in ("weekly", "business", "monthly", "data", "project", "results"):

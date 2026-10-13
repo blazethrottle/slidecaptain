@@ -1002,3 +1002,24 @@ describe("반영 재리뷰 반영 (F4, 변형 N11)", () => {
     root.remove();
   });
 });
+
+describe("다른 앱의 되돌림 안내 (D3c-1, 계획 4.2 E8)", () => {
+  it("되돌림 표시가 있으면 머리에 안내하고, 복구 화면을 열거나 닫으면 내린다", async () => {
+    render(<ProjectView project={{ ...project, reverted_by_other_app: true }} onBack={() => {}} jobPollMs={5} />);
+    const notice = await screen.findByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/);
+    await waitFor(() => expect(within(notice).getByRole("button", { name: "복구 화면 열기" })).toBeEnabled());
+    await userEvent.click(within(notice).getByRole("button", { name: "복구 화면 열기" }));
+    expect(await screen.findByRole("heading", { name: /스냅샷 복구/ })).toBeInTheDocument();
+    expect(screen.queryByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeNull();
+  });
+
+  it("닫기를 누르면 내리고, 표시가 없는 프로젝트에는 띄우지 않는다", async () => {
+    const { unmount } = render(<ProjectView project={{ ...project, reverted_by_other_app: true }} onBack={() => {}} jobPollMs={5} />);
+    const notice = await screen.findByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/);
+    await userEvent.click(within(notice).getByRole("button", { name: "닫기" }));
+    expect(screen.queryByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeNull();
+    unmount();
+    await openProject();
+    expect(screen.queryByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeNull();
+  });
+});

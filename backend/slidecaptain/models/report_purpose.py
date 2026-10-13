@@ -73,8 +73,12 @@ def has_purpose_content(meta) -> bool:
     )
 
 
-def level_of(report_types: list[object], purpose_content: bool) -> int:
-    """형식 등급. 보고 유형 값들(메타와 구성 계획)과 새 내용 항목의 유무로 정한다."""
+def level_of(report_types: list[object], purpose_content: bool, direct_edits: bool = False) -> int:
+    """형식 등급. 보고 유형 값들(메타와 구성 계획), 새 내용 항목, 직접 수정(위치, 글자 크기, 색, 숨김)의 유무로 정한다.
+
+    4는 D3c 이후만 읽는 덱이다(D3c 계획 4.2). 문구 수정은 슬롯에 저장되므로 등급을 올리지 않는다(계획 4.1 해석)."""
+    if direct_edits:
+        return 4
     if purpose_content or any(t not in INTERIM_REPORT_TYPES for t in report_types):
         return 3
     if any(t not in LEGACY_REPORT_TYPES for t in report_types):
@@ -86,7 +90,7 @@ def deck_level(deck) -> int:
     values: list[object] = [deck.meta.report_type]
     if deck.structure.story_plan is not None:
         values.append(deck.structure.story_plan.brief.report_type)
-    return level_of(values, has_purpose_content(deck.meta))
+    return level_of(values, has_purpose_content(deck.meta), any(s.direct_edits for s in deck.slides))
 
 
 def purpose_prompt_values(meta) -> dict:

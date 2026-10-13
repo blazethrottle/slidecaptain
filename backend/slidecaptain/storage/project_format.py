@@ -1,7 +1,7 @@
 """프로젝트 형식 판정과 기록 (개정판 D2a-1, D3b-1).
 
 형식 번호는 덱 내용 등급이다(models/report_purpose.py): 1은 0.2.0이 읽는 덱, 2는 개정판 중간
-빌드(D2a~D3a)까지 읽는 덱, 3은 D3b 이후만 읽는 덱이다. 판정은 manifest가 아니라 덱 내용으로 한다. 배포된 0.2.0은 manifest를 모른 채 deck.json만 다시 쓰므로(저장, 스냅샷 복원)
+빌드(D2a~D3a)까지 읽는 덱, 3은 D3b 이후만 읽는 덱, 4는 직접 수정이 있어 D3c 이후만 읽는 덱이다. 판정은 manifest가 아니라 덱 내용으로 한다. 배포된 0.2.0은 manifest를 모른 채 deck.json만 다시 쓰므로(저장, 스냅샷 복원)
 manifest만 믿으면 두 파일이 어긋난다. manifest는 판정 결과의 기록이며, 쓰기 때마다 덱 내용으로
 다시 계산해 바로잡는다. 앱 버전은 판정에 쓰지 않고 진단용으로만 남긴다.
 
@@ -9,7 +9,7 @@ manifest만 믿으면 두 파일이 어긋난다. manifest는 판정 결과의 �
 덮어쓰지 않는다. 그 프로젝트는 열지 않는다(file_store의 공통 진입이 거절한다). 이해할 수 있는
 manifest라도 모르는 필드와 모르는 기록 종류는 그대로 보존한다.
 
-Deck.schema_version은 등급 3이면 2, 아니면 1이다(models/deck.py). 0.2.0은 필드 검증이 끝난 뒤에야
+Deck.schema_version은 등급 4이면 3, 등급 3이면 2, 아니면 1이다(models/deck.py). 0.2.0은 필드 검증이 끝난 뒤에야
 버전을 검사하므로 새 보고 유형 덱의 표시는 버전과 관계없다(2026-10-08 실측). 3종 유형에 새 항목만 더한
 덱은 필드 검증을 통과하고 버전 검사에서 막힌다. 등급 3에서는 manifest 형식 번호 3이 중간 빌드를 막는
 유일한 장치이므로, 등급이 3으로 오르는 저장은 manifest를 먼저 올린다(file_store, 재리뷰 RR6).
@@ -28,14 +28,14 @@ from slidecaptain.models.report_purpose import LEGACY_REPORT_TYPES, level_of
 
 MANIFEST_NAME = "manifest.json"
 FORMAT_NAME = "slidecaptain-project"
-MAX_SUPPORTED_FORMAT = 3
+MAX_SUPPORTED_FORMAT = 4
 # 덱 스키마에서 보고 유형 열거가 쓰이는 위치. 판정 함수는 이 두 곳을 모두 본다.
 # test_project_format이 스키마를 훑어 이 목록과 실제 위치가 같은지 확인한다.
 REPORT_TYPE_LOCATIONS = frozenset({("DeckMeta", "report_type"), ("ReportBrief", "report_type")})
 # 덱 스키마, 유형별 추가 입력 칸 표, 길이 상한을 함께 해시한 SHA-256 (D3b-1, 재리뷰 RR7). 바뀌면
 # test_project_format이 실패해 형식 판정과 manifest 형식 번호를 다시 검토하게 한다 (모르는 필드를 버리는
 # 이전 앱이 새 필드를 경고 없이 지우지 않게, 이전 빌드가 읽지 못하는 덱을 복원으로 덮지 않게).
-PINNED_DECK_SCHEMA_SHA256 = "7c3e1c4fac93f529ab36aa6200e964304ba29d0a1f7b8ff0fc83c2b34ea460ee"
+PINNED_DECK_SCHEMA_SHA256 = "910da1a90d6cbf022fc413a803508ad035331221f66aec943fc436422507b221"
 
 ManifestState = Literal["missing", "ok", "newer", "unreadable"]
 
@@ -85,7 +85,7 @@ def _report_types_of_payload(payload: object) -> list[object] | None:
 
 
 def deck_format(deck) -> int:
-    """덱 내용 등급(1, 2, 3)."""
+    """덱 내용 등급(1~4)."""
     from slidecaptain.models.report_purpose import deck_level
 
     return deck_level(deck)
@@ -94,8 +94,9 @@ def deck_format(deck) -> int:
 def deck_format_of_bytes(data: bytes) -> int | None:
     """디스크 deck.json 바이트의 등급. 덱으로 읽을 수 없으면 None.
 
-    0.2.0이 쓴 덱도 판정해야 하므로 현재 모델로 검증하지 않는다. 이 앱은 등급 3 덱을 schema_version 2로
-    쓰고 새 항목은 기본값이면 키가 없으므로, 버전 하나와 보고 유형으로 모델 판정과 같은 답을 낸다(리뷰 S6).
+    0.2.0이 쓴 덱도 판정해야 하므로 현재 모델로 검증하지 않는다. 이 앱은 등급 3 덱을 schema_version 2로,
+    등급 4 덱을 3으로 쓰고 새 항목은 기본값이면 키가 없으므로, 버전, 보고 유형, 직접 수정 키로 모델 판정과 같은
+    답을 낸다(리뷰 S6, D3c 계획 리뷰 저장 S3).
     """
     try:
         payload = json.loads(data)
@@ -105,7 +106,10 @@ def deck_format_of_bytes(data: bytes) -> int | None:
     if values is None:
         return None
     version = payload.get("schema_version", 1)
-    return level_of(values, isinstance(version, int) and not isinstance(version, bool) and version >= 2)
+    numeric = isinstance(version, int) and not isinstance(version, bool)
+    slides = payload.get("slides")
+    edited = isinstance(slides, list) and any(isinstance(s, dict) and s.get("direct_edits") for s in slides)
+    return level_of(values, numeric and version >= 2, edited or (numeric and version >= 3))
 
 
 def legacy_readable(data: bytes) -> bool:
@@ -198,7 +202,7 @@ def reconcile(
 ) -> ProjectManifest:
     """끊긴 이전 기록을 디스크의 덱 내용으로 마무리하고 형식 번호를 현재 덱에 맞춘다.
 
-    revert_snapshot_id: 등급 3에서 다른 앱이 되돌렸을 때 되돌리기 직전 덱의 스냅샷(호출자가 찾는다).
+    revert_snapshot_id: 등급 3 이상에서 다른 앱이 되돌렸을 때 되돌리기 직전 덱의 스냅샷(호출자가 찾는다).
     """
     if manifest is None:
         manifest = ProjectManifest(format_version=disk_format or 1)
@@ -206,10 +210,10 @@ def reconcile(
     for record in pending:
         record.status = "done" if disk_format == record.to_format else "not_applied"
     if not pending and disk_format is not None and manifest.format_version > disk_format:
-        # 이 앱의 쓰기 없이 등급이 내려왔다: 0.2.0의 저장이나 스냅샷 복원 (D3b-1에서 등급 3까지 일반화)
+        # 이 앱의 쓰기 없이 등급이 내려왔다: 0.2.0의 저장이나 스냅샷 복원 (D3b-1에서 등급 3까지, D3c-1에서 4까지 일반화)
         manifest.migrations.append(MigrationRecord(
             at=now_iso(), kind="external_downgrade", from_format=manifest.format_version, to_format=disk_format,
-            snapshot_id=revert_snapshot_id if manifest.format_version == 3 else None,
+            snapshot_id=revert_snapshot_id if manifest.format_version >= 3 else None,
         ))
     if disk_format is not None:
         manifest.format_version = disk_format
@@ -230,13 +234,13 @@ def pre_migration_snapshot_ids(project_dir: Path) -> set[str]:
 
 
 def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) -> str | None:
-    """다른 앱이 등급 3 덱을 되돌렸을 때 되돌리기 직전 덱의 스냅샷 (재리뷰 RR3).
+    """다른 앱이 등급 3 이상의 덱을 되돌렸을 때 되돌리기 직전 덱의 스냅샷 (재리뷰 RR3, D3c 계획 리뷰 저장 S4).
 
     0.2.0의 복원은 디스크 바이트를 그대로 복사해 스냅샷으로 남긴다. 그래서 이 앱이 마지막으로 쓴 덱과
-    바이트가 같은 등급 3 스냅샷을 찾는다. 0.2.0이 복원 뒤 한 번 더 저장해 다른 스냅샷이 끼어도 찾고,
+    바이트가 같은 등급 3 이상의 스냅샷을 찾는다. 등급 3 이상은 이 앱만 쓰므로 디스크 등급이 3 아래로 내려온 것이 되돌림이다. 0.2.0이 복원 뒤 한 번 더 저장해 다른 스냅샷이 끼어도 찾고,
     등급 2 덱이 되돌려진 경우에는 오래된 등급 3 스냅샷을 고르지 않는다(바이트가 다르다).
     """
-    if manifest is None or manifest.format_version != 3 or not manifest.last_written_etag:
+    if manifest is None or manifest.format_version < 3 or not manifest.last_written_etag:
         return None
     # 이 앱의 쓰기가 끝나지 않은 동안(pending)은 디스크 등급이 낮아도 되돌림이 아니다(이 앱의 내림)
     if any(r.status == "pending" for r in manifest.migrations):
@@ -260,7 +264,7 @@ def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) ->
         if not target:
             continue
         for stem, data in snapshots:
-            if hashlib.sha256(data).hexdigest() == target and deck_format_of_bytes(data) == 3:
+            if hashlib.sha256(data).hexdigest() == target and (deck_format_of_bytes(data) or 0) >= 3:
                 return stem
     return None
 
@@ -272,7 +276,7 @@ def revert_snapshot_ids(project_dir: Path) -> set[str]:
         return set()
     ids = {
         m.snapshot_id for m in manifest.migrations
-        if m.kind == "external_downgrade" and m.from_format == 3 and m.snapshot_id
+        if m.kind == "external_downgrade" and m.from_format >= 3 and m.snapshot_id
     }
     found = find_revert_snapshot(project_dir, manifest)
     if found:

@@ -12,17 +12,18 @@ from slidecaptain.models.diagram import DiagramInput, parse_diagram_spec
 from slidecaptain.models.story import ReportType, StoryPlan
 from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
 from slidecaptain.models.change_review import DocumentChangeReview
+from slidecaptain.models.direct_edit import ElementEdit, frame_keys, normalize_edits
 from slidecaptain.models.report_purpose import (
     DETAIL_KEYS, DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, PURPOSE_DEFAULTS, DesiredOutcome, deck_level,
     is_blank,
 )
 
-# 2026-10-08 D2a-1, 2026-10-12 D3b-1: 덱 내용 등급(models/report_purpose.py)이 3이면 2, 아니면 1이다.
-# 입력으로 받은 값(1 또는 2)은 무시하고 검증 뒤 내용으로 정한다. 3 이상은 이 앱보다 새 앱이 쓴 덱이라 거절한다.
+# 2026-10-08 D2a-1, 2026-10-12 D3b-1, 2026-10-13 D3c-1: 덱 내용 등급(models/report_purpose.py)이 4이면 3, 3이면 2, 아니면 1이다.
+# 입력으로 받은 값(1~3)은 무시하고 검증 뒤 내용으로 정한다. 4 이상은 이 앱보다 새 앱이 쓴 덱이라 거절한다.
 # 3종 유형에 새 항목만 더한 덱은 0.2.0의 필드 검증을 통과하고 이 버전 검사에서 막힌다(새 항목을 지우지 않게).
 # 덱 스키마를 바꾸면 test_project_format의 스키마 해시 시험이 실패하므로 그때 형식 판정을 함께 갱신한다.
 SCHEMA_VERSION = 1
-SUPPORTED_SCHEMA_VERSIONS = (1, 2)
+SUPPORTED_SCHEMA_VERSIONS = (1, 2, 3)
 
 GeneratedTemplateName = Literal[
     "cover", "summary", "bullet_box", "table", "compare2", "divider", "callout", "cards", "process",
@@ -219,6 +220,10 @@ class Structure(BaseModel):
     story_plan: StoryPlan | None = None
 
 
+def _omittable(schema: dict) -> None:
+    schema.pop("default", None)
+
+
 class Slide(BaseModel):
     chapter_id: str
     # 제목 위 분류 라벨과 제목 아래 한 문장 (2026-09-07 DA-4). 값이 없으면 자리를 차지하지 않는다.
@@ -229,7 +234,11 @@ class Slide(BaseModel):
     slots: Slots
     chart: ChartSpec | None = None
     text_spans: list[TextSpan] = Field(default_factory=list,max_length=100)
+    # 직접 수정 (D3c-1, 계획 4.2). 비면 직렬화하지 않아 기존 덱의 바이트와 지문이 그대로다. 열쇠는 frame_keys가 정한다
+    direct_edits: dict[str, ElementEdit] = Field(default_factory=dict, json_schema_extra=_omittable)
 
+    # 생략 규칙은 이 함수 하나에 둔다. 직렬화 함수를 하나 더 두면 pydantic이 마지막 것만 써서 위 생략이 조용히
+    # 꺼진다 (D3c 계획 리뷰 저장 S5)
     @model_serializer(mode='wrap')
     def expression_serialization(self,handler):
         result=handler(self)
@@ -237,7 +246,18 @@ class Slide(BaseModel):
             result.pop('chart',None)
         if not self.text_spans:
             result.pop('text_spans',None)
+        if not self.direct_edits:
+            result.pop('direct_edits',None)
         return result
+
+    @model_validator(mode='after')
+    def _normalize_direct_edits(self):
+        # 슬라이드만으로 정한다. 형식 등급(Deck)은 이 정규화 뒤의 값으로 계산된다 (재리뷰 RR6)
+        if self.direct_edits:
+            if isinstance(self.slots, DiagramSlots):
+                raise ValueError('도식 페이지는 직접 수정을 지원하지 않습니다. 도식 작성 창에서 고쳐 주세요.')
+            self.direct_edits = normalize_edits(self.direct_edits, frame_keys(self))
+        return self
 
     @model_validator(mode='after')
     def expression_contract(self):
@@ -247,10 +267,6 @@ class Slide(BaseModel):
             raise ValueError('도식 문장의 부분 강조는 아직 지원하지 않습니다.')
         validate_spans(self)
         return self
-
-
-def _omittable(schema: dict) -> None:
-    schema.pop("default", None)
 
 
 class DeckMeta(BaseModel):
@@ -331,7 +347,7 @@ class Deck(BaseModel):
                 f"파일이 더 새 버전이라면 앱을 업데이트해 주세요."
             )
         # 입력값이 아니라 내용으로 정한다 (D3b-1). 저장, ETag 계산, 복원, CLI가 모두 이 검증을 거친다
-        self.schema_version = 2 if deck_level(self) == 3 else 1
+        self.schema_version = {4: 3, 3: 2}.get(deck_level(self), 1)
         return self
 
     @model_validator(mode="after")

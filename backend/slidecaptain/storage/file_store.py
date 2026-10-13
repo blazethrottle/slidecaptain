@@ -24,7 +24,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_serializer
 
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.models.diagram import _evidence_input
@@ -108,11 +108,25 @@ class InvalidSourceEncoding(StorageError):
     pass
 
 
+def _omittable(schema: dict) -> None:
+    schema.pop("default", None)
+
+
 class ProjectInfo(BaseModel):
     name: str
     title: str
     updated_at: str  # ISO 8601
     status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"] = "ok"
+    # 다른 앱(0.2.0)이 이 앱만 읽는 덱을 이전 내용으로 되돌렸고 그 뒤 이 앱의 저장이 아직 없다 (D3c-1, 계획 4.2 E8).
+    # 저장하면 형식 기록이 되돌림을 기록하고 이 값은 거짓이 된다(재리뷰 RR19). 거짓이면 응답에서 뺀다
+    reverted_by_other_app: bool = Field(default=False, json_schema_extra=_omittable)
+
+    @model_serializer(mode="wrap")
+    def _omit_false(self, handler):
+        data = handler(self)
+        if not self.reverted_by_other_app:
+            data.pop("reverted_by_other_app", None)
+        return data
 
 
 class SnapshotInfo(BaseModel):
@@ -276,6 +290,22 @@ class ProjectStore(Protocol):
     def save_global_preset(self, preset: Preset) -> None: ...
 
 
+def _with_computed_schema_version(deck: object) -> object:
+    """보존본의 schema_version을 덱 내용으로 바로잡는다 (D3c-1, 계획 리뷰 저장 S20).
+
+    화면이 첫 저장 전에 보존한 덱은 직접 수정이 있어도 옛 버전 값을 들고 있을 수 있다. 그대로 두면 이전 빌드가
+    그 보존본을 복원하며 수정값을 버린다. 검증에 성공하는 덱만 그 값 하나를 바꾸고 나머지 원문은 그대로 둔다.
+    봉투의 내용 해시는 바로잡은 뒤의 덱으로 계산한다(재리뷰 RR21).
+    """
+    if not isinstance(deck, dict):
+        return deck
+    try:
+        version = Deck.model_validate(deck).schema_version
+    except (ValueError, ValidationError):
+        return deck
+    return deck if deck.get("schema_version") == version else {**deck, "schema_version": version}
+
+
 class FileProjectStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
@@ -406,7 +436,7 @@ class FileProjectStore:
         revert_id = project_format.find_revert_snapshot(project_dir, prior)
         manifest = project_format.reconcile(prior, old, revert_snapshot_id=revert_id)
         old_etag = hashlib.sha256(old_bytes).hexdigest() if old_bytes is not None else None
-        if new == 3:
+        if new >= 3:  # 이 앱만 읽는 등급 (D3c-1에서 4까지)
             # 덱 교체 전에 남긴다. 아래의 pending 기록이나 미리 쓰기가 이 값을 함께 쓴다 (D3b-1 리뷰 R1)
             manifest.last_written_etag = hashlib.sha256(self._deck_bytes(deck)).hexdigest()
             manifest.prior_written_etag = old_etag
@@ -447,14 +477,14 @@ class FileProjectStore:
         else:
             if snapshot:
                 self._snapshot_current(project_dir)
-            if new == 3:
+            if new >= 3:
                 project_format.write_manifest(project_dir, manifest, self._atomic_write)  # 쓰려는 덱의 지문을 먼저
             etag = self._write_deck(project_dir, deck)
         manifest.format_version = new
         # 덱 교체가 끝났다: 직전 덱의 지문을 지운다. 등급 3이 아니면 두 값 모두 쓰이지 않으므로 비워 일반 저장이
         # manifest를 다시 쓰지 않게 한다
         manifest.prior_written_etag = None
-        manifest.last_written_etag = etag if new == 3 else None
+        manifest.last_written_etag = etag if new >= 3 else None
         try:
             project_format.write_manifest(project_dir, manifest, self._atomic_write)
         except OSError:
@@ -545,8 +575,10 @@ class FileProjectStore:
             title = "(deck.json 읽기 실패: 스냅샷 복구가 필요합니다)"
             status = "needs_recovery"
         mtime = datetime.fromtimestamp(deck_path.stat().st_mtime).astimezone()
+        reverted = status == "ok" and project_format.find_revert_snapshot(d, project_format.read_manifest(d)) is not None
         return ProjectInfo(
-            name=_nfc(d.name), title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status
+            name=_nfc(d.name), title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status,
+            reverted_by_other_app=reverted,
         )
 
     # -- 덱 ---------------------------------------------------------------
@@ -672,6 +704,7 @@ class FileProjectStore:
         """덱 원문을 검증하지 않고 보존한다. 검증에 실패한 덱도 사용자 내용이라 버리지 않는다.
         같은 내용은 새로 만들지 않는다. 개수 상한과 자동 삭제는 없다."""
         name = _nfc(name)
+        deck = _with_computed_schema_version(deck)
         # 화면이 보내는 압축 JSON과 같은 기준으로 잰다(리뷰 R7: 브리지 상한과 측정 대상을 맞춘다)
         deck_bytes = json.dumps(deck, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
         content_sha256 = hashlib.sha256(deck_bytes).hexdigest()

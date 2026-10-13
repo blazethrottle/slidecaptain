@@ -47,7 +47,7 @@ def test_deck_format_is_one_for_legacy_report_types_and_two_otherwise():
     for new in ("weekly", "business", "monthly", "data", "project", "results"):
         assert deck_format(_deck(new)) == 2
     assert deck_format(_deck("ir")) == 3
-    assert MAX_SUPPORTED_FORMAT == 3
+    assert MAX_SUPPORTED_FORMAT == 4  # 다시 씀 (D3c-1): 등급 4는 직접 수정이 있는 덱이다(test_direct_edits)
 
 
 def test_create_project_writes_manifest_after_deck(store):
@@ -280,6 +280,7 @@ def test_deck_json_schema_is_pinned_to_the_supported_format():
     # 칸이나 상한을 바꾸면 이전 빌드가 그 덱을 읽지 못하므로(모르는 칸과 상한 초과는 읽기에서도 거절된다) manifest
     # 형식 번호를 올려야 한다. 그 태스크는 등급 4의 판정(models/report_purpose.level_of)과 MAX_SUPPORTED_FORMAT을
     # 함께 정한다 (D3b-1 리뷰 R18)
+    # 다시 씀 (D3c-1): 직접 수정(Slide.direct_edits)을 더하고 등급 4와 MAX_SUPPORTED_FORMAT 4를 정했다(D3c 계획 4.2)
     from slidecaptain.models import report_purpose as rp
 
     contract = {
@@ -289,7 +290,7 @@ def test_deck_json_schema_is_pinned_to_the_supported_format():
     }
     schema = json.dumps(contract, sort_keys=True, ensure_ascii=False)
     digest = hashlib.sha256(schema.encode("utf-8")).hexdigest()
-    assert (MAX_SUPPORTED_FORMAT, digest) == (3, project_format.PINNED_DECK_SCHEMA_SHA256), (
+    assert (MAX_SUPPORTED_FORMAT, digest) == (4, project_format.PINNED_DECK_SCHEMA_SHA256), (
         "덱 스키마가 바뀌었습니다. storage/project_format.py의 deck_format과 MAX_SUPPORTED_FORMAT을 "
         f"검토하고 PINNED_DECK_SCHEMA_SHA256을 {digest}로 갱신해 주세요"
     )

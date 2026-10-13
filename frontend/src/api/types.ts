@@ -2090,6 +2090,24 @@ export interface components {
             /** Base Etag */
             base_etag?: string | null;
         };
+        /**
+         * ElementEdit
+         * @description 요소 하나의 수정. 칸은 모두 선택이다. 효과가 없는 값은 슬라이드 검증이 버린다(normalize_edits).
+         */
+        ElementEdit: {
+            /** Dx Pt */
+            dx_pt?: number | null;
+            /** Dy Pt */
+            dy_pt?: number | null;
+            /** Font Scale */
+            font_scale?: number | null;
+            /** Text Color */
+            text_color?: ("text" | "accent" | "accent1" | "accent2" | "danger" | "ok" | "ink" | "ink_soft" | "background") | null;
+            /** Fill */
+            fill?: ("box_fill" | "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger") | null;
+            /** Hidden */
+            hidden?: boolean | null;
+        };
         /** Evidence */
         Evidence: {
             /** Id */
@@ -3269,6 +3287,8 @@ export interface components {
              * @enum {string}
              */
             status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
+            /** Reverted By Other App */
+            reverted_by_other_app?: boolean;
         };
         /** ProjectProgress */
         ProjectProgress: {
@@ -3671,6 +3691,10 @@ export interface components {
             chart?: components["schemas"]["ChartSpec"] | null;
             /** Text Spans */
             text_spans?: components["schemas"]["TextSpan"][];
+            /** Direct Edits */
+            direct_edits?: {
+                [key: string]: components["schemas"]["ElementEdit"];
+            };
         };
         /** SlidePlan */
         SlidePlan: {

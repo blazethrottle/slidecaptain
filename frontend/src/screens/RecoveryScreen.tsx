@@ -247,7 +247,7 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
               {s.saved_at}
               {s.kind === "pre_migration" && <em> (새 형식으로 바꾸기 전)</em>}
               {/* 0.2.0 같은 다른 앱이 이 프로젝트를 옛 시점으로 되돌리기 직전의 덱 (D3b-1, 되찾을 지점) */}
-              {s.kind === "before_revert" && <em> (0.2.0에서 되돌리기 전)</em>}
+              {s.kind === "before_revert" && <em> (다른 앱에서 되돌리기 전)</em>}
               {" "}<Button variant="danger" onClick={() => restore(s.id)} disabled={!!restoreLockedReason}
                 title={restoreLockedReason}>이 시점으로 복원</Button>
             </li>

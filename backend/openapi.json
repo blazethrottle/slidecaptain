@@ -6220,6 +6220,105 @@
         "title": "DraftInfo",
         "description": "충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."
       },
+      "ElementEdit": {
+        "properties": {
+          "dx_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dx Pt"
+          },
+          "dy_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dy Pt"
+          },
+          "font_scale": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Scale"
+          },
+          "text_color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "accent",
+                  "accent1",
+                  "accent2",
+                  "danger",
+                  "ok",
+                  "ink",
+                  "ink_soft",
+                  "background"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Color"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "box_fill",
+                  "ink",
+                  "ink_soft",
+                  "accent1",
+                  "accent2",
+                  "danger",
+                  "ok",
+                  "surface1",
+                  "surface2",
+                  "surface3",
+                  "surface_danger"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ElementEdit",
+        "description": "요소 하나의 수정. 칸은 모두 선택이다. 효과가 없는 값은 슬라이드 검증이 버린다(normalize_edits)."
+      },
       "Evidence": {
         "properties": {
           "id": {
@@ -9412,6 +9511,10 @@
             ],
             "title": "Status",
             "default": "ok"
+          },
+          "reverted_by_other_app": {
+            "type": "boolean",
+            "title": "Reverted By Other App"
           }
         },
         "type": "object",
@@ -10499,6 +10602,13 @@
             "type": "array",
             "maxItems": 100,
             "title": "Text Spans"
+          },
+          "direct_edits": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ElementEdit"
+            },
+            "type": "object",
+            "title": "Direct Edits"
           }
         },
         "type": "object",

@@ -1,0 +1,167 @@
+"""직접 수정의 저장 계약 (개정판 D3c-1, 계획 4.2, 4.3).
+
+슬라이드의 요소(렌더 계획의 프레임)마다 위치 거리, 글자 배율, 글자 색, 채움 색, 숨김을 기록한다. 문구 수정은 지금처럼
+슬롯에 저장하고 여기에 기록하지 않는다(계획 4.1 해석). 요소 열쇠는 프레임 이름에서 장 ID를 뺀 부분이고, 열쇠의 집합과
+열쇠마다 받는 수정 종류는 `frame_keys`가 슬라이드만 보고 정한다(장 제목과 메타는 이름 집합을 바꾸지 않는다).
+`frame_keys`는 layout/templates.py의 프레임 생성 조건을 옮긴 것이고, test_direct_edits가 빌더 결과와 같은지 지킨다.
+
+이 모듈은 모델 모듈(deck.py)이 가져다 쓰므로 슬롯 클래스를 가져오지 않고 `template` 값과 속성으로 판정한다.
+"""
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+# 글자 색과 채움 색은 프리셋 색 역할 이름으로 받는다. 프리셋이 바뀌면 색이 따라 바뀐다(CalloutSlots.tone과 같은 원칙).
+# 글자 색에는 글자용 역할을, 채움 색에는 채움용 역할을 둔다 (계획 리뷰 저장 S15)
+TextColorRole = Literal["text", "accent", "accent1", "accent2", "danger", "ok", "ink", "ink_soft", "background"]
+FillRole = Literal[
+    "box_fill", "ink", "ink_soft", "accent1", "accent2", "danger", "ok",
+    "surface1", "surface2", "surface3", "surface_danger",
+]
+
+EditKind = Literal["move", "font", "text_color", "fill", "hide"]
+ALL_KINDS: frozenset[str] = frozenset({"move", "font", "text_color", "fill", "hide"})
+
+
+def _omittable(schema: dict) -> None:
+    # 없는 칸은 직렬화하지 않으므로 스키마에서 기본값 표기를 뺀다. 기본값이 적혀 있으면 화면 타입 생성기
+    # (openapi-typescript)가 "항상 있음"으로 만든다 (D3b-1 구현 기록)
+    schema.pop("default", None)
+
+
+class ElementEdit(BaseModel):
+    """요소 하나의 수정. 칸은 모두 선택이다. 효과가 없는 값은 슬라이드 검증이 버린다(normalize_edits)."""
+
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    # 엔진이 정한 자리에서 옮긴 거리(pt). 절대 좌표가 아니라 거리라서 템플릿 자리가 바뀌면 함께 움직인다(계획 리뷰 저장 S21)
+    dx_pt: float | None = Field(default=None, json_schema_extra=_omittable)
+    dy_pt: float | None = Field(default=None, json_schema_extra=_omittable)
+    # 요소 글자의 배율. 가장 큰 문단의 절대 크기로 저장하면 내용에 따라 기준 문단이 바뀐다(재리뷰 RR17)
+    font_scale: float | None = Field(default=None, gt=0, json_schema_extra=_omittable)
+    text_color: TextColorRole | None = Field(default=None, json_schema_extra=_omittable)
+    fill: FillRole | None = Field(default=None, json_schema_extra=_omittable)
+    hidden: bool | None = Field(default=None, json_schema_extra=_omittable)
+
+    @model_validator(mode="after")
+    def _paired_offsets(self) -> "ElementEdit":
+        if (self.dx_pt is None) != (self.dy_pt is None):
+            raise ValueError("위치 수정은 가로와 세로 거리를 함께 적어야 합니다")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_unset(self, handler):
+        # 없는 칸은 쓰지 않는다. 같은 수정이 늘 같은 바이트가 되게 한다
+        return {k: v for k, v in handler(self).items() if v is not None}
+
+
+class KeySpec(BaseModel):
+    """요소 열쇠 하나가 받는 수정 종류와 끄는 방식(화면용)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    kinds: frozenset[str]
+    # 글상자는 손잡이로만 끌고, 표 묶음과 단계 번호는 본체로 끈다(계획 4.3, 화면 시안)
+    drag: Literal["handle", "body"] = "handle"
+
+
+_TEXT = frozenset({"move", "font", "text_color", "hide"})
+_TEXT_FILLED = _TEXT | {"fill"}
+_TABLE = frozenset({"move", "hide"})
+_BADGE = frozenset({"move", "text_color", "fill", "hide"})
+
+
+def _text(has_paras: bool = True, filled: bool = False) -> KeySpec:
+    kinds = _TEXT_FILLED if filled else _TEXT
+    if not has_paras:  # 문단이 없는 요소(빈 불릿 상자)는 글자 크기를 받지 않는다 (재리뷰 RR17)
+        kinds = kinds - {"font"}
+    return KeySpec(kinds=kinds)
+
+
+def frame_keys(slide) -> dict[str, KeySpec]:
+    """슬라이드의 요소 열쇠와 받는 수정 종류. 쪽 번호는 수정 대상이 아니라 넣지 않는다. 도식은 빈 사전이다.
+
+    비교 차트의 `chart`와 `chart_conditions`, 표의 `table`은 한 열쇠 `table`로 묶는다(계획 4.3).
+    강조 밴드의 채움은 슬롯의 `tone`이 정하므로 `fill`을 받지 않는다(재리뷰 RR25).
+    """
+    slots = slide.slots
+    template = slots.template
+    if template == "diagram":
+        return {}
+    if template == "cover":
+        return {key: _text() for key in ("cover_title", "subtitle", "date", "presenter")}
+    if template == "divider":
+        return {key: _text() for key in ("section_no", "section_title")}
+    keys: dict[str, KeySpec] = {"title": _text()}
+    # 표지와 간지 밖에서만 공통 슬롯을 그린다(layout/templates.py의 build_slide)
+    if slide.eyebrow:
+        keys["eyebrow"] = _text()
+    if slide.subtitle:
+        keys["subtitle"] = _text()
+    if template == "bullet_box":
+        keys["bullets"] = _text(has_paras=bool(slots.bullets))
+        keys["conclusion"] = _text(filled=True)
+        if slots.footnote:
+            keys["footnote"] = _text()
+    elif template == "summary":
+        keys["conclusion"] = _text(filled=True)
+        keys["points"] = _text(has_paras=bool(slots.points))
+    elif template == "table":
+        keys["table"] = KeySpec(kinds=_TABLE, drag="body")
+        if slots.footnote:
+            keys["footnote"] = _text()
+    elif template == "compare2":
+        keys["left_card"] = _text()
+        keys["right_card"] = _text()
+        keys["conclusion"] = _text(filled=True)
+    elif template == "callout":
+        keys["text"] = _text()
+    elif template == "cards":
+        for i, card in enumerate(slots.cards):
+            keys[f"card{i}"] = _text(filled=card.emphasis)  # 강조 카드만 채움이 있다
+    elif template == "process":
+        for i, step in enumerate(slots.steps):
+            keys[f"step{i}_badge"] = KeySpec(kinds=_BADGE, drag="body")
+            keys[f"step{i}"] = _text()
+            if step.notes:
+                keys[f"step{i}_labels"] = _text()
+    elif template == "matrix":
+        for i, row in enumerate(slots.rows):
+            keys[f"row{i}_category"] = _text(filled=True)
+            if row.primary:
+                keys[f"row{i}_primary"] = _text()
+            if row.items:
+                keys[f"row{i}_items"] = _text()
+    else:
+        raise ValueError(f"알 수 없는 템플릿입니다: {template}")
+    return keys
+
+
+def normalize_edits(edits: dict[str, ElementEdit], keys: dict[str, KeySpec]) -> dict[str, ElementEdit]:
+    """계획 4.2의 정규화 다섯 규칙. 화면(useDeckEditor.apply)도 같은 규칙을 쓴다.
+
+    ① 지금 열쇠에 없는 요소를 버린다 ② 그 요소가 받지 않는 수정 종류를 버린다 ③ 효과가 없는 값(숨김 아님, 거리 0,
+    배율 1)을 버린다 ④ 빈 객체가 된 요소를 버린다 ⑤ 열쇠를 이름 순으로 둔다. 그래서 화면에 차이가 없는 수정이
+    덱을 새 형식 등급에 묶어 두지 않는다 (계획 리뷰 저장 S19, 재리뷰 RR23).
+    """
+    result: dict[str, ElementEdit] = {}
+    for key in sorted(edits):
+        spec = keys.get(key)
+        if spec is None:
+            continue
+        edit = edits[key]
+        values: dict = {}
+        if "move" in spec.kinds and edit.dx_pt is not None and (edit.dx_pt != 0 or edit.dy_pt != 0):
+            values["dx_pt"], values["dy_pt"] = edit.dx_pt, edit.dy_pt
+        if "font" in spec.kinds and edit.font_scale is not None and edit.font_scale != 1:
+            values["font_scale"] = edit.font_scale
+        if "text_color" in spec.kinds and edit.text_color is not None:
+            values["text_color"] = edit.text_color
+        if "fill" in spec.kinds and edit.fill is not None:
+            values["fill"] = edit.fill
+        if "hide" in spec.kinds and edit.hidden:
+            values["hidden"] = True
+        if values:
+            result[key] = ElementEdit(**values)
+    return result

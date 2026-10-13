@@ -22,6 +22,8 @@ REPO = Path(__file__).resolve().parents[2]
 LEGACY_TAG = "v0.2.0"
 # 개정판 중간 빌드(D2a~D3a)의 마지막 커밋. manifest 형식 2까지 읽고 보고 유형 9종을 안다 (D3b-1)
 INTERIM_REF = "afe9138"
+# D3b 종결 빌드. manifest 형식 3까지 읽고 직접 수정(Slide.direct_edits)을 모른다 (D3c-1)
+D3B_REF = "88a6572"
 
 _LEGACY_SCRIPT = r"""
 import json
@@ -87,6 +89,11 @@ def legacy_backend(tmp_path_factory):
 @pytest.fixture(scope="module")
 def interim_backend(tmp_path_factory):
     return _extract(tmp_path_factory, INTERIM_REF, "interim-d3a")
+
+
+@pytest.fixture(scope="module")
+def d3b_backend(tmp_path_factory):
+    return _extract(tmp_path_factory, D3B_REF, "d3b")
 
 
 def _run_legacy(legacy_backend: Path, root: Path, command: str) -> dict:
@@ -248,3 +255,40 @@ def test_interim_build_lists_jobs_with_new_relevance_markers(store, interim_back
     assert "template_changed" in reasons["chapter"]
     # 구조안 행은 이전 빌드가 ETag로 판정한다. 덱이 그대로라 사유가 없다 (D3b-2 리뷰 R8)
     assert reasons["structure"] == []
+
+
+# -- 직접 수정 (D3c-1, 계획 4.2) ------------------------------------------------------------------
+
+def _edited_deck(title="보고"):
+    from slidecaptain.models.deck import Chapter, Slide, Structure
+
+    return Deck(meta=DeckMeta(title=title), structure=Structure(chapters=[Chapter(id="c1", topic="장", template="callout")]),
+                slides=[Slide(chapter_id="c1", slots={"template": "callout", "text": "핵심"},
+                              direct_edits={"text": {"dx_pt": 12, "dy_pt": 8}})])
+
+
+def test_d3b_build_refuses_level_four_projects_without_touching_them(store, d3b_backend):
+    """D3b 빌드가 등급 4 덱을 열어 저장하면 수정값을 지운다. 그래서 manifest 형식 4로 거절하게 한다."""
+    store.create_project("p1")
+    store.save_deck("p1", _edited_deck(), snapshot=False)
+    before = {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
+    out = _run_legacy(d3b_backend, store.root, "load")
+    assert out["statuses"] == {"p1": "newer_format"}
+    assert out["load"] == "error"
+    assert {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()} == before
+
+
+def test_legacy_app_sees_level_four_as_needing_recovery_and_the_new_app_marks_the_revert(store, legacy_backend):
+    """0.2.0은 schema_version 3을 거절해 복구 필요로 본다. 0.2.0에서 복원하면 이 앱은 되돌리기 직전 덱을 표시하고
+    머리에 알린다 (계획 리뷰 저장 S4: 1판대로면 표시가 0개였다)."""
+    store.create_project("p1")
+    store.save_deck("p1", _edited_deck(), snapshot=False)
+    out = _run_legacy(legacy_backend, store.root, "load")
+    assert out["statuses"] == {"p1": "needs_recovery"}
+    [pre] = [s for s in store.list_snapshots("p1") if s.kind == "pre_migration"]
+    _run_legacy(legacy_backend, store.root, f"restore:{pre.id}")
+    [mark] = [s for s in store.list_snapshots("p1") if s.kind == "before_revert"]
+    [info] = store.list_projects()
+    assert info.reverted_by_other_app is True
+    restored, _ = store.restore_snapshot("p1", mark.id)
+    assert restored.slides[0].direct_edits["text"].dx_pt == 12

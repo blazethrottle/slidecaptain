@@ -71,8 +71,8 @@ it("0.2.0 같은 다른 앱이 되돌리기 직전의 덱을 구별해 보인다
   ]);
   render(<RecoveryScreen project={project} onBack={() => {}} />);
   const items = await screen.findAllByRole("listitem");
-  expect(items[0]).not.toHaveTextContent("0.2.0에서 되돌리기 전");
-  expect(items[1]).toHaveTextContent("0.2.0에서 되돌리기 전");
+  expect(items[0]).not.toHaveTextContent("다른 앱에서 되돌리기 전");
+  expect(items[1]).toHaveTextContent("다른 앱에서 되돌리기 전");
   expect(items[1]).not.toHaveTextContent("새 형식으로 바꾸기 전");
 });
 

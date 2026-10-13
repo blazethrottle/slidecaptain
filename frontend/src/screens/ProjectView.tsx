@@ -94,6 +94,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const [editorAiBusy, setEditorAiBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(null);  // 상단 머리의 저장 상태 (계획 4.1 출처 표)
   const [draftCount, setDraftCount] = useState(0);  // 충돌로 보존한 변경 건수 (C18)
+  // 다른 앱(0.2.0)이 이 프로젝트를 이전 내용으로 되돌렸고 그 뒤 이 앱의 저장이 없다 (D3c-1, 계획 4.2 E8). 목록을 읽은
+  // 때의 값이다. 이 화면에서 닫거나 복구 화면을 열면 내린다. 다음에 열 때는 서버가 저장 여부로 다시 정한다
+  const [revertNotice, setRevertNotice] = useState(!!project.reverted_by_other_app);
   const [draftsRevision, setDraftsRevision] = useState(0);
   const saveStatusRef = useRef<HTMLSpanElement | null>(null);
   // 단계 상태 (D3a-3, 계획 4.2). undefined는 첫 조회 전이다. 조회가 실패하면 "확인하지 못함"으로 보이고 준비됨으로 두지 않는다
@@ -679,8 +682,16 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
         </div>
         {/* 진행 안내와 실패 알림은 문장이라 머리의 한 줄(제목, 저장 상태, 행동) 아래에 따로 둔다. 알림이 없으면 그리지 않아
             머리 높이가 저장 상태의 유무로 바뀌지 않는다 (D3a-7 사용자 결정, 리뷰 R9) */}
-        {(activeJob || jobProblem || !ledgerAvailable) && (
+        {(activeJob || jobProblem || !ledgerAvailable || revertNotice) && (
           <div className="topbar-notices">
+            {revertNotice && (
+              <p className="topbar-job">
+                다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다. 복구 화면에서 되돌리기 전 내용을 볼 수 있습니다.{" "}
+                <button onClick={() => { setRevertNotice(false); openRecovery(); }} disabled={recoveryLocked}
+                  title={recoveryTitle}>복구 화면 열기</button>{" "}
+                <button className="btn-text" onClick={() => setRevertNotice(false)}>닫기</button>
+              </p>
+            )}
             {activeJob && (
               // 서비스 전체에서 하나만 도는 AI 작업의 안내와 취소. 이 프로젝트의 작업도 보인다 (D2b-5a 리뷰 R14, R21)
               <p className="topbar-job">
