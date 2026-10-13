@@ -237,6 +237,13 @@ const FIXED_NAMES: Record<string, string> = {
   section_title: "구분 제목", page_number: "쪽 번호",
 };
 
+/** 목적격 조사를 이름의 끝 받침으로 고른다. 한글이 아니면 둘 다 적는다 (D3c-3 리뷰 F21). */
+export function withObject(name: string): string {
+  const code = name.charCodeAt(name.length - 1) - 0xac00;
+  if (code < 0 || code > 11171) return `${name}을(를)`;
+  return `${name}${code % 28 ? "을" : "를"}`;
+}
+
 export function roleName(key: string, template?: string): string {
   if (template === "cover" && key === "subtitle") return "표지 부제";
   if (FIXED_NAMES[key]) return FIXED_NAMES[key];

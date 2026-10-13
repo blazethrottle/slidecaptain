@@ -17,7 +17,7 @@ import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { DirectEditPanel } from "../editor/DirectEditPanel";
-import { clampOffset, displayBoxes, editElement, frameKey, frameKeys, roleName } from "../editor/directEdit";
+import { clampOffset, displayBoxes, editElement, frameKey, frameKeys, roleName, withObject } from "../editor/directEdit";
 
 const NEED_MODE = "직접 수정을 누르면 요소를 옮기거나 숨길 수 있습니다.";
 // 목록 편집 직후 옛 미리보기가 남은 동안은 그려진 항목과 덱의 항목이 다르다 (D3c-3 리뷰 F10)
@@ -260,7 +260,7 @@ export function EditorScreen({
     editor.apply((d) => editElement(d, chapterId, key, { hidden: true }));
     setSelected(next ? { chapterId, slot: next } : null);
     focusFrame(next);
-    setStatus(`${roleName(key, template)}을(를) 숨겼습니다. 숨긴 요소 목록에서 다시 보이게 할 수 있습니다.`);
+    setStatus(`${withObject(roleName(key, template))} 숨겼습니다. 숨긴 요소 목록에서 다시 보이게 할 수 있습니다.`);
   };
   const toggleMode = () => {
     if (mode) {
@@ -354,6 +354,7 @@ export function EditorScreen({
             template={template} keys={keys} edits={edits} mode={mode} dragAllowed={dragAllowed} deckToken={editor.deck}
             onMove={moveElement} onHide={hideElement} onNeedMode={() => setStatus(canMode ? NEED_MODE : MODE_BLOCKED)}
             onDragChange={(d) => { dragging.current = d; }} focusRequest={focusRequest}
+            onDragDiscard={() => setStatus("끄는 동안 다른 변경이 있어 옮기지 않았습니다. 다시 끌어 주세요.")}
             hiddenCount={hiddenCount} onShowHidden={showHidden} />
         ) : editor.measureError ? (
           <p>미리보기를 만들지 못했습니다. 위 오류를 확인한 뒤 다시 그려 주세요.</p>

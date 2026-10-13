@@ -95,7 +95,7 @@ describe("키보드와 초점", () => {
   it("Tab으로 프레임에 초점이 가면 그 프레임을 고르고, 쪽 번호는 Tab 정지가 아니다", async () => {
     await open();
     act(() => frame("title")!.focus());
-    expect(frame("title")).toHaveAttribute("aria-pressed", "true");
+    expect(frame("title")).toHaveAttribute("aria-current", "true");
     expect(frame("title")).toHaveAccessibleName("장 제목, 주제");
     expect(frame("page_number")).not.toHaveAttribute("tabindex");
   });
@@ -315,7 +315,7 @@ describe("D3c-3 리뷰 반영", () => {
     expect(document.activeElement).toBe(frame("conclusion"));
     // 다음 Escape는 선택을 푼다 (Escape 우선순위의 세 번째 단계)
     fireEvent.keyDown(frame("conclusion")!, { key: "Escape" });
-    expect(frame("conclusion")).toHaveAttribute("aria-pressed", "false");
+    expect(frame("conclusion")).not.toHaveAttribute("aria-current");
     await new Promise((r) => setTimeout(r, 30));
     expect(vi.mocked(api.putDeck).mock.calls.length).toBe(saves);  // 취소는 확정하지 않는다
     expect(lastSaved().slides[0].slots).toMatchObject({ conclusion: "새 결론" });
@@ -361,7 +361,7 @@ describe("D3c-3 리뷰 반영", () => {
     fireEvent.pointerUp(handle, { pointerId: 1, clientX: 130, clientY: 100 });
     fireEvent.click(handle);  // 잡기 때문에 뒤따른 클릭은 손잡이로 간다
     await userEvent.click(frame("footnote")!);
-    expect(frame("footnote")).toHaveAttribute("aria-pressed", "true");
+    expect(frame("footnote")).toHaveAttribute("aria-current", "true");
   });
 
   it("캔버스 밖에서 놓은 누름 뒤에도 키보드 초점이 요소를 고른다 (F6)", async () => {
@@ -369,7 +369,7 @@ describe("D3c-3 리뷰 반영", () => {
     fireEvent.pointerDown(frame("title")!, { pointerId: 1, button: 0 });
     fireEvent.pointerUp(document.body, { pointerId: 1 });
     act(() => frame("footnote")!.focus());
-    expect(frame("footnote")).toHaveAttribute("aria-pressed", "true");
+    expect(frame("footnote")).toHaveAttribute("aria-current", "true");
   });
 
   it("장을 바꾸면 이전 장에서 만든 초점 요청을 새 장에 다시 적용하지 않는다 (F8)", async () => {
@@ -387,7 +387,7 @@ describe("D3c-3 리뷰 반영", () => {
     const chapterButton = screen.getByRole("button", { name: /둘째 장/ });
     await userEvent.click(chapterButton);
     await waitFor(() => expect(document.querySelector('[data-frame="c2:conclusion"]')).not.toBeNull());
-    expect(document.querySelector('[data-frame="c2:conclusion"]')).toHaveAttribute("aria-pressed", "false");
+    expect(document.querySelector('[data-frame="c2:conclusion"]')).not.toHaveAttribute("aria-current");
     expect(document.activeElement).toBe(chapterButton);
   });
 });
@@ -450,4 +450,135 @@ it("글이 없는 요소에는 글자 크기 칸을 보이지 않고 한도도 �
   expect(screen.queryByRole("group", { name: "글자 크기" })).toBeNull();
   await new Promise((r) => setTimeout(r, 350));
   expect(api.fontLimit).not.toHaveBeenCalled();
+});
+
+describe("D3c-3 리뷰 반영 (F15~F23)", () => {
+  async function dragging(dx = 30) {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 100 + dx, clientY: 100 });
+    return handle;
+  }
+
+  it("편집 직후 끄는 동안 화면이 다시 그려져도 Ctrl+Z를 받지 않고, 렌더 중 갱신 경고가 없다 (F23, F16, M4)", async () => {
+    const errors = vi.spyOn(console, "error");
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    const handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });  // 자동 저장과 새 계획으로 다시 그린다
+    fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+    expect(frame("conclusion")!.style.left).toBe("81px");
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    await waitFor(() => expect(lastSaved().slides[0].direct_edits).toEqual({ conclusion: { dx_pt: 31, dy_pt: 0 } }));
+    expect(errors.mock.calls.some((c) => String(c[0]).includes("Cannot update a component"))).toBe(false);
+    errors.mockRestore();
+  });
+
+  it("끄는 동안 덱이 바뀌면 놓아도 옮기지 않고 알린다 (F23, M12)", async () => {
+    const handle = await dragging();
+    fireEvent.keyDown(frame("footnote")!, { key: "ArrowRight" });  // 다른 요소의 편집으로 덱이 바뀐다
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    expect(screen.getAllByRole("status").some((s) => /끄는 동안 다른 변경이 있어 옮기지 않았습니다/.test(s.textContent ?? ""))).toBe(true);
+  });
+
+  it("창 초점을 잃거나 pointercancel이 오면 끌기를 취소한다 (M3, M13)", async () => {
+    let handle = await dragging();
+    act(() => { window.dispatchEvent(new Event("blur")); });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    fireEvent.pointerDown(handle, { pointerId: 2, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 2, clientX: 140, clientY: 100 });
+    fireEvent.pointerCancel(handle, { pointerId: 2 });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(vi.mocked(api.putDeck)).not.toHaveBeenCalled();
+  });
+
+  it("끄는 중 Escape는 끌기만 취소하고 선택은 남긴다 (F17)", async () => {
+    await dragging();
+    fireEvent.keyDown(frame("conclusion")!, { key: "Escape" });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    expect(frame("conclusion")).toHaveAttribute("aria-current", "true");
+  });
+
+  it("끌기 문턱은 축마다 4px다 (F19)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 103, clientY: 103 });  // 대각 4.24px
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 105, clientY: 100 });
+    expect(frame("conclusion")!.style.left).toBe("55px");
+  });
+
+  it("열린 대화 상자 안의 Ctrl+Z는 덱을 되돌리지 않는다 (M5)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const inside = document.createElement("button");
+    dialog.appendChild(inside);
+    document.body.appendChild(dialog);
+    fireEvent.keyDown(inside, { key: "z", ctrlKey: true });
+    expect(frame("conclusion")!.style.left).toBe("51px");
+    dialog.remove();
+  });
+
+  it("반영 전 입력은 칸에 안내하고 창 닫기 경고 상태가 되며, 칸이 사라질 때 반영한다 (F22, M14, M10)", async () => {
+    const dirty = vi.fn();
+    await open({ onDirtyChange: dirty });
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const x = screen.getByRole("spinbutton", { name: "가로 위치" });
+    await userEvent.clear(x);
+    await userEvent.type(x, "70");
+    expect(screen.getByText("Enter를 누르거나 다른 곳을 누르면 반영됩니다.")).toBeInTheDocument();
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    fireEvent.click(modeButton());  // 모드를 닫으면 패널과 칸이 사라진다
+    await waitFor(() => expect(lastSaved().slides[0].direct_edits).toEqual({ conclusion: { dx_pt: 20, dy_pt: 0 } }));
+  });
+
+  it("모드 중 조건이 깨지면 모드를 닫는다 (M11)", async () => {
+    const { rerender } = render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={FAST} />);
+    await waitFor(() => expect(frame("bullets")).not.toBeNull());
+    await userEvent.click(modeButton());
+    expect(modeButton()).toHaveAttribute("aria-pressed", "true");
+    rerender(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={FAST} readOnly />);
+    expect(modeButton()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("색을 고르기 전에 역할마다 견본을 볼 수 있다 (F18)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const summary = await screen.findByText("색 견본 보기");
+    await userEvent.click(summary);
+    const legend = within(summary.closest("details")!);
+    // 결론 상자는 글자 색과 채움 색을 받는다: 두 목록의 역할(겹치는 역할은 한 번)마다 이름과 견본이 있다
+    expect(legend.getAllByRole("listitem")).toHaveLength(14);  // 글자 색 9, 채움 색 11, 겹침 6
+    expect(legend.getByText("옅은 바탕 1")).toBeInTheDocument();
+    expect(summary.closest("details")!.querySelectorAll(".swatch").length).toBeGreaterThan(5);
+  });
+
+  it("숨김 안내는 받침에 맞는 조사를 쓴다 (F21)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "Delete" });
+    expect(screen.getAllByRole("status").some((s) => /결론 상자를 숨겼습니다/.test(s.textContent ?? ""))).toBe(true);
+  });
 });

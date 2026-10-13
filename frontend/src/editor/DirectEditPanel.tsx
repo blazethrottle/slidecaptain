@@ -23,6 +23,7 @@ function CommitField({ label, value, min, max, step, onCommit, onPending }: {
   const [text, setText] = useState(String(value));
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [typing, setTyping] = useState(false);  // 반영 전 입력이 있다
   const dirty = useRef(false);
   const latest = useRef({ text, onCommit });
   latest.current = { text, onCommit };
@@ -31,6 +32,7 @@ function CommitField({ label, value, min, max, step, onCommit, onPending }: {
     if (!dirty.current) return;
     dirty.current = false;
     onPending(false);
+    setTyping(false);
     const v = Number(latest.current.text);
     const result = Number.isFinite(latest.current.text.trim() === "" ? NaN : v) ? latest.current.onCommit(v) : "숫자를 입력해 주세요.";
     setError(typeof result === "string" ? result : "");
@@ -44,10 +46,12 @@ function CommitField({ label, value, min, max, step, onCommit, onPending }: {
   return (
     <label>{label}
       <input type="number" inputMode="decimal" aria-label={label} value={text} min={min} max={max} step={step}
-        onChange={(e) => { setText(e.target.value); if (!dirty.current) { dirty.current = true; onPending(true); } }}
+        onChange={(e) => { setText(e.target.value); if (!dirty.current) { dirty.current = true; onPending(true); setTyping(true); } }}
         onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } }} />
       {error && <span role="alert" className="field-error">{error}</span>}
       {notice && <span role="status" className="hint">{notice}</span>}
+      {/* 머리의 저장 상태는 반영된 편집만 말하므로 반영 전 입력은 칸에서 알린다 (D3c-3 리뷰 F22) */}
+      {typing && <span className="hint">Enter를 누르거나 다른 곳을 누르면 반영됩니다.</span>}
     </label>
   );
 }
@@ -218,6 +222,19 @@ export function DirectEditPanel({ projectName, deck, chapterId, plan, pageW, pag
             {(Object.keys(FILL_NAMES) as FillRole[]).map((r) => <option key={r} value={r}>{FILL_NAMES[r]}</option>)}
           </select>
         </label>
+      )}
+      {(spec.kinds.includes("text_color") || spec.kinds.includes("fill")) && preset && (
+        // 고르기 전에 역할마다 지금 프리셋의 색을 볼 수 있게 견본 목록을 둔다 (계획 4.3, D3c-3 리뷰 F18)
+        <details className="swatch-legend">
+          <summary>색 견본 보기</summary>
+          <ul>{[...new Set([
+            ...(spec.kinds.includes("text_color") ? Object.keys(TEXT_COLOR_NAMES) : []),
+            ...(spec.kinds.includes("fill") ? Object.keys(FILL_NAMES) : []),
+          ])].map((role) => (
+            <li key={role}>{swatch(colors[role])}{" "}
+              {TEXT_COLOR_NAMES[role as TextColorRole] ?? FILL_NAMES[role as FillRole]}</li>
+          ))}</ul>
+        </details>
       )}
       {lowContrast && <p role="status">글자와 바탕의 대비가 낮습니다(4.5:1 미만). 읽기 어려울 수 있습니다.</p>}
       {spec.kinds.includes("hide") && (

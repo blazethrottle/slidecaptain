@@ -117,3 +117,16 @@ it("템플릿 전환의 확인 목록은 실제로 있는 수정 종류만 적�
   deck.slides[0] = { ...deck.slides[0], direct_edits: { card0: { dx_pt: 3, dy_pt: 0 }, title: { hidden: true } } };
   expect(applyTemplateSwitch(deck, "c1", "bullet_box").dropped).toContain("직접 수정 2건(위치, 숨김)");
 });
+
+it("같은 키 반복이 렌더 전에 와도 직전 편집에 병합한다 (D3c-3 리뷰 F15의 M8)", async () => {
+  const initial = deckWith(["문구"]);
+  const { result } = renderHook(() => useDeckEditor("p", initial, () => {}, SLOW));
+  await act(async () => {
+    result.current.apply((d) => editElement(d, "c1", "conclusion", { dx_pt: 1, dy_pt: 0 }), { coalesce: "start" });
+    result.current.apply((d) => editElement(d, "c1", "conclusion", { dx_pt: 2, dy_pt: 0 }), { coalesce: "continue" });
+    result.current.apply((d) => editElement(d, "c1", "conclusion", { dx_pt: 3, dy_pt: 0 }), { coalesce: "continue" });
+  });
+  expect(offset(result.current.deck)).toEqual({ dx_pt: 3, dy_pt: 0 });
+  await act(async () => result.current.undo());
+  expect(result.current.deck).toBe(initial);
+});

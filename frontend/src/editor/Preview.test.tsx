@@ -262,3 +262,35 @@ it("직접 수정으로 숨긴 프레임은 그리지 않는다 (D3c-2)", () => 
   expect(screen.queryByText("첫 불릿")).toBeNull();
   expect(screen.getByText("장 제목")).toBeInTheDocument();
 });
+
+it("표 칸은 오른쪽과 아래 선만 그려 안쪽 선이 1pt다 (D3c-3 리뷰 F20)", () => {
+  const table = {
+    col_widths_pt: [200, 330], header: ["구분", "A안"], rows: [["비용", "높음"]], font_pt: 12, header_fill: "F2F2F2",
+    row_heights_pt: [22.8, 22.8], header_lines: [["구분"], ["A안"]], cell_lines: [[["비용"], ["높음"]]], header_fills: [], body_fills: [],
+  };
+  const plan: SlidePlan = { chapter_id: "c3", template: "table", warnings: [],
+    frames: [{ name: "c3:table", x: 50, y: 92, w: 530, h: 200, fill: null, border: null, valign: "top", paras: [], table }] };
+  const { container } = render(<Preview slide={plan} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  const cell = Array.from(container.querySelectorAll<HTMLElement>('[data-frame="c3:table"] div')).find((el) => el.style.width !== "")!;
+  expect(cell.style.borderRight).toBe("1px solid rgb(255, 255, 255)");
+  expect(cell.style.borderBottom).toBe("1px solid rgb(255, 255, 255)");
+  expect(cell.style.borderTop).toBe("");
+  expect(cell.style.borderLeft).toBe("");
+});
+
+it("배지가 있는 카드의 접근 이름은 소제목을 쓰고, 묶음의 나머지 프레임은 버튼이 아니다 (D3c-3 리뷰 F21)", () => {
+  const para = (text: string, font_pt: number) => ({ text, level: 0, font_pt, bold: true, color: "202020",
+    align: "left" as const, bullet: false, lines: [text] });
+  const plan: SlidePlan = { chapter_id: "c1", template: "cards", warnings: [], frames: [
+    { name: "c1:card0", x: 50, y: 92, w: 200, h: 200, fill: null, border: null, valign: "top", table: null,
+      paras: [para("1", 9), para("소제목", 12)] },
+    { name: "c1:chart", x: 300, y: 92, w: 300, h: 150, fill: null, border: null, valign: "top", table: null, paras: [] },
+    { name: "c1:chart_conditions", x: 300, y: 250, w: 300, h: 20, fill: null, border: null, valign: "top", table: null,
+      paras: [para("조건", 9)] },
+  ] };
+  render(<Preview slide={plan} style={style} pageW={960} pageH={540} selected={{ chapterId: "c1", slot: "card0" }}
+    onSelect={() => {}} onCommitText={() => {}} />);
+  expect(screen.getByRole("button", { name: "1번 카드, 소제목" })).toHaveAttribute("aria-current", "true");
+  expect(screen.getAllByRole("button", { name: /^표/ })).toHaveLength(1);
+});

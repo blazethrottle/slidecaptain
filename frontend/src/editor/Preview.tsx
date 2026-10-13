@@ -15,7 +15,9 @@ type Style = RenderPlan["style"];
 // PowerPoint 표시는 회사 PC에서 확인한다 (D3c-3, E6, 계획 리뷰 저장 S26)
 const TABLE_BODY_FILL = "#E9EDF4";
 const TABLE_LINE = "#FFFFFF";
-const DRAG_START_PX = 4;  // Windows의 기본 끌기 시작 거리(SM_CXDRAG)를 CSS px로 쓴다 (계획 4.5)
+// Windows의 기본 끌기 시작 거리(SM_CXDRAG, SM_CYDRAG)를 CSS px로 쓴다. 두 값은 축마다 따로 보는 사각형이다
+// (계획 4.5, D3c-3 리뷰 F19)
+const DRAG_START_PX = 4;
 const ARROW_STEP = { small: 1, large: 10 };  // 화면 시안의 방향키 이동량(pt). PowerPoint의 Shift+방향키와 다르다(가정 8)
 
 // 선택자 안의 따옴표만 막는다. 열쇠와 장 ID는 영문, 숫자, 밑줄이다
@@ -34,11 +36,12 @@ function textEditable(f: Frame): boolean {
 type Drag = {
   key: string; pointerId: number; x0: number; y0: number; scale: number; baseDx: number; baseDy: number;
   started: boolean; token: unknown; target: Element;
+  dx: number; dy: number;  // 지금까지 끈 거리(pt). 놓을 때 상태 갱신 함수 밖에서 읽는다 (D3c-3 리뷰 F16)
 };
 
 export function Preview({
   slide, style, pageW, pageH, editable = true, selected, onSelect, onCommitText,
-  template, keys = {}, edits, mode = false, dragAllowed = false, deckToken, onMove, onHide, onNeedMode, onDragChange,
+  template, keys = {}, edits, mode = false, dragAllowed = false, deckToken, onMove, onHide, onNeedMode, onDragChange, onDragDiscard,
   focusRequest, hiddenCount = 0, onShowHidden,
 }: {
   slide: SlidePlan;
@@ -60,6 +63,7 @@ export function Preview({
   onHide?: (key: string) => void;
   onNeedMode?: () => void;  // 모드 밖에서 Delete나 방향키를 눌렀다
   onDragChange?: (dragging: boolean) => void;
+  onDragDiscard?: () => void;  // 끄는 동안 덱이 바뀌어 놓은 결과를 버렸다
   focusRequest?: { target: string | null; nonce: number };  // 요소 열쇠(그 요소의 첫 프레임) 또는 캔버스
   hiddenCount?: number;
   onShowHidden?: () => void;
@@ -97,23 +101,30 @@ export function Preview({
     if (!d) return;
     dragRef.current = null;  // 먼저 비운다: pointerup 뒤에 오는 lostpointercapture를 무시하기 위해서다 (리뷰 화면 S10)
     try { (d.target as Element & { releasePointerCapture?: (id: number) => void }).releasePointerCapture?.(d.pointerId); } catch { /* 이미 풀림 */ }
-    setDrag((current) => {
-      if (commit && d.started && current && d.token === deckToken) {
-        suppressClick.current = true;
-        onMove?.(d.key, d.baseDx + current.dx, d.baseDy + current.dy, {});
-      }
-      return null;
-    });
-    onDragChange?.(false);
-  }, [deckToken, onMove, onDragChange]);
+    // 반영은 이벤트 처리 안에서 한다. 상태 갱신 함수 안에서 부르면 렌더 중에 편집 화면을 갱신하게 된다 (D3c-3 리뷰 F16)
+    if (d.started) suppressClick.current = true;  // 놓기나 취소 뒤 따라오는 클릭이 선택을 바꾸지 않게 (F17)
+    if (commit && d.started) {
+      if (d.token === deckToken) onMove?.(d.key, d.baseDx + d.dx, d.baseDy + d.dy, {});
+      else onDragDiscard?.();
+    }
+    setDrag(null);
+    dragChange.current?.(false);
+  }, [deckToken, onMove, onDragDiscard]);
 
   // 모드가 닫히거나 끌기가 막히면(읽기 전용, 충돌, 서버 내용 다시 읽기, 목록 편집 직후의 낡은 계획) 끌기를 취소한다
   useEffect(() => { if (!mode || !dragAllowed) endDrag(false); }, [mode, dragAllowed, endDrag]);
-  useEffect(() => () => { if (dragRef.current) onDragChange?.(false); }, [onDragChange]);
+  // 끌기 여부 알림은 최신 콜백으로 한다. 정리는 마운트 해제 때만 한다: 부모가 렌더마다 새 콜백을 넘기므로 콜백에 걸면
+  // 끄는 중 부모가 다시 그려질 때마다 "끌기 끝"을 알려 끄는 중 되돌리기가 통했다 (D3c-3 리뷰 F23)
+  const dragChange = useRef(onDragChange);
+  dragChange.current = onDragChange;
+  useEffect(() => () => { if (dragRef.current) dragChange.current?.(false); }, []);
   useEffect(() => {
     if (!drag) return;
     const cancel = () => endDrag(false);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); endDrag(false); } };
+    // 끌기를 취소한 Escape는 프레임의 선택 해제로 넘기지 않는다. 한 번에 한 단계다 (D3c-3 리뷰 F17)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation(); endDrag(false); }
+    };
     window.addEventListener("blur", cancel);
     window.addEventListener("keydown", onKey, true);
     return () => { window.removeEventListener("blur", cancel); window.removeEventListener("keydown", onKey, true); };
@@ -130,7 +141,7 @@ export function Preview({
     const target = e.currentTarget;
     try { (target as Element & { setPointerCapture?: (id: number) => void }).setPointerCapture?.(e.pointerId); } catch { /* jsdom */ }
     dragRef.current = { key, pointerId: e.pointerId, x0: e.clientX, y0: e.clientY, scale: liveScale,
-      baseDx: edit?.dx_pt ?? 0, baseDy: edit?.dy_pt ?? 0, started: false, token: deckToken, target };
+      baseDx: edit?.dx_pt ?? 0, baseDy: edit?.dy_pt ?? 0, started: false, token: deckToken, target, dx: 0, dy: 0 };
   };
   const moveDrag = (e: React.PointerEvent) => {
     const d = dragRef.current;
@@ -138,11 +149,13 @@ export function Preview({
     const px = e.clientX - d.x0;
     const py = e.clientY - d.y0;
     if (!d.started) {
-      if (Math.hypot(px, py) <= DRAG_START_PX) return;
+      if (Math.abs(px) <= DRAG_START_PX && Math.abs(py) <= DRAG_START_PX) return;
       d.started = true;
-      onDragChange?.(true);
+      dragChange.current?.(true);
     }
-    setDrag({ key: d.key, dx: px / d.scale, dy: py / d.scale });
+    d.dx = px / d.scale;
+    d.dy = py / d.scale;
+    setDrag({ key: d.key, dx: d.dx, dy: d.dy });
   };
   const dragHandlers = {
     onPointerMove: moveDrag,
@@ -268,7 +281,9 @@ export function Preview({
             // 칸 채움은 라이터와 같은 규칙이다: 칸별 목록이 있으면 그것을, 없으면 머리행만 단일 색, 본문은 표 스타일의 채움
             background: cellFill(t, rowIdx, col),
             padding: `${style.table_cell_pad_y_pt}px ${style.table_cell_pad_x_pt}px`,
-            border: `1px solid ${TABLE_LINE}`, fontSize: t.font_pt,
+            // 칸은 오른쪽과 아래 선만 그린다. 네 변을 다 그리면 이웃 칸의 선이 맞닿아 안쪽 선이 2pt가 된다. 표 스타일은
+            // 안쪽과 바깥 선이 모두 1pt다 (D3c-3 리뷰 F20)
+            borderRight: `1px solid ${TABLE_LINE}`, borderBottom: `1px solid ${TABLE_LINE}`, fontSize: t.font_pt,
             lineHeight: String(style.line_spacing), overflow: "hidden",
           }}
             onClick={(e) => {
@@ -283,7 +298,7 @@ export function Preview({
       </div>
     );
     return (
-      <div>
+      <div style={{ borderTop: `1px solid ${TABLE_LINE}`, borderLeft: `1px solid ${TABLE_LINE}` }}>
         {renderRow(t.header_lines, t.header, -1, true)}
         {t.cell_lines.map((rowLines, r) => renderRow(rowLines, t.rows[r], r, false))}
       </div>
@@ -364,14 +379,20 @@ export function Preview({
           // 요소 하나에 Tab 정지 하나다. 표 묶음은 첫 프레임만, 쪽 번호는 정지에서 뺀다 (재리뷰 RR12)
           const tabStop = !isPageNumber && !tabbedKeys.has(ref.slot);
           if (tabStop) tabbedKeys.add(ref.slot);
-          const firstLine = f.table ? f.table.header.join(", ") : (f.paras[0]?.lines[0] ?? f.paras[0]?.text ?? "");
+          // 배지가 있는 카드는 첫 문단이 배지 숫자다. 배지는 소제목보다 작은 글자이므로 그때는 소제목을 쓴다 (D3c-3 리뷰 F21)
+          const nameSource = /^card\d+$/.test(ref.slot) && f.paras.length > 1 && f.paras[0].font_pt < f.paras[1].font_pt
+            ? f.paras[1] : f.paras[0];
+          const firstLine = f.table ? f.table.header.join(", ") : (nameSource?.lines[0] ?? nameSource?.text ?? "");
+          // 접근성 트리에는 요소 하나에 버튼 하나다. 표 묶음의 나머지 프레임(차트 조건 문구)은 이름을 달지 않는다
+          const labelled = !isPageNumber && tabStop;
           const bodyDrag = mode && spec?.drag === "body" && spec.kinds.includes("move");
           return (
             <div key={f.name} data-frame={f.name} data-key={ref.slot}
-              role={isPageNumber ? undefined : "button"}
+              role={labelled ? "button" : undefined}
               tabIndex={isPageNumber ? undefined : tabStop ? 0 : -1}
-              aria-pressed={isPageNumber ? undefined : isSelected}
-              aria-label={isPageNumber ? undefined : `${roleName(ref.slot, template)}${firstLine ? `, ${firstLine}` : ""}`}
+              // 고름은 눌림 상태가 아니라 지금 항목이다 (D3c-3 리뷰 F21)
+              aria-current={labelled && isSelected ? "true" : undefined}
+              aria-label={labelled ? `${roleName(ref.slot, template)}${firstLine ? `, ${firstLine}` : ""}` : undefined}
               className={[
                 "frame",
                 warnedKeys.has(ref.slot) ? "warned" : "",

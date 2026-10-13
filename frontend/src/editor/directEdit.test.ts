@@ -6,7 +6,7 @@ import type { Deck, SlidePlan } from "../api/client";
 import type { ElementEdit } from "./directEdit";
 import {
   clampOffset, contrastRatio, displayBoxes, editElement, frameKeys, normalizeDeckEdits, normalizeEdits, roleName,
-  shiftListKeys, warningKey,
+  shiftListKeys, warningKey, withObject,
 } from "./directEdit";
 
 type Slide = Deck["slides"][number];
@@ -101,4 +101,17 @@ it("역할 이름과 대비", () => {
   expect(roleName("subtitle", "cover")).toBe("표지 부제");
   expect(contrastRatio("000000", "ffffff")).toBeCloseTo(21);
   expect(contrastRatio("777777", "ffffff")).toBeLessThan(4.5);
+});
+
+it("목적격 조사를 끝 받침으로 고른다 (D3c-3 리뷰 F21)", () => {
+  expect(withObject("결론 상자")).toBe("결론 상자를");
+  expect(withObject("장 제목")).toBe("장 제목을");
+  expect(withObject("1단계 본문")).toBe("1단계 본문을");
+  expect(withObject("card9")).toBe("card9을(를)");
+});
+
+it("계산된 표시는 프레임 하나도 페이지 안으로 자른다 (D3c-3 리뷰 F15의 M7)", () => {
+  const one = { chapter_id: "c1", template: "bullet_box", warnings: [], frames: [
+    { name: "c1:title", x: 50, y: 36, w: 860, h: 40, base_x: 50, base_y: 36, paras: [] }] } as unknown as SlidePlan;
+  expect(displayBoxes(one, { title: { dx_pt: 5000, dy_pt: -5000 } }, 960, 540).get("c1:title")).toMatchObject({ x: 100, y: 0 });
 });
