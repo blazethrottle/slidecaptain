@@ -49,8 +49,9 @@ STATES = tuple(TRANSITIONS)
 PARENT_FINISH = {state: frozenset({"succeeded", "failed", "cancelled"})
                  for state in ("running", "validating", "cancel_requested")}
 UNFINISHED = ("queued", "running", "validating", "cancel_requested")
-# 후보 처분의 전이표 (계획서 5.8). 버린 후보와 반영한 후보는 되살리지 않는다. delivered는 래퍼가 응답으로
-# 이미 화면에 돌려준 결과다. 화면은 delivered를 "이전에 만든 결과"로 다시 보이지 않는다 (D2b-2 리뷰 R8)
+# 후보 처분의 전이표 (계획서 5.8). 버린 후보와 반영한 후보는 되살리지 않는다. delivered는 동기 생성 래퍼가 응답으로
+# 이미 화면에 돌려준 결과다. 화면은 delivered를 "이전에 만든 결과"로 다시 보이지 않는다 (D2b-2 리뷰 R8). D3c 빌드는 래퍼를
+# 지워(D3c-7) delivered를 쓰지 않는다. 이전 빌드가 쓴 행을 읽으려고 값과 전이를 남긴다
 CANDIDATE_TRANSITIONS: dict[str, frozenset[str]] = {
     "none": frozenset({"held", "stale"}),
     "held": frozenset({"delivered", "applied", "dismissed", "stale"}),

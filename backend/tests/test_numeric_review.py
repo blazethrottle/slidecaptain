@@ -12,6 +12,7 @@ from slidecaptain.pipeline.story import parse_story_structure, story_fingerprint
 from slidecaptain.server.app import create_app
 from test_derived_values import BRIEF, sample
 from test_metric_comparison import META
+from tests.job_runs import post_generation
 
 FIXTURE = Path(__file__).parent / "fixtures" / "q2c-derived-deck.json"
 EXPECTED = "A팀 순매출: B팀 대비 차이 +200원 (2026-01-01~2026-01-31)"
@@ -217,7 +218,7 @@ def test_generation_and_condense_use_canonical_expressions_without_new_calls(sto
     store.save_deck("synthetic", deck)
     saved = store.load_deck("synthetic").model_dump_json()
     suffix, body = ("", {}) if operation == "generate" else ("/condense", {"slots": slots})
-    response = client.post(f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
+    response = post_generation(client, f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert len(provider.calls) == 1

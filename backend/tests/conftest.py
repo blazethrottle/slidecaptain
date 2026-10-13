@@ -66,3 +66,10 @@ def isolated_font_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "isolated_home")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated_home" / "AppData" / "Local"))
     monkeypatch.setattr(installer, "_system_font_dirs", lambda: [])
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # 래퍼 이전 대응표의 범주 기록 (D3c-7). D3C7_MIGRATION_OUT이 없으면 아무것도 쓰지 않는다
+    from tests.job_runs import write_records
+
+    write_records()

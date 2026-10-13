@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+import time
+import uuid
 
 from fastapi.testclient import TestClient
 from pptx import Presentation
@@ -32,6 +34,9 @@ from slidecaptain.storage.file_store import FileProjectStore
 
 PROJECT = "quality-pilot"
 BODY = "pilot-action"
+# 생성 작업 하나를 기다리는 상한. 화면이 생성 중에 보이는 "최대 5분" 안내와 같다(editor/GeneratePanel.tsx)
+JOB_WAIT_SECONDS = 300
+_TERMINAL = {"succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown"}
 
 
 def _write(path, data):
@@ -204,9 +209,22 @@ def _workflow(client, output, data, report):
         _expect(response.status_code == status, f"{method} {suffix}: HTTP {response.status_code}")
         return response
 
+    def job(kind, params, headers=None):
+        """작업 API로 생성을 등록하고 끝날 때까지 기다린다. 동기 생성 래퍼는 D3c-7에서 지웠다. 형식 오류로 실패한 작업도
+        결과(원문과 사용량)를 남기므로 결과를 돌려주고, 결과 없이 끝나면 멈춘다."""
+        registered = request("POST", "/jobs", status=202, headers=headers or {}, json={
+            "request_id": f"pilot-{uuid.uuid4().hex}", "kind": kind, "params": params})
+        job_id = registered.json()["id"]
+        deadline = time.monotonic() + JOB_WAIT_SECONDS
+        while (view := request("GET", f"/jobs/{job_id}").json())["state"] not in _TERMINAL:
+            _expect(time.monotonic() < deadline, f"{kind} 작업이 {JOB_WAIT_SECONDS}초 안에 끝나지 않았습니다.")
+            time.sleep(0.05)
+        _expect(view["result"] is not None, f"{kind} 작업이 결과 없이 끝났습니다({view['state']}).")
+        return view
+
     report["stage"] = "chapter"
     base = request("GET", "/deck")
-    generated = request("POST", f"/generate/chapter/{BODY}", json={"instructions": data["chapter_instructions"]}).json()
+    generated = job("chapter", {"chapter_id": BODY, "instructions": data["chapter_instructions"]})["result"]
     _write(output / "chapter-result.json", generated)
     _expect(generated["status"] == "ok", "장 생성 응답을 적용하지 못했습니다.")
     deck = base.json()
@@ -221,11 +239,13 @@ def _workflow(client, output, data, report):
     snapshots = request("GET", "/snapshots").json()
 
     report["stage"] = "rewrite_preview"
-    candidate = request("POST", "/story-plan/rewrite", json={
-        "brief": data["rewrite_brief"], "instructions": data["rewrite_instructions"],
-    }, headers={"If-Match": before.headers["etag"]}).json()
+    rewrite = job("rewrite", {"brief": data["rewrite_brief"], "instructions": data["rewrite_instructions"]},
+                  headers={"If-Match": before.headers["etag"]})
+    candidate = rewrite["result"]
     _write(output / "rewrite-result.json", candidate)
     _expect(candidate["status"] == "ok", "재작성 후보를 적용하지 못했습니다.")
+    # 래퍼는 만드는 동안 저장본이나 자료가 바뀌면 412나 409로 멈췄다. 작업 API에서는 후보가 낡음으로 남는다
+    _expect(rewrite["candidate_status"] == "held", "재작성 후보가 만드는 동안 입력이 바뀌어 낡았습니다.")
     unchanged = request("GET", "/deck")
     checks = report["checks"]
     checks["preview_did_not_save"] = (

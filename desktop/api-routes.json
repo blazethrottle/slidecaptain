@@ -83,19 +83,7 @@
     ]
   },
   {
-    "path": "/api/projects/{name}/story-plan/rewrite",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
     "path": "/api/projects/{name}/story-plan/rewrite/apply",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
-    "path": "/api/projects/{name}/story-plan/repair",
     "methods": [
       "POST"
     ]
@@ -250,18 +238,6 @@
     ]
   },
   {
-    "path": "/api/projects/{name}/generate/diagram",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
-    "path": "/api/projects/{name}/generate/structure",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
     "path": "/api/projects/{name}/jobs",
     "methods": [
       "POST",
@@ -302,18 +278,6 @@
     "path": "/api/jobs/active",
     "methods": [
       "GET"
-    ]
-  },
-  {
-    "path": "/api/projects/{name}/generate/chapter/{chapter_id}",
-    "methods": [
-      "POST"
-    ]
-  },
-  {
-    "path": "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
-    "methods": [
-      "POST"
     ]
   }
 ]

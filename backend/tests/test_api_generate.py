@@ -6,6 +6,7 @@ from slidecaptain.models.deck import DeckMeta
 from slidecaptain.pipeline.prompts import build_structure_prompt
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 # store 픽스처는 backend/tests/conftest.py 참조
 
@@ -56,7 +57,7 @@ def test_generate_structure_returns_draft_without_saving(store):
     client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 5})
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
@@ -68,7 +69,7 @@ def test_generate_structure_returns_draft_without_saving(store):
 def test_generate_structure_without_sources_422(store):
     client = _client(store, [])
     client.post("/api/projects", json={"name": "p1"})
-    r = client.post("/api/projects/p1/generate/structure", json={})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={})
     assert r.status_code == 422
     assert "자료" in r.json()["detail"]
 
@@ -76,7 +77,7 @@ def test_generate_structure_without_sources_422(store):
 def test_generate_chapter_ok(store):
     client = _client(store, [ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r")])
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
@@ -89,14 +90,14 @@ def test_generate_chapter_ok(store):
 def test_generate_chapter_unknown_chapter_404(store):
     client = _client(store, [])
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/없는장", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/없는장", json={})
     assert r.status_code == 404
 
 
 def test_provider_failure_returns_503(store):
     client = _client(store, [ProviderCallFailed("한도를 소진했습니다")])
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
     assert r.status_code == 503
     assert "한도" in r.json()["detail"]
 
@@ -104,7 +105,7 @@ def test_provider_failure_returns_503(store):
 def test_generate_without_provider_returns_503(store):
     client = TestClient(create_app(store), headers=_APP_HEADERS)  # provider 없음: 기존 시그니처 호환
     client.post("/api/projects", json={"name": "p1"})
-    r = client.post("/api/projects/p1/generate/structure", json={})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={})
     assert r.status_code == 503
 
 
@@ -114,7 +115,7 @@ def test_condense_chapter_endpoint(store):
     body = {"slots": {"template": "bullet_box",
                       "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
                       "conclusion": "성장 지속", "footnote": ""}}
-    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1/condense", json=body)
     assert r.status_code == 200
     assert r.json()["condensed"] is True
 
@@ -123,14 +124,14 @@ def test_condense_chapter_template_mismatch_422(store):
     client = _client(store, [])
     _project_with_structure(client)
     body = {"slots": {"template": "table", "columns": ["a"], "rows": [["b"]]}}
-    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1/condense", json=body)
     assert r.status_code == 422
 
 
 def test_target_chapters_zero_422(store):
     client = _client(store, [])
     client.post("/api/projects", json={"name": "p1"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 0})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 0})
     assert r.status_code == 422
     assert "target_chapters" in r.json()["detail"]  # 자료 없음 422가 아니라 ge 검증 422임을 판별
 
@@ -139,7 +140,7 @@ def test_sources_over_total_limit_422(store):
     client = _client(store, [])
     client.post("/api/projects", json={"name": "p1"})
     client.put("/api/projects/p1/sources/큰자료.md", json={"text": "가" * 100_001})
-    r = client.post("/api/projects/p1/generate/structure", json={})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={})
     assert r.status_code == 422
     assert "발췌" in r.json()["detail"]
 
@@ -155,7 +156,7 @@ def test_generate_structure_without_ai_consent_header_428(store):
     )
     client.post("/api/projects", json={"name": "p1"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={})
     assert r.status_code == 428
     assert "AI 전송 확인" in r.json()["detail"]
 
@@ -165,7 +166,7 @@ def test_generate_chapter_without_ai_consent_header_428(store):
         create_app(store, provider=StubProvider([])), headers={"X-Requested-With": "SlideCaptain"}
     )
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
     assert r.status_code == 428
 
 
@@ -177,7 +178,7 @@ def test_condense_chapter_without_ai_consent_header_428(store):
     body = {"slots": {"template": "bullet_box",
                       "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
                       "conclusion": "성장 지속", "footnote": ""}}
-    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1/condense", json=body)
     assert r.status_code == 428
 
 
@@ -186,7 +187,7 @@ def test_generate_structure_with_ai_consent_header_passes(store):
     client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 5})
     assert r.status_code == 200
 
 
@@ -194,7 +195,7 @@ def test_generate_without_any_marker_headers_is_403_not_428(store):
     # 표식 헤더(X-Requested-With)까지 없으면 A2 보호 미들웨어의 403이 428보다 먼저다 (계획서 B3)
     client = TestClient(create_app(store, provider=StubProvider([])))
     client.post("/api/projects", json={"name": "p1"})
-    r = client.post("/api/projects/p1/generate/structure", json={})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={})
     assert r.status_code == 403
 
 
@@ -209,7 +210,7 @@ def test_generate_structure_writes_usage_record(store):
     )
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 5})
     assert r.status_code == 200
     assert r.json()["usage"]["calls"] == 1
 
@@ -228,7 +229,7 @@ def test_generate_structure_without_model_writes_none_requested_model(store):
     client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 5})
     record = json.loads(
         (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8").splitlines()[0]
     )
@@ -241,7 +242,7 @@ def test_generate_chapter_with_format_retry_writes_usage_record(store):
         ProviderResponse(structured=SLOTS_PAYLOAD, raw_text="r"),
     ])
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
     assert r.status_code == 200
     assert r.json()["format_retried"] is True
 
@@ -261,7 +262,7 @@ def test_condense_chapter_writes_usage_record(store):
     body = {"slots": {"template": "bullet_box",
                       "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
                       "conclusion": "성장 지속", "footnote": ""}}
-    r = client.post("/api/projects/p1/generate/chapter/c1/condense", json=body)
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1/condense", json=body)
     assert r.status_code == 200
 
     record = json.loads(
@@ -275,7 +276,7 @@ def test_condense_chapter_writes_usage_record(store):
 def test_provider_failure_writes_failed_usage_record(store):
     client = _client(store, [ProviderCallFailed("한도를 소진했습니다")])
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
     assert r.status_code == 503  # 종전과 동일한 상태 코드 (기록 추가가 오류 처리를 바꾸지 않는다)
 
     record = json.loads(
@@ -294,7 +295,7 @@ def test_generate_ok_even_if_usage_log_write_fails(store, monkeypatch):
     client = _client(store, [ProviderResponse(structured=STRUCTURE_PAYLOAD, raw_text="r")])
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 5})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 5})
     assert r.status_code == 200  # 기록 쓰기 실패는 생성 결과를 막지 않는다 (가정 4)
 
 
@@ -320,9 +321,9 @@ def test_usage_log_has_no_content_leak(store):
     ]}
     assert client.put("/api/projects/p1/deck", json=deck).status_code == 200
 
-    client.post("/api/projects/p1/generate/structure", json={"instructions": "지시문유출금지그자체"})
-    client.post("/api/projects/p1/generate/chapter/c1", json={})
-    client.post("/api/projects/p1/generate/chapter/c1", json={})  # 실패 호출
+    post_generation(client, "/api/projects/p1/generate/structure", json={"instructions": "지시문유출금지그자체"})
+    post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})
+    post_generation(client, "/api/projects/p1/generate/chapter/c1", json={})  # 실패 호출
 
     content = (store.root / "p1" / "ai-usage.jsonl").read_text(encoding="utf-8")
     assert content.count("\n") == 3  # 세 호출 각각 1줄

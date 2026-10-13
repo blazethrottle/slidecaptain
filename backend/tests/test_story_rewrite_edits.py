@@ -15,6 +15,7 @@ from slidecaptain.pipeline.rewrite import (
 )
 from slidecaptain.pipeline.story import require_current_story, story_fingerprint
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 @pytest.fixture
@@ -216,7 +217,7 @@ def test_api_retries_invalid_edits_then_applies_without_saving_preview(edit_case
     with TestClient(create_app(store, provider=provider), headers={
         "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "If-Match": f'"{etag}"',
     }) as client:
-        response = client.post("/api/projects/rewrite-edits/story-plan/rewrite", json={"brief": brief.model_dump(), "instructions": "내용 보존"})
+        response = post_generation(client, "/api/projects/rewrite-edits/story-plan/rewrite", json={"brief": brief.model_dump(), "instructions": "내용 보존"})
         assert response.status_code == 200, response.text
         result = response.json()
         assert result["status"] == "ok", result

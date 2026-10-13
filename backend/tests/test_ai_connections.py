@@ -11,6 +11,7 @@ from slidecaptain.pipeline.connections import (
 )
 from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 class FakeConnection:
@@ -122,16 +123,16 @@ def test_api_selection_consent_and_both_routes(store, manager):
         initial = client.get("/api/status").json()
         assert initial["provider"] == "claude"
         route = "/api/projects/p/generate/structure"
-        assert client.post(route, json={}).status_code == 409
-        result = client.post(route, json={}, headers={"X-AI-Selection": initial["selection_id"]})
+        assert post_generation(client, route, json={}).status_code == 409
+        result = post_generation(client, route, json={}, headers={"X-AI-Selection": initial["selection_id"]})
         assert result.status_code == 200
         result = client.put("/api/ai/selection", json={"provider": "chatgpt", "model": "gpt-test"})
         assert result.status_code == 200
-        assert client.post(route, json={}, headers={"X-AI-Selection": initial["selection_id"]}).status_code == 409
+        assert post_generation(client, route, json={}, headers={"X-AI-Selection": initial["selection_id"]}).status_code == 409
         selected = client.get("/api/status").json()
         assert selected["provider"] == "chatgpt"
         assert selected["last_generation_at"] is None
-        assert client.post(route, json={}, headers={"X-AI-Selection": selected["selection_id"]}).status_code == 200
+        assert post_generation(client, route, json={}, headers={"X-AI-Selection": selected["selection_id"]}).status_code == 200
         assert len(manager.connections["claude"].calls) == len(manager.connections["chatgpt"].calls) == 1
 
 
@@ -147,96 +148,6 @@ def test_connection_mutations_protected_and_login_is_not_generation(store, manag
         assert client.get("/api/ai/settings").status_code == 200
         assert client.get(path).headers["cache-control"] == "no-store"
         assert not any(x.calls for x in manager.connections.values())
-
-
-@pytest.mark.parametrize("defer_release", [False, True])
-@pytest.mark.parametrize("login_failed", [False, True])
-def test_request_cancelled_during_login_check_releases_generation_lease(store, manager, monkeypatch, defer_release, login_failed):
-    import anyio
-    import httpx
-    from slidecaptain.pipeline.provider import ProviderNotAvailable
-    to_thread = asyncio.to_thread
-
-    async def scheduled_to_thread(function, *args, **kwargs):
-        if defer_release and function.__name__ == "__exit__":
-            # A Windows worker may not start before middleware cancels again.
-            # Exercise that scheduling gap on every platform.
-            await anyio.lowlevel.checkpoint()
-        return await to_thread(function, *args, **kwargs)
-
-    monkeypatch.setattr(asyncio, "to_thread", scheduled_to_thread)
-    store.create_project("p", "report")
-    store.write_source("p", "source.md", "자료")
-    entered, resume = threading.Event(), threading.Event()
-    def slow_status():
-        entered.set()
-        assert resume.wait(3)
-        if login_failed:
-            raise ProviderNotAvailable("Login check failed")
-        return LoginStatus(logged_in=True)
-    manager.connections["claude"].status = slow_status
-
-    async def scenario():
-        app = create_app(store, ai_connections=manager)
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
-            task = asyncio.create_task(client.post("/api/projects/p/generate/structure", json={}, headers={
-                "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "X-AI-Selection": manager.selection_id,
-            }))
-            assert await asyncio.to_thread(entered.wait, 2)
-            task.cancel()
-            if defer_release:
-                # Propagate middleware cancellation while the worker is still
-                # checking login, rather than relying on OS thread scheduling.
-                for _ in range(5):
-                    await asyncio.sleep(0)
-            resume.set()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        # A leaked lease would reject this change forever.
-        manager.select(AISelection(provider="chatgpt", model="gpt-test"))
-        assert not manager.connections["claude"].calls
-    asyncio.run(scenario())
-
-
-def test_request_cancelled_during_generation_releases_lease(store, manager, monkeypatch):
-    import anyio
-    import httpx
-    store.create_project("p", "report")
-    store.write_source("p", "source.md", "자료")
-    to_thread = asyncio.to_thread
-
-    async def scheduled_to_thread(function, *args, **kwargs):
-        if function.__name__ == "__exit__":
-            await anyio.lowlevel.checkpoint()
-        return await to_thread(function, *args, **kwargs)
-
-    monkeypatch.setattr(asyncio, "to_thread", scheduled_to_thread)
-
-    async def scenario():
-        # D2b-2: 제공자는 작업 루프 스레드에서 돈다. 시험 루프의 asyncio.Event는 다른 스레드에서
-        # set()하면 시험 루프를 깨우지 못하므로 threading.Event로 신호한다 (바뀐 실행 구조에 맞춘 수정)
-        entered = threading.Event()
-
-        class SlowProvider:
-            async def complete(self, prompt, schema):
-                entered.set()
-                await asyncio.Event().wait()
-
-        monkeypatch.setattr(manager.connections["claude"], "provider", lambda _: SlowProvider())
-        app = create_app(store, ai_connections=manager)
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
-            task = asyncio.create_task(client.post("/api/projects/p/generate/structure", json={}, headers={
-                "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "X-AI-Selection": manager.selection_id,
-            }))
-            assert await asyncio.to_thread(entered.wait, 2)
-            with pytest.raises(ConnectionConflict):
-                manager.select(AISelection(provider="chatgpt", model="gpt-test"))
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-        manager.select(AISelection(provider="chatgpt", model="gpt-test"))
-
-    asyncio.run(scenario())
 
 
 def test_claude_login_uses_official_cli_and_requires_verified_completion(tmp_path, monkeypatch):

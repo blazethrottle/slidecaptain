@@ -30,7 +30,7 @@ export async function startJob(name: string, kind: JobKind, params: unknown, req
   return api.startJob(name, { request_id: requestId, kind, params }, headers, expectedEtag);
 }
 
-// 종결된 작업을 종전 동기 라우트의 응답처럼 바꾼다. 서버 래퍼(_run_wrapped, http_error_from)와 같은 규칙이다:
+// 종결된 작업을 종전 동기 라우트의 응답처럼 바꾼다. 서버의 동기 생성 래퍼(D3c-7에서 지웠다)가 쓰던 규칙을 이어받는다:
 // 결과가 있으면 돌려주고(형식 오류 결과 포함), 취소는 409, 중단과 완료 여부 불명은 503, 나머지는 기록된 오류다
 export function jobResult<T>(view: JobView): T {
   if (view.state === "cancelled") throw new JobCancelled(view);

@@ -239,23 +239,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/story-plan/rewrite": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Preview Story Rewrite */
-        post: operations["preview_story_rewrite_api_projects__name__story_plan_rewrite_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{name}/story-plan/rewrite/apply": {
         parameters: {
             query?: never;
@@ -267,23 +250,6 @@ export interface paths {
         put?: never;
         /** Apply Story Rewrite */
         post: operations["apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/story-plan/repair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Preview Story Repair */
-        post: operations["preview_story_repair_api_projects__name__story_plan_repair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -721,40 +687,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/generate/diagram": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Generate Diagram */
-        post: operations["generate_diagram_api_projects__name__generate_diagram_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/generate/structure": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Generate Structure */
-        post: operations["generate_structure_api_projects__name__generate_structure_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{name}/jobs": {
         parameters: {
             query?: never;
@@ -875,40 +807,6 @@ export interface paths {
         get: operations["get_active_job_api_jobs_active_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/generate/chapter/{chapter_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Generate Chapter */
-        post: operations["generate_chapter_api_projects__name__generate_chapter__chapter_id__post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/generate/chapter/{chapter_id}/condense": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Condense Chapter */
-        post: operations["condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1650,16 +1548,6 @@ export interface components {
             message: string;
             /** Evidence Id */
             evidence_id?: string | null;
-        };
-        /** CondenseChapterRequest */
-        CondenseChapterRequest: {
-            /** Slots */
-            slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"] | components["schemas"]["DiagramSlots"];
-            /**
-             * Instructions
-             * @default
-             */
-            instructions: string;
         };
         /** CondenseJobParams */
         CondenseJobParams: {
@@ -2812,14 +2700,6 @@ export interface components {
             /** Hidden */
             hidden?: boolean;
         };
-        /** GenerateChapterRequest */
-        GenerateChapterRequest: {
-            /**
-             * Instructions
-             * @default
-             */
-            instructions: string;
-        };
         /** GenerateDiagramRequest */
         GenerateDiagramRequest: {
             /**
@@ -2844,17 +2724,6 @@ export interface components {
              * @default
              */
             instructions: string;
-        };
-        /** GenerateStructureRequest */
-        GenerateStructureRequest: {
-            /** Target Chapters */
-            target_chapters?: number | null;
-            /**
-             * Instructions
-             * @default
-             */
-            instructions: string;
-            brief?: components["schemas"]["ReportBrief"] | null;
         };
         /** GenerationActiveBody */
         GenerationActiveBody: {
@@ -3814,15 +3683,6 @@ export interface components {
             source_plan_fingerprint: string;
             /** Preserved Chapter Ids */
             preserved_chapter_ids: string[];
-        };
-        /** RewriteStoryRequest */
-        RewriteStoryRequest: {
-            brief: components["schemas"]["ReportBrief"];
-            /**
-             * Instructions
-             * @default
-             */
-            instructions: string;
         };
         /**
          * SaveDraftRequest
@@ -5223,54 +5083,6 @@ export interface operations {
             };
         };
     };
-    preview_story_rewrite_api_projects__name__story_plan_rewrite_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "if-match"?: string | null;
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RewriteStoryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoryRewriteResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post: {
         parameters: {
             query?: never;
@@ -5295,54 +5107,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deck"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_story_repair_api_projects__name__story_plan_repair_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "if-match"?: string | null;
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StoryRepairRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoryRepairResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
                 };
             };
             /** @description Validation Error */
@@ -6289,101 +6053,6 @@ export interface operations {
             };
         };
     };
-    generate_diagram_api_projects__name__generate_diagram_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "if-match"?: string | null;
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerateDiagramRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DiagramGenerationResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    generate_structure_api_projects__name__generate_structure_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerateStructureRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StructureResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_jobs_api_projects__name__jobs_get: {
         parameters: {
             query?: never;
@@ -6653,102 +6322,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActiveJobStatus"];
-                };
-            };
-        };
-    };
-    generate_chapter_api_projects__name__generate_chapter__chapter_id__post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-                chapter_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerateChapterRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChapterResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-                chapter_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CondenseChapterRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChapterResult"];
-                };
-            };
-            /** @description Conflict */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GenerationActiveBody"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

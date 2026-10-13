@@ -30,6 +30,7 @@ from test_jobs_api import HEADERS, GateProvider, _project, _register, _wait, man
 from test_jobs_candidates import SLOTS, _two_chapters
 from test_jobs_candidates import GateProvider as ChapterGate
 from test_jobs_candidates import _wait as _wait_chapter
+from tests.job_runs import post_generation
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -321,7 +322,7 @@ def test_structure_registration_rejects_a_brief_that_differs_from_the_report_inf
     brief = {"decision_question": "확대할 것인가?", "audience": "", "report_type": "weekly"}
     with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
         response = _register(client, brief=brief)
-        sync = client.post("/api/projects/p1/generate/structure", json={"brief": brief})
+        sync = post_generation(client, "/api/projects/p1/generate/structure", json={"brief": brief})
     # 다른 탭이 보고 정보를 바꾼 경우가 대부분이라, 화면이 다시 읽기로 안내하도록 코드를 싣는다 (D3b-2 리뷰 R1)
     for body in (response, sync):
         assert body.status_code == 422 and body.json()["code"] == "brief_mismatch"

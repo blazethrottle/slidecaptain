@@ -18,6 +18,7 @@ from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, Provid
 from slidecaptain.pipeline.rewrite import sources_fingerprint
 from slidecaptain.pipeline.story import story_fingerprint
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 ROUTE = "/api/projects/diagram/generate/diagram"
@@ -109,7 +110,7 @@ def test_preview_returns_server_owned_spec_without_saving_or_sending_other_conte
     provider = StubProvider(payload)
     etag = store.deck_etag("diagram")
     client = app_client(store, provider)
-    response = client.post(ROUTE, json=REQUEST)
+    response = post_generation(client, ROUTE, json=REQUEST)
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["status"] == "ok"
@@ -155,7 +156,7 @@ def test_preview_returns_server_owned_spec_without_saving_or_sending_other_conte
 def test_bad_request_is_rejected_before_provider(diagram_input, store, field, value):
     deck, _, payload = diagram_input
     provider = StubProvider(payload)
-    response = app_client(store, provider).post(ROUTE, json={**REQUEST, field: value})
+    response = post_generation(app_client(store, provider), ROUTE, json={**REQUEST, field: value})
     assert response.status_code == 422, response.text
     assert provider.calls == []
     assert usage_records(store) == []
@@ -187,7 +188,7 @@ def test_plan_and_actual_source_must_be_current_before_provider(diagram_input, s
         refresh_plan(deck, sources)  # A freshly forged fingerprint cannot approve stale evidence.
     store.save_deck("diagram", deck, snapshot=False)
     provider = StubProvider(payload)
-    response = app_client(store, provider).post(ROUTE, json=REQUEST)
+    response = post_generation(app_client(store, provider), ROUTE, json=REQUEST)
     assert response.status_code == status, response.text
     assert provider.calls == []
     assert usage_records(store) == []
@@ -200,12 +201,12 @@ def test_required_gates_precede_generation(diagram_input, store, header, status)
     provider = StubProvider(diagram_input[2])
     client = app_client(store, provider)
     del client.headers[header]
-    assert client.post(ROUTE, json=REQUEST).status_code == status
+    assert post_generation(client, ROUTE, json=REQUEST).status_code == status
     assert provider.calls == []
 
 
 def test_stale_etag_precedes_generation_setup(diagram_input, store):
-    response = app_client(store).post(ROUTE, json=REQUEST, headers={"If-Match": '"old"'})
+    response = post_generation(app_client(store), ROUTE, json=REQUEST, headers={"If-Match": '"old"'})
     assert response.status_code == 412, response.text
     assert usage_records(store) == []
 
@@ -234,9 +235,10 @@ def test_invalid_ai_output_retries_once_and_preserves_saved_deck(diagram_input, 
     if defect == "no_nodes": payload["nodes"] = []
     if defect == "no_edges": payload["edges"] = []
     provider = StubProvider(payload)
-    response = app_client(store, provider).post(ROUTE, json=REQUEST)
-    assert response.status_code == 200, response.text
-    result = response.json()
+    response = post_generation(app_client(store, provider), ROUTE, json=REQUEST)
+    # 래퍼는 200과 format_error 결과를 돌려줬다. 작업 API에서는 형식 오류로 실패하고 원문은 원장의 결과에 남는다(대응표 ②)
+    assert (response.view["state"], response.view["error"]["error_class"]) == ("failed", "ai_output"), response.text
+    result = response.view["result"]
     assert result["status"] == "format_error"
     assert result["diagram"] is None
     assert result["raw_text"] == "합성 도식 후보"
@@ -256,7 +258,7 @@ def test_retry_success_preserves_unknown_usage_and_does_not_normalize_text(diagr
         ProviderResponse(structured={}, raw_text="bad", usage=usage()),
         ProviderResponse(structured=payload, raw_text="good", usage=usage(input_tokens=None, output_tokens=0)),
     ])
-    response = app_client(store, provider).post(ROUTE, json=REQUEST)
+    response = post_generation(app_client(store, provider), ROUTE, json=REQUEST)
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["status"] == "ok" and result["format_retried"] is True
@@ -274,7 +276,7 @@ def test_provider_failure_records_usage_without_saving(diagram_input, store, fai
     responses = ([ProviderResponse(structured={}, raw_text="bad")] if failed_attempt == 2 else [])
     responses.append(ProviderCallFailed("합성 호출 실패", usage=usage()))
     provider = StubProvider(payload, responses=responses)
-    response = app_client(store, provider).post(ROUTE, json=REQUEST)
+    response = post_generation(app_client(store, provider), ROUTE, json=REQUEST)
     assert response.status_code == 503, response.text
     record, = usage_records(store)
     assert record["kind"] == "diagram" and record["outcome"] == "failed"
@@ -289,7 +291,7 @@ def test_numbers_only_use_selected_registered_excerpts(diagram_input, store):
     payload["nodes"][0]["content"] = "접수 777건, 검토 999건"
     payload["nodes"][2]["caveats"] = ["비용 321원 미확인"]
     payload["edges"][1]["label"] = "알림 123회 제안"
-    response = app_client(store, StubProvider(payload)).post(ROUTE, json=REQUEST)
+    response = post_generation(app_client(store, StubProvider(payload)), ROUTE, json=REQUEST)
     assert response.status_code == 200, response.text
     assert set(response.json()["unverified_numbers"]) == {"777", "999", "321", "123"}
 
@@ -313,8 +315,15 @@ def test_changes_while_awaiting_provider_discard_candidate(diagram_input, store,
             for path in (store.root / "diagram" / "sources").iterdir(): path.unlink()
     provider = StubProvider(payload, effect=mutate)
     client = app_client(store, provider)
-    response = client.post(ROUTE, json=REQUEST)
-    assert response.status_code == (412 if change.startswith("deck") else 409), response.text
+    response = post_generation(client, ROUTE, json=REQUEST)
+    # 래퍼는 생성 뒤 판정으로 412나 409를 돌려줬다. 작업 API에서는 작업이 성공하고 결과가 낡은 후보로 남는다(대응표 ③).
+    # 자료를 읽지 못하면 판정을 미루므로 후보는 held이고 조회의 사유가 unknown_sources다 (D3c-7)
+    candidate, reasons = {"deck": ("stale", ["deck_changed"]), "deck_invalid": ("stale", ["unknown_deck"]),
+                          "source_too_large": ("held", ["unknown_sources"]),
+                          "source_invalid": ("held", ["unknown_sources"])}.get(change, ("stale", ["sources_changed"]))
+    view = response.view
+    assert (view["state"], view["candidate_status"], view["stale_reasons"]) == ("succeeded", candidate, reasons), response.text
+    assert view["result"]["status"] == "ok"
     assert len(provider.calls) == 1
     assert store.list_snapshots("diagram") == []
     assert len(usage_records(store)) == 1
@@ -344,19 +353,19 @@ def test_selection_consent_and_etag_gate_before_lease_and_release(diagram_input,
         manager.select(AISelection(provider="claude", model="synthetic-model"))
         client = app_client(store, manager=manager)
         headers = {"X-AI-Selection": manager.selection_id}
-        response = client.post(ROUTE, json=REQUEST, headers={**headers, "If-Match": '"old"'})
+        response = post_generation(client, ROUTE, json=REQUEST, headers={**headers, "If-Match": '"old"'})
         assert response.status_code == 412
         assert connection.status_checks == 0
-        response = client.post(ROUTE, json=REQUEST)
+        response = post_generation(client, ROUTE, json=REQUEST)
         assert response.status_code == 409
-        response = client.post(ROUTE, json=REQUEST, headers={"X-AI-Selection": "old"})
+        response = post_generation(client, ROUTE, json=REQUEST, headers={"X-AI-Selection": "old"})
         assert response.status_code == 409
         assert provider.calls == []
         def change_selection_while_busy():
             with pytest.raises(ConnectionConflict):
                 manager.select(AISelection(provider="claude", model="synthetic-model"))
         provider.effect = change_selection_while_busy
-        response = client.post(ROUTE, json=REQUEST, headers=headers)
+        response = post_generation(client, ROUTE, json=REQUEST, headers=headers)
         assert response.status_code == 200, response.text
         assert response.json()["status"] == "ok"
         assert len(provider.calls) == 1
@@ -383,7 +392,7 @@ def test_changes_during_lease_acquisition_do_not_reach_provider(diagram_input, s
     manager = AIConnections(tmp_path / "ai.json", connections={"claude": connection})
     try:
         manager.select(AISelection(provider="claude", model="synthetic-model"))
-        response = app_client(store, manager=manager).post(ROUTE, json=REQUEST, headers={
+        response = post_generation(app_client(store, manager=manager), ROUTE, json=REQUEST, headers={
             "X-AI-Selection": manager.selection_id,
         })
         assert response.status_code == (412 if change == "deck" else 409), response.text
@@ -433,7 +442,7 @@ def test_candidate_enters_existing_manual_validation_and_save_path(diagram_input
         payload["edges"][1].update(from_node_id="intake")
     provider = StubProvider(payload)
     client = app_client(store, provider)
-    result = client.post(ROUTE, json=REQUEST)
+    result = post_generation(client, ROUTE, json=REQUEST)
     assert result.status_code == 200, result.text
     result = result.json()
     assert result["status"] == "ok"  # Structure success does not approve a layout.

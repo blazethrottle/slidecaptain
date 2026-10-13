@@ -12,6 +12,7 @@ from slidecaptain.pipeline.connections import AIConnections
 from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
+from tests.job_runs import post_generation
 
 
 class CountingProvider:
@@ -167,7 +168,7 @@ def test_pilot_connection_enforces_consent_and_selection_before_calls(tmp_path, 
     bounded = BudgetedProvider(provider, max_calls=5)
     manager = AIConnections(tmp_path / "settings.json", connections={"claude": _PilotConnection(bounded, "sonnet")})
     with TestClient(create_app(store, ai_connections=manager), headers={"X-Requested-With": "SlideCaptain"}) as client:
-        response = client.post("/api/projects/quality-pilot/generate/chapter/pilot-action", json={}, headers=headers)
+        response = post_generation(client, "/api/projects/quality-pilot/generate/chapter/pilot-action", json={}, headers=headers)
     assert response.status_code == status
     assert provider.calls == 0
 

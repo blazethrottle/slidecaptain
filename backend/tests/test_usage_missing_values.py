@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 import slidecaptain.pipeline.subscription as sub
 from slidecaptain.pipeline.provider import ProviderCallFailed
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 FIELDS = (
@@ -145,7 +146,7 @@ def test_sdk_to_api_retry_and_jsonl_match_shared_frontend_fixture(store, monkeyp
     with TestClient(create_app(store, provider=sub.SubscriptionProvider()), headers=headers) as client:
         assert client.post("/api/projects", json={"name": "usage-fixture"}).status_code == 201
         assert client.put("/api/projects/usage-fixture/sources/source.md", json={"text": "synthetic source"}).status_code == 200
-        response = client.post("/api/projects/usage-fixture/generate/structure", json={"target_chapters": 2})
+        response = post_generation(client, "/api/projects/usage-fixture/generate/structure", json={"target_chapters": 2})
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["format_retried"] is True

@@ -290,30 +290,6 @@ def test_structure_jobs_call_generate_then_at_most_one_format_retry(store, monke
     assert purposes == (["generate"] if first_valid else ["generate", "format_retry"])
 
 
-def test_the_sync_structure_route_records_the_same_steps(store):
-    """동기 래퍼(POST /generate/structure)도 같은 실행기로 단계를 남긴다 (계획 리뷰 V11, D3b-4 리뷰 R6)."""
-    _project(store)
-    provider = StepProvider()
-    app = create_app(store, provider=provider, login_checker=lambda: LoginStatus(logged_in=False))
-    result = {}
-    with TestClient(app, headers=HEADERS) as client:
-        thread = threading.Thread(
-            target=lambda: result.setdefault("response", client.post("/api/projects/p1/generate/structure", json={})))
-        thread.start()
-        try:
-            assert provider.entered[0].wait(5)
-            first = _active(client)
-            provider.release[0].set()
-            assert provider.entered[1].wait(5)
-            second = _active(client)
-        finally:
-            provider.release[0].set()
-            provider.release[1].set()
-            thread.join(10)
-    assert first["step"] == "generating" and second["step"] == "retrying_format"
-    assert result["response"].status_code == 200 and result["response"].json()["format_retried"] is True
-
-
 def test_other_kinds_have_no_step(store):
     _two_chapters(store)
     provider = ChapterGate(SLOTS)

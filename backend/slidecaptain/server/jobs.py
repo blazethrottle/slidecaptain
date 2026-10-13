@@ -40,8 +40,6 @@ _LOG = logging.getLogger("slidecaptain.server.jobs")
 # 화면에 작업 취소 수단이 생기는 D2b-5a 전까지는 취소 안내를 넣지 않는다 (α 묶음 리뷰 A12)
 GENERATION_ACTIVE_MESSAGE = "다른 AI 생성이 진행 중입니다. 끝난 뒤 다시 시도해 주세요."
 SERVICE_STOPPING_MESSAGE = "앱이 종료되는 중이라 AI 생성을 시작하지 않았습니다."
-JOB_CANCELLED_MESSAGE = "AI 생성이 취소되었습니다."
-JOB_INTERRUPTED_MESSAGE = "AI 생성이 중단되었습니다. 완료 여부를 확인할 수 없으면 결과를 다시 생성해 주세요."
 LEDGER_WRITE_MESSAGE = "작업 기록을 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요."
 FORMAT_ERROR_MESSAGE = "AI 응답을 형식에 맞게 읽지 못했습니다. 입력은 그대로 두었습니다. 다시 생성해 주세요."
 UNFINISHED_PARENT = ("running", "validating", "cancel_requested")
@@ -589,18 +587,6 @@ class JobRunner:
         return self.ledger.transition(job_id, expected=expected, new="failed", error_class=error_class,
                                       error_status=status, error_detail=detail, error_code=code)
 
-    def mark_delivered(self, job_id: str) -> None:
-        """래퍼가 결과를 실제로 응답으로 돌려줄 때만 부른다. 화면은 이 결과를 "이전에 만든 결과"로 다시 보이지
-        않는다. 낡은 결과를 200으로 돌려준 경우도 같다 (D2b-3 리뷰 R1, R11)."""
-        for expected in ("held", "stale"):
-            try:
-                self.ledger.settle_candidate(job_id, expected=expected, new="delivered")
-                return
-            except TransitionRejected:
-                continue
-            except LedgerError:
-                return  # 원장 문제는 응답을 막지 않는다
-
     # 재시작 조정과 종료 (계획서 5.5, 5.6)
 
     def reconcile_on_start(self, lock_state: str) -> int:
@@ -675,14 +661,3 @@ class JobRunner:
 
 def new_request_id() -> str:
     return uuid.uuid4().hex
-
-
-def http_error_from(row: JobRow | None) -> JobFailed:
-    """종결된 작업 행의 오류를 래퍼 응답으로 바꾼다."""
-    if row is None:
-        return JobFailed(503, LEDGER_WRITE_MESSAGE, "ledger_write_failed")
-    if row.state == "cancelled":
-        return JobFailed(409, JOB_CANCELLED_MESSAGE, "job_cancelled")
-    if row.state in ("interrupted", "remote_completion_unknown"):
-        return JobFailed(503, JOB_INTERRUPTED_MESSAGE, "job_interrupted")
-    return JobFailed(row.error_status or 500, row.error_detail or "AI 생성 작업을 처리하지 못했습니다.", row.error_code)

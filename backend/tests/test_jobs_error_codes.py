@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.job_ledger import LEDGER_NAME
 from tests.test_jobs_api import HEADERS, GateProvider, _project, _register, _wait, manager  # noqa: F401
+from tests.job_runs import post_generation
 
 
 def _finished_job(client):
@@ -186,7 +187,7 @@ def test_wrapped_generation_connection_errors_put_the_code_in_the_body(store, ma
     _project(store)
     manager.connections["claude"].login = LoginStatus(logged_in=False)  # 처음 보는 로그아웃
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
-        response = client.post("/api/projects/p1/generate/structure", json={},
+        response = post_generation(client, "/api/projects/p1/generate/structure", json={},
                                headers={"X-AI-Selection": manager.selection_id})
     assert response.status_code == 503 and response.json()["code"] == "login_required"
 
@@ -194,7 +195,7 @@ def test_wrapped_generation_connection_errors_put_the_code_in_the_body(store, ma
 def test_registration_selection_change_puts_the_code_in_the_body(store, manager):
     _project(store)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
-        response = client.post("/api/projects/p1/generate/structure", json={},
+        response = post_generation(client, "/api/projects/p1/generate/structure", json={},
                                headers={"X-AI-Selection": "other-selection"})
     assert response.status_code == 409 and response.json()["code"] == "selection_changed"
 
@@ -230,7 +231,7 @@ def test_generation_with_a_missing_cli_records_provider_missing_not_login_requir
     _project(store)
     try:
         with TestClient(create_app(store, ai_connections=connections), headers=HEADERS) as client:
-            response = client.post("/api/projects/p1/generate/structure", json={},
+            response = post_generation(client, "/api/projects/p1/generate/structure", json={},
                                    headers={"X-AI-Selection": connections.selection_id})
     finally:
         connections.close()

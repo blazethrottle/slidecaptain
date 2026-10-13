@@ -24,7 +24,11 @@ import anyio
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.openapi import utils as openapi_utils
+from fastapi.openapi.models import OpenAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.utils import create_model_field
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -93,7 +97,7 @@ from slidecaptain.server.jobs import (
     FORMAT_ERROR_MESSAGE, LEDGER_WRITE_MESSAGE, NOTICE_REASONS,
     real_reasons,
     GENERATION_ACTIVE_MESSAGE, SERVICE_STOPPING_MESSAGE, GenerationActive, JobFailed, JobRunner, JobSpec,
-    ServiceStopping, http_error_from, new_request_id,
+    ServiceStopping,
 )
 from slidecaptain.storage.job_ledger import (
     BATCH_KIND, CHAIN_BROKEN, HELD_STALE_PLAN, STALE_STORY_PLAN, UNFINISHED as UNFINISHED_CHAPTER, parent_outcome,
@@ -124,6 +128,8 @@ from slidecaptain.storage.file_store import (
 )
 
 _LOG = logging.getLogger("slidecaptain.server.app")
+# 작업 결과의 모델. 화면이 JobView.result를 이 타입으로 읽는다 (D3c-7, 계획 4.9)
+_RESULT_MODELS = (ChapterResult, StructureResult, DiagramGenerationResult, StoryRewriteResult, StoryRepairResult)
 _GENERATED_SLOTS = TypeAdapter(GeneratedSlots)
 _ANY_SLOTS = TypeAdapter(Slots)
 
@@ -684,46 +690,6 @@ def create_app(
                                 "sources_changed")
         return recheck
 
-    async def _run_wrapped(build_spec: Callable[[], JobSpec]):
-        """래퍼: 작업을 등록하고 끝날 때까지 기다린 뒤 (결과, 작업)을 돌려준다 (계획서 2.2, 5.4).
-
-        등록(덱과 자료 읽기, 원장 쓰기)은 작업 스레드에서 한다(D2b-2 리뷰 R9). 요청이 취소되면 작업에
-        취소를 한 번 요청하고, 작업이 실제로 끝난 뒤 취소를 다시 올린다. 그래야 요청이 끝났을 때 임대가
-        풀려 있다(지금 라우트와 같은 성질). 결과를 응답으로 돌려주는 라우트는 _deliver로 처분을 남긴다.
-        """
-        # 등록은 작업 스레드에서 돈다. 등록 중 요청이 취소돼도 등록을 끝까지 기다린 뒤 만들어진 작업에 취소를
-        # 보낸다. 그러지 않으면 응답받을 주체 없는 생성이 돌고 임대가 요청 뒤까지 남는다 (α 묶음 리뷰 A2)
-        registering = asyncio.ensure_future(asyncio.to_thread(lambda: runner.start(build_spec())))
-        try:
-            row, handle, _ = await asyncio.shield(registering)
-        except asyncio.CancelledError:
-            with anyio.CancelScope(shield=True):
-                try:
-                    _, started, _ = await registering
-                except Exception:
-                    started = None
-                if started is not None:
-                    await asyncio.to_thread(runner.cancel, started.job_id)
-                    await started.wait()
-            raise
-        if handle is None:
-            raise http_error_from(row)
-        try:
-            outcome = await handle.wait()
-        except asyncio.CancelledError:
-            with anyio.CancelScope(shield=True):
-                await asyncio.to_thread(runner.cancel, handle.job_id)
-                await handle.wait()
-            raise
-        if outcome.result is None or (outcome.row is not None and outcome.row.state == "cancelled"):
-            raise http_error_from(outcome.row)
-        return outcome, handle
-
-    async def _deliver(handle, result):
-        """결과를 응답으로 돌려주기 직전에만 부른다. 오류 응답이면 부르지 않는다 (D2b-3 리뷰 R1)."""
-        await asyncio.to_thread(runner.mark_delivered, handle.job_id)
-        return result
-
     def _job_views(rows: list[JobRow], chapters: dict[str, list] | None = None) -> list[JobView]:
         """작업 행을 응답으로 바꾼다. 프로젝트마다 덱과 자료를 한 번만 읽고(D2b-2 리뷰 R9, D2b-3 리뷰 R12),
         실행 중 판정과 같은 이유 이름을 쓴다(D2b-3 리뷰 R4)."""
@@ -1173,24 +1139,6 @@ def create_app(
         result.sources_fingerprint = revision
         return result
 
-    @app.post("/api/projects/{name}/story-plan/rewrite", response_model=StoryRewriteResult,
-              responses={409: {"model": GenerationActiveBody}})
-    async def preview_story_rewrite(
-        name: str, req: RewriteStoryRequest, if_match: str | None = Header(default=None),
-        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
-    ):
-        # 래퍼 (계획서 2.2): 생성 뒤 덱이 바뀌면 412, 자료가 바뀌면 409. 결과는 원장에 낡은 후보로 남는다
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _rewrite_spec(name, req, if_match, x_ai_selection,
-                                                                    new_request_id()))
-        if outcome.stale_reasons:
-            # 종전 라우트의 생성 뒤 확인을 그대로 돌려 같은 응답(412, 409, 읽기 오류의 원래 응답)을 낸다 (리뷰 R2)
-            with store.locked(name):
-                _rewrite_base(name, f'"{handle.spec.inputs.base_etag}"')
-                if sources_fingerprint(_load_sources(name, allow_empty=True)) != handle.spec.inputs.sources_fingerprint:
-                    raise HTTPException(409, "재작성 중 자료가 바뀌었습니다. 현재 자료로 다시 작성해 주세요.")
-        return await _deliver(handle, outcome.result)
-
     @app.post("/api/projects/{name}/story-plan/rewrite/apply", response_model=Deck)
     def apply_story_rewrite(
         name: str, req: ApplyStoryRewriteRequest, response: Response,
@@ -1244,20 +1192,6 @@ def create_app(
                        selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
                        run=run, recheck=_stale_recheck("rewrite", name, etag, revision),
                        judge=_base_judge(name, etag, revision), finalize=finalize)
-
-    @app.post("/api/projects/{name}/story-plan/repair", response_model=StoryRepairResult,
-              responses={409: {"model": GenerationActiveBody}})
-    async def preview_story_repair(
-        name: str, req: StoryRepairRequest,
-        if_match: str | None = Header(default=None),
-        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
-    ):
-        # 종전의 연결 끊김 감시는 HTTP 미들웨어 뒤에서 끊김을 감지하지 못해 지웠다(D2b-3 리뷰 R7). 수리 패널의
-        # "실행 중단"은 D2b-5b에서 작업 취소 API로 옮긴다
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _repair_spec(name, req, if_match, x_ai_selection,
-                                                                   new_request_id()))
-        return await _deliver(handle, outcome.result)
 
     @app.post("/api/projects/{name}/export", response_model=ExportResult)
     def export_project(name: str, final: bool = False):
@@ -1768,25 +1702,8 @@ def create_app(
                        run=run, recheck=_stale_recheck("diagram", name, etag, revision),
                        judge=_base_judge(name, etag, revision), target=req.chapter_id)
 
-    @app.post("/api/projects/{name}/generate/diagram", response_model=DiagramGenerationResult,
-              responses={409: {"model": GenerationActiveBody}})
-    async def generate_diagram(
-        name: str, req: GenerateDiagramRequest, if_match: str | None = Header(default=None),
-        x_ai_consent: str | None = Header(default=None), x_ai_selection: str | None = Header(default=None),
-    ):
-        # 래퍼 (계획서 2.2): 임대 직후와 생성 뒤의 기준 변경을 종전 문구로 돌려준다
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _diagram_spec(name, req, if_match, x_ai_selection,
-                                                                    new_request_id()))
-        error = _stale_error("diagram", _basis_reasons(name, handle.spec.inputs.base_etag,
-                                                       handle.spec.inputs.sources_fingerprint)
-                             if outcome.stale_reasons else [])
-        if error is not None:
-            raise error
-        return await _deliver(handle, outcome.result)
-
     def _structure_spec(name: str, req: GenerateStructureRequest, selection_id: str | None,
-                        request_id: str, strict: bool = False) -> JobSpec:
+                        request_id: str) -> JobSpec:
         """구조안의 등록 검사와 작업 정의. 검사 순서는 종전 라우트와 같다 (계획서 5.4)."""
         deck, etag = store.load_deck_with_etag(name)
         if any(ch.template == "diagram" for ch in deck.structure.chapters):
@@ -1796,14 +1713,13 @@ def create_app(
                                       or req.brief.audience != deck.meta.audience):
             raise BriefMismatch()
         _require_current_selection(selection_id)
-        if strict:  # 작업 API는 자료 422를 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
-            _load_sources(name)
+        _load_sources(name)  # 자료 422는 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
         revision = _sources_revision(name)
         provider_id, model = _fixed_selection()
         relevance = structure_relevance(deck)  # 지시문에 넘기는 바로 그 덱에서 계산한다 (리뷰 V18)
 
         async def run(svc, _ctx):
-            # 자료 없음과 상한 초과의 422는 종전처럼 임대를 잡은 뒤에 낸다(래퍼)
+            # 등록 뒤 자료가 지워지거나 상한을 넘으면 여기서 422로 실패한다(임대 직후 재비교가 자료 변경을 먼저 막는다)
             sources = _load_sources(name)
             return await svc.generate_structure(
                 deck.meta, sources, req.target_chapters, req.instructions,
@@ -1822,17 +1738,6 @@ def create_app(
         if existing is not None and existing.params_hash != params_hash(kind, params):
             raise RequestIdConflict("같은 요청 식별자로 다른 생성 요청이 왔습니다.")
         return existing
-
-    @app.post("/api/projects/{name}/generate/structure", response_model=StructureResult,
-              responses={409: {"model": GenerationActiveBody}})
-    async def generate_structure(
-        name: str, req: GenerateStructureRequest, x_ai_consent: str | None = Header(default=None),
-        x_ai_selection: str | None = Header(default=None),
-    ):
-        # 래퍼 (계획서 2.2): 생성 뒤 덱이나 자료가 바뀌어도 종전처럼 결과를 돌려준다. 원장에는 낡음으로 남는다
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _structure_spec(name, req, x_ai_selection, new_request_id()))
-        return await _deliver(handle, outcome.result)
 
     # 장 생성 묶음 (D2b-4, 계획서 2.1, 5.7)
 
@@ -2137,15 +2042,15 @@ def create_app(
         _require_ai_consent(x_ai_consent)
         if req.kind == "structure":
             params = GenerateStructureRequest.model_validate(req.params.model_dump())
-            build = lambda: _structure_spec(name, params, x_ai_selection, req.request_id, strict=True)
+            build = lambda: _structure_spec(name, params, x_ai_selection, req.request_id)
             dumped = params.model_dump(mode="json")
         elif req.kind == "chapter":
             params = GenerateChapterRequest(instructions=req.params.instructions)
-            build = lambda: _chapter_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id, strict=True)
+            build = lambda: _chapter_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id)
             dumped = {"chapter_id": req.params.chapter_id, **params.model_dump(mode="json")}
         elif req.kind == "condense":
             params = CondenseChapterRequest(slots=req.params.slots, instructions=req.params.instructions)
-            build = lambda: _condense_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id, strict=True)
+            build = lambda: _condense_spec(name, req.params.chapter_id, params, x_ai_selection, req.request_id)
             dumped = {"chapter_id": req.params.chapter_id, **params.model_dump(mode="json")}
         elif req.kind == "diagram":
             build = lambda: _diagram_spec(name, req.params, if_match, x_ai_selection, req.request_id)
@@ -2452,12 +2357,9 @@ def create_app(
         return ActiveJobStatus(active=ActiveJob(**summary) if summary else None, ledger_available=ledger is not None)
 
     def _chapter_spec(name: str, chapter_id: str, req: GenerateChapterRequest, selection_id: str | None,
-                      request_id: str, strict: bool = False) -> JobSpec:
-        """장 생성의 등록 검사와 작업 정의.
-
-        래퍼는 종전처럼 없는 장 404와 자료 422를 임대 뒤에 낸다. 작업 API(strict)는 계획서 5.4대로 등록
-        검사에서 내고 행을 만들지 않는다 (D2b-3 리뷰 R6).
-        """
+                      request_id: str) -> JobSpec:
+        """장 생성의 등록 검사와 작업 정의. 없는 장 404와 자료 422는 계획서 5.4대로 등록 검사에서 내고 행을 만들지
+        않는다 (D2b-3 리뷰 R6). 임대 뒤에 내던 동기 생성 래퍼의 갈래는 D3c-7에서 지웠다."""
         with store.locked(name):
             deck, etag = store.load_deck_with_etag(name)
             revision = _sources_revision(name)
@@ -2465,17 +2367,14 @@ def create_app(
         if chapter is not None and chapter.template == "diagram":
             raise DiagramGenerationUnsupported()
         _require_current_selection(selection_id)
-        if strict:
-            if chapter is None:
-                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-            # 구성 계획 낡음을 등록 단계에서 낸다. 등록(202) 뒤 실패보다 호출 비용과 기다림이 없다 (D3c-5, E9)
-            require_current_story(deck, _load_sources(name))
+        if chapter is None:
+            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+        # 구성 계획 낡음을 등록 단계에서 낸다. 등록(202) 뒤 실패보다 호출 비용과 기다림이 없다 (D3c-5, E9)
+        require_current_story(deck, _load_sources(name))
         relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
-            if chapter is None:
-                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
             preset = _preset_for(deck)
             sources = _load_sources(name)
             return await svc.generate_chapter(deck, chapter_id, sources, preset, req.instructions,
@@ -2484,26 +2383,12 @@ def create_app(
         return JobSpec(kind="chapter", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
                        inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
-                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision)
-                       if chapter is not None else None,
+                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision),
                        judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)
 
-    @app.post("/api/projects/{name}/generate/chapter/{chapter_id}", response_model=ChapterResult,
-              responses={409: {"model": GenerationActiveBody}})
-    async def generate_chapter(
-        name: str, chapter_id: str, req: GenerateChapterRequest,
-        x_ai_consent: str | None = Header(default=None),
-        x_ai_selection: str | None = Header(default=None),
-    ):
-        # 래퍼 (계획서 2.2): 생성 뒤 다른 곳이 바뀌어도 종전처럼 결과를 돌려준다. 판정은 원장에 남는다
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _chapter_spec(name, chapter_id, req, x_ai_selection,
-                                                                    new_request_id()))
-        return await _deliver(handle, outcome.result)
-
     def _condense_spec(name: str, chapter_id: str, req: CondenseChapterRequest, selection_id: str | None,
-                       request_id: str, strict: bool = False) -> JobSpec:
+                       request_id: str) -> JobSpec:
         with store.locked(name):
             deck, etag = store.load_deck_with_etag(name)
             revision = _sources_revision(name)
@@ -2511,28 +2396,20 @@ def create_app(
         if req.slots.template == "diagram" or (chapter is not None and chapter.template == "diagram"):
             raise DiagramGenerationUnsupported()
         _require_current_selection(selection_id)
-
-        def template_mismatch() -> HTTPException:
-            return HTTPException(
+        # 등록 검사에서 거절하고 행을 만들지 않는다 (D2b-3 리뷰 R6)
+        if chapter is None:
+            raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
+        if req.slots.template != chapter.template:
+            raise HTTPException(
                 422,
                 f"이 장의 템플릿({chapter.template})과 보낸 내용의 템플릿({req.slots.template})이 "
                 "다릅니다. 서버 내용을 다시 읽은 뒤 다시 시도해 주세요.",
             )
-
-        if strict:  # 작업 API는 등록 검사에서 거절하고 행을 만들지 않는다 (D2b-3 리뷰 R6)
-            if chapter is None:
-                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-            if req.slots.template != chapter.template:
-                raise template_mismatch()
-            require_current_story(deck, _load_sources(name))  # D3c-5, E9
+        require_current_story(deck, _load_sources(name))  # D3c-5, E9
         relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
-            if chapter is None:
-                raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-            if req.slots.template != chapter.template:
-                raise template_mismatch()
             preset = _preset_for(deck)
             sources = _load_sources(name)
             return await svc.condense_chapter(deck, chapter_id, req.slots, sources, preset, req.instructions,
@@ -2541,24 +2418,36 @@ def create_app(
         return JobSpec(kind="condense", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
                        inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
-                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision)
-                       if chapter is not None else None,
+                       recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision),
                        judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)
 
-    @app.post(
-        "/api/projects/{name}/generate/chapter/{chapter_id}/condense",
-        response_model=ChapterResult, responses={409: {"model": GenerationActiveBody}},
-    )
-    async def condense_chapter(
-        name: str, chapter_id: str, req: CondenseChapterRequest,
-        x_ai_consent: str | None = Header(default=None),
-        x_ai_selection: str | None = Header(default=None),
-    ):
-        _require_ai_consent(x_ai_consent)
-        outcome, handle = await _run_wrapped(lambda: _condense_spec(name, chapter_id, req, x_ai_selection,
-                                                                     new_request_id()))
-        return await _deliver(handle, outcome.result)
+    # 결과 스키마 다섯 (D3c-7, 계획 4.9). 동기 생성 래퍼를 지우면 이 모델을 응답으로 쓰는 라우트가 없어 OpenAPI에서
+    # 빠진다. 화면은 작업 응답의 결과(JobView.result)를 이 타입으로 읽으므로 구성 요소로 남긴다. FastAPI가 응답 모델의
+    # 스키마를 만드는 것과 같은 생성 경로(모든 라우트 필드와 함께 이름표를 만들고 get_definitions로 정의를 만든다)를 쓴다.
+    # pydantic의 models_json_schema로 따로 만들면 판별자와 선택 칸의 기본값과 공유 정의가 달라져 화면 타입이 깨졌다
+    # (계획 재리뷰 RR4). 이미 있는 정의는 덮지 않는다
+    def _openapi_with_results():
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = FastAPI.openapi(app)
+        fields = openapi_utils.get_fields_from_routes(app.routes) + [
+            create_model_field(name=model.__name__, type_=model, mode="serialization") for model in _RESULT_MODELS]
+        name_map = openapi_utils.get_model_name_map(openapi_utils.get_flat_models_from_fields(fields, known_models=set()))
+        _, definitions = openapi_utils.get_definitions(fields=fields, model_name_map=name_map,
+                                                       separate_input_output_schemas=app.separate_input_output_schemas)
+        components = schema.setdefault("components", {})
+        known = components.get("schemas", {})
+        extra = {key: value for key, value in definitions.items() if key not in known}
+        # FastAPI가 마지막에 하는 것과 같이 OpenAPI 모델로 감싸 None 값을 뺀다. 빼지 않으면 기본값 null이 남아 화면 타입의
+        # 선택 칸이 필수 칸이 된다
+        encoded = jsonable_encoder(OpenAPI(openapi=schema["openapi"], info=schema["info"], paths={},
+                                           components={"schemas": extra}), by_alias=True, exclude_none=True)
+        merged = {**known, **encoded["components"]["schemas"]}
+        components["schemas"] = {key: merged[key] for key in sorted(merged)}
+        return schema
+
+    app.openapi = _openapi_with_results
 
     # 재시작 조정은 앱의 보조 함수가 모두 정의된 뒤에 한다(묶음 조정이 저장소와 자료 읽기를 쓴다)
     runner.reconcile_on_start(data_dir_lock)

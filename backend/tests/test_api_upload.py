@@ -13,6 +13,7 @@ from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.server.app import create_app
 from slidecaptain.sources.xlsx import extract_xlsx
 from slidecaptain.storage.file_store import FileProjectStore
+from tests.job_runs import post_generation
 
 # store 픽스처는 backend/tests/conftest.py 참조. client는 프로젝트 p1을 미리 만드는 이 파일만의
 # 확장이라 conftest의 것을 그대로 쓰지 않는다 (A2에서 기본 헤더 X-Requested-With만 conftest와 통일).
@@ -384,7 +385,7 @@ def test_generated_route_reads_xlsx_extract_as_source(client, store):
         create_app(store, provider=provider),
         headers={"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"},
     )
-    gr = gen_client.post("/api/projects/p1/generate/structure", json={})
+    gr = post_generation(gen_client, "/api/projects/p1/generate/structure", json={})
     assert gr.status_code == 200
     assert provider.prompts
     assert "매출현황" in provider.prompts[0]

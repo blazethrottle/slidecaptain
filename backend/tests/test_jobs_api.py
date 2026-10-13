@@ -19,6 +19,7 @@ from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.job_ledger import LEDGER_NAME, FixedInputs, JobLedger
 from tests.test_ai_connections import FakeConnection
+from tests.job_runs import post_generation, run_job
 
 STRUCTURE = {"chapters": [{"topic": "표지", "conclusion": "", "template": "cover", "source_refs": []}]}
 HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
@@ -101,7 +102,7 @@ def test_wrapper_result_is_also_kept_in_the_ledger(store):
     provider = GateProvider()
     provider.release.set()
     with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
-        assert client.post("/api/projects/p1/generate/structure", json={}).status_code == 200
+        assert post_generation(client, "/api/projects/p1/generate/structure", json={}).status_code == 200
         [job] = client.get("/api/projects/p1/jobs").json()
     assert job["kind"] == "structure" and job["state"] == "succeeded" and job["result"]["status"] == "ok"
 
@@ -191,7 +192,7 @@ def test_expired_login_makes_no_call(store, manager, observed_before, status):
         manager.selected_status()
     manager.connections["claude"].login = LoginStatus(logged_in=False)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
-        response = client.post("/api/projects/p1/generate/structure", json={},
+        response = post_generation(client, "/api/projects/p1/generate/structure", json={},
                                headers={"X-AI-Selection": manager.selection_id})
     assert response.status_code == status
     assert manager.connections["claude"].calls == []
@@ -283,7 +284,7 @@ def test_unreadable_ledger_blocks_only_generation(store):
         deck = client.get("/api/projects/p1/deck")
         saved = client.put("/api/projects/p1/deck", json=deck.json(), headers={"If-Match": deck.headers["etag"]})
         assert saved.status_code == 200
-        blocked = client.post("/api/projects/p1/generate/structure", json={})
+        blocked = post_generation(client, "/api/projects/p1/generate/structure", json={})
         assert blocked.status_code == 503 and blocked.json()["code"] == "job_ledger_unavailable"
         assert client.get("/api/projects/p1/progress").json()["jobs"] is None
 
@@ -323,7 +324,7 @@ def test_record_success_uses_the_fixed_model(store, manager):
     # 고정: 지금도 임대 중에는 선택을 바꿀 수 없어 시작 때 모델로 기록된다
     _project(store)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
-        assert client.post("/api/projects/p1/generate/structure", json={},
+        assert post_generation(client, "/api/projects/p1/generate/structure", json={},
                            headers={"X-AI-Selection": manager.selection_id}).status_code == 200
         manager.select(AISelection(provider="chatgpt", model="gpt-test"))
         manager.select(AISelection(provider="claude", model="sonnet"))
@@ -546,19 +547,9 @@ def test_retry_with_the_same_request_id_merges_before_registration_checks(store,
     assert again.status_code == 200 and again.json()["id"] == first["id"]
 
 
-def test_wrapper_marks_its_result_delivered_and_lists_stay_short(store):
-    _project(store)
-    provider = GateProvider()
-    provider.release.set()
-    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
-        for _ in range(4):
-            assert client.post("/api/projects/p1/generate/structure", json={}).status_code == 200
-        jobs = client.get("/api/projects/p1/jobs").json()
-    assert len(jobs) == 1 and jobs[0]["candidate_status"] == "delivered"
-
-
-@pytest.mark.parametrize("failing", ["validating", "succeeded", "everything"])
-def test_ledger_write_failures_keep_the_result_for_the_wrapper(store, monkeypatch, failing):
+@pytest.mark.parametrize("failing", ["validating", "succeeded"])
+def test_ledger_write_failures_end_the_job_as_a_ledger_failure(store, monkeypatch, failing):
+    # D3c-7: 래퍼가 원장 실패에도 결과를 응답으로 돌려주던 성질(원장 전체 고장 경우 포함)은 래퍼와 함께 지웠다
     from slidecaptain.storage.job_ledger import LedgerError
     _project(store)
     provider = GateProvider()
@@ -568,31 +559,17 @@ def test_ledger_write_failures_keep_the_result_for_the_wrapper(store, monkeypatc
         real_transition, real_get = ledger.transition, ledger.get_job
 
         def transition(job_id, *, expected, new, **changes):
-            if new == failing or (failing == "everything" and new in ("validating", "failed")):
+            if new == failing:
                 raise LedgerError("디스크")
             return real_transition(job_id, expected=expected, new=new, **changes)
 
         monkeypatch.setattr(ledger, "transition", transition)
-        if failing == "everything":
-            def get_job(job_id):
-                if ledger.transition is transition and getattr(get_job, "armed", False):
-                    raise LedgerError("디스크")
-                return real_get(job_id)
-            monkeypatch.setattr(ledger, "get_job", get_job)
-            real_wait = provider.complete
-
-            async def arm_then_complete(prompt, schema):
-                get_job.armed = True
-                return await real_wait(prompt, schema)
-
-            monkeypatch.setattr(provider, "complete", arm_then_complete)
-        response = client.post("/api/projects/p1/generate/structure", json={})
+        run = run_job(client, "p1", "structure", {})
         monkeypatch.setattr(ledger, "transition", real_transition)
         monkeypatch.setattr(ledger, "get_job", real_get)
         [row] = ledger.list_jobs("p1")
-    assert response.status_code == 200 and response.json()["status"] == "ok"
-    if failing != "everything":
-        assert row.state == "failed" and row.error_class == "ledger" and row.error_code == "ledger_write_failed"
+    assert run.state == "failed"
+    assert row.state == "failed" and row.error_class == "ledger" and row.error_code == "ledger_write_failed"
 
 
 def test_waiter_on_a_closed_loop_does_not_block_other_waiters():
@@ -677,38 +654,6 @@ def test_result_written_by_one_app_is_read_by_the_next_app_on_the_same_folder(st
     assert view["owner"] == "other_instance"
 
 
-def test_wrapper_cancelled_during_registration_cancels_the_job(store, monkeypatch):
-    import httpx
-    _project(store)
-    provider = GateProvider()
-    app = create_app(store, provider=provider)
-    runner = app.state.job_runner
-    entered, resume = threading.Event(), threading.Event()
-    real_start = runner.start
-
-    def slow_start(spec):
-        entered.set()
-        assert resume.wait(5)
-        return real_start(spec)
-
-    monkeypatch.setattr(runner, "start", slow_start)
-
-    async def scenario():
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver") as client:
-            task = asyncio.create_task(client.post("/api/projects/p1/generate/structure", json={}, headers=HEADERS))
-            assert await asyncio.to_thread(entered.wait, 5)
-            task.cancel()
-            for _ in range(5):
-                await asyncio.sleep(0)
-            resume.set()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-
-    asyncio.run(scenario())
-    [row] = runner.ledger.list_jobs("p1")
-    assert row.state == "cancelled" and provider.calls == 0
-
-
 def test_structure_job_api_rejects_missing_sources_without_a_row(store):
     store.create_project("p1", "보고")
     with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
@@ -756,7 +701,7 @@ def test_provider_is_not_called_when_the_send_time_cannot_be_written(store, monk
             return real_update(job_id, expected=expected, **changes)
 
         monkeypatch.setattr(ledger, "update_job", failing_update)
-        response = client.post("/api/projects/p1/generate/structure", json={})
+        response = post_generation(client, "/api/projects/p1/generate/structure", json={})
         [row] = ledger.list_jobs("p1")
     assert response.status_code == 503 and response.json()["code"] == "ledger_write_failed"
     assert provider.calls == 0 and row.state == "failed" and row.error_class == "ledger"

@@ -12,6 +12,7 @@ from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.pipeline.service import GenerationService
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 SOURCE = "합성 자료.md"
@@ -196,7 +197,7 @@ def prepare_api(store, payloads):
 
 
 def save_plan(client):
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     structure = response.json()["structure"]
@@ -211,13 +212,13 @@ def test_api_save_reload_edit_and_condense_preserve_plan(store):
     client, provider = prepare_api(store, [PAYLOAD, SLOTS, SLOTS])
     deck = save_plan(client)
     assert client.get("/api/projects/synthetic/deck").json() == deck
-    generated = client.post("/api/projects/synthetic/generate/chapter/c2", json={})
+    generated = post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={})
     assert generated.status_code == 200
     deck["slides"] = [{"chapter_id": "c2", "eyebrow": "수동 분류", "subtitle": "", "slots": generated.json()["slots"]}]
     assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     restored = store.load_deck("synthetic")
     assert restored.structure.story_plan.model_dump(mode="json") == deck["structure"]["story_plan"]
-    condensed = client.post("/api/projects/synthetic/generate/chapter/c2/condense", json={"slots": SLOTS})
+    condensed = post_generation(client, "/api/projects/synthetic/generate/chapter/c2/condense", json={"slots": SLOTS})
     assert condensed.status_code == 200
     assert BRIEF["decision_question"] in provider.calls[-1][0]
 
@@ -238,7 +239,7 @@ def test_stale_plan_is_preserved_but_blocks_generation_before_provider(store, ch
         deck["structure"]["story_plan"]["claims"][0]["statement"] = "수정한 주장"
     assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     suffix, body = ("", {}) if operation == "generate" else ("/condense", {"slots": SLOTS})
-    response = client.post(f"/api/projects/synthetic/generate/chapter/c2{suffix}", json=body)
+    response = post_generation(client, f"/api/projects/synthetic/generate/chapter/c2{suffix}", json=body)
     assert response.status_code == 409
     assert response.json().get("code") == "stale_story_plan"
     assert "다시 생성" in response.json()["detail"]
@@ -250,14 +251,14 @@ def test_stale_plan_is_preserved_but_blocks_generation_before_provider(store, ch
 def test_planned_request_still_requires_ai_consent(store):
     client, provider = prepare_api(store, [])
     client.headers.pop("X-AI-Consent")
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
     assert response.status_code == 428
     assert provider.calls == []
 
 
 def test_blank_question_is_rejected_before_provider(store):
     client, provider = prepare_api(store, [])
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": {**BRIEF, "decision_question": "  "}})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": {**BRIEF, "decision_question": "  "}})
     assert response.status_code == 422
     assert provider.calls == []
 
@@ -291,9 +292,9 @@ def test_snapshot_restore_preserves_binding_and_detects_later_source_changes(sto
     response = client.post(f"/api/projects/synthetic/snapshots/{snapshots[-1]['id']}/restore")
     assert response.status_code == 200
     assert response.json() == deck
-    assert client.post("/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 200
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 200
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": TEXT + "\n조건 변경"}).status_code == 200
-    assert client.post("/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 409
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 409
     assert len(provider.calls) == 2
 
 

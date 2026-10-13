@@ -19,6 +19,7 @@ from slidecaptain.storage.file_store import DeckUnreadable, ProjectNotFound
 from slidecaptain.storage.job_ledger import LEDGER_NAME
 from tests import test_jobs_batch as batch
 from tests.test_jobs_api import HEADERS, GateProvider, _project, _register, _wait, manager  # noqa: F401
+from tests.job_runs import post_generation
 
 FIXTURE = Path(__file__).parent / "fixtures" / "failure-bodies.json"
 
@@ -114,7 +115,7 @@ def _collect(tmp_path_factory) -> dict:
         missing = client.post("/api/projects/nope/jobs",
                               json={"request_id": "req-00000003", "kind": "structure", "params": {}})
         http["project_missing"] = {"status": missing.status_code, "body": missing.json()}
-        consent = client.post("/api/projects/p1/generate/structure", json={}, headers={"X-AI-Consent": "no"})
+        consent = post_generation(client, "/api/projects/p1/generate/structure", json={}, headers={"X-AI-Consent": "no"})
         http["consent_missing"] = {"status": consent.status_code, "body": consent.json()}
         # 다른 탭이 보고 정보를 바꾼 뒤 옛 화면이 구조안을 등록한다 (D3b-2 리뷰 R1)
         mismatch = _register(client, request_id="req-00000004",
@@ -124,7 +125,7 @@ def _collect(tmp_path_factory) -> dict:
     _project(store)
     (store.root / LEDGER_NAME).write_bytes(b"broken" * 50)
     with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
-        blocked = client.post("/api/projects/p1/generate/structure", json={})
+        blocked = post_generation(client, "/api/projects/p1/generate/structure", json={})
         http["job_ledger_unavailable"] = {"status": blocked.status_code, "body": blocked.json()}
     return {"jobs": jobs, "chapters": chapters, "http": http}
 
@@ -196,16 +197,16 @@ def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory,
     store = FileProjectStore(tmp_path_factory.mktemp("conn"))
     _project(store)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
-        changed = client.post("/api/projects/p1/generate/structure", json={},
+        changed = post_generation(client, "/api/projects/p1/generate/structure", json={},
                               headers={"X-AI-Selection": "other-selection"})
         # 처음 보는 로그아웃, 그 뒤 상태 확인이 CLI를 찾지 못함(실제 check_login 문구와 코드)
         manager.connections["claude"].login = LoginStatus(logged_in=False)
-        logout = client.post("/api/projects/p1/generate/structure", json={},
+        logout = post_generation(client, "/api/projects/p1/generate/structure", json={},
                              headers={"X-AI-Selection": manager.selection_id})
         manager.connections["claude"].login = LoginStatus(
             error="Claude CLI를 찾지 못했습니다. Claude Code가 설치되어 있는지 확인해 주세요.", error_code="provider_missing")
         manager.selected_status()  # 화면은 생성 전에 상태를 읽는다. 상태가 바뀐 것을 먼저 관찰해 선택 ID가 새로 난다
-        no_cli = client.post("/api/projects/p1/generate/structure", json={},
+        no_cli = post_generation(client, "/api/projects/p1/generate/structure", json={},
                              headers={"X-AI-Selection": manager.selection_id})
     collected["http"]["selection_changed"] = {"status": changed.status_code, "body": changed.json()}
     collected["http"]["login_required"] = {"status": logout.status_code, "body": logout.json()}

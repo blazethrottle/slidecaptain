@@ -23,6 +23,7 @@ from test_story_plan_rewrite import StubProvider as RewriteProvider
 from test_story_plan_rewrite import rewrite_input  # noqa: F401 (픽스처)
 from test_story_repair import Provider as RepairProvider
 from test_story_repair import request as repair_request
+from tests.job_runs import post_generation, run_job, stale_result
 
 HEADERS = {"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"}
 SLOTS = {"template": "bullet_box", "bullets": [{"text": "시장 규모 500억", "level": 0}],
@@ -45,9 +46,9 @@ def test_sources_changed_while_drawing_keep_the_candidate_as_stale(diagram_input
     deck, _, payload = diagram_input
     provider = DiagramProvider(payload, effect=lambda: store.write_source("diagram", "unselected.md", "바뀐 원문"))
     with diagram_client(store, provider) as client:
-        response = client.post(DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
+        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
         [row] = _ledger_rows(client, "diagram")
-    assert response.status_code == 409  # 종전과 같은 응답
+    stale_result(response, ["sources_changed"])  # 래퍼의 409 자리 (D3c-7 대응표 ③)
     assert row.state == "succeeded" and row.candidate_status == "stale" and row.result["status"] == "ok"
     assert store.load_deck("diagram") == deck
 
@@ -192,32 +193,16 @@ def test_diagram_job_result_carries_its_basis(diagram_input, store):
     assert view["target"] == DIAGRAM_REQUEST["chapter_id"] and view["params"]["chapter_id"] == "new-diagram"
 
 
-def test_unreadable_basis_after_drawing_is_not_delivered(diagram_input, store):
+def test_unreadable_basis_after_drawing_keeps_the_candidate_held(diagram_input, store):
+    # 판정할 수 없는 결과는 낡음으로 굳히지 않고 후보로 남긴다. 조회의 사유가 판정 불가를 알린다 (D3c-7: 래퍼의 409 자리)
     _, _, payload = diagram_input
     provider = DiagramProvider(payload, effect=lambda: (store.root / "diagram" / "sources" / "unselected.md")
                                .write_bytes(b"\xff"))
     with diagram_client(store, provider) as client:
-        response = client.post(DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
+        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
         [row] = _ledger_rows(client, "diagram")
-    assert response.status_code == 409 and row.candidate_status == "held"  # 화면이 받지 못한 결과는 전달됨이 아니다
-
-
-def test_stale_chapter_result_returned_by_the_wrapper_is_delivered(store):
-    deck = _two_chapters(store)
-    provider = GateProvider(SLOTS)
-
-    def edit_then_release():
-        assert provider.entered.wait(5)
-        changed = deck.model_copy(deep=True)
-        changed.structure.chapters[0].conclusion = "바뀐 결론"
-        store.save_deck("p1", changed, snapshot=False)
-        provider.release.set()
-
-    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
-        threading.Thread(target=edit_then_release).start()
-        response = client.post("/api/projects/p1/generate/chapter/c1", json={})
-        [row] = _ledger_rows(client, "p1")
-    assert response.status_code == 200 and row.candidate_status == "delivered"
+    stale_result(response, ["unknown_sources"], candidate="held")
+    assert row.candidate_status == "held"
 
 
 @pytest.mark.parametrize("kind", ["rewrite", "chapter"])
@@ -259,7 +244,9 @@ def test_inputs_changed_between_registration_and_lease_make_no_call(rewrite_inpu
         store.save_deck(project, current, snapshot=False)
         resume.set()
         view = _wait(client, project, job["id"])
+        sent_at = client.app.state.job_runner.ledger.get_job(job["id"]).remote_sent_at
     assert view["state"] == "failed" and view["error"]["status"] == 412 and provider.calls == 0
+    assert sent_at is None  # 제공자를 부르기 전에 멈춘 작업은 원격 호출 시각이 없다
 
 
 def test_chapter_job_api_rejects_a_missing_chapter_without_a_row(store):
@@ -271,12 +258,15 @@ def test_chapter_job_api_rejects_a_missing_chapter_without_a_row(store):
 
 
 def test_remote_sent_time_is_recorded_only_when_the_provider_is_called(store):
+    # 제공자를 부른 작업에만 원격 호출 시각이 있다. 부르기 전에 멈춘 작업은 바로 위 시험이 본다. 래퍼가 없는 장의 404를
+    # 임대 뒤에 내던 경우는 D3c-7부터 등록 검사라 행이 생기지 않는다
     _two_chapters(store)
-    with TestClient(create_app(store, provider=GateProvider(SLOTS)), headers=HEADERS) as client:
-        # 래퍼는 종전처럼 없는 장 404를 임대 뒤에 낸다. 제공자를 부르지 않았으므로 원격 호출 시각이 없다
-        assert client.post("/api/projects/p1/generate/chapter/missing", json={}).status_code == 404
+    provider = GateProvider(SLOTS)
+    provider.release.set()
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        run = run_job(client, "p1", "chapter", {"chapter_id": "c1"})
         [row] = _ledger_rows(client, "p1")
-    assert row.state == "failed" and row.remote_sent_at is None
+    assert run.state == "succeeded" and provider.calls == 1 and row.remote_sent_at is not None
 
 
 def test_repair_stops_between_calls_when_its_cancel_flag_is_set(rewrite_input, store):
@@ -320,12 +310,13 @@ def test_repair_result_is_stopped_in_the_ledger_and_the_response_when_the_deck_c
 
     monkeypatch.setattr(app_module, "repair_story", repair_then_edit)
     with TestClient(create_app(store, provider=RepairProvider(payload)), headers=HEADERS) as client:
-        response = client.post("/api/projects/rewrite/story-plan/repair",
+        response = post_generation(client, "/api/projects/rewrite/story-plan/repair",
                                json=repair_request(brief).model_dump(mode="json"),
                                headers={"If-Match": f'"{store.deck_etag("rewrite")}"'})
         [row] = _ledger_rows(client, "rewrite")
-    assert response.status_code == 200 and response.json()["status"] == "stopped"
-    assert row.result["status"] == "stopped" and row.candidate_status == "delivered"
+    # 원장과 작업 결과가 같은 stopped다. 덱이 바뀌었으므로 후보는 낡았다 (D3c-7: 래퍼의 delivered 기록은 없어졌다)
+    assert stale_result(response, ["deck_changed"])["status"] == "stopped"
+    assert row.result["status"] == "stopped" and row.candidate_status == "stale"
 
 
 def test_chapter_recheck_reports_a_stale_story_plan(rewrite_input, store):
