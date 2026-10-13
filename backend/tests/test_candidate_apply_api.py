@@ -409,6 +409,24 @@ def test_job_api_rejects_a_stale_story_plan_at_registration_without_a_row(store,
     assert rows == [] and provider.calls == 0
 
 
+@pytest.mark.parametrize("kind", ["chapter", "condense"])
+def test_selection_check_comes_before_the_stale_story_plan_at_registration(store, monkeypatch, kind):
+    """선택 확인(제공자 없음 503, 연결 선택 변경 409)은 구성 계획 낡음(E9)보다 먼저다. 둘이 함께 성립하면 화면은 AI 연결을
+    다시 확인하라고 안내해야 한다. 구성 계획을 다시 만들라고 안내하면, 다시 만든 뒤에도 같은 요청이 선택 확인에 막힌다
+    (D3c-7 리뷰 H5)."""
+    _project(store)
+    _save_slide(store, {"chapter_id": "c1", "slots": slots("지금")})
+    monkeypatch.setattr("slidecaptain.server.app.require_current_story",
+                        lambda deck, sources: (_ for _ in ()).throw(StaleStoryPlan("보고 계획이 바뀌었습니다.")))
+    params = {"chapter_id": "c1", **({"slots": slots("지금")} if kind == "condense" else {})}
+    with TestClient(create_app(store), headers=HEADERS) as client:  # 제공자 없음
+        response = client.post("/api/projects/p1/jobs", json={"request_id": "req-00000001", "kind": kind, "params": params})
+        rows = client.app.state.job_runner.ledger.list_jobs("p1")
+    assert response.status_code == 503, response.text
+    assert response.json().get("code") != "stale_story_plan"
+    assert rows == []
+
+
 # -- D3c-5 리뷰 반영 ---------------------------------------------------------------------------------------
 
 

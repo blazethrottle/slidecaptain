@@ -18,7 +18,7 @@ from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, Provid
 from slidecaptain.pipeline.rewrite import sources_fingerprint
 from slidecaptain.pipeline.story import story_fingerprint
 from slidecaptain.server.app import create_app
-from tests.job_runs import post_generation
+from tests.job_runs import format_error_result, post_generation
 
 
 ROUTE = "/api/projects/diagram/generate/diagram"
@@ -235,11 +235,9 @@ def test_invalid_ai_output_retries_once_and_preserves_saved_deck(diagram_input, 
     if defect == "no_nodes": payload["nodes"] = []
     if defect == "no_edges": payload["edges"] = []
     provider = StubProvider(payload)
-    response = post_generation(app_client(store, provider), ROUTE, json=REQUEST)
+    client = app_client(store, provider)
     # 래퍼는 200과 format_error 결과를 돌려줬다. 작업 API에서는 형식 오류로 실패하고 원문은 원장의 결과에 남는다(대응표 ②)
-    assert (response.view["state"], response.view["error"]["error_class"]) == ("failed", "ai_output"), response.text
-    result = response.view["result"]
-    assert result["status"] == "format_error"
+    result = format_error_result(post_generation(client, ROUTE, json=REQUEST))
     assert result["diagram"] is None
     assert result["raw_text"] == "합성 도식 후보"
     assert result["format_retried"] is True
@@ -248,6 +246,7 @@ def test_invalid_ai_output_retries_once_and_preserves_saved_deck(diagram_input, 
     assert [r["purpose"] for r in result["usage"]["records"]] == ["generate", "format_retry"]
     assert usage_records(store)[0]["outcome"] == "format_error"
     assert store.load_deck("diagram") == deck
+    assert client.get("/api/status").json()["last_generation_at"] is None  # 형식 오류는 성공이 아니다 (D3c-7 리뷰 H3)
     assert store.list_snapshots("diagram") == []
 
 
@@ -315,7 +314,7 @@ def test_changes_while_awaiting_provider_discard_candidate(diagram_input, store,
             for path in (store.root / "diagram" / "sources").iterdir(): path.unlink()
     provider = StubProvider(payload, effect=mutate)
     client = app_client(store, provider)
-    response = post_generation(client, ROUTE, json=REQUEST)
+    response = post_generation(client, ROUTE, json=REQUEST, expect="stale")
     # 래퍼는 생성 뒤 판정으로 412나 409를 돌려줬다. 작업 API에서는 작업이 성공하고 결과가 낡은 후보로 남는다(대응표 ③).
     # 자료를 읽지 못하면 판정을 미루므로 후보는 held이고 조회의 사유가 unknown_sources다 (D3c-7)
     candidate, reasons = {"deck": ("stale", ["deck_changed"]), "deck_invalid": ("stale", ["unknown_deck"]),
@@ -394,7 +393,7 @@ def test_changes_during_lease_acquisition_do_not_reach_provider(diagram_input, s
         manager.select(AISelection(provider="claude", model="synthetic-model"))
         response = post_generation(app_client(store, manager=manager), ROUTE, json=REQUEST, headers={
             "X-AI-Selection": manager.selection_id,
-        })
+        }, expect="run_failure")  # 임대를 얻는 동안 바뀐 기준은 실행 단계의 재비교가 거절한다
         assert response.status_code == (412 if change == "deck" else 409), response.text
         assert provider.calls == []
         assert usage_records(store) == []

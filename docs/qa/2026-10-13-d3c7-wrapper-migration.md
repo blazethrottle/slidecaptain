@@ -21,6 +21,10 @@
 
 래퍼가 같이 고정한 부수 단언(제공자 호출 수, 사용량 기록, 저장본과 스냅샷 불변, 성공 시각 기록 여부)은 시험에 그대로 남겼다.
 
+형식 오류의 원장 오류에는 상태가 없다(`error.status`가 `null`). 처음 판에 "② failed(500)"으로 적은 500은 도우미의 대체값이었고, 화면의 `jobResult`는 결과가 있으면 형식 오류 결과를 돌려주므로 500을 보지 않는다(D3c-7 리뷰 H7).
+
+D3c-7 리뷰 반영(H1, H2)부터 아래 표의 "행 없음"과 "성공 held"는 기록의 관측이 아니라 도우미의 단언이다. `run_job`은 등록이 거절되면 작업 목록이 그대로인지 보고, `post_generation`은 실행 단계의 4xx 실패를 `expect="run_failure"`를 넘긴 시험만 받으며(3곳), 성공은 후보 `held`와 빈 사유일 때만 받는다(낡은 후보와 판정 불가를 기대하는 15곳은 `expect="stale"`). 등록 단계 503 세 곳은 실행 단계 503과 상태가 같아 `run.rejected`를 직접 본다.
+
 ## 지운 시험 (래퍼에만 있던 성질)
 
 | 시험 | 성질 | 이유 |
@@ -103,21 +107,21 @@
 | `test_diagram_generation.py::test_changes_while_awaiting_provider_discard_candidate[source]` | diagram 409 | ③ succeeded, stale(sources_changed) |
 | `test_diagram_generation.py::test_changes_while_awaiting_provider_discard_candidate[source_invalid]` | diagram 409 | 성공 held(unknown_sources) |
 | `test_diagram_generation.py::test_changes_while_awaiting_provider_discard_candidate[source_too_large]` | diagram 409 | 성공 held(unknown_sources) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[claim_ids]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[coordinates]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[cycle]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[duplicate_edge]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[duplicate_node]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[fixed_id]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[missing_relation_support]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[missing_uncertainty]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[new_evidence]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[no_edges]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[no_nodes]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[not_selected]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[role]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[unknown_evidence]` | diagram 200 | ② failed(500) |
-| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[unknown_node]` | diagram 200 | ② failed(500) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[claim_ids]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[coordinates]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[cycle]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[duplicate_edge]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[duplicate_node]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[fixed_id]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[missing_relation_support]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[missing_uncertainty]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[new_evidence]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[no_edges]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[no_nodes]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[not_selected]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[role]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[unknown_evidence]` | diagram 200 | ② failed(ai_output, 상태 없음) |
+| `test_diagram_generation.py::test_invalid_ai_output_retries_once_and_preserves_saved_deck[unknown_node]` | diagram 200 | ② failed(ai_output, 상태 없음) |
 | `test_diagram_generation.py::test_numbers_only_use_selected_registered_excerpts` | diagram 200 | 성공 held |
 | `test_diagram_generation.py::test_plan_and_actual_source_must_be_current_before_provider[absent-422]` | diagram 422 | ① 등록 422, 행 없음 |
 | `test_diagram_generation.py::test_plan_and_actual_source_must_be_current_before_provider[forged_excerpt-409]` | diagram 409 | ① 등록 409, 행 없음 |
@@ -199,12 +203,12 @@
 | `test_story_plan_rewrite.py::test_apply_revalidates_candidate[topic]` | rewrite 200 | 성공 held |
 | `test_story_plan_rewrite.py::test_apply_twice_rejects_second_attempt_and_preserves_one_snapshot` | rewrite 200 | 성공 held |
 | `test_story_plan_rewrite.py::test_apply_without_etag_is_rejected` | rewrite 200 | 성공 held |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[claim]` | rewrite 200 | ② failed(500) |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[duplicate]` | rewrite 200 | ② failed(500) |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[evidence]` | rewrite 200 | ② failed(500) |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[invented]` | rewrite 200 | ② failed(500) |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[missing]` | rewrite 200 | ② failed(500) |
-| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[role]` | rewrite 200 | ② failed(500) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[claim]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[duplicate]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[evidence]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[invented]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[missing]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
+| `test_story_plan_rewrite.py::test_bad_ai_output_is_retried_once_without_saving[role]` | rewrite 200 | ② failed(ai_output, 상태 없음) |
 | `test_story_plan_rewrite.py::test_changed_base_cannot_apply[after-add_source]` | rewrite 200 | 성공 held |
 | `test_story_plan_rewrite.py::test_changed_base_cannot_apply[after-deck]` | rewrite 200 | 성공 held |
 | `test_story_plan_rewrite.py::test_changed_base_cannot_apply[after-remove_source]` | rewrite 200 | 성공 held |
@@ -224,7 +228,7 @@
 | `test_story_plan_rewrite.py::test_protected_source_change_blocks_before_ai[delete]` | rewrite 409 | ① 등록 409, 행 없음 |
 | `test_story_plan_rewrite.py::test_protected_source_change_blocks_before_ai[move]` | rewrite 409 | ① 등록 409, 행 없음 |
 | `test_story_plan_rewrite.py::test_rewrite_checks_numbers_in_caveats_and_unanswered_questions` | rewrite 200 | 성공 held |
-| `test_story_plan_rewrite.py::test_usage_records_rewrite_and_format_retry_without_source_text` | rewrite 200 | ② failed(500) |
+| `test_story_plan_rewrite.py::test_usage_records_rewrite_and_format_retry_without_source_text` | rewrite 200 | ② failed(ai_output, 상태 없음) |
 | `test_story_repair.py::test_api_requires_consent_etag_and_never_saves_candidate` | repair 428, repair 428, repair 200 | ① 등록 428, 행 없음; ① 등록 428, 행 없음; 성공 held |
 | `test_story_rewrite_edits.py::test_api_retries_invalid_edits_then_applies_without_saving_preview[answer_role]` | rewrite 200 | 성공 held |
 | `test_story_rewrite_edits.py::test_api_retries_invalid_edits_then_applies_without_saving_preview[protected_echo]` | rewrite 200 | 성공 held |

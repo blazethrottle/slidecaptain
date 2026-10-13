@@ -14,7 +14,6 @@ import asyncio
 import logging
 import threading
 import time
-import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -657,7 +656,3 @@ class JobRunner:
             return
         for row in rows:
             self._settle_left_over(row, allow_apply=False)
-
-
-def new_request_id() -> str:
-    return uuid.uuid4().hex

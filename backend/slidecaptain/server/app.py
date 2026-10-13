@@ -20,7 +20,6 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-import anyio
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse

@@ -193,7 +193,8 @@ def test_expired_login_makes_no_call(store, manager, observed_before, status):
     manager.connections["claude"].login = LoginStatus(logged_in=False)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
         response = post_generation(client, "/api/projects/p1/generate/structure", json={},
-                               headers={"X-AI-Selection": manager.selection_id})
+                               headers={"X-AI-Selection": manager.selection_id}, expect="run_failure")
+    # 로그인 확인은 임대 뒤 실행 단계에서 한다. 처음 보는 로그아웃(503)도 만료(409)도 행이 남는 실행 실패다
     assert response.status_code == status
     assert manager.connections["claude"].calls == []
 
@@ -285,7 +286,7 @@ def test_unreadable_ledger_blocks_only_generation(store):
         saved = client.put("/api/projects/p1/deck", json=deck.json(), headers={"If-Match": deck.headers["etag"]})
         assert saved.status_code == 200
         blocked = post_generation(client, "/api/projects/p1/generate/structure", json={})
-        assert blocked.status_code == 503 and blocked.json()["code"] == "job_ledger_unavailable"
+        assert blocked.status_code == 503 and blocked.json()["code"] == "job_ledger_unavailable" and blocked.run.rejected
         assert client.get("/api/projects/p1/progress").json()["jobs"] is None
 
 
@@ -556,7 +557,7 @@ def test_ledger_write_failures_end_the_job_as_a_ledger_failure(store, monkeypatc
     provider.release.set()
     with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
         ledger = _runner(client).ledger
-        real_transition, real_get = ledger.transition, ledger.get_job
+        real_transition = ledger.transition
 
         def transition(job_id, *, expected, new, **changes):
             if new == failing:
@@ -566,7 +567,6 @@ def test_ledger_write_failures_end_the_job_as_a_ledger_failure(store, monkeypatc
         monkeypatch.setattr(ledger, "transition", transition)
         run = run_job(client, "p1", "structure", {})
         monkeypatch.setattr(ledger, "transition", real_transition)
-        monkeypatch.setattr(ledger, "get_job", real_get)
         [row] = ledger.list_jobs("p1")
     assert run.state == "failed"
     assert row.state == "failed" and row.error_class == "ledger" and row.error_code == "ledger_write_failed"

@@ -106,7 +106,8 @@ def test_generate_without_provider_returns_503(store):
     client = TestClient(create_app(store), headers=_APP_HEADERS)  # provider 없음: 기존 시그니처 호환
     client.post("/api/projects", json={"name": "p1"})
     r = post_generation(client, "/api/projects/p1/generate/structure", json={})
-    assert r.status_code == 503
+    # 등록 단계의 503은 실행 단계의 503(로그인)과 상태가 같으므로 거절을 직접 본다 (D3c-7 리뷰 H1)
+    assert r.status_code == 503 and r.run.rejected
 
 
 def test_condense_chapter_endpoint(store):

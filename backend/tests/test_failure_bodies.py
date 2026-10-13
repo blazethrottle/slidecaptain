@@ -126,6 +126,7 @@ def _collect(tmp_path_factory) -> dict:
     (store.root / LEDGER_NAME).write_bytes(b"broken" * 50)
     with TestClient(create_app(store, provider=GateProvider()), headers=HEADERS) as client:
         blocked = post_generation(client, "/api/projects/p1/generate/structure", json={})
+        assert blocked.run.rejected  # 등록 단계의 503 (D3c-7 리뷰 H1)
         http["job_ledger_unavailable"] = {"status": blocked.status_code, "body": blocked.json()}
     return {"jobs": jobs, "chapters": chapters, "http": http}
 
@@ -193,7 +194,9 @@ def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory,
     from slidecaptain.storage.file_store import FileProjectStore
 
     collected = _collect(tmp_path_factory)
-    # 연결 상태 확인에서 나는 등록 단계 오류: 처음 보는 로그아웃과 선택 변경
+    # 연결 상태 확인에서 나는 오류. 선택 변경은 등록 단계의 409 응답 본문이다. 처음 보는 로그아웃과 CLI 없음은 임대 뒤
+    # 실행 단계의 실패이고, 고정 파일의 본문은 작업 오류(error.status, detail, code)에서 만든 값이다 (D3c-7 리뷰 H11).
+    # 화면의 jobResult(frontend/src/api/jobs.ts)도 같은 규칙으로 작업 오류를 본문으로 바꾼다
     store = FileProjectStore(tmp_path_factory.mktemp("conn"))
     _project(store)
     with TestClient(create_app(store, ai_connections=manager), headers=HEADERS) as client:
@@ -208,6 +211,7 @@ def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory,
         manager.selected_status()  # 화면은 생성 전에 상태를 읽는다. 상태가 바뀐 것을 먼저 관찰해 선택 ID가 새로 난다
         no_cli = post_generation(client, "/api/projects/p1/generate/structure", json={},
                              headers={"X-AI-Selection": manager.selection_id})
+    assert changed.run.rejected and logout.category == "failure" and no_cli.category == "failure"
     collected["http"]["selection_changed"] = {"status": changed.status_code, "body": changed.json()}
     collected["http"]["login_required"] = {"status": logout.status_code, "body": logout.json()}
     collected["http"]["provider_missing"] = {"status": no_cli.status_code, "body": no_cli.json()}

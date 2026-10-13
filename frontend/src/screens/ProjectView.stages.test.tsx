@@ -319,7 +319,11 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeEnabled());
     await userEvent.clear(screen.getByLabelText("보고서 제목"));
     await userEvent.type(screen.getByLabelText("보고서 제목"), "제목");  // 저장본으로 되돌렸다
+    const reads = vi.mocked(api.getDeck).mock.calls.length;
     await otherTabBatchEnds(batchDeck);
+    // 묶음 종결을 진행 확인 주기로 알아채고 덱을 다시 읽을 때까지 기다린 뒤 안내를 본다. 둘을 한 waitFor(기본 1초)에 묶으면
+    // CI 부하에서 넘친다 (561a774의 macOS 실행에서 한 번 실패했다)
+    await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBeGreaterThan(reads), { timeout: 5000 });
     await waitFor(() => expect(screen.queryByText(/생성한 장이 문서에 반영되었습니다/)).toBeNull());
     await userEvent.type(screen.getByLabelText("보고서 제목"), " 다시");
     await waitFor(() => expect(api.putDeck).toHaveBeenCalled());

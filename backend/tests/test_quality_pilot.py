@@ -6,7 +6,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.quality_pilot import BudgetedProvider, _PilotConnection, main, run_pilot, scenario
+from scripts import quality_pilot
+from scripts.quality_pilot import BudgetedProvider, OfflineProvider, _PilotConnection, main, run_pilot, scenario
 from slidecaptain.models.deck import Deck
 from slidecaptain.pipeline.connections import AIConnections
 from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, ProviderResponse
@@ -232,3 +233,43 @@ def test_journal_failure_after_response_stops_next_dispatch(tmp_path, monkeypatc
     result = run_pilot(tmp_path / "journal-failure", mode="offline", max_calls=5, provider=provider)
     assert result["status"] == "blocked"
     assert provider.calls == 1
+
+
+class _SourceChangingProvider:
+    """오프라인 응답을 내되 재작성 호출(스키마에 chapter_order가 있음) 중에 자료를 더한다."""
+
+    def __init__(self, sources_dir):
+        self.inner, self.sources_dir = OfflineProvider(), sources_dir
+
+    async def complete(self, prompt, schema):
+        if "chapter_order" in schema.get("properties", {}):
+            (self.sources_dir / "added-while-rewriting.md").write_text("새 합성 자료", encoding="utf-8")
+        return await self.inner.complete(prompt, schema)
+
+
+def test_rewrite_candidate_made_stale_while_drawing_stops_the_pilot(tmp_path):
+    # 래퍼는 이 경우 412나 409로 멈췄다. 작업 API에서는 후보가 낡음으로 남으므로 파일럿이 후보 상태를 본다 (D3c-7 리뷰 H4)
+    output = tmp_path / "stale-rewrite"
+    provider = _SourceChangingProvider(output / "projects" / "quality-pilot" / "sources")
+    result = run_pilot(output, mode="offline", max_calls=5, provider=provider)
+    assert result["status"] == "blocked"
+    assert result["stage"] == "rewrite_preview"
+    assert result["error"] == "재작성 후보가 만드는 동안 입력이 바뀌어 낡았습니다."
+    assert (output / "rewrite-result.json").exists()
+    assert not (output / "applied-deck.json").exists()
+
+
+class _SlowProvider:
+    # 0.3초 안에 호출까지 갔는지는 러너 부하에 따라 다르므로 호출 수는 보지 않는다
+    async def complete(self, prompt, schema):
+        await asyncio.sleep(30)  # 대기 상한을 넘긴다. 파일럿이 끝나면 앱 종료가 이 호출을 취소한다
+        raise AssertionError("취소되어야 합니다")
+
+
+def test_job_wait_limit_stops_the_pilot(tmp_path, monkeypatch):
+    monkeypatch.setattr(quality_pilot, "JOB_WAIT_SECONDS", 0.3)
+    provider = _SlowProvider()
+    result = run_pilot(tmp_path / "slow", mode="offline", max_calls=5, provider=provider)
+    assert result["status"] == "blocked"
+    assert result["stage"] == "chapter"
+    assert result["error"] == "chapter 작업이 0.3초 안에 끝나지 않았습니다."

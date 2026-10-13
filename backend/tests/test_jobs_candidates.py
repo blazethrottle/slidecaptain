@@ -46,7 +46,7 @@ def test_sources_changed_while_drawing_keep_the_candidate_as_stale(diagram_input
     deck, _, payload = diagram_input
     provider = DiagramProvider(payload, effect=lambda: store.write_source("diagram", "unselected.md", "바뀐 원문"))
     with diagram_client(store, provider) as client:
-        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
+        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST, expect="stale")
         [row] = _ledger_rows(client, "diagram")
     stale_result(response, ["sources_changed"])  # 래퍼의 409 자리 (D3c-7 대응표 ③)
     assert row.state == "succeeded" and row.candidate_status == "stale" and row.result["status"] == "ok"
@@ -199,7 +199,7 @@ def test_unreadable_basis_after_drawing_keeps_the_candidate_held(diagram_input, 
     provider = DiagramProvider(payload, effect=lambda: (store.root / "diagram" / "sources" / "unselected.md")
                                .write_bytes(b"\xff"))
     with diagram_client(store, provider) as client:
-        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST)
+        response = post_generation(client, DIAGRAM_ROUTE, json=DIAGRAM_REQUEST, expect="stale")
         [row] = _ledger_rows(client, "diagram")
     stale_result(response, ["unknown_sources"], candidate="held")
     assert row.candidate_status == "held"
@@ -312,7 +312,7 @@ def test_repair_result_is_stopped_in_the_ledger_and_the_response_when_the_deck_c
     with TestClient(create_app(store, provider=RepairProvider(payload)), headers=HEADERS) as client:
         response = post_generation(client, "/api/projects/rewrite/story-plan/repair",
                                json=repair_request(brief).model_dump(mode="json"),
-                               headers={"If-Match": f'"{store.deck_etag("rewrite")}"'})
+                               headers={"If-Match": f'"{store.deck_etag("rewrite")}"'}, expect="stale")
         [row] = _ledger_rows(client, "rewrite")
     # 원장과 작업 결과가 같은 stopped다. 덱이 바뀌었으므로 후보는 낡았다 (D3c-7: 래퍼의 delivered 기록은 없어졌다)
     assert stale_result(response, ["deck_changed"])["status"] == "stopped"
