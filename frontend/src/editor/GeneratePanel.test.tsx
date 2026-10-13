@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { AiConsentDeclined, api, ApiError, type ChapterResult, type Deck } from "../api/client";
+import { AiConsentDeclined, api, ApiError, type ChapterResult, type Deck, type JobView } from "../api/client";
+import { deferred } from "../test/fixtures";
 import { applyThroughCompare, compareDialog, previewOf } from "../test/compare";
 import { jobView } from "../test/jobs";
 import { emptyUsage, expectUsageCollapsed } from "../test/usage";
@@ -481,11 +482,13 @@ it("서버가 낡은 후보로 기록한 결과는 반영 대신 다시 생성�
 
 it("조회가 실패하면 확인하지 못했다고 알리고 계속 조회한다", async () => {
   vi.mocked(api.startJob).mockResolvedValue(jobView("chapter", { target: "c1", state: "running", candidate_status: "none" }));
-  vi.mocked(api.getJob).mockRejectedValueOnce(new ApiError(503, "연결 오류"))
-    .mockResolvedValueOnce(jobView("chapter", { target: "c1", result: okResult as unknown as Record<string, unknown> }));
+  // 다음 조회는 안내를 확인한 뒤에 끝낸다. 30ms 뒤 바로 성공하면 느린 러너에서 안내가 찾기 전에 사라진다
+  const next = deferred<JobView>();
+  vi.mocked(api.getJob).mockRejectedValueOnce(new ApiError(503, "연결 오류")).mockReturnValueOnce(next.promise);
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} pollIntervalMs={30} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeInTheDocument();
+  next.resolve(jobView("chapter", { target: "c1", result: okResult as unknown as Record<string, unknown> }));
   expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
   expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
 });

@@ -1147,11 +1147,13 @@ it("구조안 생성의 조회가 실패하면 확인하지 못했다고 알린�
   // 다시 씀 (D3a-5): 작업이 진행 작업에 남아 있는 동안만 계속 조회한다. 없으면 한 번 더 조회한 뒤 멈춘다
   vi.mocked(api.getActiveJob).mockResolvedValue({ active: { id: "job-1", project: "p1", kind: "structure", target: null,
     stage: "running", created_at: "", cancel_requested: false }, ledger_available: true });
-  vi.mocked(batchGetJob).mockRejectedValueOnce(new ApiError(503, "연결 오류"))
-    .mockResolvedValueOnce(jobView("structure", { result: structureResult([CH1]) as unknown as Record<string, unknown> }));
+  // 다음 조회는 안내를 확인한 뒤에 끝낸다. 30ms 뒤 바로 성공하면 느린 러너에서 안내가 찾기 전에 사라진다(macOS CI 실패)
+  const next = deferred<JobView>();
+  vi.mocked(batchGetJob).mockRejectedValueOnce(new ApiError(503, "연결 오류")).mockReturnValueOnce(next.promise);
   render(<StructureScreen project={project} deck={emptyDeck()} onDeckChange={() => {}} onDone={() => {}} pollIntervalMs={30} />);
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
   expect(await screen.findByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeInTheDocument();
+  next.resolve(jobView("structure", { result: structureResult([CH1]) as unknown as Record<string, unknown> }));
   await screen.findByLabelText("1번 장 주제");
   expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
 });
