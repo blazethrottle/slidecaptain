@@ -165,3 +165,47 @@ def normalize_edits(edits: dict[str, ElementEdit], keys: dict[str, KeySpec]) -> 
         if values:
             result[key] = ElementEdit(**values)
     return result
+
+
+# 근거 표시인 요소(계획 4.3): 각주와 표 묶음은 늘 근거이고, 그 밖의 요소는 수치 검토가 평가한 칸이 들어 있으면 근거다
+EVIDENCE_KEYS = frozenset({"footnote", "table"})
+_LIST_KEYS = {"cards": "card", "steps": "step", "rows": "row"}
+
+
+def numeric_path_key(slide, path: str) -> str | None:
+    """수치 검토 칸의 경로(pipeline/numeric_review.py)가 든 요소 열쇠. 그려지지 않는 칸은 None (재리뷰 RR11).
+
+    예: `/topic`은 title, 표지의 `/slots/title`은 cover_title, `/slots/rows/0/1`(표)은 table, `/slots/steps/0/notes/0`은
+    step0_labels, `/slots/rows/2/items/1`(분류)은 row2_items다. 표지와 간지의 `/eyebrow`, `/subtitle`은 그리지 않는다."""
+    template = slide.slots.template
+    keys = frame_keys(slide)
+    parts = path.strip("/").split("/")
+    if parts[0] != "slots":
+        key = {"topic": "title", "eyebrow": "eyebrow", "subtitle": "subtitle"}.get(parts[0])
+        if template in ("cover", "divider"):
+            return None
+        return key if key in keys else None
+    field = parts[1] if len(parts) > 1 else ""
+    if template == "cover":
+        key = {"title": "cover_title"}.get(field, field)
+    elif template == "divider" or template == "callout":
+        key = field
+    elif template == "table":
+        key = "table" if field in ("columns", "rows") else field
+    elif template == "compare2":
+        key = {"left": "left_card", "right": "right_card"}.get(field, field)
+    elif template in ("bullet_box", "summary"):
+        key = field
+    elif field in _LIST_KEYS and len(parts) > 2:
+        index = parts[2]
+        base = f"{_LIST_KEYS[field]}{index}"
+        if template == "process":
+            key = f"{base}_labels" if len(parts) > 3 and parts[3] == "notes" else base
+        elif template == "matrix":
+            sub = parts[3] if len(parts) > 3 else "category"
+            key = f"{base}_{sub}"
+        else:
+            key = base
+    else:
+        key = None
+    return key if key in keys else None

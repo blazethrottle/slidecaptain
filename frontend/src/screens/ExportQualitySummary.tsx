@@ -5,6 +5,7 @@ const checkNames: Record<string, string> = {
   chapter_coverage: "장 구성 반영",
   layout_capacity: "레이아웃 용량",
   numeric_expressions: "계산 문구 대조",
+  hidden_evidence: "숨긴 근거 표시",
   narrative: "보고 흐름",
   evidence: "근거 타당성",
   representation: "표현 적절성",

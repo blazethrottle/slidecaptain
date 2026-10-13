@@ -8,6 +8,7 @@ import hashlib
 import json
 
 from slidecaptain.models.deck import Deck
+from slidecaptain.models.direct_edit import EVIDENCE_KEYS, numeric_path_key
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.quality import QualityCheck, QualityReport
@@ -32,6 +33,18 @@ class QualityExportBlocked(ValueError):
             else "완성본 내보내기를 허용할 수 없습니다. 내용과 시각 검수가 아직 구현되지 않았습니다. 검수 전 초안으로 내보내거나 검수 기능 구현 후 다시 시도해 주세요."
         )
         super().__init__(reason)
+
+
+def _hidden_evidence(deck: Deck, numeric) -> list[tuple[str, str]]:
+    """숨긴 근거 표시(장 ID, 요소 열쇠). 각주와 표 묶음, 수치 검토가 평가한 칸이 든 요소다 (D3c 계획 4.3, 4.6)."""
+    found: list[tuple[str, str]] = []
+    for slide in deck.slides:
+        hidden = [key for key, edit in slide.direct_edits.items() if edit.hidden]
+        if not hidden:
+            continue
+        numeric_keys = {numeric_path_key(slide, item.path) for item in numeric.items if item.chapter_id == slide.chapter_id}
+        found.extend((slide.chapter_id, key) for key in hidden if key in EVIDENCE_KEYS or key in numeric_keys)
+    return found
 
 
 def assess_quality(
@@ -92,6 +105,16 @@ def assess_quality(
             f"확인 필요 {numeric.unresolved}개입니다. 자유로운 문장의 의미는 검수하지 않았습니다."
         ),
     ))
+    hidden = _hidden_evidence(deck, numeric)
+    if hidden:
+        # 숨긴 근거 표시가 있을 때만 넣는다. 늘 넣으면 대상 0인 통과가 되거나 모든 덱의 보고가 바뀐다 (D3c-2, 재리뷰 RR11)
+        evidence = [key for _, key in hidden]
+        checks.append(QualityCheck(
+            name="hidden_evidence", status="failed", evaluated=len(hidden), failed=len(hidden),
+            chapter_ids=list(dict.fromkeys(chapter_id for chapter_id, _ in hidden)),
+            detail=f"근거 표시(각주, 표, 숫자가 든 문구) {len(hidden)}개를 숨겼습니다({', '.join(evidence)}). "
+                   "숨긴 채로 내보내도 되는지 확인해 주세요. 숨긴 문구는 계속 검토합니다.",
+        ))
     for name, detail in (
         ("narrative", "전체 보고 흐름, 요약과 본문의 정합성 검수를 수행하지 않았습니다."),
         ("evidence", "주장 전체의 근거 타당성과 원문 해석을 검수하지 않았습니다. 계산 문구 대조는 별도 항목입니다."),

@@ -35,6 +35,12 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/direct-edits/font-limit",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
     "path": "/api/render-plan",
     "methods": [
       "POST"

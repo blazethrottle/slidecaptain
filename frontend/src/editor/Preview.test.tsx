@@ -251,3 +251,13 @@ it("미리보기 표 칸은 화면 글자색이 아니라 프리셋 글자색을
     selected={null} onSelect={() => {}} onCommitText={() => {}} />);
   expect(getComputedStyle(screen.getByText("값")).color).toBe("rgb(18, 52, 86)");
 });
+
+it("직접 수정으로 숨긴 프레임은 그리지 않는다 (D3c-2)", () => {
+  const hidden: SlidePlan = { ...slide, frames: slide.frames.map((f) =>
+    f.name === "c1:bullets" ? { ...f, hidden: true, base_x: f.x, base_y: f.y } : f) };
+  const { container } = render(<Preview slide={hidden} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  expect(container.querySelector('[data-frame="c1:bullets"]')).toBeNull();
+  expect(screen.queryByText("첫 불릿")).toBeNull();
+  expect(screen.getByText("장 제목")).toBeInTheDocument();
+});

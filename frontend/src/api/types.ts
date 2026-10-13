@@ -94,6 +94,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/direct-edits/font-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Direct Edit Font Limit
+         * @description 고른 요소가 넘치지 않는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 렌더 계획 직렬화를 바꾸지 않도록 따로 묻는다.
+         */
+        post: operations["direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/render-plan": {
         parameters: {
             query?: never;
@@ -2469,6 +2489,32 @@ export interface components {
             render: components["schemas"]["NativeRenderRecord"];
             independent_review: components["schemas"]["IndependentReviewRecord"];
         };
+        /**
+         * FontLimit
+         * @description 요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,
+         *     가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt).
+         */
+        FontLimit: {
+            /** Current Pt */
+            current_pt: number;
+            /** Fits Up To Pt */
+            fits_up_to_pt: number | null;
+            /** Min Pt */
+            min_pt: number;
+            /** Max Pt */
+            max_pt: number;
+        };
+        /**
+         * FontLimitRequest
+         * @description 직접 수정의 글자 크기 칸이 묻는 요소 (D3c-2, 계획 4.5). 덱은 편집 화면이 지금 보는 덱이다(저장 전 포함).
+         */
+        FontLimitRequest: {
+            deck: components["schemas"]["Deck"];
+            /** Chapter Id */
+            chapter_id: string;
+            /** Key */
+            key: string;
+        };
         /** FontRoles */
         FontRoles: {
             /**
@@ -2568,6 +2614,12 @@ export interface components {
             radius_pt?: number | null;
             /** Border Width Pt */
             border_width_pt?: number | null;
+            /** Base X */
+            base_x?: number | null;
+            /** Base Y */
+            base_y?: number | null;
+            /** Hidden */
+            hidden?: boolean;
         };
         /** GenerateChapterRequest */
         GenerateChapterRequest: {
@@ -4681,6 +4733,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenderPlan"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FontLimitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontLimit"];
                 };
             };
             /** @description Validation Error */

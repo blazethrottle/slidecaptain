@@ -46,6 +46,8 @@ from slidecaptain.export.qualification import (
     publish_final, read_export_qualification, render_export,
 )
 from slidecaptain.layout.engine import build_render_plan
+from slidecaptain.layout.direct_edits import font_limit
+from slidecaptain.models.direct_edit import frame_keys
 from slidecaptain.layout.diagram_page import DiagramRenderBlocked
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Deck, Slide, Slots
@@ -181,6 +183,24 @@ _VALIDATION_TYPE_MESSAGES = {
 class CreateProjectRequest(BaseModel):
     name: str
     title: str = ""
+
+
+class FontLimitRequest(BaseModel):
+    """직접 수정의 글자 크기 칸이 묻는 요소 (D3c-2, 계획 4.5). 덱은 편집 화면이 지금 보는 덱이다(저장 전 포함)."""
+
+    deck: Deck
+    chapter_id: str
+    key: str
+
+
+class FontLimit(BaseModel):
+    """요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,
+    가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt)."""
+
+    current_pt: float
+    fits_up_to_pt: float | None
+    min_pt: float
+    max_pt: float
 
 
 class SourceText(BaseModel):
@@ -966,6 +986,23 @@ def create_app(
     def measure_project_deck(name: str, deck: Deck):
         with store.locked(name):
             return build_render_plan(deck, _preset_for(deck), metrics, sources=_load_sources(name, allow_empty=True))
+
+    @app.post("/api/projects/{name}/direct-edits/font-limit", response_model=FontLimit)
+    def direct_edit_font_limit(name: str, req: FontLimitRequest):
+        """고른 요소가 넘치지 않는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 렌더 계획 직렬화를 바꾸지 않도록 따로 묻는다."""
+        chapter = next((c for c in req.deck.structure.chapters if c.id == req.chapter_id), None)
+        slide = next((s for s in req.deck.slides if s.chapter_id == req.chapter_id), None)
+        if chapter is None or slide is None:
+            raise HTTPException(404, f"구조안에 없거나 내용이 없는 장입니다: {req.chapter_id}")
+        spec = frame_keys(slide).get(req.key)
+        if spec is None or "font" not in spec.kinds:
+            raise HTTPException(422, "이 요소는 글자 크기를 바꿀 수 없습니다.")
+        with store.locked(name):
+            store.deck_etag(name)  # 프로젝트가 없으면 여기서 404
+            result = font_limit(chapter, slide, _preset_for(req.deck), metrics, req.deck.meta.presenter, req.key)
+        if result is None:
+            raise HTTPException(422, "이 요소에는 글자가 없습니다.")
+        return FontLimit(**result)
 
     @app.post("/api/render-plan", response_model=RenderPlan)
     def measure_deck(deck: Deck):

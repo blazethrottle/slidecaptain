@@ -145,7 +145,8 @@ export function Preview({ slide, style, pageW, pageH, editable = true, selected,
         onClick={() => { setEditing(null); onSelect(null); }}
       >
         {slide.diagram && <DiagramPreview page={slide.diagram} style={style} />}
-        {slide.frames.map((f) => {
+        {/* 직접 수정으로 숨긴 요소는 계획에 남지만 그리지 않는다 (D3c-2). 다시 보이기와 목록은 D3c-3 */}
+        {slide.frames.filter((f) => !f.hidden).map((f) => {
           const ref = frameRef(f);
           const boxed = f.fill != null || f.border != null;
           const isSelected = selected?.chapterId === ref.chapterId && selected.slot === ref.slot;

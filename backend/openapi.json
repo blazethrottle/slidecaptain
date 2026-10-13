@@ -395,6 +395,56 @@
         }
       }
     },
+    "/api/projects/{name}/direct-edits/font-limit": {
+      "post": {
+        "summary": "Direct Edit Font Limit",
+        "description": "고른 요소가 넘치지 않는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 렌더 계획 직렬화를 바꾸지 않도록 따로 묻는다.",
+        "operationId": "direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FontLimitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FontLimit"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/render-plan": {
       "post": {
         "summary": "Measure Deck",
@@ -7539,6 +7589,65 @@
         ],
         "title": "FinalPublication"
       },
+      "FontLimit": {
+        "properties": {
+          "current_pt": {
+            "type": "number",
+            "title": "Current Pt"
+          },
+          "fits_up_to_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits Up To Pt"
+          },
+          "min_pt": {
+            "type": "number",
+            "title": "Min Pt"
+          },
+          "max_pt": {
+            "type": "number",
+            "title": "Max Pt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_pt",
+          "fits_up_to_pt",
+          "min_pt",
+          "max_pt"
+        ],
+        "title": "FontLimit",
+        "description": "요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,\n가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt)."
+      },
+      "FontLimitRequest": {
+        "properties": {
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deck",
+          "chapter_id",
+          "key"
+        ],
+        "title": "FontLimitRequest",
+        "description": "직접 수정의 글자 크기 칸이 묻는 요소 (D3c-2, 계획 4.5). 덱은 편집 화면이 지금 보는 덱이다(저장 전 포함)."
+      },
       "FontRoles": {
         "properties": {
           "cover_title_pt": {
@@ -7729,6 +7838,32 @@
               }
             ],
             "title": "Border Width Pt"
+          },
+          "base_x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base X"
+          },
+          "base_y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Y"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
           }
         },
         "type": "object",

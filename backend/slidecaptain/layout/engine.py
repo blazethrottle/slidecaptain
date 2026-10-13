@@ -8,6 +8,8 @@ from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import RenderPlan
 from slidecaptain.layout.expression import apply_text_spans, build_comparison_chart
+from slidecaptain.layout.direct_edits import apply_layout_edits, clamp_scales, drop_hidden_warnings
+from slidecaptain.models.direct_edit import frame_keys
 
 
 def build_render_plan(deck: Deck, preset: Preset, metrics, *, sources: dict[str,str] | None = None) -> RenderPlan:
@@ -36,18 +38,33 @@ def build_render_plan(deck: Deck, preset: Preset, metrics, *, sources: dict[str,
             )
             slides.extend(diagram.slides)
             continue
+        edits = slide.direct_edits
+        scales = {key: edit.font_scale for key, edit in edits.items() if edit.font_scale is not None}
+        edit_warnings = []
+        if scales:
+            # 배율의 한계는 요소의 기본 문단 크기로 정한다. 그래서 수정값이 있는 장만 빌더를 한 번 더 돈다 (D3c-2)
+            base = build_slide(chapter, slide.slots, page_no, preset, metrics,
+                               presenter=deck.meta.presenter, eyebrow=slide.eyebrow, subtitle=slide.subtitle)
+            scales, edit_warnings = clamp_scales(scales, base, preset)
         page=build_slide(
             chapter, slide.slots, page_no, preset, metrics,
-            presenter=deck.meta.presenter, eyebrow=slide.eyebrow, subtitle=slide.subtitle,
+            presenter=deck.meta.presenter, eyebrow=slide.eyebrow, subtitle=slide.subtitle, font_scales=scales,
         )
-        if slide.chart is not None:
+        page.warnings.extend(edit_warnings)
+        table_hidden = "table" in edits and bool(edits["table"].hidden)
+        # 숨긴 표 묶음은 차트를 만들지 않는다. 차트를 만들 수 없는 상태(계획 낡음, 조건 세 줄 초과)도 숨겨서 피한다 (재리뷰 RR20)
+        if slide.chart is not None and not table_hidden:
             frame=next(item for item in page.frames if item.table is not None)
             chart,caption=build_comparison_chart(deck,slide,frame,preset,metrics,sources)
             page.frames=[item for item in page.frames if item is not frame]
             page.frames.extend([chart,caption])
             page.warnings=[warning for warning in page.warnings if warning.slot!='table']
+        if edits:
+            apply_layout_edits(page, edits, preset)
         if slide.text_spans:
             apply_text_spans(slide,page,preset,metrics)
+        if edits:
+            drop_hidden_warnings(page, edits, frame_keys(slide))
         slides.append(page)
     return RenderPlan(
         page_width_pt=preset.page_width_pt,
