@@ -2,6 +2,7 @@ import { useState } from "react";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type Deck, type GenerationUsage, type JobView, type StructureResult } from "../api/client";
+import { previewOf } from "../test/compare";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { emptyUsage, expectUsageCollapsed } from "../test/usage";
 import { storyDeck } from "../test/story";
@@ -29,7 +30,8 @@ vi.mock("../api/client", async (importOriginal) => {
   return { ...mod, api: { ...mod.api,
     startJob: vi.fn(), settleCandidate: vi.fn(), generateChapter: vi.fn(), putDeck: vi.fn(), saveDraft: vi.fn(),
     prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn(),
-    cancelJob: vi.fn(), dismissChapterCandidate: vi.fn(), getActiveJob: vi.fn() } };
+    cancelJob: vi.fn(), dismissChapterCandidate: vi.fn(), getActiveJob: vi.fn(), previewCandidate: vi.fn(),
+    applyCandidate: vi.fn() } };
 });
 
 // D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
@@ -728,8 +730,12 @@ it("이전 입력 기준 후보는 내용을 볼 수 있고, 구성 계획 보�
     chapterView("c2", "interrupted", { error: { error_class: null, status: null, detail: null, code: "held_stale_plan" } })],
   { state: "failed", outcome: "chain_broken" })]);
   render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
-  await userEvent.click(await screen.findByText("후보 보기"));
-  expect(screen.getByText("제목")).toBeInTheDocument();  // 후보 슬롯의 글자
+  // 후보는 비교 화면에서 본다 (D3c-6). 내용이 없는 장이라 "지금"은 비어 있다
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(null, COVER, { units: ["title", "subtitle", "date"] }));
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 후보 비교" }));
+  const dialog = await screen.findByRole("dialog", { name: "1장 표지: 새 내용과 비교" });
+  expect(within(dialog).getByRole("group", { name: "표지 제목" })).toHaveTextContent("제목");  // 후보 슬롯의 글자
+  await userEvent.keyboard("{Escape}");
   expect(screen.getByRole("button", { name: "1번 장 다시 생성" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "2번 장 다시 생성" })).toBeNull();
   await userEvent.type(screen.getByLabelText("1번 장 주제"), " 수정");
@@ -798,7 +804,7 @@ it("취소 뒤 도착한 결과도 후보로 보고 버릴 수 있다 (D2b-4 리
     error: { error_class: "cancelled", status: null, detail: null, code: null } })],
   { state: "cancelled", outcome: "cancelled" })]);
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
-  expect(await screen.findByText("후보 보기")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "1번 장 후보 비교" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "1번 장 후보 버리기" })).toBeInTheDocument();
 });
 
@@ -1688,4 +1694,76 @@ it("낡은 계획 복구 안내는 보고 목적 원인과 장 내용을 지키�
   render(<StoryPlanRecoveryGuidance hasDiagrams={false} />);
   expect(screen.getByText(/보고 정보\(보고 목적 포함\)/)).toBeInTheDocument();
   expect(screen.getByText(/장 내용을 지키려면 구성 단계의 ‘기존 편집을 보존하며 계획 재작성’/)).toBeInTheDocument();
+});
+
+
+// -- D3c-6: 구성 화면의 비교와 반영, 재승인 확인 -----------------------------------------------------------
+
+const BODY2 = { template: "bullet_box" as const, bullets: [{ text: "새 불릿", level: 0 as const }], conclusion: "새 결론", footnote: "" };
+
+function staleBodyCandidate() {
+  return batchView([chapterView("c2", "failed", { candidate_status: "stale", result: chapterResult(BODY2),
+    error: { error_class: "base_changed", status: null, detail: null, code: "base_changed" } })],
+  { id: "job-b", state: "failed", outcome: "chain_broken" });
+}
+
+function Harness({ initial, onConflict }: { initial: Deck; onConflict?: () => void }) {
+  const [deck, setDeck] = useState(initial);
+  return <StructureScreen project={project} deck={deck} onDeckChange={setDeck} onDone={() => {}} onConflict={onConflict} />;
+}
+
+it("내용이 있는 장의 묶음 후보를 비교 화면에서 반영하면 초안은 남고, 그 뒤 승인이 반영된 슬라이드를 계승한다 (계획 4.7)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  const saved: Deck = { ...initial, slides: [initial.slides[0], { ...initial.slides[1], slots: BODY2 }] };
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2));
+  vi.mocked(api.applyCandidate).mockResolvedValue(saved);
+  batchGetJob.mockResolvedValue(batchView([chapterView("c2", "failed", { candidate_status: "applied" })], { id: "job-b" }));
+  vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+  render(<Harness initial={initial} />);
+  await userEvent.type(screen.getByLabelText("1번 장 주제"), " 수정");  // 승인 전 초안
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교" }));
+  const dialog = await screen.findByRole("dialog", { name: "2장 본문: 새 내용과 비교" });
+  const apply = within(dialog).getByRole("button", { name: "반영" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  await userEvent.click(apply);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-b",
+    { chapter_id: "c2", keep_current: [], drop_edits: [], unhide: [] });
+  expect(screen.getByLabelText("1번 장 주제")).toHaveValue("표지 수정");  // 반영 뒤에도 초안이 남는다
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
+  const approved = vi.mocked(api.putDeck).mock.calls[0][1];
+  expect(approved.structure.chapters[0].topic).toBe("표지 수정");
+  expect(approved.slides.find((s) => s.chapter_id === "c2")?.slots).toEqual(BODY2);  // kept가 반영된 슬라이드를 담는다
+});
+
+it("구성 화면의 반영이 412면 부모의 충돌 경로로 보낸다 (계획 4.7)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2));
+  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
+  const onConflict = vi.fn();
+  render(<Harness initial={initial} onConflict={onConflict} />);
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교" }));
+  const dialog = await screen.findByRole("dialog");
+  const apply = within(dialog).getByRole("button", { name: "반영" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  await userEvent.click(apply);
+  await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("직접 수정이 있는 장을 지우는 재승인은 같은 확인 창에 그 사실을 합쳐 알린다 (계획 4.8, 리뷰 화면 S33)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  initial.slides[1] = { ...initial.slides[1], direct_edits: { conclusion: { dx_pt: 5, dy_pt: 0 } } };
+  render(<StructureScreen project={project} deck={initial} onDeckChange={() => {}} onDone={() => {}} />);
+  await userEvent.selectOptions(screen.getByLabelText("2번 장 템플릿"), "summary");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(confirm.mock.calls[0][0]).toBe("구조안 변경으로 기존 장 내용 1개가 사라집니다. 이 가운데 1개 장(2장 본문)은 직접 수정한 위치와 서식도 함께 사라집니다. "
+    + "승인 직전 상태는 스냅샷으로 남아 복구 화면에서 되돌릴 수 있습니다. 계속할까요?");
+  expect(api.putDeck).not.toHaveBeenCalled();
+  confirm.mockRestore();
 });

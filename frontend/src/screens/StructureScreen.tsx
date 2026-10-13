@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AiConsentDeclined, api, ApiError, followJob, isStaleStoryPlan, messageOf, newRequestId, TERMINAL_JOB_STATES,
   type Chapter, type ChapterView, type Deck, type GenerationUsage, type JobView, type ProjectInfo, type StoryPlan,
-  type StructureResult,
+  type Slots, type StructureResult,
   type TemplateName,
 } from "../api/client";
 import {
   blockingReasons, endedSince, FAILED_JOB_STATES, JOB_FOLLOW_ERROR, jobResult, JobCancelled, pendingCandidate, reasonText, runJob, runningJob, settle,
-  slotsText, stillActive, waitJob,
+  stillActive, waitJob,
 } from "../api/jobs";
 import { formatUsage, sumUsage } from "../api/usage";
 import { Diagnostics } from "../ui/Diagnostics";
@@ -25,6 +25,8 @@ import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
 import { StoryRewritePanel } from "./StoryRewritePanel";
 import { DocumentChangePanel } from "./DocumentChangePanel";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
+import { CandidateCompareDialog, STALE_BASE, type CompareSelection } from "../editor/CandidateCompareDialog";
+import { APPLY_UNCONFIRMED } from "../editor/GeneratePanel";
 import { formatSavedAt } from "../api/time";
 import { Button } from "../ui/Button";
 import type { SaveStatus } from "../ui/StatusIndicator";
@@ -86,10 +88,6 @@ function chapterLabel(chapter: ChapterView, hasSlide: boolean): ProgressLabel {
 
 // 다시 생성할 수 있는 장 상태. 보류(구성 계획 낡음)는 복구 안내를 따른다
 const RETRYABLE_STATES = new Set(["failed", "interrupted", "cancelled", "remote_completion_unknown"]);
-
-function candidateText(chapter: ChapterView): string {
-  return slotsText((chapter.result as { slots?: unknown } | null)?.slots);
-}
 
 function nextChapterId(chapters: Chapter[]): string {
   const max = chapters
@@ -717,10 +715,18 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     const kept = keptSlides();
     const droppedCount = deck.slides.length - kept.length;
     if (droppedCount > 0) {
+      // 지워질 장 가운데 직접 수정이 있는 장을 같은 확인 창에 알린다. 확인 창을 따로 더하지 않는다 (계획 4.8, 리뷰 화면 S33)
+      const edited = deck.slides.filter((s) => !kept.includes(s) && Object.keys(s.direct_edits ?? {}).length > 0);
+      const first = edited[0] && deck.structure.chapters.findIndex((c) => c.id === edited[0].chapter_id);
+      const example = edited[0] && first !== undefined && first >= 0
+        ? `${first + 1}장 ${deck.structure.chapters[first].topic}${edited.length > 1 ? " 등" : ""}` : "";
+      const editedNote = edited.length > 0
+        ? ` 이 가운데 ${edited.length}개 장(${example})은 직접 수정한 위치와 서식도 함께 사라집니다. 승인 직전 상태는 스냅샷으로 남아 복구 화면에서 되돌릴 수 있습니다.`
+        : "";
       const ok = window.confirm(
         draftGenerated
-          ? `새 구조안을 승인하면 기존 장 내용 ${droppedCount}개를 지우고 전부 새로 생성합니다. 계속할까요?`
-          : `구조안 변경으로 기존 장 내용 ${droppedCount}개가 사라집니다. 계속할까요?`,
+          ? `새 구조안을 승인하면 기존 장 내용 ${droppedCount}개를 지우고 전부 새로 생성합니다.${editedNote} 계속할까요?`
+          : `구조안 변경으로 기존 장 내용 ${droppedCount}개가 사라집니다.${editedNote} 계속할까요?`,
       );
       if (!ok) return;
     }
@@ -863,6 +869,37 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
     }
   };
 
+  // 묶음의 장 후보를 비교 화면에서 반영한다 (D3c-6, 계획 4.7 마지막 문단). 구성 화면에는 편집기가 없으므로 성공하면 응답
+  // 덱으로 부모의 덱을 바꾸고(저장 ETag는 요청 계층이 갱신한다), 412와 확인하지 못한 결과는 부모의 충돌 배너로 보낸다.
+  // 승인 전 구조안 초안은 그대로 둔다. 반영은 슬라이드만 바꾸므로 그 뒤 승인이 반영된 슬라이드를 계승한다
+  const [comparing, setComparing] = useState<string | null>(null);
+  const compareOpener = useRef<HTMLElement | null>(null);
+  const candidateRow = (chapterId: string) => job && showJob && !busy
+    ? job.chapters.find((c) => c.chapter_id === chapterId && (c.candidate_status === "held" || c.candidate_status === "stale")
+      && !["queued", "running", "validating", "cancel_requested"].includes(c.state) && c.result)
+    : undefined;
+  const applyCompare = async (chapterId: string, selection: CompareSelection) => {
+    if (!job) return;
+    const batch = job;
+    try {
+      const saved = await api.applyCandidate(project.name, batch.id, { chapter_id: chapterId, ...selection });
+      if (!mounted.current) return;
+      onDeckChange(saved);
+      setJob(await api.getJob(project.name, batch.id).catch(() => batch));
+    } catch (e) {
+      if (!mounted.current) return;
+      if (e instanceof ApiError && (e.status === 412 || e.status >= 500)) {
+        onConflict?.();
+        setError(e.status === 412 ? e.message : APPLY_UNCONFIRMED);
+      } else {
+        setError(messageOf(e));
+        if (e instanceof ApiError && e.status === 409) setJob(await api.getJob(project.name, batch.id).catch(() => batch));
+      }
+    } finally {
+      if (mounted.current) setComparing(null);
+    }
+  };
+
   // 장별 행동: 결과가 없는 장은 다시 생성할 수 있고, 이전 입력 기준 후보는 내용을 볼 수 있다
   const chapterRow = (chapterId: string) => job && showJob && !busy && !draftDirty
     ? job.chapters.find((c) => c.chapter_id === chapterId && RETRYABLE_STATES.has(c.state)
@@ -873,6 +910,23 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   const headerShowsJob = useHeaderShowsJob(job?.id);
   return (
     <div className="structure-screen">
+      {comparing && job && (() => {
+        const row = job.chapters.find((c) => c.chapter_id === comparing);
+        const index = deck.structure.chapters.findIndex((c) => c.id === comparing);
+        const slots = (row?.result as { slots?: Slots } | null)?.slots;
+        if (!row || !slots) return null;
+        const empty = !deck.slides.some((sl) => sl.chapter_id === comparing);
+        return (
+          <CandidateCompareDialog projectName={project.name} jobId={job.id} chapterId={comparing}
+            title={index >= 0 ? `${index + 1}장 ${deck.structure.chapters[index].topic}` : "이 장"}
+            candidateSlots={slots} returnFocus={compareOpener}
+            onApply={(selection) => applyCompare(comparing, selection)}
+            // 내용이 있는 장은 묶음으로 다시 생성하지 않는다(이미 내용이 있는 장은 등록이 거절된다). 편집 단계에서 다시 생성한다
+            onRegenerate={empty ? () => void regenerateChapter(comparing) : undefined}
+            onStaleBase={() => { setComparing(null); onConflict?.(); setError(STALE_BASE); }}
+            onClose={() => setComparing(null)} />
+        );
+      })()}
       {readOnly && readOnlyNotice && !busy && <p role="status">{BATCH_READ_ONLY_NOTICE}</p>}
       {/* 생성 중에는 아래 입력 영역이 잠기므로 중단 버튼은 그 밖에 둔다 */}
       {busy && job && !TERMINAL_JOB_STATES.has(job.state) && !headerShowsJob && (
@@ -1026,10 +1080,10 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                         onClick={() => void regenerateChapter(c.id)}>
                         {["stale", "held"].includes(chapterRow(c.id)!.candidate_status) ? "현재 입력으로 다시 생성" : "이 장 다시 생성"}</button>
                     )}
-                    {["stale", "held"].includes(chapterRow(c.id)?.candidate_status ?? "") && (<>
-                      {candidateText(chapterRow(c.id)!) && (
-                        <details><summary aria-label={`${n}번 장 후보 보기`}>후보 보기</summary><pre>{candidateText(chapterRow(c.id)!)}</pre></details>
-                      )}
+                    {candidateRow(c.id) && (<>
+                      {/* 내용이 있는 장의 후보도 비교 화면에서 단위마다 골라 반영한다 (D3c-6, 계획 4.8) */}
+                      <button aria-label={`${n}번 장 후보 비교`}
+                        onClick={(e) => { compareOpener.current = e.currentTarget; setComparing(c.id); }}>비교 보기</button>
                       <Button variant="danger" aria-label={`${n}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
                     </>)}
                   </div>
