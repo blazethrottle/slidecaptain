@@ -357,3 +357,12 @@ def test_font_limit_rejects_elements_without_font_and_unknown_chapters(client):
     assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 422
     body["chapter_id"] = "없음"
     assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 404
+
+
+def test_warning_keys_fixture_matches_the_engine():
+    """화면의 warningKey(D3c-3)가 같은 결과를 내는지 지키는 고정 파일. 모든 템플릿의 실제 경고 slot을 담는다."""
+    cases = json.loads((FIXTURES / "warning-keys.json").read_text(encoding="utf-8"))["cases"]
+    assert len(cases) > 100
+    for case in cases:
+        assert warning_key(case["slot"], set(case["keys"])) == case["key"], case
+    assert [c["slot"] for c in cases if c["key"] is None] == ["unknown_slot"]

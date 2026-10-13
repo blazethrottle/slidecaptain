@@ -182,12 +182,19 @@ export function applyTemplateSwitch(deck: Deck, chapterId: string, to: TemplateN
   const expressionLosses: string[] = [];
   if (slide?.chart) expressionLosses.push(`차트 표시 (${slide.chart.kind === 'bar' ? '가로' : '세로'} 막대, 비교 ${slide.chart.comparison_id})`);
   if (slide?.text_spans?.length) expressionLosses.push(`부분 강조 ${slide.text_spans.length}개`);
+  // 직접 수정은 요소 열쇠가 템플릿마다 다르므로 비운다. 전환 전 확인 목록에 올린다 (D3c-3, 계획 리뷰 화면 S11)
+  const editCount = Object.keys(slide?.direct_edits ?? {}).length;
+  if (editCount) expressionLosses.push(`직접 수정 ${editCount}건(위치, 글자 크기, 색, 숨김)`);
   const next: Deck = {
     ...deck,
     structure: { ...deck.structure, chapters: deck.structure.chapters.map((ch) =>
       ch.id === chapterId ? { ...ch, template: to } : ch) },
     slides: result
-      ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots: result.slots, ...(s.chart ? { chart: null } : {}), ...(s.text_spans?.length ? { text_spans: [] } : {}) } : s))
+      ? deck.slides.map((s) => {
+        if (s.chapter_id !== chapterId) return s;
+        const { direct_edits: _cleared, ...rest } = s;
+        return { ...rest, slots: result.slots, ...(s.chart ? { chart: null } : {}), ...(s.text_spans?.length ? { text_spans: [] } : {}) };
+      })
       : deck.slides,
   };
   return { deck: next, dropped: [...(result?.dropped ?? []), ...expressionLosses] };

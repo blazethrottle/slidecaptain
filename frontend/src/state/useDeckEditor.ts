@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api, ApiError, messageOf, type Deck, type DraftInfo, type RenderPlan } from "../api/client";
 import { editorReducer } from "./deckStore";
 import { pruneChangedSpans } from "../editor/expressionEditing";
+import { normalizeDeckEdits } from "../editor/directEdit";
 
 export type SaveState = "저장됨" | "저장 대기" | "저장 중" | "저장 실패";
 export type Timings = { measureMs: number; saveMs: number };
@@ -172,10 +173,21 @@ export function useDeckEditor(
     if (!conflictRef.current && !pausedRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);
 
-  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean }) => {
-    const next = pruneChangedSpans(deckRef.current, edit(deckRef.current));
-    if (next !== deckRef.current && options?.snapshot) snapshotNext.current += 1;
-    dispatch({ type: "edit", deck: next });
+  // 직전 병합 편집이 만든 덱. 지금 덱이 이것과 같을 때만 다음 병합 편집이 그 항목을 바꿔 쓴다. 그사이 자동 저장
+  // 응답이나 서버 적용, 되돌리기가 끼어들면 덱이 달라 새 항목이 된다 (D3c 계획 재리뷰 RR16)
+  const coalesceBase = useRef<Deck | null>(null);
+  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean; coalesce?: boolean }) => {
+    // 직접 수정은 화면에서도 정규화한다. PUT 응답이 정규화한 덱을 돌려주지 않아 화면 덱이 서버와 어긋나기 때문이다
+    // (D3c-3, 계획 재리뷰 RR5)
+    const next = normalizeDeckEdits(pruneChangedSpans(deckRef.current, edit(deckRef.current)));
+    // 바뀐 것이 없으면(페이지 끝에서 누른 방향키 등) 병합 기준도 건드리지 않는다. 건드리면 다음 이동이 관계없는
+    // 직전 편집의 항목을 바꿔 쓴다
+    if (next === deckRef.current) return;
+    if (options?.snapshot) snapshotNext.current += 1;
+    const amend = !!options?.coalesce && coalesceBase.current !== null && coalesceBase.current === deckRef.current;
+    dispatch({ type: amend ? "amend" : "edit", deck: next });
+    coalesceBase.current = options?.coalesce ? next : null;
+    deckRef.current = next;  // 같은 키 반복이 렌더 전에 와도 병합 판정이 새 덱을 보게 한다
   }, []);
 
   const replace = useCallback((next: Deck) => {
