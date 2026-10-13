@@ -604,7 +604,8 @@ describe("D3a-β 묶음 리뷰 반영", () => {
     expect(await within(header()).findByText(/구성 단계의 AI 생성이 실패했습니다/)).toBeInTheDocument();
     await userEvent.click(within(header()).getByRole("button", { name: "구성 단계로 이동" }));
     await waitFor(() => expect(stageButton("구성")).toHaveAttribute("aria-current", "step"));
-    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+    // 머리 알림은 단계가 바뀐 뒤의 효과에서 지운다. 느린 환경에서는 한 번 더 그려야 사라진다 (2026-10-13 Windows CI)
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull());
     const notice = (await screen.findByText("지난 구조안 생성이 끝나지 않았습니다.")).closest(".failure-notice")!;
     expect(notice).toHaveTextContent("AI 호출이 정상적으로 끝나지 않았습니다.");
     // 한 번 본 실패는 다시 열어도 되풀이하지 않는다
@@ -765,7 +766,8 @@ describe("D3a-β 반영 커밋 재리뷰 반영", () => {
     await userEvent.click(within(header()).getByRole("button", { name: "편집 단계로 이동" }));
     await waitFor(() => expect(stageButton("편집")).toHaveAttribute("aria-current", "step"));
     expect(await screen.findByText("장 생성 호출이 끝나지 않았습니다.")).toBeInTheDocument();
-    expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull();
+    // 머리 알림은 단계가 바뀐 뒤의 효과에서 지운다. 느린 환경에서는 한 번 더 그려야 사라진다 (2026-10-13 Windows CI)
+    await waitFor(() => expect(within(header()).queryByText(/AI 생성이 실패했습니다/)).toBeNull());
   });
 
   it("다른 탭이 시작한 작업의 실패는 그 단계에 있어도 머리에 알리고, 이 탭이 시작한 작업은 화면 안내에 맡긴다 (D3a-7 사용자 결정, F8)", async () => {
