@@ -106,13 +106,19 @@ export function EditorScreen({
   const [diagramBusy, setDiagramBusy] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const templateBusyRef = useRef(false);
+  // 장 후보의 서버 적용 중 (D3c-5, 계획 4.7의 2). 템플릿 전환처럼 화면을 잠그고 떠나지 못하게 한다
+  const [applyBusy, setApplyBusy] = useState(false);
+  const applyBusyRef = useRef(false);
+  // 응답이 온 때의 충돌 여부. 패널은 클릭한 때의 콜백을 부르므로 렌더 값(editor.conflict)은 낡을 수 있다
+  const conflictNow = useRef(editor.conflict);
+  conflictNow.current = editor.conflict;
   const current = useRef({deck: editor.deck, chapterId, mounted: true});
   current.current = {...current.current, deck: editor.deck, chapterId};
   useEffect(() => { current.current.mounted = true; return () => {current.current.mounted = false;}; }, []);
   // 떠날 수 없는 상태를 부모에 알린다. 작성 창이 열려 있거나 템플릿 전환 전 저장 중이다
   const diagramOpen = useRef(false);
   const reportHolding = useCallback(() => {
-    onBusyChange?.(templateBusyRef.current || diagramOpen.current);
+    onBusyChange?.(templateBusyRef.current || applyBusyRef.current || diagramOpen.current);
   }, [onBusyChange]);
   const switchTemplate = async (id: string, to: TemplateName, base: Deck) => {
     if (templateBusyRef.current || editor.conflict || current.current.deck !== base
@@ -131,6 +137,11 @@ export function EditorScreen({
       reportHolding();
     }
   };
+  const onApplyBusyChange = useCallback((busy: boolean) => {
+    applyBusyRef.current = busy;
+    if (current.current.mounted) setApplyBusy(busy);
+    reportHolding();
+  }, [reportHolding]);
   const diagramCalls = useRef(0);
   const onDiagramBusyChange = useCallback((busy: boolean) => {
     // 닫힌 작성창도 자기 호출이 끝날 때 해제한다. 다른 호출이 있으면 마지막 소유자까지 잠금을 유지한다.
@@ -145,7 +156,7 @@ export function EditorScreen({
   // 작성 중인 의미 입력은 아직 Deck이 아니다. 이탈/복원/내보내기로 조용히 버리지 않는다.
   // 작성 창을 닫은 뒤 남은 AI 호출은 막지 않는다. 그 결과는 작업 원장에 후보로 남아 복구 화면에 보인다 (리뷰 R10)
   const flush = useCallback(async (): Promise<boolean | "declined"> => {
-    if (diagramDraftRef.current || templateBusyRef.current) return false;
+    if (diagramDraftRef.current || templateBusyRef.current || applyBusyRef.current) return false;
     // 읽기 전용이면 저장하지 않는다. 이미 나간 저장은 착지를 기다리고(그 편집은 사라지지 않는다), 그래도
     // 저장하지 않은 편집이 남았으면 버릴지 묻는다 (D3a-5 리뷰 R7, D3a-β 리뷰 B5)
     if (readOnlyRef.current) {
@@ -285,7 +296,7 @@ export function EditorScreen({
     {readOnly && readOnlyNotice && <p role="status">{BATCH_READ_ONLY_NOTICE}
       {/* 묶음 전에 고친 내용이 남아 있으면 그 결과를 알린다 (D3a-β 리뷰 B2) */}
       {editor.saveState === "저장 대기" && " 고친 내용은 생성이 끝난 뒤 다시 저장합니다. 그사이 문서가 바뀌었으면 충돌 안내가 뜨고, 서버 내용으로 되돌릴 때 고친 내용을 보존합니다."}</p>}
-    <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
+    <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || applyBusy || editor.reloading}>
       {/* 막대는 편집 영역의 첫 자식이다: 쌓인 배치에서 장 목록보다 위에 와 512×360에서도 첫 화면 안에 남고,
           넓은 배치에서는 격자 영역으로 가운데 열 위에 둔다 (α 랩업 배치 A) */}
       {slide && !slide.diagram && editor.plan && (
@@ -388,7 +399,12 @@ export function EditorScreen({
         {chapterId && (
           <GeneratePanel project={project} deck={editor.deck} chapterId={chapterId}
             seenJobFailures={seenJobFailures} failuresSince={failuresSince}
-            onReplace={editor.replace} />
+            onFlush={editor.flushSave} onConflict={editor.reportConflict} onApplyBusyChange={onApplyBusyChange}
+            onApplied={(saved, base) => {
+              // 요청 중 덱이 바뀌었으면 받지 않는다. 그 편집의 저장이 412로 충돌 경로에 들어간다 (도식 경로와 같다)
+              if (current.current.deck !== base || conflictNow.current) return;
+              editor.acceptSaved(saved); setSelected(null);
+            }} />
         )}
         {/* 일부러 줄인 글자 크기 경고는 분량 넘침이 아니므로 따로 보인다 (D3c-2 리뷰 F3, α 리뷰 A3) */}
         {slide && ([["capacity", "분량 경고"], ["font_size", "글자 크기 경고"]] as const).map(([kind, title]) => {

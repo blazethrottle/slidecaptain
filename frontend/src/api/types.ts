@@ -804,6 +804,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/jobs/{job_id}/apply/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Candidate
+         * @description 저장하지 않는 적용 미리 보기. 판정이 막아도 비교는 보이도록 200이다 (계획 4.8, 제품 설계 7절).
+         */
+        post: operations["preview_candidate_api_projects__name__jobs__job_id__apply_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Candidate
+         * @description 장 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (계획 4.8의 순서와 원자성).
+         */
+        post: operations["apply_candidate_api_projects__name__jobs__job_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/active": {
         parameters: {
             query?: never;
@@ -1075,6 +1115,69 @@ export interface components {
             action: "applied" | "dismissed";
             /** Chapter Id */
             chapter_id?: string | null;
+        };
+        /**
+         * CandidateApplyPreview
+         * @description 적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다.
+         */
+        CandidateApplyPreview: {
+            /** Job Id */
+            job_id: string;
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chapter" | "condense";
+            /** Base Etag */
+            base_etag: string;
+            /** Blocked Reasons */
+            blocked_reasons: string[];
+            /** Notices */
+            notices: string[];
+            /** Units */
+            units: string[];
+            /** Edited Units */
+            edited_units: string[] | null;
+            /** Keep Current */
+            keep_current: string[];
+            /** Drop Edits */
+            drop_edits: string[];
+            /** Unhide */
+            unhide: string[];
+            /** Length Changed Units */
+            length_changed_units: string[];
+            current: components["schemas"]["Slide"] | null;
+            merged: components["schemas"]["Slide"] | null;
+            /** Warnings */
+            warnings: components["schemas"]["CapacityWarning"][];
+            /** Removed Edits */
+            removed_edits: string[];
+            /** Unhidden */
+            unhidden: string[];
+            /** Removed Spans */
+            removed_spans: number;
+            /** Removed Chart */
+            removed_chart: boolean;
+            /** Already Applied */
+            already_applied: boolean;
+        };
+        /**
+         * CandidateApplyRequest
+         * @description 장 후보 적용과 미리 보기의 본문 (D3c-5, 계획 4.8). 칸을 비우면(null) 서버가 기본 선택을 쓴다: 다시 생성은 "직접 고친
+         *     문구" 단위만 지금 문구, 장 축약은 모두 새 문구, 요소 수정은 길이가 바뀐 목록의 순번 요소만 지운다. 응답은 실제로 쓴 선택을
+         *     돌려준다(계획 4.8에 없던 확장, D3c-5 기록).
+         */
+        CandidateApplyRequest: {
+            /** Chapter Id */
+            chapter_id?: string | null;
+            /** Keep Current */
+            keep_current?: string[] | null;
+            /** Drop Edits */
+            drop_edits?: string[] | null;
+            /** Unhide */
+            unhide?: string[] | null;
         };
         /**
          * CapacityWarning
@@ -6341,6 +6444,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_candidate_api_projects__name__jobs__job_id__apply_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateApplyPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_candidate_api_projects__name__jobs__job_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
                 };
             };
             /** @description Validation Error */

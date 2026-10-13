@@ -47,7 +47,8 @@ it("저장된 도식의 주제와 템플릿을 읽기 전용으로 보여 준다
 });
 
 it("도식에 AI 재생성이나 축약을 제공하지 않는다", () => {
-  render(<GeneratePanel project={project} deck={freshDeck()} chapterId={chapterId} onReplace={vi.fn()} />);
+  render(<GeneratePanel project={project} deck={freshDeck()} chapterId={chapterId} onFlush={async () => true}
+    onApplied={vi.fn()} onConflict={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "이 장 다시 생성" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "이 장 축약" })).not.toBeInTheDocument();
   expect(api.startJob).not.toHaveBeenCalled();
@@ -110,14 +111,15 @@ it.each(["generate", "condense"])("일반 장의 %s도 낡은 계획을 도식 �
     state: "failed", candidate_status: "none",
     error: { error_class: "input", status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } }));
   const deck = freshDeck();
-  const onReplace = vi.fn();
-  render(<GeneratePanel project={project} deck={deck} chapterId="cover" onReplace={onReplace} />);
+  const onApplied = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="cover" onFlush={async () => true} onApplied={onApplied}
+    onConflict={vi.fn()} />);
   await userEvent.type(screen.getByLabelText("재생성 지시사항"), "유지할 지시");
   await userEvent.click(screen.getByRole("button", { name: operation === "generate" ? "이 장 다시 생성" : "이 장 축약" }));
   expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
   expect(screen.queryByText("구조안을 다시 생성해 주세요.")).not.toBeInTheDocument();
   expect(screen.getByLabelText("재생성 지시사항")).toHaveValue("유지할 지시");
-  expect(onReplace).not.toHaveBeenCalled();
+  expect(onApplied).not.toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();
   expect(deck).toEqual(fixture.deck);
 });

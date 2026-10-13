@@ -18,13 +18,23 @@ import { FailureNotice } from "../ui/FailureNotice";
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
 
 const KINDS = ["chapter", "condense"] as const;
-const APPLY_CHECK_ERROR = "후보의 현재 상태를 확인하지 못해 반영하지 않았습니다. 잠시 뒤 다시 반영해 주세요.";
+// 적용 요청이 500, 503, 원장 오류로 끝나면 덱은 반영됐을 수 있다. 다음 자동 저장을 멈추고 다시 읽게 한다 (계획 4.7의 6)
+export const APPLY_UNCONFIRMED = "반영 결과를 확인하지 못했습니다. 서버 내용을 다시 읽어 주세요.";
+// 서버 판정이 반영을 막은 이유. 후보를 다시 조회해 이전 입력 기준 후보로 보인다 (계획 4.8 상태 코드 표)
+const APPLY_BLOCKING = new Set(["chapter_missing", "template_changed", "chapter_changed", "story_plan_changed",
+  "sources_changed", "slots_changed"]);
 
-export function GeneratePanel({ project, deck, chapterId, onReplace, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000 }: {
+export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, onConflict, onApplyBusyChange, seenJobFailures,
+  failuresSince = 0, pollIntervalMs = 1000 }: {
   project: ProjectInfo;
   deck: Deck;
   chapterId: string;
-  onReplace: (next: Deck) => void;
+  // 서버 적용의 화면 계약 (D3c-5, 계획 4.7). 반영 직전에 남은 편집을 저장하고(실패하면 진행하지 않는다), 성공하면 응답
+  // 덱을 저장본으로 받는다. base는 요청 직전의 화면 덱이다. 그사이 덱이 바뀌었으면 받는 쪽이 버린다(도식 경로와 같다)
+  onFlush: () => Promise<boolean>;
+  onApplied: (saved: Deck, base: Deck) => void;
+  onConflict: (message: string) => void;  // 412와 확인하지 못한 결과: 자동 저장을 멈추고 다시 읽기를 연다
+  onApplyBusyChange?: (busy: boolean) => void;  // 요청 중 편집 화면을 잠근다(템플릿 전환과 같다)
   // 이미 보인 실패와 기준 시각. 다시 열 때 이 장의 가장 최근 작업이 그 뒤에 실패했으면 한 번 보인다 (D3a-β 재리뷰 F3)
   seenJobFailures?: Set<string>;
   failuresSince?: number;
@@ -41,6 +51,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, seenJobFail
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
+  const deckRef = useRef(deck);
+  deckRef.current = deck;
   const chapterIdRef = useRef(chapterId);
   chapterIdRef.current = chapterId;
   const follow = useRef<AbortController | null>(null);
@@ -164,36 +176,42 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, seenJobFail
     setEarlier(false);
   };
 
-  // 반영 직전에 작업을 다시 조회해 그사이 바뀐 입력을 확인한다. 지난 후보는 며칠 뒤에 반영할 수도 있다
-  // (계획서 「다르게 정하는 것」 7항, D2b-β 리뷰 R9). 확인하지 못하면 반영하지 않는다
+  // 서버가 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (D3c-5, 계획 4.7, 4.8). 판정(입력이 바뀐
+  // 후보, 축약 뒤 바뀐 슬롯)도 서버가 저장 직전에 한다. 비교 화면(D3c-6)이 생기기 전까지는 서버의 기본 선택으로 반영한다:
+  // 다시 생성은 직접 고친 문구만 지금 문구로 두고, 축약은 모두 새 문구다. 위치와 서식 수정은 남는다
   const applyResult = async () => {
-    if (!result || result.status !== "ok" || !result.slots || busy) return;
-    const slots = result.slots;
-    if (job) {
-      const requestedChapterId = chapterId;
-      setBusy(true);
-      let fresh: JobView;
-      try {
-        fresh = await api.getJob(project.name, job.id);
-      } catch {
-        if (chapterIdRef.current === requestedChapterId) { setBusy(false); setError(APPLY_CHECK_ERROR); }
+    if (!result || result.status !== "ok" || !result.slots || busy || !job) return;
+    const requestedChapterId = chapterId;
+    const candidate = job;
+    setBusy(true);
+    setError("");
+    setFailure(null);
+    onApplyBusyChange?.(true);
+    try {
+      if (!await onFlush()) return;  // 저장 실패나 충돌이면 진행하지 않는다. 편집기의 안내가 보인다
+      if (chapterIdRef.current !== requestedChapterId) return;
+      const base = deckRef.current;
+      const saved = await api.applyCandidate(project.name, candidate.id);
+      onApplied(saved, base);
+      if (chapterIdRef.current !== requestedChapterId) return;
+      setResult(null);
+      setJob(null);
+      setEarlier(false);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 412) onConflict(e.message);
+      else if (e instanceof ApiError && e.status >= 500) onConflict(APPLY_UNCONFIRMED);
+      if (chapterIdRef.current !== requestedChapterId) return;
+      if (e instanceof ApiError && (e.status === 412 || e.status >= 500)) return;
+      if (e instanceof ApiError && e.status === 409 && e.code && APPLY_BLOCKING.has(e.code)) {
+        setError(e.message);
+        try { setJob(await api.getJob(project.name, candidate.id)); } catch { /* 반영은 이미 막혔다 */ }
         return;
       }
-      if (chapterIdRef.current !== requestedChapterId) return;
-      setBusy(false);
-      if (blockingReasons(fresh).length > 0) { setJob(fresh); return; }  // 이전 입력 기준 후보로 보인다
+      setFailure(e);
+    } finally {
+      onApplyBusyChange?.(false);
+      if (chapterIdRef.current === requestedChapterId) setBusy(false);
     }
-    const next: Deck = {
-      ...deck,
-      slides: deck.slides.some((s) => s.chapter_id === chapterId)
-        ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots } : s))
-        : [...deck.slides, { chapter_id: chapterId, slots, eyebrow: "", subtitle: "" }],  // 공통 슬롯은 생성이 채우지 않는다. 값은 사용자가 속성 패널에서 넣는다 (DA-4)
-    };
-    onReplace(next);  // 반영 저장은 스냅샷을 남긴다 (결정 1)
-    if (job) void settle(project.name, job.id, "applied");
-    setResult(null);
-    setJob(null);
-    setEarlier(false);
   };
 
   return (
@@ -249,6 +267,8 @@ export function GeneratePanel({ project, deck, chapterId, onReplace, seenJobFail
           )}
           <button onClick={() => void applyResult()} disabled={busy}>반영</button>
           <Button variant="danger" onClick={dismiss}>버리기</Button>
+          {/* 계획 4.7의 5: 반영 뒤 되돌리기는 일반 편집이다. 처분은 applied로 남는다 */}
+          <p className="hint">반영한 뒤 되돌리면 덱은 돌아가지만 이 결과는 다시 반영할 수 없습니다.</p>
         </div>
       )}
       {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6). 형식 오류면 실패 안내의

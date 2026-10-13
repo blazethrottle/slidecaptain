@@ -39,6 +39,8 @@ export type EvidenceMigrationApplyRequest = components["schemas"]["EvidenceMigra
 export type ChapterResult = components["schemas"]["ChapterResult"];
 export type JobView = components["schemas"]["JobView"];
 export type ChapterView = components["schemas"]["ChapterView"];
+export type CandidateApplyRequest = components["schemas"]["CandidateApplyRequest"];
+export type CandidateApplyPreview = components["schemas"]["CandidateApplyPreview"];
 export type ActiveJob = components["schemas"]["ActiveJob"];
 export type ActiveJobStatus = components["schemas"]["ActiveJobStatus"];
 export type NumericReviewReport = components["schemas"]["NumericReviewReport"];
@@ -398,6 +400,16 @@ export const api = {
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
       method: "POST", body: JSON.stringify({ action }),
     }, { notify: { kind: "saved", project: name } }),
+  // 장 후보의 서버 적용 (D3c-5, 계획 4.7, 4.8). 미리 보기는 저장하지 않는다. 적용은 이 탭의 마지막 저장 ETag를
+  // If-Match로 보내고 응답의 ETag로 갱신한다(문서 변경 적용과 같은 모양). 칸을 비우면 서버가 기본 선택을 쓴다
+  previewCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}) =>
+    request<CandidateApplyPreview>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply/preview`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  applyCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}) =>
+    request<Deck>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply`, {
+      method: "POST", body: JSON.stringify(body),
+    }, { etagKey: name, notify: { kind: "saved", project: name } }),
   // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
   dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
