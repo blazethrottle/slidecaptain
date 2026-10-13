@@ -10,7 +10,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_serializer, model_validator
 
 # 글자 색과 채움 색은 프리셋 색 역할 이름으로 받는다. 프리셋이 바뀌면 색이 따라 바뀐다(CalloutSlots.tone과 같은 원칙).
 # 글자 색에는 글자용 역할을, 채움 색에는 채움용 역할을 둔다 (계획 리뷰 저장 S15)
@@ -24,10 +24,16 @@ EditKind = Literal["move", "font", "text_color", "fill", "hide"]
 ALL_KINDS: frozenset[str] = frozenset({"move", "font", "text_color", "fill", "hide"})
 
 
-def _omittable(schema: dict) -> None:
-    # 없는 칸은 직렬화하지 않으므로 스키마에서 기본값 표기를 뺀다. 기본값이 적혀 있으면 화면 타입 생성기
-    # (openapi-typescript)가 "항상 있음"으로 만든다 (D3b-1 구현 기록)
+def omittable(schema: dict) -> None:
+    """기본값이면 직렬화하지 않는 칸의 스키마에서 기본값 표기를 뺀다. 기본값이 적혀 있으면 화면 타입 생성기
+    (openapi-typescript)가 "항상 있음"으로 만든다 (D3b-1 구현 기록). 덱, 렌더 계획, 프로젝트 정보가 이 함수 하나를 쓴다
+    (D3c-1 리뷰 F13)."""
     schema.pop("default", None)
+
+
+_omittable = omittable
+# 손 편집이나 다른 클라이언트가 보낸 "12"나 true를 숫자로 바꿔 받지 않는다. 도식 슬롯의 strict와 같은 원칙 (D3c-1 리뷰 F4)
+_Number = StrictFloat | StrictInt
 
 
 class ElementEdit(BaseModel):
@@ -36,13 +42,13 @@ class ElementEdit(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
     # 엔진이 정한 자리에서 옮긴 거리(pt). 절대 좌표가 아니라 거리라서 템플릿 자리가 바뀌면 함께 움직인다(계획 리뷰 저장 S21)
-    dx_pt: float | None = Field(default=None, json_schema_extra=_omittable)
-    dy_pt: float | None = Field(default=None, json_schema_extra=_omittable)
+    dx_pt: _Number | None = Field(default=None, json_schema_extra=_omittable)
+    dy_pt: _Number | None = Field(default=None, json_schema_extra=_omittable)
     # 요소 글자의 배율. 가장 큰 문단의 절대 크기로 저장하면 내용에 따라 기준 문단이 바뀐다(재리뷰 RR17)
-    font_scale: float | None = Field(default=None, gt=0, json_schema_extra=_omittable)
+    font_scale: _Number | None = Field(default=None, gt=0, json_schema_extra=_omittable)
     text_color: TextColorRole | None = Field(default=None, json_schema_extra=_omittable)
     fill: FillRole | None = Field(default=None, json_schema_extra=_omittable)
-    hidden: bool | None = Field(default=None, json_schema_extra=_omittable)
+    hidden: StrictBool | None = Field(default=None, json_schema_extra=_omittable)
 
     @model_validator(mode="after")
     def _paired_offsets(self) -> "ElementEdit":

@@ -12,7 +12,7 @@ from slidecaptain.models.diagram import DiagramInput, parse_diagram_spec
 from slidecaptain.models.story import ReportType, StoryPlan
 from slidecaptain.models.expression import ChartSpec, TextSpan, validate_spans
 from slidecaptain.models.change_review import DocumentChangeReview
-from slidecaptain.models.direct_edit import ElementEdit, frame_keys, normalize_edits
+from slidecaptain.models.direct_edit import ElementEdit, frame_keys, normalize_edits, omittable as _omittable
 from slidecaptain.models.report_purpose import (
     DETAIL_KEYS, DETAIL_MAX, KEY_MESSAGE_MAX, OUTCOME_OTHER_MAX, PURPOSE_DEFAULTS, DesiredOutcome, deck_level,
     is_blank,
@@ -218,10 +218,6 @@ class GeneratedChapter(Chapter):
 class Structure(BaseModel):
     chapters: list[Chapter] = []
     story_plan: StoryPlan | None = None
-
-
-def _omittable(schema: dict) -> None:
-    schema.pop("default", None)
 
 
 class Slide(BaseModel):

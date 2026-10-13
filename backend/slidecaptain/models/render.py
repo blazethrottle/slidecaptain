@@ -18,8 +18,7 @@ from slidecaptain.models.expression import ChartPlan, TextRun
 HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
 
 
-def _omittable(schema: dict) -> None:
-    schema.pop("default", None)
+from slidecaptain.models.direct_edit import omittable as _omittable  # noqa: E402  같은 규칙 하나 (D3c-1 리뷰 F13)
 
 
 class Para(BaseModel):

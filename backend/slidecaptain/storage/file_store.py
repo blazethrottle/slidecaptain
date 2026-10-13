@@ -26,6 +26,8 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field, ValidationError, model_serializer
 
+from slidecaptain.models.direct_edit import omittable as _omittable
+
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
@@ -108,10 +110,6 @@ class InvalidSourceEncoding(StorageError):
     pass
 
 
-def _omittable(schema: dict) -> None:
-    schema.pop("default", None)
-
-
 class ProjectInfo(BaseModel):
     name: str
     title: str
@@ -133,7 +131,7 @@ class SnapshotInfo(BaseModel):
     id: str  # 파일 이름에서 확장자를 뺀 것 (예: deck-20260828-153000-123456)
     saved_at: str
     # pre_migration: 등급 1 덱을 처음 올리기 직전의 복사본 (0.2.0으로 되돌릴 지점).
-    # before_revert: 0.2.0 같은 다른 앱이 등급 3 덱을 되돌리기 직전의 덱 (D3b-1, 되찾을 지점)
+    # before_revert: 0.2.0 같은 다른 앱이 이 앱만 읽는 등급(3 이상) 덱을 되돌리기 직전의 덱 (D3b-1, D3c-1, 되찾을 지점)
     kind: Literal["snapshot", "pre_migration", "before_revert"] = "snapshot"
 
 
@@ -421,10 +419,10 @@ class FileProjectStore:
         디스크의 덱이 등급 1이고 새 덱이 2 이상이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을 남긴다.
         단 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같으면 생략한다: 자동 저장이 같은 등급 1 상태와 등급
         3을 오갈 때 강제 스냅샷이 쌓이지 않게 하고(리뷰 S13), 등급 1에서 무엇이든 바뀌면(이 앱의 편집이든 0.2.0의
-        편집이든) 다시 복구 지점을 남긴다(재리뷰 RR2, D3b-1 리뷰 R5). 등급 3 저장은 덱 교체 전에 쓰려는 덱과 직전
+        편집이든) 다시 복구 지점을 남긴다(재리뷰 RR2, D3b-1 리뷰 R5). 등급 3 이상 저장은 덱 교체 전에 쓰려는 덱과 직전
         덱의 지문을 manifest에 남긴다(되돌림 표시, D3b-1 리뷰 R1). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다
         (0.2.0도 열지 못하는 깨진 덱에서 오르는 저장은 기록 없이 번호만 먼저 올린다).
-        등급 3에서는 manifest 번호가 중간 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
+        이 앱만 읽는 등급(3 이상)에서는 manifest 번호가 이전 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
         pending 기록을 옛 번호로 먼저 남기고 덱을 교체한 뒤 번호를 내린다. 끊기면 다음 쓰기가 덱 내용으로
         pending을 마무리한다.
         """
@@ -478,10 +476,12 @@ class FileProjectStore:
             if snapshot:
                 self._snapshot_current(project_dir)
             if new >= 3:
+                # 디스크 덱을 읽지 못한 경우(old=None)에도 번호를 먼저 올린다. 이 쓰기가 이전 빌드를 막는다 (D3c-1 리뷰 F2)
+                manifest.format_version = max(manifest.format_version, new)
                 project_format.write_manifest(project_dir, manifest, self._atomic_write)  # 쓰려는 덱의 지문을 먼저
             etag = self._write_deck(project_dir, deck)
         manifest.format_version = new
-        # 덱 교체가 끝났다: 직전 덱의 지문을 지운다. 등급 3이 아니면 두 값 모두 쓰이지 않으므로 비워 일반 저장이
+        # 덱 교체가 끝났다: 직전 덱의 지문을 지운다. 등급 3 이상이 아니면 두 값 모두 쓰이지 않으므로 비워 일반 저장이
         # manifest를 다시 쓰지 않게 한다
         manifest.prior_written_etag = None
         manifest.last_written_etag = etag if new >= 3 else None

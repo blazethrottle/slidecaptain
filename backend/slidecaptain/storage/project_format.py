@@ -11,8 +11,8 @@ manifest라도 모르는 필드와 모르는 기록 종류는 그대로 보존�
 
 Deck.schema_version은 등급 4이면 3, 등급 3이면 2, 아니면 1이다(models/deck.py). 0.2.0은 필드 검증이 끝난 뒤에야
 버전을 검사하므로 새 보고 유형 덱의 표시는 버전과 관계없다(2026-10-08 실측). 3종 유형에 새 항목만 더한
-덱은 필드 검증을 통과하고 버전 검사에서 막힌다. 등급 3에서는 manifest 형식 번호 3이 중간 빌드를 막는
-유일한 장치이므로, 등급이 3으로 오르는 저장은 manifest를 먼저 올린다(file_store, 재리뷰 RR6).
+덱은 필드 검증을 통과하고 버전 검사에서 막힌다. 이 앱만 읽는 등급(3 이상)에서는 manifest 형식 번호가
+이전 빌드를 막는 유일한 장치이므로, 등급이 오르는 저장과 그 등급의 저장은 manifest를 먼저 쓴다(file_store, 재리뷰 RR6).
 """
 
 import hashlib
@@ -35,7 +35,7 @@ REPORT_TYPE_LOCATIONS = frozenset({("DeckMeta", "report_type"), ("ReportBrief", 
 # 덱 스키마, 유형별 추가 입력 칸 표, 길이 상한을 함께 해시한 SHA-256 (D3b-1, 재리뷰 RR7). 바뀌면
 # test_project_format이 실패해 형식 판정과 manifest 형식 번호를 다시 검토하게 한다 (모르는 필드를 버리는
 # 이전 앱이 새 필드를 경고 없이 지우지 않게, 이전 빌드가 읽지 못하는 덱을 복원으로 덮지 않게).
-PINNED_DECK_SCHEMA_SHA256 = "910da1a90d6cbf022fc413a803508ad035331221f66aec943fc436422507b221"
+PINNED_DECK_SCHEMA_SHA256 = "83a166dbd205fc9eeb1f0ea822fdb178dd1fc049e239a38153e33457b3982f65"
 
 ManifestState = Literal["missing", "ok", "newer", "unreadable"]
 
@@ -61,9 +61,9 @@ class ProjectManifest(BaseModel):
     format_version: int
     written_by: str = __version__  # 진단용. 판정에 쓰지 않는다
     migrations: list[MigrationRecord] = []
-    # 이 앱이 등급 3 덱으로 쓴(또는 쓰려는) deck.json의 ETag와 그 직전 덱의 ETag (D3b-1). 되돌림 표시(재리뷰 RR3)가
+    # 이 앱이 이 앱만 읽는 등급(3 이상) 덱으로 쓴(또는 쓰려는) deck.json의 ETag와 그 직전 덱의 ETag (D3b-1, D3c-1). 되돌림 표시(재리뷰 RR3)가
     # 쓴다. 등급 3 저장은 덱 교체 전에 두 값을 함께 남기고 교체 뒤 직전 값을 지운다. 마지막 기록이 실패해도 쓰려던
-    # 덱의 지문이 남아 표시가 옛 스냅샷에 붙지 않는다(D3b-1 리뷰 R1). 등급 3이 아니면 비운다
+    # 덱의 지문이 남아 표시가 옛 스냅샷에 붙지 않는다(D3b-1 리뷰 R1). 등급 3 이상이 아니면 비운다
     last_written_etag: str | None = None
     prior_written_etag: str | None = None
 
@@ -96,7 +96,8 @@ def deck_format_of_bytes(data: bytes) -> int | None:
 
     0.2.0이 쓴 덱도 판정해야 하므로 현재 모델로 검증하지 않는다. 이 앱은 등급 3 덱을 schema_version 2로,
     등급 4 덱을 3으로 쓰고 새 항목은 기본값이면 키가 없으므로, 버전, 보고 유형, 직접 수정 키로 모델 판정과 같은
-    답을 낸다(리뷰 S6, D3c 계획 리뷰 저장 S3).
+    답을 낸다(리뷰 S6, D3c 계획 리뷰 저장 S3). 손 편집으로 효과 없는 수정만 남은 덱(예: hidden false)은 바이트 판정이 4,
+    모델 판정이 1이라 다음 저장이 내림 기록을 남긴다. 이 앱이 쓴 덱에서는 정규화가 그런 수정을 버려 생기지 않는다 (D3c-1 리뷰 F11).
     """
     try:
         payload = json.loads(data)
@@ -208,7 +209,17 @@ def reconcile(
         manifest = ProjectManifest(format_version=disk_format or 1)
     pending = [r for r in manifest.migrations if r.status == "pending"]
     for record in pending:
-        record.status = "done" if disk_format == record.to_format else "not_applied"
+        reverted = (revert_snapshot_id is not None and record.kind == "upgrade" and record.to_format >= 3
+                    and disk_format is not None and disk_format < record.to_format)
+        if reverted:
+            # 올림은 끝났지만 마지막 기록이 실패했고, 그 뒤 다른 앱이 되돌렸다 (D3c-1 리뷰 F1)
+            record.status = "done"
+            manifest.migrations.append(MigrationRecord(
+                at=now_iso(), kind="external_downgrade", from_format=record.to_format, to_format=disk_format,
+                snapshot_id=revert_snapshot_id,
+            ))
+        else:
+            record.status = "done" if disk_format == record.to_format else "not_applied"
     if not pending and disk_format is not None and manifest.format_version > disk_format:
         # 이 앱의 쓰기 없이 등급이 내려왔다: 0.2.0의 저장이나 스냅샷 복원 (D3b-1에서 등급 3까지, D3c-1에서 4까지 일반화)
         manifest.migrations.append(MigrationRecord(
@@ -227,9 +238,12 @@ def pre_migration_snapshot_ids(project_dir: Path) -> set[str]:
     manifest = read_manifest(project_dir)
     if manifest is None:
         return set()
+    # 마지막 기록이 실패한 올림(pending)도 다른 앱이 되돌렸으면 끝난 올림이다. 쓰기 전 읽기에서도 표시한다 (D3c-1 리뷰 F1)
+    reverted = find_revert_snapshot(project_dir, manifest) is not None
     return {
         m.snapshot_id for m in manifest.migrations
-        if m.kind == "upgrade" and m.status == "done" and m.snapshot_id and m.from_format == 1
+        if m.kind == "upgrade" and m.snapshot_id and m.from_format == 1
+        and (m.status == "done" or (m.status == "pending" and reverted))
     }
 
 
@@ -242,8 +256,10 @@ def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) ->
     """
     if manifest is None or manifest.format_version < 3 or not manifest.last_written_etag:
         return None
-    # 이 앱의 쓰기가 끝나지 않은 동안(pending)은 디스크 등급이 낮아도 되돌림이 아니다(이 앱의 내림)
-    if any(r.status == "pending" for r in manifest.migrations):
+    # 이 앱의 내림이 끝나지 않은 동안(pending)은 디스크 등급이 낮아도 되돌림이 아니다. 올림 pending은 다르다: 덱 교체 뒤
+    # 마지막 manifest 쓰기가 실패한 채 다른 앱이 되돌렸을 수 있다. 그 경우 쓰려던 덱과 바이트가 같은 스냅샷이 있다(교체가
+    # 일어나지 않았다면 다른 앱의 복원이 그 바이트를 스냅샷으로 남길 수 없다) (D3c-1 리뷰 F1)
+    if any(r.status == "pending" and not (r.kind == "upgrade" and r.to_format >= 3) for r in manifest.migrations):
         return None
     deck_path = project_dir / "deck.json"
     try:
@@ -270,7 +286,7 @@ def find_revert_snapshot(project_dir: Path, manifest: ProjectManifest | None) ->
 
 
 def revert_snapshot_ids(project_dir: Path) -> set[str]:
-    """"0.2.0에서 되돌리기 전"으로 표시할 스냅샷. 쓰기 때 남긴 기록과, 아직 쓰기가 없을 때의 읽기 전용 감지."""
+    """"다른 앱에서 되돌리기 전"으로 표시할 스냅샷. 쓰기 때 남긴 기록과, 아직 쓰기가 없을 때의 읽기 전용 감지."""
     manifest = read_manifest(project_dir)
     if manifest is None:
         return set()

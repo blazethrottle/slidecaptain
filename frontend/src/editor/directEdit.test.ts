@@ -1,7 +1,9 @@
 // 직접 수정의 화면 쪽 계약 (D3c-3). 열쇠 함수와 경고 대응이 서버와 같은지 고정 파일로 지킨다
 import keysFixture from "../../../backend/tests/fixtures/frame-keys.json";
 import warningsFixture from "../../../backend/tests/fixtures/warning-keys.json";
+import normalizeFixture from "../../../backend/tests/fixtures/normalize-cases.json";
 import type { Deck, SlidePlan } from "../api/client";
+import type { ElementEdit } from "./directEdit";
 import {
   clampOffset, contrastRatio, displayBoxes, editElement, frameKeys, normalizeDeckEdits, normalizeEdits, roleName,
   shiftListKeys, warningKey,
@@ -11,12 +13,14 @@ type Slide = Deck["slides"][number];
 const samples = keysFixture.samples as Record<string, Record<string, Record<string, unknown>>>;
 
 function sample(template: string, variant: string, common: boolean): Slide {
+  // 서버 시험의 _slide와 같다. "blank"는 공백만 있는 선택 칸과 공통 슬롯이다 (D3c-1 리뷰 F6)
+  const [eyebrow, subtitle] = variant === "blank" ? [" ", "\u3000"] : ["분류", "한 문장 부제"];
   return { chapter_id: "c1", slots: { template, ...samples[template][variant] } as Slide["slots"],
-    eyebrow: common ? "분류" : "", subtitle: common ? "한 문장 부제" : "" };
+    eyebrow: common ? eyebrow : "", subtitle: common ? subtitle : "" };
 }
 
-it("요소 열쇠와 받는 수정 종류가 서버 frame_keys와 같다 (고정 파일 40개 구성)", () => {
-  expect(keysFixture.cases.length).toBe(40);
+it("요소 열쇠와 받는 수정 종류가 서버 frame_keys와 같다 (고정 파일 60개 구성, 공백만 있는 칸 포함)", () => {
+  expect(keysFixture.cases.length).toBe(60);
   for (const c of keysFixture.cases) {
     expect(frameKeys(sample(c.template, c.variant, c.common)), `${c.template} ${c.variant} ${c.common}`).toEqual(c.keys);
   }
@@ -24,6 +28,14 @@ it("요소 열쇠와 받는 수정 종류가 서버 frame_keys와 같다 (고정
 
 it("경고 slot의 요소 대응이 서버 warning_key와 같다", () => {
   for (const c of warningsFixture.cases) expect(warningKey(c.slot, c.keys), c.slot).toBe(c.key);
+});
+
+it("정규화가 서버 normalize_edits와 같은 결과를 낸다 (고정 파일, D3c-1 리뷰 F12)", () => {
+  for (const c of normalizeFixture.cases) {
+    const result = normalizeEdits(c.input as unknown as Record<string, ElementEdit>, frameKeys(sample(c.template, c.variant, c.common)));
+    expect(Object.keys(result), c.name).toEqual(Object.keys(c.expected));
+    expect(result, c.name).toEqual(c.expected);
+  }
 });
 
 describe("정규화 (서버와 같은 다섯 규칙)", () => {

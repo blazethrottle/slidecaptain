@@ -2120,7 +2120,7 @@ export interface components {
             /** Dy Pt */
             dy_pt?: number | null;
             /** Font Scale */
-            font_scale?: number | null;
+            font_scale?: (number) | null;
             /** Text Color */
             text_color?: ("text" | "accent" | "accent1" | "accent2" | "danger" | "ok" | "ink" | "ink_soft" | "background") | null;
             /** Fill */

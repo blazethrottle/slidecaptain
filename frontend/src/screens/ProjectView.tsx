@@ -580,8 +580,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const goBack = async () => {
     if (await leaveScreen("이동을")) onBack();
   };
-  const openRecovery = async () => {
-    if (await leaveScreen("이동을")) { setSaveStatus(null); setShowRecovery(true); }
+  const openRecovery = async (): Promise<boolean> => {
+    if (await leaveScreen("이동을")) { setSaveStatus(null); setShowRecovery(true); return true; }
+    return false;
   };
 
   const doExport = async () => {
@@ -687,7 +688,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             {revertNotice && (
               <p className="topbar-job">
                 다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다. 복구 화면에서 되돌리기 전 내용을 볼 수 있습니다.{" "}
-                <button onClick={() => { setRevertNotice(false); openRecovery(); }} disabled={recoveryLocked}
+                {/* 복구 화면이 실제로 열렸을 때만 안내를 내린다. 이동이 취소되면 남긴다 (D3c-1 리뷰 F9) */}
+                <button onClick={() => void openRecovery().then((opened) => { if (opened) setRevertNotice(false); })} disabled={recoveryLocked}
                   title={recoveryTitle}>복구 화면 열기</button>{" "}
                 <button className="btn-text" onClick={() => setRevertNotice(false)}>닫기</button>
               </p>

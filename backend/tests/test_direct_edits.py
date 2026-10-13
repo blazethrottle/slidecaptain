@@ -26,35 +26,44 @@ METRICS = FontMetrics.load_default()
 
 # 템플릿별 표본. "full"은 선택 칸을 모두 채우고, "bare"는 선택 칸을 비운다(프레임이 생기고 사라지는 조건을 함께 본다)
 SAMPLES: dict[str, dict[str, dict]] = {
-    "cover": {"full": {"title": "제목", "subtitle": "부제", "date": "2026-10-13"}, "bare": {"title": "제목"}},
-    "divider": {"full": {"section_no": "1", "section_title": "구분"}, "bare": {"section_title": "구분"}},
-    "summary": {"full": {"conclusion": "결론", "points": [{"text": "요점"}]}, "bare": {"conclusion": "결론"}},
+    "cover": {"full": {"title": "제목", "subtitle": "부제", "date": "2026-10-13"}, "bare": {"title": "제목"},
+              "blank": {"title": "제목", "subtitle": " ", "date": "\u3000"}},
+    "divider": {"full": {"section_no": "1", "section_title": "구분"}, "bare": {"section_title": "구분"},
+                "blank": {"section_no": " ", "section_title": "구분"}},
+    "summary": {"full": {"conclusion": "결론", "points": [{"text": "요점"}]}, "bare": {"conclusion": "결론"},
+                "blank": {"conclusion": "결론", "points": [{"text": " "}]}},
     "bullet_box": {"full": {"bullets": [{"text": "항목"}], "conclusion": "결론", "footnote": "출처"},
-                   "bare": {"conclusion": "결론"}},
+                   "bare": {"conclusion": "결론"}, "blank": {"conclusion": "결론", "footnote": " "}},
     "table": {"full": {"columns": ["구분", "값"], "rows": [["A", "1"]], "footnote": "출처"},
-              "bare": {"columns": ["구분"], "rows": []}},
+              "bare": {"columns": ["구분"], "rows": []}, "blank": {"columns": ["구분"], "rows": [], "footnote": "\t"}},
     "compare2": {"full": {"conclusion": "결론", "left": {"heading": "A", "bullets": [{"text": "왼쪽"}]},
                           "right": {"heading": "B", "bullets": [{"text": "오른쪽"}]}},
-                 "bare": {"conclusion": "결론", "left": {"heading": "A"}, "right": {"heading": "B"}}},
-    "callout": {"full": {"text": "핵심", "tone": "accent1"}, "bare": {"text": "핵심"}},
+                 "bare": {"conclusion": "결론", "left": {"heading": "A"}, "right": {"heading": "B"}},
+                 "blank": {"conclusion": "결론", "left": {"heading": " "}, "right": {"heading": "B"}}},
+    "callout": {"full": {"text": "핵심", "tone": "accent1"}, "bare": {"text": "핵심"}, "blank": {"text": " "}},
     "cards": {"full": {"cards": [{"heading": "A", "badge": "1", "tail": "끝", "emphasis": True},
                                  {"heading": "B", "bullets": [{"text": "항목"}]}, {"heading": "C"}, {"heading": "D"}]},
-              "bare": {"cards": [{"heading": "A"}, {"heading": "B"}]}},
+              "bare": {"cards": [{"heading": "A"}, {"heading": "B"}]},
+              "blank": {"cards": [{"heading": "A", "badge": " ", "tail": "\n"}, {"heading": "B"}]}},
     "process": {"full": {"steps": [{"heading": f"단계{i}", "subtitle": "부", "notes": ["라벨"]} for i in range(6)]},
-                "bare": {"steps": [{"heading": f"단계{i}"} for i in range(3)]}},
+                "bare": {"steps": [{"heading": f"단계{i}"} for i in range(3)]},
+                "blank": {"steps": [{"heading": f"단계{i}", "subtitle": " ", "notes": [" "]} for i in range(3)]}},
     "matrix": {"full": {"rows": [{"category": f"분류{i}", "primary": "대표", "items": ["가", "나"]} for i in range(6)]},
-               "bare": {"rows": [{"category": f"분류{i}"} for i in range(3)]}},
+               "bare": {"rows": [{"category": f"분류{i}"} for i in range(3)]},
+               "blank": {"rows": [{"category": f"분류{i}", "primary": " ", "items": [" "]} for i in range(3)]}},
 }
 
 
 def _slide(template: str, variant: str, common: bool, **extra) -> Slide:
+    # 공백만 있는 공통 슬롯도 빌더는 프레임을 만든다. 화면이 trim()으로 판정하는 실수를 막는다 (D3c-1 리뷰 F6)
+    eyebrow, subtitle = (" ", "\u3000") if variant == "blank" else ("분류", "한 문장 부제")
     return Slide(chapter_id="c1", slots={"template": template, **SAMPLES[template][variant]},
-                 eyebrow="분류" if common else "", subtitle="한 문장 부제" if common else "", **extra)
+                 eyebrow=eyebrow if common else "", subtitle=subtitle if common else "", **extra)
 
 
 def _configs():
     for template in SAMPLES:
-        for variant in ("full", "bare"):
+        for variant in ("full", "bare", "blank"):
             for common in (False, True):
                 yield template, variant, common
 
@@ -183,6 +192,10 @@ def test_empty_bullet_box_does_not_take_a_font_scale():
     {"text_color": "surface1"},        # 글자용 역할이 아니다
     {"fill": "background"},            # 채움용 역할이 아니다
     {"unknown": 1},
+    {"dx_pt": "12", "dy_pt": 0},       # 문자열 숫자 (D3c-1 리뷰 F4)
+    {"dx_pt": True, "dy_pt": 0},
+    {"hidden": 1},
+    {"hidden": "yes"},
 ])
 def test_invalid_edits_are_rejected(bad):
     with pytest.raises(ValidationError):
@@ -201,6 +214,35 @@ def test_diagram_slides_reject_direct_edits():
             break
     with pytest.raises(ValidationError, match="도식 페이지는 직접 수정을 지원하지 않습니다"):
         Deck.model_validate(deck)
+
+
+def test_empty_and_all_null_edits_are_dropped_by_normalization_not_rejected():
+    """빈 객체는 거절하지 않고 정규화 ④가 버린다. 화면이 칸을 지우는 중간 상태를 422로 막지 않기 위해서다 (D3c-1 리뷰 F3)."""
+    deck = _deck(direct_edits={"title": {}, "card0": {"hidden": None, "fill": None}})
+    assert deck.slides[0].direct_edits == {}
+    assert deck.schema_version == 1
+
+
+def test_vertical_or_horizontal_only_moves_are_kept():
+    """세로로만 옮긴 수정이 저장 때 사라지지 않는다 (D3c-1 리뷰 F7)."""
+    deck = _deck(direct_edits={"title": {"dx_pt": 0, "dy_pt": 5}, "card0": {"dx_pt": 5, "dy_pt": 0}})
+    assert deck.slides[0].direct_edits["title"] == ElementEdit(dx_pt=0, dy_pt=5)
+    assert deck.slides[0].direct_edits["card0"] == ElementEdit(dx_pt=5, dy_pt=0)
+
+
+NORMALIZE_FIXTURE = FIXTURES / "normalize-cases.json"
+
+
+def test_normalization_fixture_matches_the_server_rule():
+    """화면의 normalizeEdits(D3c-3)가 같은 결과를 내는지 지키는 고정 파일 (D3c-1 리뷰 F12)."""
+    data = json.loads(NORMALIZE_FIXTURE.read_text(encoding="utf-8"))
+    assert len(data["cases"]) >= 10
+    for case in data["cases"]:
+        slide = _slide(case["template"], case["variant"], case["common"])
+        edits = {k: ElementEdit.model_validate(v) for k, v in case["input"].items()}
+        result = normalize_edits(edits, frame_keys(slide))
+        assert list(result) == list(case["expected"]), case["name"]
+        assert {k: v.model_dump() for k, v in result.items()} == case["expected"], case["name"]
 
 
 def test_normalize_edits_is_idempotent():
@@ -358,3 +400,77 @@ def test_invalid_draft_is_kept_verbatim(store):
     info = store.save_draft("p1", deck=raw, reason="conflict", source="editor", base_etag=None)
     envelope = json.loads((store.root / "p1" / "drafts" / f"{info.id}.json").read_text(encoding="utf-8"))
     assert envelope["deck"] == raw
+
+
+# -- 마지막 형식 기록이 실패한 경우 (D3c-1 리뷰 F1, F2, F5) ---------------------------------------
+
+def _fail_after(monkeypatch, n: int = 2):
+    """덱 교체 뒤의 마지막 형식 기록을 실패시킨다. 그 기록은 직전 덱의 지문을 지우는 쓰기다(먼저 쓰기와 pending 기록은
+    직전 지문을 남긴다). 쓰기 횟수로 정하면 먼저 쓰기를 빼먹은 결함에서 실패 지점이 함께 밀려 결함을 놓친다."""
+    original = project_format.write_manifest
+
+    def flaky(project_dir, manifest, atomic_write):
+        if manifest.prior_written_etag is None and not any(m.status == "pending" for m in manifest.migrations):
+            raise OSError("디스크 오류 흉내")
+        return original(project_dir, manifest, atomic_write)
+
+    monkeypatch.setattr(project_format, "write_manifest", flaky)
+    return lambda: monkeypatch.setattr(project_format, "write_manifest", original)
+
+
+def _legacy_restore(store, snapshot_id):
+    """0.2.0의 스냅샷 복원을 흉내 낸다: 지금 덱을 스냅샷으로 남기고 그 스냅샷으로 덮는다."""
+    project = store.root / "p1"
+    current = (project / "deck.json").read_bytes()
+    (project / "snapshots" / "deck-29991231-235959-000000.json").write_bytes(current)
+    (project / "deck.json").write_bytes((project / "snapshots" / f"{snapshot_id}.json").read_bytes())
+
+
+def test_upgrade_with_failed_final_record_then_legacy_revert_is_still_marked(store, monkeypatch):
+    store.create_project("p1")
+    store.save_deck("p1", _deck(), snapshot=False)
+    restore = _fail_after(monkeypatch, 2)  # 1: pending 기록과 함께 먼저 쓰기, 2: 마지막 기록
+    store.save_deck("p1", _deck(direct_edits={"title": {"hidden": True}}), snapshot=False)
+    restore()
+    manifest = project_format.read_manifest(store.root / "p1")
+    [record] = manifest.migrations
+    assert (record.kind, record.status, manifest.format_version) == ("upgrade", "pending", 4)
+    _legacy_restore(store, record.snapshot_id)
+    [info] = store.list_projects()
+    assert info.reverted_by_other_app is True
+    kinds = {s.id: s.kind for s in store.list_snapshots("p1")}
+    assert kinds["deck-29991231-235959-000000"] == "before_revert"
+    assert kinds[record.snapshot_id] == "pre_migration"
+    store.save_deck("p1", store.load_deck("p1"), snapshot=False)
+    records = [(m.kind, m.status, m.snapshot_id) for m in project_format.read_manifest(store.root / "p1").migrations]
+    assert records[0][:2] == ("upgrade", "done")
+    assert records[1] == ("external_downgrade", "done", "deck-29991231-235959-000000")
+
+
+def test_level_four_saves_write_the_manifest_number_first_even_if_the_final_record_fails(store, monkeypatch):
+    """같은 등급 저장과 3에서 4로의 올림 모두 덱 교체 전에 manifest가 4다. 이전 빌드를 막는 장치다 (D3c-1 리뷰 F5)."""
+    store.create_project("p1")
+    meta = {"title": "보고", "key_message": "핵심"}
+    store.save_deck("p1", Deck.model_validate({**_deck().model_dump(mode="json"), "meta": meta}), snapshot=False)
+    restore = _fail_after(monkeypatch, 2)
+    edited = Deck.model_validate({**_deck(direct_edits={"title": {"hidden": True}}).model_dump(mode="json"), "meta": meta})
+    store.save_deck("p1", edited, snapshot=False)
+    restore()
+    assert project_format.read_manifest(store.root / "p1").format_version == 4
+    restore = _fail_after(monkeypatch, 2)
+    moved = Deck.model_validate({**_deck(direct_edits={"title": {"dx_pt": 3, "dy_pt": 0}}).model_dump(mode="json"), "meta": meta})
+    store.save_deck("p1", moved, snapshot=False)
+    restore()
+    manifest = project_format.read_manifest(store.root / "p1")
+    assert manifest.format_version == 4
+    assert manifest.last_written_etag == store.deck_etag("p1")  # 먼저 쓰기가 새 덱의 지문을 남겼다
+
+
+def test_writing_level_four_over_an_unreadable_deck_raises_the_manifest_first(store, monkeypatch):
+    """디스크 덱을 읽지 못하는 상태에서도 번호를 먼저 올린다 (D3c-1 리뷰 F2)."""
+    store.create_project("p1")
+    (store.root / "p1" / "deck.json").write_text("{깨진", encoding="utf-8")
+    restore = _fail_after(monkeypatch, 2)
+    store.save_deck("p1", _deck(direct_edits={"title": {"hidden": True}}), snapshot=False)
+    restore()
+    assert project_format.read_manifest(store.root / "p1").format_version == 4

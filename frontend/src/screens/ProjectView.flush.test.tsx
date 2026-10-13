@@ -65,6 +65,29 @@ it("목록으로: 플러시가 실패하면 나가지 않고 배너를 띄운다
   expect(document.querySelector(".editor-screen")).not.toBeNull();  // 편집기는 내려가지 않았다
 });
 
+it("되돌림 안내의 복구 화면 열기: 플러시가 실패해 이동이 취소되면 안내를 남긴다 (D3c-1 리뷰 F9)", async () => {
+  vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  render(<ProjectView project={{ ...project, reverted_by_other_app: true }} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+  const preview = () => within(document.querySelector(".editor-center") as HTMLElement);
+  await userEvent.click(await preview().findByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
+  const box = await screen.findByLabelText("내용 수정");
+  await userEvent.clear(box);
+  await userEvent.type(box, "둘{Enter}");
+  const notice = screen.getByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/);
+  await userEvent.click(within(notice).getByRole("button", { name: "복구 화면 열기" }));
+  await waitFor(() => expect(screen.getAllByRole("alert").map((a) => a.textContent).join("\n"))
+    .toContain("저장하지 못해 이동을 중단"));
+  expect(screen.queryByRole("heading", { name: /스냅샷 복구/ })).toBeNull();
+  expect(screen.getByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeInTheDocument();
+});
+
 it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 뜬다", async () => {
   const d = deferred<{ ok: boolean }>();
   vi.mocked(api.putDeck).mockImplementation(() => d.promise);

@@ -26,6 +26,18 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
     return () => window.removeEventListener("slidecaptain:ai-selection", refresh);
   }, []);
 
+  // 여는 때의 정보로 연다. 목록을 처음 읽은 뒤 다른 앱(0.2.0)이 되돌렸으면 그 사실(되돌림 안내)이 목록에 없다
+  // (D3c-1 리뷰 F8). 다시 읽지 못하면 지금 목록의 정보로 연다
+  const openFresh = async (p: ProjectInfo) => {
+    try {
+      const list = await api.listProjects();
+      setProjects(list);
+      onOpen(list.find((x) => x.name === p.name) ?? p);
+    } catch {
+      onOpen(p);
+    }
+  };
+
   const create = async () => {
     setError("");
     try {
@@ -69,7 +81,7 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
           <ul>
             {projects.map((p) => (
               <li key={p.name}>
-                <button onClick={() => onOpen(p)}>
+                <button onClick={() => void openFresh(p)}>
                   {p.title} <small>({p.name}, {p.updated_at})</small>
                   {p.status === "needs_recovery" && <em> 복구 필요</em>}
                   {p.status === "newer_format" && <em> 새 버전 필요</em>}

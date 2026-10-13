@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type AppStatus } from "../api/client";
 import { ProjectList } from "./ProjectList";
@@ -28,6 +28,27 @@ it("프로젝트 목록과 복구 필요 표지를 보여준다", async () => {
   render(<ProjectList onOpen={() => {}} />);
   expect(await screen.findByText("주간 보고")).toBeInTheDocument();
   expect(screen.getByText("복구 필요")).toBeInTheDocument();
+});
+
+it("열 때 목록을 다시 읽어 그 사이 생긴 되돌림 표시로 연다 (D3c-1 리뷰 F8)", async () => {
+  vi.mocked(api.listProjects)
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok" }])
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok", reverted_by_other_app: true }]);
+  const onOpen = vi.fn();
+  render(<ProjectList onOpen={onOpen} />);
+  await userEvent.click(await screen.findByText("주간 보고"));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ name: "p1", reverted_by_other_app: true })));
+});
+
+it("다시 읽지 못하면 지금 목록의 정보로 연다", async () => {
+  vi.mocked(api.listProjects)
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok" }])
+    .mockRejectedValueOnce(new Error("서버 중단"));
+  const onOpen = vi.fn();
+  render(<ProjectList onOpen={onOpen} />);
+  await userEvent.click(await screen.findByText("주간 보고"));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ name: "p1" })));
+  expect(onOpen.mock.calls[0][0].reverted_by_other_app).toBeUndefined();
 });
 
 it("새 프로젝트를 만들고 연다", async () => {
