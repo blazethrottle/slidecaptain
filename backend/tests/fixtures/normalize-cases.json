@@ -249,6 +249,29 @@
      "hidden": true
     }
    }
+  },
+  {
+   "name": "글이 없는 요소(공백만 있는 표지 부제)의 글자 크기는 버린다 (α 리뷰 A2)",
+   "template": "cover",
+   "variant": "blank",
+   "common": false,
+   "input": {
+    "subtitle": {
+     "font_scale": 1.5,
+     "hidden": true
+    },
+    "cover_title": {
+     "font_scale": 1.2
+    }
+   },
+   "expected": {
+    "cover_title": {
+     "font_scale": 1.2
+    },
+    "subtitle": {
+     "hidden": true
+    }
+   }
   }
  ]
 }

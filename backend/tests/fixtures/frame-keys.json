@@ -486,7 +486,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -496,7 +495,6 @@
     },
     "date": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -533,7 +531,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -543,7 +540,6 @@
     },
     "date": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -580,7 +576,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -590,7 +585,6 @@
     },
     "date": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -627,7 +621,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -637,7 +630,6 @@
     },
     "date": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -718,7 +710,6 @@
    "keys": {
     "section_no": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -745,7 +736,6 @@
    "keys": {
     "section_no": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -772,7 +762,6 @@
    "keys": {
     "section_no": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -799,7 +788,6 @@
    "keys": {
     "section_no": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1037,7 +1025,6 @@
     },
     "points": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1064,7 +1051,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1074,7 +1060,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1095,7 +1080,6 @@
     },
     "points": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1352,7 +1336,6 @@
     },
     "footnote": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1379,7 +1362,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1389,7 +1371,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1419,7 +1400,6 @@
     },
     "footnote": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1614,7 +1594,6 @@
     },
     "footnote": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1641,7 +1620,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1651,7 +1629,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1669,7 +1646,6 @@
     },
     "footnote": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1928,7 +1904,6 @@
     },
     "left_card": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1976,7 +1951,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1986,7 +1960,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -1996,7 +1969,6 @@
     },
     "left_card": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2192,7 +2164,6 @@
     },
     "text": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2219,7 +2190,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2229,7 +2199,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2239,7 +2208,6 @@
     },
     "text": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2533,7 +2501,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -2543,7 +2510,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3198,7 +3164,6 @@
     },
     "step0_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3228,7 +3193,6 @@
     },
     "step1_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3258,7 +3222,6 @@
     },
     "step2_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3285,7 +3248,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3295,7 +3257,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3325,7 +3286,6 @@
     },
     "step0_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3355,7 +3315,6 @@
     },
     "step1_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3385,7 +3344,6 @@
     },
     "step2_labels": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3969,7 +3927,6 @@
     },
     "row0_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -3979,7 +3936,6 @@
     },
     "row0_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4000,7 +3956,6 @@
     },
     "row1_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4010,7 +3965,6 @@
     },
     "row1_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4031,7 +3985,6 @@
     },
     "row2_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4041,7 +3994,6 @@
     },
     "row2_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4068,7 +4020,6 @@
     },
     "eyebrow": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4078,7 +4029,6 @@
     },
     "subtitle": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4099,7 +4049,6 @@
     },
     "row0_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4109,7 +4058,6 @@
     },
     "row0_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4130,7 +4078,6 @@
     },
     "row1_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4140,7 +4087,6 @@
     },
     "row1_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4161,7 +4107,6 @@
     },
     "row2_primary": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"
@@ -4171,7 +4116,6 @@
     },
     "row2_items": {
      "kinds": [
-      "font",
       "hide",
       "move",
       "text_color"

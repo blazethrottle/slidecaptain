@@ -294,3 +294,37 @@ it("배지가 있는 카드의 접근 이름은 소제목을 쓰고, 묶음의 �
   expect(screen.getByRole("button", { name: "1번 카드, 소제목" })).toHaveAttribute("aria-current", "true");
   expect(screen.getAllByRole("button", { name: /^표/ })).toHaveLength(1);
 });
+
+describe("α 리뷰 반영", () => {
+  const para = (text: string, font_pt: number, bullet = false) => ({ text, level: 0, font_pt, bold: false, color: "202020",
+    align: "left" as const, bullet, lines: [text] });
+  const card: SlidePlan = { chapter_id: "c1", template: "cards", warnings: [], frames: [
+    { name: "c1:card0", x: 50, y: 92, w: 200, h: 200, fill: null, border: null, valign: "top", table: null,
+      paras: [para("1", 9), para("A", 12), para("가 항목", 12, true)] },
+  ] };
+
+  it("배지를 비운 입력의 Tab은 옛 계획의 다음 칸을 열지 않고 프레임으로 돌아간다 (A1)", async () => {
+    const commits: unknown[] = [];
+    const { container } = render(<Preview slide={card} style={style} pageW={960} pageH={540} editable
+      selected={{ chapterId: "c1", slot: "card0" }} onSelect={() => {}} onCommitText={(ref, text) => commits.push([ref, text])} />);
+    const frame = container.querySelector<HTMLElement>('[data-frame="c1:card0"]')!;
+    frame.focus();
+    await userEvent.keyboard("{Enter}");
+    const box = screen.getByLabelText("내용 수정");
+    await userEvent.clear(box);
+    await userEvent.keyboard("{Tab}");
+    expect(commits).toEqual([[{ chapterId: "c1", slot: "card0", index: 0 }, ""]]);
+    expect(screen.queryByLabelText("내용 수정")).toBeNull();
+    expect(document.activeElement).toBe(frame);
+  });
+
+  it("빈 칸이 생기지 않는 입력의 Tab은 다음 칸을 연다", async () => {
+    const { container } = render(<Preview slide={card} style={style} pageW={960} pageH={540} editable
+      selected={{ chapterId: "c1", slot: "card0" }} onSelect={() => {}} onCommitText={() => {}} />);
+    container.querySelector<HTMLElement>('[data-frame="c1:card0"]')!.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.type(screen.getByLabelText("내용 수정"), "2");
+    await userEvent.keyboard("{Tab}");
+    expect(screen.getByLabelText("내용 수정")).toHaveValue("A");
+  });
+});

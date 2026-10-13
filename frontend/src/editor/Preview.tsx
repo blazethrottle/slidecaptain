@@ -225,7 +225,10 @@ export function Preview({
     const stops = f ? textStops(f) : [];
     const at = stops.findIndex((s) => sameStop(s.ref, editing.ref));
     const next = stops[at + direction];
-    if (next && editable) { commit(); setEditing({ ref: next.ref, text: next.text, origin: next.text }); return; }
+    // 칸을 비우거나 빈 칸을 채우는 확정은 선택 칸(카드 배지와 꼬리 등)을 없애거나 만들어 문단 번호의 뜻을 바꾼다. 그때는
+    // 옛 계획의 다음 칸을 열지 않고 프레임으로 돌아간다. 열면 고친 문구가 다른 칸을 덮어썼다 (α 리뷰 A1)
+    const reshaped = (editing.origin.trim() === "") !== (editing.text.trim() === "");
+    if (next && editable && !reshaped) { commit(); setEditing({ ref: next.ref, text: next.text, origin: next.text }); return; }
     // 프레임으로 초점을 옮기면 입력란의 blur가 한 번 확정한다. 옮기지 못했을 때만 여기서 확정한다
     if (!focusFrameOf(editing.ref)) commit();
   };
@@ -331,6 +334,10 @@ export function Preview({
   };
 
   const boxes = displayBoxes(slide, edits, pageW, pageH);
+  // 끄는 동안에도 저장할 때와 같은 규칙으로 페이지 안에 잘라 그린다. 놓을 때만 자르면 보이는 자리와 저장되는 자리가
+  // 달랐다 (α 리뷰 A12)
+  const dragged = drag ? displayBoxes(slide, { ...edits, [drag.key]: { ...(edits?.[drag.key] ?? {}),
+    dx_pt: (edits?.[drag.key]?.dx_pt ?? 0) + drag.dx, dy_pt: (edits?.[drag.key]?.dy_pt ?? 0) + drag.dy } }, pageW, pageH) : null;
   // 경고와 요소의 대응은 서버와 같은 규칙이다(접두어 규칙은 step0이 step0_labels의 경고까지 표시했다, 재리뷰 RR22)
   const frameKeySet = slide.frames.map(frameKey);
   const warnedKeys = new Set(slide.warnings.map((w) => warningKey(w.slot, frameKeySet)).filter(Boolean));
@@ -400,7 +407,7 @@ export function Preview({
                 dragging ? "dragging" : "",
               ].join(" ").trim()}
               style={{
-                position: "absolute", left: box.x + (dragging ? drag.dx : 0), top: box.y + (dragging ? drag.dy : 0),
+                position: "absolute", left: dragging ? dragged!.get(f.name)!.x : box.x, top: dragging ? dragged!.get(f.name)!.y : box.y,
                 width: f.w, height: f.h,
                 boxSizing: "border-box",
                 background: f.fill ? `#${f.fill}` : undefined,

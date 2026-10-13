@@ -582,3 +582,65 @@ describe("D3c-3 리뷰 반영 (F15~F23)", () => {
     expect(screen.getAllByRole("status").some((s) => /결론 상자를 숨겼습니다/.test(s.textContent ?? ""))).toBe(true);
   });
 });
+
+describe("α 리뷰 반영", () => {
+  async function inMode(key = "conclusion") {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame(key)!.focus());
+  }
+  const statusText = () => screen.getAllByRole("status").map((s) => s.textContent ?? "").join("\n");
+
+  it("글자 크기 경고는 분량 경고와 따로 보이고 장 목록에 분량 주의를 붙이지 않는다 (A3)", async () => {
+    vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [{ ...plan.slides[0], warnings: [
+      { chapter_id: "c1", slot: "bullets", kind: "font_size", message: "읽기 하한(12pt) 아래로 줄였습니다.", needed_pt: 12, available_pt: 10 }] }] });
+    await open();
+    expect(screen.getByRole("heading", { name: "글자 크기 경고" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "분량 경고" })).toBeNull();
+    expect(screen.queryByText(/분량 주의/)).toBeNull();
+    expect(screen.getByText(/글자 크기 확인/)).toBeInTheDocument();
+  });
+
+  it("끄는 동안에도 페이지 안으로 잘라 그린다 (A12)", async () => {
+    await inMode();
+    const handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 500, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: -2000, clientY: 100 });
+    expect(frame("conclusion")!.style.left).toBe("0px");
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: -2000, clientY: 100 });
+    await waitFor(() => expect(lastSaved().slides[0].direct_edits).toEqual({ conclusion: { dx_pt: -50, dy_pt: 0 } }));
+  });
+
+  it("가로 위치 칸은 지금의 세로 거리를 지킨다 (A8의 F06)", async () => {
+    await inMode();
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowDown" });
+    const x = screen.getByRole("spinbutton", { name: "가로 위치" });
+    await userEvent.clear(x);
+    await userEvent.type(x, "70{Enter}");
+    await waitFor(() => expect(lastSaved().slides[0].direct_edits).toEqual({ conclusion: { dx_pt: 20, dy_pt: 1 } }));
+  });
+
+  it("두 번째 글자 크기 변경도 배율을 기준 크기로 계산한다 (A8의 F08)", async () => {
+    vi.mocked(api.fontLimit).mockResolvedValue({ base_pt: 12, current_pt: 14.4, fits_up_to_pt: 20, min_pt: 1, max_pt: 1131 });
+    await inMode();
+    const size = await screen.findByRole("spinbutton", { name: "글자 크기(pt)" }, { timeout: 2000 });
+    await userEvent.clear(size);
+    await userEvent.type(size, "18{Enter}");
+    await waitFor(() => expect(lastSaved().slides[0].direct_edits).toEqual({ conclusion: { font_scale: 1.5 } }));
+  });
+
+  it("숨긴 뒤 다음 요소가 이미 숨겨져 있으면 그 요소를 고르지 않는다 (A8의 F11)", async () => {
+    await inMode("footnote");
+    fireEvent.keyDown(frame("footnote")!, { key: "Delete" });
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "Delete" });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("슬라이드 미리보기")));
+    expect(screen.getByText("미리보기에서 요소를 고르면 위치와 글자, 색을 바꿀 수 있습니다.")).toBeInTheDocument();
+  });
+
+  it("이동 안내는 페이지 안으로 자른 자리를 말한다 (A8의 F20)", async () => {
+    await inMode();
+    for (let i = 0; i < 6; i++) fireEvent.keyDown(frame("conclusion")!, { key: "ArrowLeft", shiftKey: true });
+    expect(statusText()).toMatch(/결론 상자: 가로 0pt/);
+  });
+});

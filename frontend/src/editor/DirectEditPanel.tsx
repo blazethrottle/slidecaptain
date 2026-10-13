@@ -103,6 +103,7 @@ export function DirectEditPanel({ projectName, deck, chapterId, plan, pageW, pag
     slots: slide?.slots, eyebrow: slide?.eyebrow, subtitle: slide?.subtitle,
     topic: deck.structure.chapters.find((c) => c.id === chapterId)?.topic, presenter: deck.meta.presenter,
     scales: Object.entries(edits).filter(([, e]) => e.font_scale != null).map(([k, e]) => [k, e.font_scale]),
+    spans: slide?.text_spans,  // 서버 한도는 부분 강조까지 적용해 본다 (D3c-2 리뷰 F4, α 리뷰 A4)
     overrides: deck.meta.preset_overrides,
   });
   useEffect(() => {
@@ -128,7 +129,8 @@ export function DirectEditPanel({ projectName, deck, chapterId, plan, pageW, pag
       {hidden.length === 0 ? <p className="hint">숨긴 요소가 없습니다.</p> : (
         <ul>{hidden.map((k) => (
           <li key={k}>{roleName(k, template)}{" "}
-            <button onClick={() => { onApply((d) => editElement(d, chapterId, k, { hidden: undefined })); onShowFrame(k); }}>
+            {/* 옛 미리보기가 남은 동안은 초점을 줄 프레임이 다른 항목일 수 있어 막는다 (α 리뷰 A11) */}
+            <button disabled={locked} onClick={() => { onApply((d) => editElement(d, chapterId, k, { hidden: undefined })); onShowFrame(k); }}>
               다시 보이기</button></li>
         ))}</ul>
       )}

@@ -79,9 +79,24 @@ _TABLE = frozenset({"move", "hide"})
 _BADGE = frozenset({"move", "text_color", "fill", "hide"})
 
 
-def _text(has_paras: bool = True, filled: bool = False) -> KeySpec:
+def _has_text(value) -> bool:
+    """글이 있는가. 공백만 있는 문구는 글이 없다. 렌더(layout/direct_edits의 _text_keys)와 같은 판정이다."""
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, BaseModel):
+        value = value.model_dump()
+    if isinstance(value, dict):
+        return any(_has_text(v) for v in value.values())
+    if isinstance(value, list):
+        return any(_has_text(v) for v in value)
+    return False
+
+
+def _text(has_text: bool = True, filled: bool = False) -> KeySpec:
     kinds = _TEXT_FILLED if filled else _TEXT
-    if not has_paras:  # 문단이 없는 요소(빈 불릿 상자)는 글자 크기를 받지 않는다 (재리뷰 RR17)
+    # 글이 없는 요소(문단이 없는 불릿 상자, 빈 표지 부제 등)는 글자 크기를 받지 않는다. 렌더는 그 배율을 버리고 화면은
+    # 칸을 숨기므로, 저장에 남기면 보이지 않는 수정이 덱을 새 등급에 묶는다 (재리뷰 RR17, α 리뷰 A2)
+    if not has_text:
         kinds = kinds - {"font"}
     return KeySpec(kinds=kinds)
 
@@ -97,49 +112,51 @@ def frame_keys(slide) -> dict[str, KeySpec]:
     if template == "diagram":
         return {}
     if template == "cover":
-        return {key: _text() for key in ("cover_title", "subtitle", "date", "presenter")}
+        # 보고자는 메타에서 오므로 여기서는 글 유무를 볼 수 없다(장 제목과 같다)
+        return {"cover_title": _text(_has_text(slots.title)), "subtitle": _text(_has_text(slots.subtitle)),
+                "date": _text(_has_text(slots.date)), "presenter": _text()}
     if template == "divider":
-        return {key: _text() for key in ("section_no", "section_title")}
+        return {"section_no": _text(_has_text(slots.section_no)), "section_title": _text(_has_text(slots.section_title))}
     keys: dict[str, KeySpec] = {"title": _text()}
     # 표지와 간지 밖에서만 공통 슬롯을 그린다(layout/templates.py의 build_slide)
     if slide.eyebrow:
-        keys["eyebrow"] = _text()
+        keys["eyebrow"] = _text(_has_text(slide.eyebrow))
     if slide.subtitle:
-        keys["subtitle"] = _text()
+        keys["subtitle"] = _text(_has_text(slide.subtitle))
     if template == "bullet_box":
-        keys["bullets"] = _text(has_paras=bool(slots.bullets))
-        keys["conclusion"] = _text(filled=True)
+        keys["bullets"] = _text(_has_text(slots.bullets))
+        keys["conclusion"] = _text(_has_text(slots.conclusion), filled=True)
         if slots.footnote:
-            keys["footnote"] = _text()
+            keys["footnote"] = _text(_has_text(slots.footnote))
     elif template == "summary":
-        keys["conclusion"] = _text(filled=True)
-        keys["points"] = _text(has_paras=bool(slots.points))
+        keys["conclusion"] = _text(_has_text(slots.conclusion), filled=True)
+        keys["points"] = _text(_has_text(slots.points))
     elif template == "table":
         keys["table"] = KeySpec(kinds=_TABLE, drag="body")
         if slots.footnote:
-            keys["footnote"] = _text()
+            keys["footnote"] = _text(_has_text(slots.footnote))
     elif template == "compare2":
-        keys["left_card"] = _text()
-        keys["right_card"] = _text()
-        keys["conclusion"] = _text(filled=True)
+        keys["left_card"] = _text(_has_text(slots.left))
+        keys["right_card"] = _text(_has_text(slots.right))
+        keys["conclusion"] = _text(_has_text(slots.conclusion), filled=True)
     elif template == "callout":
-        keys["text"] = _text()
+        keys["text"] = _text(_has_text(slots.text))
     elif template == "cards":
         for i, card in enumerate(slots.cards):
-            keys[f"card{i}"] = _text(filled=card.emphasis)  # 강조 카드만 채움이 있다
+            keys[f"card{i}"] = _text(_has_text(card), filled=card.emphasis)  # 강조 카드만 채움이 있다
     elif template == "process":
         for i, step in enumerate(slots.steps):
             keys[f"step{i}_badge"] = KeySpec(kinds=_BADGE, drag="body")
-            keys[f"step{i}"] = _text()
+            keys[f"step{i}"] = _text(_has_text([step.heading, step.subtitle]))
             if step.notes:
-                keys[f"step{i}_labels"] = _text()
+                keys[f"step{i}_labels"] = _text(_has_text(step.notes))
     elif template == "matrix":
         for i, row in enumerate(slots.rows):
-            keys[f"row{i}_category"] = _text(filled=True)
+            keys[f"row{i}_category"] = _text(_has_text(row.category), filled=True)
             if row.primary:
-                keys[f"row{i}_primary"] = _text()
+                keys[f"row{i}_primary"] = _text(_has_text(row.primary))
             if row.items:
-                keys[f"row{i}_items"] = _text()
+                keys[f"row{i}_items"] = _text(_has_text(row.items))
     else:
         raise ValueError(f"알 수 없는 템플릿입니다: {template}")
     return keys

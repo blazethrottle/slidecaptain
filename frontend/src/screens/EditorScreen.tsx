@@ -388,12 +388,16 @@ export function EditorScreen({
             seenJobFailures={seenJobFailures} failuresSince={failuresSince}
             onReplace={editor.replace} />
         )}
-        {slide && slide.warnings.length > 0 && (
-          <section>
-            <h3>분량 경고</h3>
-            <ul>{slide.warnings.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
-          </section>
-        )}
+        {/* 일부러 줄인 글자 크기 경고는 분량 넘침이 아니므로 따로 보인다 (D3c-2 리뷰 F3, α 리뷰 A3) */}
+        {slide && ([["capacity", "분량 경고"], ["font_size", "글자 크기 경고"]] as const).map(([kind, title]) => {
+          const found = slide.warnings.filter((w) => (w.kind ?? "capacity") === kind);
+          return found.length > 0 && (
+            <section key={kind}>
+              <h3>{title}</h3>
+              <ul>{found.map((w, i) => <li key={i}>{w.message}</li>)}</ul>
+            </section>
+          );
+        })}
       </aside>
     </div>
     {diagramDraft && <DiagramAuthoringDialog projectName={project.name} deck={editor.deck} initialDraft={diagramDraft} blocked={editor.conflict}

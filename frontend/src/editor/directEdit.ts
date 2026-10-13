@@ -17,8 +17,17 @@ const TEXT_FILLED: EditKind[] = ["fill", "font", "hide", "move", "text_color"];
 const TABLE: EditKind[] = ["hide", "move"];
 const BADGE: EditKind[] = ["fill", "hide", "move", "text_color"];
 
-function text(hasParas = true, filled = false): KeySpec {
-  const kinds = (filled ? TEXT_FILLED : TEXT).filter((k) => hasParas || k !== "font");
+/** 글이 있는가. 공백만 있는 문구는 글이 없다(서버 _has_text와 같다). 문자열 아닌 칸(강조 여부 등)은 보지 않는다. */
+function hasText(value: unknown): boolean {
+  if (typeof value === "string") return value.trim() !== "";
+  if (Array.isArray(value)) return value.some(hasText);
+  if (value && typeof value === "object") return Object.values(value).some(hasText);
+  return false;
+}
+
+// 글이 없는 요소는 글자 크기를 받지 않는다 (재리뷰 RR17, α 리뷰 A2)
+function text(withText = true, filled = false): KeySpec {
+  const kinds = (filled ? TEXT_FILLED : TEXT).filter((k) => withText || k !== "font");
   return { kinds, drag: "handle" };
 }
 
@@ -26,48 +35,50 @@ function text(hasParas = true, filled = false): KeySpec {
 export function frameKeys(slide: Slide): Record<string, KeySpec> {
   const s = slide.slots;
   if (s.template === "diagram") return {};
-  if (s.template === "cover") return Object.fromEntries(["cover_title", "subtitle", "date", "presenter"].map((k) => [k, text()]));
-  if (s.template === "divider") return Object.fromEntries(["section_no", "section_title"].map((k) => [k, text()]));
+  // 보고자는 메타에서 오므로 글 유무를 볼 수 없다(장 제목과 같다)
+  if (s.template === "cover") return { cover_title: text(hasText(s.title)), subtitle: text(hasText(s.subtitle)),
+    date: text(hasText(s.date)), presenter: text() };
+  if (s.template === "divider") return { section_no: text(hasText(s.section_no)), section_title: text(hasText(s.section_title)) };
   const keys: Record<string, KeySpec> = { title: text() };
-  if (slide.eyebrow) keys.eyebrow = text();
-  if (slide.subtitle) keys.subtitle = text();
+  if (slide.eyebrow) keys.eyebrow = text(hasText(slide.eyebrow));
+  if (slide.subtitle) keys.subtitle = text(hasText(slide.subtitle));
   switch (s.template) {
     case "bullet_box":
-      keys.bullets = text((s.bullets ?? []).length > 0);
-      keys.conclusion = text(true, true);
-      if (s.footnote) keys.footnote = text();
+      keys.bullets = text(hasText(s.bullets));
+      keys.conclusion = text(hasText(s.conclusion), true);
+      if (s.footnote) keys.footnote = text(hasText(s.footnote));
       break;
     case "summary":
-      keys.conclusion = text(true, true);
-      keys.points = text((s.points ?? []).length > 0);
+      keys.conclusion = text(hasText(s.conclusion), true);
+      keys.points = text(hasText(s.points));
       break;
     case "table":
       keys.table = { kinds: TABLE, drag: "body" };
-      if (s.footnote) keys.footnote = text();
+      if (s.footnote) keys.footnote = text(hasText(s.footnote));
       break;
     case "compare2":
-      keys.left_card = text();
-      keys.right_card = text();
-      keys.conclusion = text(true, true);
+      keys.left_card = text(hasText(s.left));
+      keys.right_card = text(hasText(s.right));
+      keys.conclusion = text(hasText(s.conclusion), true);
       break;
     case "callout":
-      keys.text = text();  // 채움은 슬롯의 tone이 정한다 (재리뷰 RR25)
+      keys.text = text(hasText(s.text));  // 채움은 슬롯의 tone이 정한다 (재리뷰 RR25)
       break;
     case "cards":
-      s.cards.forEach((card, i) => { keys[`card${i}`] = text(true, !!card.emphasis); });
+      s.cards.forEach((card, i) => { keys[`card${i}`] = text(hasText(card), !!card.emphasis); });
       break;
     case "process":
       s.steps.forEach((step, i) => {
         keys[`step${i}_badge`] = { kinds: BADGE, drag: "body" };
-        keys[`step${i}`] = text();
-        if ((step.notes ?? []).length > 0) keys[`step${i}_labels`] = text();
+        keys[`step${i}`] = text(hasText([step.heading, step.subtitle]));
+        if ((step.notes ?? []).length > 0) keys[`step${i}_labels`] = text(hasText(step.notes));
       });
       break;
     case "matrix":
       s.rows.forEach((row, i) => {
-        keys[`row${i}_category`] = text(true, true);
-        if (row.primary) keys[`row${i}_primary`] = text();
-        if ((row.items ?? []).length > 0) keys[`row${i}_items`] = text();
+        keys[`row${i}_category`] = text(hasText(row.category), true);
+        if (row.primary) keys[`row${i}_primary`] = text(hasText(row.primary));
+        if ((row.items ?? []).length > 0) keys[`row${i}_items`] = text(hasText(row.items));
       });
       break;
   }

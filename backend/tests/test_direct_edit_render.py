@@ -81,8 +81,9 @@ def test_table_group_moves_chart_and_conditions_together_and_clips_as_one():
     deck.slides[0].chart = ChartSpec(rule_version="comparison-chart-v1",
                                      comparison_id=deck.structure.story_plan.comparisons[0].id, kind="column")
     plain = _frames(build_render_plan(deck, PRESET, METRICS, sources=sources))
-    deck.slides[0].direct_edits = {"table": {"dx_pt": 0, "dy_pt": 10000}}
-    deck = Deck.model_validate(deck.model_dump(mode="json"))
+    payload = deck.model_dump(mode="json")
+    payload["slides"][0]["direct_edits"] = {"table": {"dx_pt": 0, "dy_pt": 10000}}
+    deck = Deck.model_validate(payload)  # 생 dict를 대입하지 않는다(직렬화 경고, α 리뷰 A10)
     moved = _frames(build_render_plan(deck, PRESET, METRICS, sources=sources))
     dy = moved["chart"].y - plain["chart"].y
     assert dy > 0 and moved["chart_conditions"].y - plain["chart_conditions"].y == pytest.approx(dy)
@@ -229,8 +230,9 @@ def test_hidden_table_skips_chart_construction_even_when_the_chart_cannot_be_bui
                                      comparison_id=deck.structure.story_plan.comparisons[0].id, kind="column")
     with pytest.raises(Exception):
         build_render_plan(deck, PRESET, METRICS, sources={})  # 자료가 없으면 차트를 만들 수 없다
-    deck.slides[0].direct_edits = {"table": {"hidden": True}}
-    deck = Deck.model_validate(deck.model_dump(mode="json"))
+    payload = deck.model_dump(mode="json")
+    payload["slides"][0]["direct_edits"] = {"table": {"hidden": True}}
+    deck = Deck.model_validate(payload)
     plan = build_render_plan(deck, PRESET, METRICS, sources={})
     frames = _frames(plan)
     assert frames["table"].hidden is True and "chart" not in frames
@@ -591,3 +593,65 @@ def test_empty_cover_fields_take_no_font_scale(client):
     assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 422
     body["key"] = "cover_title"
     assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 200
+
+
+# -- α 리뷰 반영 ------------------------------------------------------------------------------
+
+def test_card_order_badges_are_not_evidence_and_other_hidden_elements_are_listed():
+    """순번 배지만 숫자인 카드의 숨김은 근거 실패가 아니다(A5). 근거가 아닌 숨김은 미수행 정보 줄로 보인다(A6)."""
+    cards = {"cards": [{"heading": "가", "badge": "1"}, {"heading": "나", "badge": "2"}]}
+    deck = _deck("cards", cards, edits={"card0": {"hidden": True}})
+    report = assess_quality(deck, PRESET, _plan(deck))
+    checks = {c.name: c for c in report.checks}
+    assert "hidden_evidence" not in checks and report.status == "draft"
+    assert checks["hidden_elements"].status == "not_run"
+    assert checks["hidden_elements"].detail.startswith("숨긴 요소 1개: 1장 장 제목의 1번 카드.")
+    numeric = _deck("cards", {"cards": [{"heading": "매출 20% 증가", "badge": "1"}, {"heading": "나"}]},
+                    edits={"card0": {"hidden": True}})
+    assert "hidden_evidence" in {c.name for c in assess_quality(numeric, PRESET, _plan(numeric)).checks}
+    plain = _deck("cards", cards)
+    assert "hidden_elements" not in {c.name for c in assess_quality(plain, PRESET, _plan(plain)).checks}
+
+
+def test_hidden_numeric_compare_card_is_evidence():
+    """비교 카드의 숫자 문구 경로가 left_card로 간다 (α 리뷰 A8의 B04)."""
+    slots = {"left": {"heading": "직접 진출", "bullets": [{"text": "비용 30% 절감"}]}, "right": {"heading": "제휴"},
+             "conclusion": "결론"}
+    deck = _deck("compare2", slots, edits={"left_card": {"hidden": True}})
+    [check] = [c for c in assess_quality(deck, PRESET, _plan(deck)).checks if c.name == "hidden_evidence"]
+    assert "왼쪽 카드" in check.detail
+
+
+def test_hidden_element_drops_its_span_warning():
+    """숨긴 요소의 부분 강조 경고도 사라진다. 숨김의 경고 제거는 강조 적용 뒤다 (α 리뷰 A8의 B09)."""
+    import hashlib
+
+    first = "가나다라마바사 아자차카 타파하 " * 10
+    span = {"slot": "bullets", "index": 0, "start": 0, "end": len(first), "role": "bold",
+            "text_sha256": hashlib.sha256(first.encode()).hexdigest()}
+    slots = {"bullets": [{"text": first}, {"text": "둘째"}], "conclusion": "결론"}
+    shown = _plan(_deck("bullet_box", slots, text_spans=[span], edits={"bullets": {"font_scale": 3}}))
+    assert "bullets_span" in {w.slot for w in shown.slides[0].warnings}  # 전제: 숨기지 않으면 강조 경고가 있다
+    hidden = _plan(_deck("bullet_box", slots, text_spans=[span], edits={"bullets": {"font_scale": 3, "hidden": True}}))
+    assert not [w for w in hidden.slides[0].warnings if w.slot.startswith("bullets")]
+
+
+def test_position_is_clipped_at_the_left_and_top_page_edges():
+    """가로와 세로 모두 왼쪽, 위 경계에서 자른다 (α 리뷰 A8의 B11)."""
+    frames = _frames(_plan(_deck("bullet_box", BULLETS, edits={"title": {"dx_pt": -5000, "dy_pt": -5000}})))
+    assert (frames["title"].x, frames["title"].y) == (0, 0)
+
+
+def test_font_limit_route_reports_current_base_and_deck_design_sizes(client):
+    """최대 크기 라우트의 계약: 지금 배율의 현재 크기, 가장 큰 문단의 기준 크기, 덱별 디자인 값 (α 리뷰 A8의 B14, B15, B23)."""
+    def ask(deck, key):
+        body = {"deck": deck.model_dump(mode="json"), "chapter_id": "c1", "key": key}
+        return client.post("/api/projects/p1/direct-edits/font-limit", json=body).json()
+
+    scaled = ask(_deck("bullet_box", BULLETS, edits={"bullets": {"font_scale": 1.25}}), "bullets")
+    assert (scaled["base_pt"], scaled["current_pt"]) == (PRESET.font_roles.body_pt, round(PRESET.font_roles.body_pt * 1.25, 2))
+    mixed = ask(_deck("cards", CARDS), "card0")  # 배지(작은 글자)와 소제목이 섞인 카드
+    assert mixed["base_pt"] == max(p.font_pt for p in _frames(_plan(_deck("cards", CARDS)))["card0"].paras)
+    designed = _deck("bullet_box", BULLETS)
+    designed.meta.preset_overrides = {"font_roles": {"body_pt": 14}}
+    assert ask(Deck.model_validate(designed.model_dump(mode="json")), "bullets")["base_pt"] == 14
