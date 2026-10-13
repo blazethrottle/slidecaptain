@@ -90,6 +90,9 @@ it("가장 최근 장 생성 묶음의 장 요약은 원장의 실제 행 모양
   expect(batchSummary([batchView([chapterView("c1", "succeeded")])])).toBeNull();  // 모두 반영
   expect(batchSummary([batchView([chapterView("c1", "succeeded"),
     chapterView("c2", "failed", { candidate_status: "dismissed" })])])).toBeNull();  // 버린 후보만 남음
+  // 적용 라우트로 반영한 낡은 후보는 상태가 failed로 남고 처분만 applied다. 끝난 일로 센다 (D3c-5 리뷰 F4)
+  expect(batchSummary([batchView([chapterView("c1", "succeeded"),
+    chapterView("c2", "failed", { candidate_status: "applied", error: err("base_changed", "base_changed") })])])).toBeNull();
   expect(batchSummary([{ ...latest, state: "running" }])).toBeNull();  // 진행 중은 생성 중 표시가 맡는다
   expect(batchSummary(null)).toBeNull();
 });

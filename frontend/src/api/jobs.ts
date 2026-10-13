@@ -144,7 +144,8 @@ export const STALE_REASON_LABELS = {
   deck_changed: "저장본이 바뀌었습니다",
   unknown_deck: "저장본을 확인하지 못했습니다",
   candidate_stale: "만드는 동안 입력이 바뀌었던 후보입니다",
-} as const satisfies Record<ServerStaleReason | "slots_changed" | "candidate_stale", string>;
+  not_applicable: "이전 버전에서 만든 결과라 반영 여부를 판정할 수 없습니다",  // 적용 라우트의 409 (D3c-5)
+} as const satisfies Record<ServerStaleReason | "slots_changed" | "candidate_stale" | "not_applicable", string>;
 
 export function reasonText(reasons: string[]): string {
   const labels: Record<string, string> = STALE_REASON_LABELS;

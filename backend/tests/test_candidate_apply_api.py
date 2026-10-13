@@ -248,11 +248,14 @@ def test_running_batch_blocks_both_routes_and_unfinished_jobs_are_not_terminal(s
         active = _apply(client, store, single["id"])
         active_preview = _preview(client, single["id"])
         own = _apply(client, store, batch["id"], {"chapter_id": "c2"})
+        stale_tab = client.post(f"/api/projects/p1/jobs/{single['id']}/apply", json={}, headers={"If-Match": '"old"'})
         provider.release.set()
         _wait_batch(client, batch["id"])
         after = _apply(client, store, single["id"])
     assert active.status_code == 409 and active.json()["code"] == "batch_active"
-    assert active_preview.status_code == 409 and active_preview.json()["code"] == "batch_active"
+    # 비교는 보이되 반영은 막는다(계획 4.8 비교 화면). 낡은 탭은 다른 판정보다 412가 먼저다 (리뷰 F10)
+    assert active_preview.status_code == 200 and active_preview.json()["blocked_reasons"][0] == "batch_active"
+    assert stale_tab.status_code == 412
     assert own.status_code == 409
     assert after.status_code == 200
 
@@ -276,6 +279,7 @@ def test_settled_candidates_and_bad_requests(store):
         first = _job(client, "chapter-0001")
         assert _apply(client, store, first["id"]).status_code == 200
         again = _apply(client, store, first["id"])
+        stale_tab = client.post(f"/api/projects/p1/jobs/{first['id']}/apply", json={}, headers={"If-Match": '"old"'})
         second = _job(client, "chapter-0002")
         unknown_unit = _apply(client, store, second["id"], {"keep_current": ["card0"]})
         other_chapter = _apply(client, store, second["id"], {"chapter_id": "c2"})
@@ -285,6 +289,7 @@ def test_settled_candidates_and_bad_requests(store):
                              (json.dumps({"status": "ok", "slots": {"template": "bullet_box"}}), second["id"]))
         unreadable = _apply(client, store, second["id"])
     assert again.status_code == 409 and again.json()["code"] == "candidate_settled"
+    assert stale_tab.status_code == 412  # 낡은 탭은 처분 판정보다 다시 읽기가 먼저다 (리뷰 F10)
     assert [r.status_code for r in (unknown_unit, other_chapter, unknown_edit, unreadable)] == [422] * 4
 
 
@@ -375,3 +380,129 @@ def test_job_api_rejects_a_stale_story_plan_at_registration_without_a_row(store,
     assert response.status_code == 409 and response.json()["code"] == "stale_story_plan"
     assert no_sources.status_code == 422  # 자료 읽기가 먼저다
     assert rows == [] and provider.calls == 0
+
+
+# -- D3c-5 리뷰 반영 ---------------------------------------------------------------------------------------
+
+
+def test_edited_text_baseline_follows_the_apply_order_not_the_registration_order(store):
+    """A와 B를 등록하고 B, A 순서로 반영하면 지금 슬라이드는 A의 결과다. 등록 순서로 기준을 고르면 B가 기준이 되어 모든 단위가
+    "직접 고친 문구"로 보이고, 다음 다시 생성의 새 내용이 기본 선택에서 통째로 버려진다 (리뷰 F2)."""
+    _project(store)
+    provider = ChapterProvider([slots("A"), slots("B"), slots("C")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        a = _job(client, "chapter-0001")
+        b = _job(client, "chapter-0002")
+        assert _apply(client, store, b["id"]).status_code == 200
+        assert _apply(client, store, a["id"]).status_code == 200
+        c = _job(client, "chapter-0003")
+        preview = _preview(client, c["id"]).json()
+        response = _apply(client, store, c["id"])
+    assert preview["edited_units"] == [] and preview["keep_current"] == [] and not preview["already_applied"]
+    assert response.status_code == 200 and _slide(store).slots.conclusion == "C"
+
+
+def test_batch_and_single_results_use_the_last_applied_one_as_the_baseline(store):
+    _project(store)
+    provider = ChapterProvider([slots("묶음"), slots("단독"), slots("셋째")], gate_at=0)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        batch = _register_batch(client, store, ["c1"]).json()
+        assert provider.entered.wait(10)
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("그사이 생긴 내용")})  # 묶음의 c1은 낡은 후보로 남는다
+        provider.release.set()
+        _wait_batch(client, batch["id"])
+        single = _job(client, "chapter-0001")
+        assert _apply(client, store, single["id"]).status_code == 200
+        assert _apply(client, store, batch["id"], {"chapter_id": "c1"}).status_code == 200
+        third = _job(client, "chapter-0002")
+        preview = _preview(client, third["id"]).json()
+    assert preview["edited_units"] == [] and preview["merged"]["slots"]["conclusion"] == "셋째"
+
+
+def test_restoring_a_snapshot_resets_the_baseline(store):
+    """후보가 아닌 경로가 장을 바꾸면 기준이 없다: 표시 없이 모두 새 문구다 (리뷰 F3, 계획 4.1)."""
+    _project(store)
+    provider = ChapterProvider([slots("A"), slots("B")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("처음")})
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        snapshot = store.list_snapshots("p1")[0]
+        restored = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+        b = _job(client, "chapter-0002")
+        preview = _preview(client, b["id"]).json()
+        ledger = client.app.state.job_runner.ledger
+        record = ledger.last_apply("p1", "c1")
+    assert restored.status_code == 200 and _slide(store).slots.conclusion == "처음"
+    assert record == ("reset", None) and preview["edited_units"] is None
+
+
+def test_single_rows_without_relevance_or_success_are_not_applicable(store):
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("하나"), slots("둘")])), headers=HEADERS) as client:
+        first = _job(client, "chapter-0001")
+        second = _job(client, "chapter-0002")
+        conn = client.app.state.job_runner.ledger._conn
+        conn.execute("UPDATE jobs SET relevance_hash = NULL WHERE id = ?", (first["id"],))
+        conn.execute("UPDATE jobs SET state = 'cancelled' WHERE id = ?", (second["id"],))  # 취소 뒤 결과가 남은 행
+        no_hash = _apply(client, store, first["id"])
+        cancelled = _apply(client, store, second["id"])
+    assert (no_hash.status_code, no_hash.json()["code"]) == (409, "not_applicable")
+    assert (cancelled.status_code, cancelled.json()["code"]) == (409, "not_applicable")
+
+
+def test_preview_reports_capacity_warnings_of_the_merged_slide(store):
+    _project(store)
+    long = {"template": "bullet_box", "bullets": [{"text": "아주 긴 문장 " * 40, "level": 0} for _ in range(12)],
+            "conclusion": "결론 " * 80, "footnote": ""}
+    with TestClient(create_app(store, provider=ChapterProvider([long])), headers=HEADERS) as client:
+        view = _job(client, "chapter-0001")
+        preview = _preview(client, view["id"]).json()
+    assert preview["warnings"], "넘치는 후보는 반영 전에 경고가 보여야 한다 (계획 재리뷰 RR26)"
+
+
+def test_default_keeps_the_hidden_state_and_same_slots_with_dropped_edits_still_write(store):
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("지금")])), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("지금"),
+                            "direct_edits": {"conclusion": {"hidden": True}, "bullets": {"dx_pt": 5, "dy_pt": 0}}})
+        view = _job(client, "chapter-0001")
+        preview = _preview(client, view["id"]).json()
+        response = _apply(client, store, view["id"], {"drop_edits": ["bullets"]})
+    assert preview["unhide"] == [] and preview["merged"]["direct_edits"]["conclusion"] == {"hidden": True}
+    assert preview["already_applied"]  # 슬롯과 수정이 같으면 덱을 다시 쓰지 않는다
+    assert response.status_code == 200 and set(_slide(store).direct_edits) == {"conclusion"}  # 수정만 달라도 쓴다
+
+
+def test_condense_judgement_normalizes_the_requested_slots(store):
+    """화면이 기본값 칸을 빼고 보낸 슬롯이 거짓 slots_changed를 내지 않는다 (리뷰 F8 M10)."""
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("짧게")])), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("길게")})
+        sparse = {"template": "bullet_box", "bullets": [{"text": "길게"}], "conclusion": "길게"}
+        view = _job(client, "condense-0001", kind="condense", slots=sparse)
+        preview = _preview(client, view["id"]).json()
+    assert preview["blocked_reasons"] == []
+
+
+@pytest.mark.parametrize("kind", ["chapter", "condense"])
+def test_generic_route_refuses_applied_for_both_chapter_kinds(store, kind):
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("새")])), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("지금")})
+        params = {"slots": slots("지금")} if kind == "condense" else {}
+        view = _job(client, f"{kind}-0001", kind=kind, **params)
+        applied = client.post(f"/api/projects/p1/jobs/{view['id']}/candidate", json={"action": "applied"})
+    assert applied.status_code == 409 and applied.json()["code"] == "apply_route_required"
+
+
+def test_batch_apply_to_an_empty_chapter_becomes_the_baseline(store):
+    """묶음이 빈 장에 쓴 결과도 반영 순서에 남는다. 그 뒤 다시 생성하면 고친 단위가 없다 (리뷰 F2)."""
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("묶음"), slots("다시")])), headers=HEADERS) as client:
+        batch = _register_batch(client, store, ["c1"]).json()
+        _wait_batch(client, batch["id"])
+        again = _job(client, "chapter-0001")
+        preview = _preview(client, again["id"]).json()
+    assert _slide(store).slots.conclusion == "묶음"
+    assert preview["edited_units"] == [] and preview["merged"]["slots"]["conclusion"] == "다시"

@@ -96,6 +96,19 @@ it("반영은 남은 편집을 저장한 뒤 서버가 후보를 합치게 하�
   expect(screen.queryByText("반영")).toBeNull();
 });
 
+it("반영 직전 저장을 기다리는 동안 장을 옮기면 반영을 요청하지 않는다 (리뷰 F7)", async () => {
+  answer(okResult);
+  let finish: (ok: boolean) => void = () => {};
+  const onFlush = () => new Promise<boolean>((res) => { finish = res; });
+  const { rerender } = render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onFlush={onFlush} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByText("반영"));
+  rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" {...H} onFlush={onFlush} />);
+  finish(true);
+  await new Promise((r) => setTimeout(r, 20));
+  expect(api.applyCandidate).not.toHaveBeenCalled();
+});
+
 it("반영 직전 저장이 실패하면 서버에 반영을 요청하지 않는다 (계획 4.7의 1)", async () => {
   answer(okResult);
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onFlush={async () => false} />);
@@ -120,39 +133,47 @@ it.each([
   expect(screen.queryByRole("alert")).toBeNull();  // 안내는 편집기의 충돌 배너 하나다
 });
 
-it.each(["sources_changed", "slots_changed"])("서버 판정 %s가 반영을 막으면 그 이유를 알리고 후보를 다시 조회한다", async (name) => {
+// 서버 판정이 반영을 막은 코드와 그 표시 (D3c-5, 리뷰 F5와 F7). 실제 본문이 고정 파일에 없는 코드는 같은 모양으로 만든다
+const BLOCKED: [string, string][] = [
+  ["sources_changed", "자료가 바뀌었습니다"], ["slots_changed", "이 장의 내용이 바뀌었습니다"],
+  ["chapter_changed", "이 장의 주제나 결론이 바뀌었습니다"], ["story_plan_changed", "보고 계획이 바뀌었습니다"],
+  ["template_changed", "이 장의 템플릿이 바뀌었습니다"], ["chapter_missing", "이 장이 구조안에서 빠졌습니다"],
+  ["not_applicable", "이전 버전에서 만든 결과라 반영 여부를 판정할 수 없습니다"],
+];
+it.each(BLOCKED)("서버가 %s로 반영을 막으면 반영 대신 이전 입력 기준 후보와 다시 생성을 보인다", async (code, label) => {
   answer(okResult);
-  vi.mocked(api.applyCandidate).mockRejectedValue(applyError(name));
-  vi.mocked(api.getJob).mockResolvedValue(jobView("chapter", { target: "c1", candidate_status: "stale",
-    stale_reasons: name === "sources_changed" ? ["sources_changed"] : [], result: okResult as unknown as Record<string, unknown> }));
+  vi.mocked(api.applyCandidate).mockRejectedValue(applyBodies[code] ? applyError(code)
+    : new ApiError(409, "이 후보는 지금 반영할 수 없습니다.", code));
+  vi.mocked(api.getJob).mockResolvedValue(jobView("chapter", { target: "c1", result: okResult as unknown as Record<string, unknown> }));
   const onConflict = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   await userEvent.click(await screen.findByText("반영"));
-  expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies[name].body.detail);
-  await waitFor(() => expect(api.getJob).toHaveBeenCalledWith("p1", "job-1"));
-  if (name === "sources_changed") expect(await screen.findByText(/만드는 동안 입력이 바뀌었던 후보입니다|이전 입력 기준 후보입니다/)).toBeInTheDocument();
+  expect(await screen.findByText(new RegExp(`이전 입력 기준 후보입니다\\(${label}\\)`))).toBeInTheDocument();
+  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.getByText("현재 입력으로 다시 생성")).toBeInTheDocument();
+  expect(api.getJob).toHaveBeenCalledWith("p1", "job-1");
   expect(onConflict).not.toHaveBeenCalled();
 });
 
-it.each(["candidate_settled", "batch_active", "not_applicable"])("적용 오류 %s는 원인별 안내로 보인다", async (name) => {
+it("다른 탭이 먼저 처분한 후보는 결과를 닫고 그 사실을 알린다 (리뷰 F5)", async () => {
   answer(okResult);
-  vi.mocked(api.applyCandidate).mockRejectedValue(applyError(name));
+  vi.mocked(api.applyCandidate).mockRejectedValue(applyError("candidate_settled"));
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   await userEvent.click(await screen.findByText("반영"));
-  expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies[name].body.detail);
+  expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies.candidate_settled.body.detail);
+  expect(screen.queryByText("반영")).toBeNull();
 });
 
-// -- D2b-5b: 후보의 처분, 다시 열기, 낡음 -----------------------------------------------------------
-
-it("버리면 후보를 버림으로 처분한다", async () => {
+it("묶음 실행 중이면 안내하고 반영 버튼은 남겨 묶음이 끝난 뒤 다시 누를 수 있다", async () => {
   answer(okResult);
+  vi.mocked(api.applyCandidate).mockRejectedValue(applyError("batch_active"));
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("버리기"));
-  expect(api.settleCandidate).toHaveBeenCalledWith("p1", "job-1", "dismissed");
-  expect(screen.queryByText("반영")).toBeNull();
+  await userEvent.click(await screen.findByText("반영"));
+  expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies.batch_active.body.detail);
+  expect(screen.getByText("반영")).toBeEnabled();
 });
 
 it("다시 열면 처분하지 않은 지난 결과를 보이고 반영할 수 있다", async () => {

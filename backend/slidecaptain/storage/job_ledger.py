@@ -206,6 +206,22 @@ CREATE TABLE job_chapters (
 );
 CREATE INDEX jobs_by_project ON jobs(project);
 """
+# 장 후보의 반영 순서 (D3c-5 리뷰 F2, F3). "직접 고친 문구"의 기준은 그 장에 마지막으로 반영된 AI 결과인데, 원장의 작업 행은
+# 등록 순서만 있고 반영 순서가 없다. 반영(applied)과 기준 무효화(reset, 문서 변경 반영이나 복원처럼 후보가 아닌 경로가 장을
+# 통째로 바꿈)를 순번과 함께 남긴다. 형식 번호(user_version)와 기존 두 테이블의 열은 그대로라 이전 빌드는 이 테이블을 보지
+# 않고 원장을 연다(그 빌드의 검사는 형식 번호와 jobs, job_chapters의 필수 열뿐이다)
+_APPLIES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chapter_applies (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    project TEXT NOT NULL,
+    chapter_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    job_id TEXT,
+    slots TEXT,
+    at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chapter_applies_by_chapter ON chapter_applies(project, chapter_id);
+"""
 _REQUIRED_COLUMNS = {"jobs": set(_JOB_COLUMNS) | {"params_hash"}, "job_chapters": set(_CHAPTER_COLUMNS)}
 
 
@@ -274,6 +290,7 @@ class JobLedger:
             conn.execute("PRAGMA synchronous=FULL")
             if version == 0:
                 conn.executescript("BEGIN;" + _SCHEMA + f"PRAGMA user_version = {LEDGER_FORMAT};COMMIT;")
+            conn.executescript("BEGIN;" + _APPLIES_SCHEMA + "COMMIT;")
         except LedgerUnavailable:
             conn.close()
             raise
@@ -421,6 +438,33 @@ class JobLedger:
             else:
                 self._cas_candidate("job_chapters", "job_id = ? AND chapter_id = ?", (job_id, chapter_id), expected,
                                     "applied")
+
+    def record_apply(self, project: str, chapter_id: str, job_id: str, slots: Any) -> None:
+        """장 후보를 반영했다. 적용 라우트, 묶음 적용, 재시작 조정이 처분 교체와 같은 트랜잭션에서 부른다."""
+        with self._lock, self._transaction():
+            self._conn.execute(
+                "INSERT INTO chapter_applies (project, chapter_id, kind, job_id, slots, at) VALUES (?, ?, 'applied', ?, ?, ?)",
+                (_nfc(project), chapter_id, job_id, json.dumps(slots, ensure_ascii=False), _now()))
+
+    def record_reset(self, project: str, chapter_ids: list[str]) -> None:
+        """후보가 아닌 경로(문서 변경 반영, 근거 이전, 스냅샷과 보존본 복원)가 장의 내용을 바꿨다. 그 장의 기준은 없다."""
+        if not chapter_ids:
+            return
+        with self._lock, self._transaction():
+            for chapter_id in chapter_ids:
+                self._conn.execute(
+                    "INSERT INTO chapter_applies (project, chapter_id, kind, at) VALUES (?, ?, 'reset', ?)",
+                    (_nfc(project), chapter_id, _now()))
+
+    def last_apply(self, project: str, chapter_id: str) -> tuple[str, Any] | None:
+        """그 장의 마지막 기록: ("applied", 슬롯) 또는 ("reset", None). 기록이 없으면 None."""
+        with self._lock, self._reading():
+            row = self._conn.execute(
+                "SELECT kind, slots FROM chapter_applies WHERE project = ? AND chapter_id = ? ORDER BY seq DESC LIMIT 1",
+                (_nfc(project), chapter_id)).fetchone()
+        if row is None:
+            return None
+        return row["kind"], None if row["slots"] is None else json.loads(row["slots"])
 
     # 묶음 하위 행
 

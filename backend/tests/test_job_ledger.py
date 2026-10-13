@@ -656,3 +656,26 @@ def test_parent_outcome_needs_finished_chapters(tmp_path):
     with pytest.raises(ValueError):
         parent_outcome(ledger.chapters(job.id))
     ledger.close()
+
+
+
+def test_apply_candidate_takes_only_held_or_stale_and_records_keep_their_order(tmp_path):
+    """적용 라우트 전용 처분 교체는 held와 stale만 받는다. 반영 기록은 등록 순서가 아니라 기록한 순서다 (D3c-5 리뷰 F2)."""
+    ledger = JobLedger.open(tmp_path)
+    try:
+        row, _ = ledger.create_job(project="p1", kind="chapter", request_id="r1", params={"chapter_id": "c1"},
+                                   instance_id="i1", inputs=INPUTS)
+        ledger.transition(row.id, expected="queued", new="running")
+        ledger.transition(row.id, expected="running", new="validating", candidate_status="held")
+        ledger.transition(row.id, expected="validating", new="succeeded")
+        ledger.settle_candidate(row.id, expected="held", new="delivered")  # 옛 래퍼가 응답으로 돌려준 결과
+        with pytest.raises(TransitionRejected):
+            ledger.apply_candidate(row.id, None, expected="delivered")
+        assert ledger.get_job(row.id).candidate_status == "delivered"
+        ledger.record_apply("p1", "c1", "job-b", {"template": "summary", "conclusion": "B"})
+        ledger.record_apply("p1", "c1", "job-a", {"template": "summary", "conclusion": "A"})
+        assert ledger.last_apply("p1", "c1") == ("applied", {"template": "summary", "conclusion": "A"})
+        ledger.record_reset("p1", ["c1"])
+        assert ledger.last_apply("p1", "c1") == ("reset", None) and ledger.last_apply("p1", "c2") is None
+    finally:
+        ledger.close()

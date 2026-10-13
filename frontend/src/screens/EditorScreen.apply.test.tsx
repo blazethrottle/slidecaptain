@@ -93,3 +93,19 @@ it("요청 중 충돌이 생기면 응답 덱을 받지 않아 충돌 안내와 
   expect(onDeckChange).not.toHaveBeenCalledWith(saved);
   expect(within(document.querySelector(".editor-center") as HTMLElement).getByText("옛 불릿")).toBeInTheDocument();
 });
+
+it("적용 중에는 단계 이동 전 저장이 거절되고 부모에 떠날 수 없음을 알린다 (계획 4.7의 2, 리뷰 F7)", async () => {
+  const pending = deferred<Deck>();
+  vi.mocked(api.applyCandidate).mockReturnValue(pending.promise);
+  let flush: (() => Promise<boolean | "declined">) | null = null;
+  const onBusyChange = vi.fn();
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onEditorReady={(f) => { flush = f; }} onBusyChange={onBusyChange} />);
+  await userEvent.click(await screen.findByText("반영"));
+  await waitFor(() => expect(document.querySelector(".editor-screen")).toHaveAttribute("inert"));
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  expect(await flush!()).toBe(false);
+  pending.resolve(saved);
+  await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+  expect(await flush!()).toBe(true);
+});

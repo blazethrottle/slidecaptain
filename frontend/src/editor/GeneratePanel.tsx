@@ -50,6 +50,8 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   const [followError, setFollowError] = useState("");
   const [storyStale, setStoryStale] = useState(false);
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
+  // 반영을 시도했을 때 서버가 막은 이유. 다시 조회한 작업에 없을 수 있어(축약 슬롯, 이전 버전 결과) 따로 둔다 (D3c-5 리뷰 F5)
+  const [refused, setRefused] = useState<string[]>([]);
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
   const deckRef = useRef(deck);
   deckRef.current = deck;
@@ -58,6 +60,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   const follow = useRef<AbortController | null>(null);
 
   const show = (view: JobView, fromEarlier: boolean) => {
+    setRefused([]);
     setJob(view);
     setEarlier(fromEarlier);
     try {
@@ -85,6 +88,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
     setFollowError("");
     setStoryStale(false);
     setCancelNotice("");
+    setRefused([]);
     setBusy(false);
     const controller = new AbortController();
     follow.current = controller;
@@ -132,6 +136,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
     setResult(null);
     setJob(null);
     setEarlier(false);
+    setRefused([]);
     try {
       // 장을 옮기면 조회만 멈춘다. 작업은 끝까지 돌고 결과는 돌아왔을 때 지난 후보로 보인다
       const { job: final } = await runJob<ChapterResult>(project.name, kind, { chapter_id: requestedChapterId, ...params },
@@ -168,6 +173,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       && !sameSlots((job.params as { slots?: Slots }).slots, slide.slots)) {
     reasons.push("slots_changed");
   }
+  for (const r of refused) if (!reasons.includes(r)) reasons.push(r);
   const elsewhere = job?.stale_reasons.includes("deck_changed_elsewhere") ?? false;
   const dismiss = () => {
     if (job) void settle(project.name, job.id, "dismissed");
@@ -202,9 +208,18 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       else if (e instanceof ApiError && e.status >= 500) onConflict(APPLY_UNCONFIRMED);
       if (chapterIdRef.current !== requestedChapterId) return;
       if (e instanceof ApiError && (e.status === 412 || e.status >= 500)) return;
-      if (e instanceof ApiError && e.status === 409 && e.code && APPLY_BLOCKING.has(e.code)) {
-        setError(e.message);
+      if (e instanceof ApiError && e.status === 409 && e.code && (APPLY_BLOCKING.has(e.code) || e.code === "not_applicable")) {
+        // 반영 대신 이전 입력 기준 후보로 보이고 현재 입력으로 다시 생성을 연다
+        setRefused([e.code]);
         try { setJob(await api.getJob(project.name, candidate.id)); } catch { /* 반영은 이미 막혔다 */ }
+        return;
+      }
+      if (e instanceof ApiError && e.status === 409 && e.code === "candidate_settled") {
+        // 다른 탭이 먼저 반영했거나 버렸다. 다시 반영할 수 없으므로 결과를 닫고 알린다 (D3c-5 리뷰 F5)
+        setError(e.message);
+        setResult(null);
+        setJob(null);
+        setEarlier(false);
         return;
       }
       setFailure(e);

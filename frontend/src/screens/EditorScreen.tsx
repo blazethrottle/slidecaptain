@@ -27,6 +27,9 @@ const MODE_BLOCKED = "지금은 직접 수정을 열 수 없습니다. 읽기 �
 const SWITCHED = "이 화면에서 되돌리기로 되찾을 수 있습니다. 전환 직전 상태는 스냅샷으로도 남습니다.";
 const MODE_GUIDE = "요소를 고르세요. 문구는 다시 누르거나 Enter, 위치는 손잡이나 방향키(Shift는 10pt)로 고칩니다. 숨기기는 Delete입니다.";
 
+// 서버가 저장한 결과를 화면이 받지 못했다(요청 중 화면 덱이 바뀌었다). 다음 자동 저장이 그 결과를 덮지 않게 충돌로 멈춘다
+// (D3c-5 리뷰 F1). 도식 작성 창의 저장된 반영도 같은 문구를 쓴다
+const SAVED_ELSEWHERE_CONFLICT = "반영한 내용은 서버에 저장됐지만 그사이 이 화면이 바뀌어 받지 않았습니다. '서버 내용으로 되돌리기'를 누르면 이 화면의 내용을 보존한 뒤 새 문서를 읽습니다.";
 const BATCH_END_CONFLICT = "생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다. '서버 내용으로 되돌리기'를 누르면 고친 내용을 보존한 뒤 새 문서를 읽습니다.";
 import { Button } from "../ui/Button";
 
@@ -191,7 +194,8 @@ export function EditorScreen({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // 되돌리기(서버 내용 다시 읽기) 중에는 보존할 덱이 바뀌지 않게 단축키도 막는다 (리뷰 R11)
-      if (readOnly || diagramDraft || diagramBusy || templateBusyRef.current || editor.reloading) return;
+      // 서버 적용 중에도 막는다. 응답 전에 덱이 바뀌면 서버의 반영 결과를 받지 못한다 (D3c-5 리뷰 F1)
+      if (readOnly || diagramDraft || diagramBusy || templateBusyRef.current || applyBusyRef.current || editor.reloading) return;
       // 인라인 편집 입력 중에는 브라우저 네이티브 undo가 동작해야 하므로 덱 undo가 끼어들지 않는다
       // (2026-08-29 최종 리뷰 발견)
       const t = e.target as HTMLElement;
@@ -402,7 +406,8 @@ export function EditorScreen({
             onFlush={editor.flushSave} onConflict={editor.reportConflict} onApplyBusyChange={onApplyBusyChange}
             onApplied={(saved, base) => {
               // 요청 중 덱이 바뀌었으면 받지 않는다. 그 편집의 저장이 412로 충돌 경로에 들어간다 (도식 경로와 같다)
-              if (current.current.deck !== base || conflictNow.current) return;
+              if (current.current.deck !== base) { reportConflict(SAVED_ELSEWHERE_CONFLICT); return; }
+              if (conflictNow.current) return;  // 이미 충돌 안내가 있다. 다시 읽기가 서버 내용을 가져온다
               editor.acceptSaved(saved); setSelected(null);
             }} />
         )}
@@ -421,7 +426,9 @@ export function EditorScreen({
     {diagramDraft && <DiagramAuthoringDialog projectName={project.name} deck={editor.deck} initialDraft={diagramDraft} blocked={editor.conflict}
       flushBeforeCheck={editor.flushSave} onConflict={editor.reportConflict} onBusyChange={onDiagramBusyChange}
       onCancel={() => setDiagramDraft(null)} onApply={(candidate, base, id, persisted) => {
-        if (editor.deck !== base || editor.conflict) return;
+        // 저장된 반영을 받지 못하면 충돌로 멈춘다. 렌더 값 대신 최신 값을 본다 (D3c-5 리뷰 F1)
+        if (current.current.deck !== base) { if (persisted) reportConflict(SAVED_ELSEWHERE_CONFLICT); return; }
+        if (conflictNow.current) return;
         if(persisted) editor.acceptSaved(candidate); else editor.replace(candidate);
         setChapterId(id); setSelected(null); setDiagramDraft(null);
       }} />}

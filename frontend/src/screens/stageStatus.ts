@@ -140,6 +140,7 @@ export function batchSummary(jobs: JobView[] | null | undefined): string | null 
     const code = c.error?.code;
     if (c.state === "succeeded") continue;
     if (c.candidate_status === "dismissed") continue;  // 사용자가 버린 후보는 남은 일이 아니다
+    if (c.candidate_status === "applied") continue;  // 적용 라우트로 반영한 낡은 후보도 끝난 일이다 (D3c-5 리뷰 F4)
     if (c.candidate_status === "stale") counts.stale += 1;
     else if (code === "stale_story_plan" || code === "held_stale_plan") counts.held += 1;
     else if (c.state === "failed") counts.failed += 1;

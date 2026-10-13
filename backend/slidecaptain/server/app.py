@@ -1111,6 +1111,7 @@ def create_app(
                 _rewrite_invalid(exc)
             _check_document_sources(name, revision)
             saved = store.save_deck(name, candidate, snapshot=True, expected_etag=etag)
+            _reset_baselines(name, base, candidate)
             response.headers["ETag"] = f'"{saved}"'
             return candidate
 
@@ -1138,6 +1139,7 @@ def create_app(
                 _rewrite_invalid(exc)
             _check_document_sources(name, revision)
             saved = store.save_deck(name, candidate, snapshot=True, expected_etag=etag)
+            _reset_baselines(name, base, candidate)
             response.headers["ETag"] = f'"{saved}"'
             return candidate
 
@@ -1478,7 +1480,13 @@ def create_app(
         if_match: str | None = Header(default=None),
     ):
         expected_etag = if_match.strip('"') if if_match is not None else None
-        deck, etag = store.restore_snapshot(name, snapshot_id, expected_etag=expected_etag)
+        with store.locked(name):
+            try:
+                before = store.load_deck(name)
+            except (StorageError, OSError):
+                before = None  # 읽지 못한 덱에서 복원하면 복원한 모든 장의 기준을 없앤다
+            deck, etag = store.restore_snapshot(name, snapshot_id, expected_etag=expected_etag)
+        _reset_baselines(name, before, deck)
         response.headers["ETag"] = f'"{etag}"'
         return deck
 
@@ -1499,7 +1507,13 @@ def create_app(
         if_match: str | None = Header(default=None),
     ):
         expected_etag = if_match.strip('"') if if_match is not None else None
-        deck, etag = store.restore_draft(name, draft_id, expected_etag=expected_etag)
+        with store.locked(name):
+            try:
+                before = store.load_deck(name)
+            except (StorageError, OSError):
+                before = None  # 읽지 못한 덱에서 복원하면 복원한 모든 장의 기준을 없앤다
+            deck, etag = store.restore_draft(name, draft_id, expected_etag=expected_etag)
+        _reset_baselines(name, before, deck)
         response.headers["ETag"] = f'"{etag}"'
         return deck
 
@@ -1998,8 +2012,10 @@ def create_app(
                                           error_class="ledger" if isinstance(exc, LedgerError) else "storage",
                                           error_detail=str(exc)[:500], error_code="apply_failed")
                 return None
-            ledger.transition_chapter(job_id, chapter_id, expected="validating", new="succeeded", applied_etag=saved,
-                                      candidate_status="applied")
+            with ledger.batch():
+                ledger.transition_chapter(job_id, chapter_id, expected="validating", new="succeeded",
+                                          applied_etag=saved, candidate_status="applied")
+                ledger.record_apply(name, chapter_id, job_id, slots)  # D3c-5 리뷰 F2: 반영 순서
             return saved
 
     def _batch_reconcile(row: JobRow, allow_apply: bool, force: bool = False) -> bool:
@@ -2045,11 +2061,15 @@ def create_app(
                 ledger.transition_chapter(row.id, cid, expected=state, new="failed", error_class="ai_output",
                                           error_detail=FORMAT_ERROR_MESSAGE, error_code="format_error")
             elif action == "mark_applied":
-                ledger.transition_chapter(row.id, cid, expected=state, new="succeeded", applied_etag=current,
-                                          candidate_status="applied")
+                with ledger.batch():
+                    ledger.transition_chapter(row.id, cid, expected=state, new="succeeded", applied_etag=current,
+                                              candidate_status="applied")
+                    ledger.record_apply(row.project, cid, row.id, chapter.result["slots"])
                 chain = current
             elif action == "mark_applied_changed":
-                ledger.transition_chapter(row.id, cid, expected=state, new="succeeded", candidate_status="applied")
+                with ledger.batch():
+                    ledger.transition_chapter(row.id, cid, expected=state, new="succeeded", candidate_status="applied")
+                    ledger.record_apply(row.project, cid, row.id, chapter.result["slots"])
             elif action == "mark_stale":
                 ledger.transition_chapter(row.id, cid, expected=state, new="failed", error_class="base_changed",
                                           error_code="base_changed", candidate_status="stale")
@@ -2141,6 +2161,19 @@ def create_app(
         runner.require_ledger()  # 원장 없음은 빈 목록이 아니라 503이다 (α 묶음 리뷰 A14)
         return _project_job_views(name)
 
+    def _reset_baselines(name: str, before: Deck | None, after: Deck) -> None:
+        """후보가 아닌 경로가 바꾼 장의 "직접 고친 문구" 기준을 없앤다 (D3c-5 리뷰 F3, 계획 4.1). 원장을 열지 못했거나 쓰지
+        못해도 덱 저장을 막지 않는다. 그 장은 이전 기준으로 판정되어 직접 고친 문구가 더 많이 표시된다."""
+        if ledger is None:
+            return
+        old = {s.chapter_id: s.model_dump(mode="json") for s in before.slides} if before is not None else {}
+        new = {s.chapter_id: s.model_dump(mode="json") for s in after.slides}
+        changed = sorted(cid for cid in set(old) | set(new) if old.get(cid) != new.get(cid))
+        try:
+            ledger.record_reset(name, changed)
+        except LedgerError:
+            _LOG.exception("장 후보 기준 무효화를 기록하지 못했습니다: %s", name)
+
     def _project_job(name: str, job_id: str) -> JobRow:
         row = runner.require_ledger().get_job(job_id)
         if row is None or row.project != unicodedata.normalize("NFC", name):
@@ -2202,12 +2235,11 @@ def create_app(
         return any(row.kind == BATCH_KIND and (row.state in UNFINISHED_CHAPTER or any(
             c.state in UNFINISHED_CHAPTER for c in current.chapters(row.id))) for row in current.list_jobs(name))
 
+    _BATCH_ACTIVE = "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요."
+
     def _candidate_ref(name: str, job_id: str, chapter_id: str | None) -> dict:
         """적용할 후보 하나: 행, 장, 처분, 관련 입력, 결과 슬롯. 대상이 아니면 409나 422로 거절한다."""
         row = _project_job(name, job_id)
-        if _batch_running(name):
-            raise JobFailed(409, "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요.",
-                            "batch_active")
         not_terminal = JobFailed(409, "아직 끝나지 않은 작업의 결과는 반영할 수 없습니다.", "not_terminal")
         current = runner.require_ledger()
         if row.kind == BATCH_KIND:
@@ -2242,28 +2274,20 @@ def create_app(
             slots = _GENERATED_SLOTS.validate_python(ref["result"]["slots"])
         except (KeyError, TypeError, ValueError):
             raise HTTPException(422, "저장된 후보를 지금 형식으로 읽지 못했습니다. 현재 입력으로 다시 생성해 주세요.") from None
-        return {**ref, "row": row, "chapter_id": chapter_id, "relevance": relevance, "slots": slots}
+        return {**ref, "row": row, "chapter_id": chapter_id, "relevance": relevance, "slots": slots,
+                "batch_active": _batch_running(name)}
 
     def _last_applied(name: str, chapter_id: str) -> Slots | None:
-        """그 장에 마지막으로 반영된 AI 결과(장 생성, 장 축약, 묶음 하위 행). "직접 고친 문구" 표시의 기준이다(계획 4.1).
-        원장은 행을 지우지 않으므로 반영한 후보의 결과가 남는다. 지금 형식으로 읽지 못하면 기준이 없다고 본다."""
-        current = runner.require_ledger()
-        for row in current.list_jobs(name):
-            result = None
-            if row.kind in ("chapter", "condense") and row.candidate_status == "applied" and isinstance(row.params, dict) \
-                    and row.params.get("chapter_id") == chapter_id:
-                result = row.result
-            elif row.kind == BATCH_KIND:
-                child = next((c for c in current.chapters(row.id)
-                              if c.chapter_id == chapter_id and c.candidate_status == "applied"), None)
-                result = child.result if child is not None else None
-            if result is None:
-                continue
-            try:
-                return _ANY_SLOTS.validate_python(result["slots"])
-            except (KeyError, TypeError, ValueError):
-                return None
-        return None
+        """그 장에 마지막으로 반영된 AI 결과. "직접 고친 문구" 표시의 기준이다(계획 4.1). 반영 기록(원장의 chapter_applies)의
+        순서로 고른다. 작업 행의 등록 순서는 반영 순서가 아니다(D3c-5 리뷰 F2). 마지막 기록이 기준 무효화이거나, 기록이
+        없거나(이 기록이 생기기 전에 반영한 장), 지금 형식으로 읽지 못하면 기준이 없다: 표시 없이 모두 새 문구다."""
+        record = runner.require_ledger().last_apply(name, chapter_id)
+        if record is None or record[0] != "applied":
+            return None
+        try:
+            return _ANY_SLOTS.validate_python(record[1])
+        except (TypeError, ValueError):
+            return None
 
     def _apply_plan(name: str, job_id: str, req: CandidateApplyRequest) -> dict:
         """판정과 합치기. 프로젝트 잠금 안에서 부른다. 덱을 쓰지 않는다."""
@@ -2282,8 +2306,10 @@ def create_app(
         reasons = _chapter_reasons(chapter_id, ref["relevance"], row.base_etag, row.sources_fingerprint,
                                    (deck, etag, revision))
         blocked = real_reasons(reasons)
+        if ref["batch_active"]:
+            blocked.insert(0, "batch_active")  # 비교는 보이되 반영은 막는다(계획 4.8 비교 화면)
         current = next((s for s in deck.slides if s.chapter_id == chapter_id), None)
-        if current is not None and current.slots.template != ref["slots"].template and not blocked:
+        if current is not None and current.slots.template != ref["slots"].template and not real_reasons(reasons):
             blocked.append("template_changed")
         plan = {"ref": ref, "deck": deck, "etag": etag, "blocked": blocked, "current": current, "merged": None,
                 "notices": [r for r in reasons if r in NOTICE_REASONS], "edited": None, "keep": [], "drops": [],
@@ -2311,13 +2337,11 @@ def create_app(
 
         new_deck = with_slide(result.slide)
         try:
-            store.etag_for(new_deck)  # 저장과 같은 덱 검증. 비교 차트의 등록 비교 조건도 여기서 본다
+            # 저장과 같은 덱 검증. 비교 차트의 조건은 구성 계획의 등록 비교만 보고 합치기는 구성 계획을 바꾸지 않으므로,
+            # 지금 덱이 유효하면 차트도 유효하다(D3c-5 리뷰 F9: 차트를 지우고 다시 합치던 분기는 도달할 수 없어 지웠다)
+            store.etag_for(new_deck)
         except ValueError:
-            if result.slide.chart is None:
-                raise HTTPException(422, "합친 결과가 덱 검증을 통과하지 못했습니다. 현재 입력으로 다시 생성해 주세요.") from None
-            result = merge_slide(current, chapter_id, ref["slots"], keep_current=keep, drop_edits=drops, unhide=unhide,
-                                 keep_chart=False)
-            new_deck = with_slide(result.slide)
+            raise HTTPException(422, "합친 결과가 덱 검증을 통과하지 못했습니다. 현재 입력으로 다시 생성해 주세요.") from None
         already = same_slide(current, result.slide)
         # 축약은 요청한 슬롯과 지금 슬롯이 다르면 낡았다(리뷰 서버 S7). 이미 반영된 결과인지를 먼저 본다(재리뷰 RR8)
         if ref["kind"] == "condense" and not already:
@@ -2363,9 +2387,16 @@ def create_app(
             raise HTTPException(428, "반영의 기준 저장본을 확인해야 합니다. 화면을 새로 고친 뒤 다시 반영해 주세요.")
         current_ledger = runner.require_ledger()
         with store.locked(name):
+            # 낡은 탭은 다른 판정보다 먼저 충돌 경로(다시 읽기)로 보낸다 (D3c-5 리뷰 F10)
+            known = _deck_etag_or_none(name)  # 읽지 못하면 판정 단계가 503으로 알린다
+            if known is not None and if_match.strip('"') != known:
+                _project_job(name, job_id)  # 없는 작업은 404가 먼저다
+                raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
             plan = _apply_plan(name, job_id, req)
             if if_match.strip('"') != plan["etag"]:
                 raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+            if "batch_active" in plan["blocked"]:
+                raise JobFailed(409, _BATCH_ACTIVE, "batch_active")
             if plan["blocked"]:
                 code = plan["blocked"][0]
                 raise JobFailed(409, _APPLY_BLOCKED.get(code, "이 후보는 지금 반영할 수 없습니다."), code)
@@ -2375,6 +2406,7 @@ def create_app(
                 with current_ledger.batch():
                     current_ledger.apply_candidate(job_id, ref["chapter_id"] if ref["batch"] else None,
                                                    expected=ref["status"])
+                    current_ledger.record_apply(name, ref["chapter_id"], job_id, ref["slots"].model_dump(mode="json"))
                     if not plan["already"]:
                         saved = store.save_deck(name, plan["new_deck"], snapshot=True, expected_etag=plan["etag"])
             except TransitionRejected:

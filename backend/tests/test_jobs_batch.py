@@ -283,6 +283,12 @@ def test_restart_after_the_save_marks_the_chapter_applied(store):
         view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
     assert provider.calls == 0 and [s.chapter_id for s in store.load_deck("p1").slides] == ["c1"]
     assert view["state"] == "succeeded" and view["outcome"] == "all_applied"
+    # 재시작 조정의 반영도 반영 순서에 남는다. "직접 고친 문구"의 기준이 된다 (D3c-5 리뷰 F2)
+    ledger = JobLedger.open(store.root)
+    try:
+        assert ledger.last_apply("p1", "c1") == ("applied", extra["slots"])
+    finally:
+        ledger.close()
 
 
 def test_restart_marks_a_sent_chapter_without_result_as_unknown(store):
