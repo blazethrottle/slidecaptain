@@ -9,6 +9,8 @@ export type Timings = { measureMs: number; saveMs: number };
 
 const DEFAULT_TIMINGS: Timings = { measureMs: 300, saveMs: 1200 };  // 결정 1, 2
 
+export type Coalesce = "start" | "continue";
+
 export function useDeckEditor(
   projectName: string,
   initialDeck: Deck,
@@ -176,7 +178,9 @@ export function useDeckEditor(
   // 직전 병합 편집이 만든 덱. 지금 덱이 이것과 같을 때만 다음 병합 편집이 그 항목을 바꿔 쓴다. 그사이 자동 저장
   // 응답이나 서버 적용, 되돌리기가 끼어들면 덱이 달라 새 항목이 된다 (D3c 계획 재리뷰 RR16)
   const coalesceBase = useRef<Deck | null>(null);
-  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean; coalesce?: boolean }) => {
+  // coalesce: "start"는 새 항목을 만들고 병합 기준을 세운다(방향키를 새로 누름). "continue"는 지금 덱이 그 기준일 때
+  // 직전 항목을 바꿔 쓴다(키 자동 반복). 첫 누름이 기준을 세우지 않으면 길게 누른 이동이 두 항목이 된다 (D3c-3 리뷰 F1)
+  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean; coalesce?: Coalesce }) => {
     // 직접 수정은 화면에서도 정규화한다. PUT 응답이 정규화한 덱을 돌려주지 않아 화면 덱이 서버와 어긋나기 때문이다
     // (D3c-3, 계획 재리뷰 RR5)
     const next = normalizeDeckEdits(pruneChangedSpans(deckRef.current, edit(deckRef.current)));
@@ -184,7 +188,7 @@ export function useDeckEditor(
     // 직전 편집의 항목을 바꿔 쓴다
     if (next === deckRef.current) return;
     if (options?.snapshot) snapshotNext.current += 1;
-    const amend = !!options?.coalesce && coalesceBase.current !== null && coalesceBase.current === deckRef.current;
+    const amend = options?.coalesce === "continue" && coalesceBase.current !== null && coalesceBase.current === deckRef.current;
     dispatch({ type: amend ? "amend" : "edit", deck: next });
     coalesceBase.current = options?.coalesce ? next : null;
     deckRef.current = next;  // 같은 키 반복이 렌더 전에 와도 병합 판정이 새 덱을 보게 한다

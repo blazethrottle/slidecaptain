@@ -184,8 +184,17 @@ export function applyTemplateSwitch(deck: Deck, chapterId: string, to: TemplateN
   if (slide?.chart) expressionLosses.push(`차트 표시 (${slide.chart.kind === 'bar' ? '가로' : '세로'} 막대, 비교 ${slide.chart.comparison_id})`);
   if (slide?.text_spans?.length) expressionLosses.push(`부분 강조 ${slide.text_spans.length}개`);
   // 직접 수정은 요소 열쇠가 템플릿마다 다르므로 비운다. 전환 전 확인 목록에 올린다 (D3c-3, 계획 리뷰 화면 S11)
-  const editCount = Object.keys(slide?.direct_edits ?? {}).length;
-  if (editCount) expressionLosses.push(`직접 수정 ${editCount}건(위치, 글자 크기, 색, 숨김)`);
+  const edits = Object.values(slide?.direct_edits ?? {});
+  if (edits.length) {
+    // 실제로 있는 수정 종류만 적는다 (D3c-3 리뷰 F14)
+    const kinds = [
+      edits.some((e) => e.dx_pt != null || e.dy_pt != null) && "위치",
+      edits.some((e) => e.font_scale != null) && "글자 크기",
+      edits.some((e) => e.text_color != null || e.fill != null) && "색",
+      edits.some((e) => e.hidden) && "숨김",
+    ].filter(Boolean);
+    expressionLosses.push(`직접 수정 ${edits.length}건(${kinds.join(", ")})`);
+  }
   const next: Deck = {
     ...deck,
     structure: { ...deck.structure, chapters: deck.structure.chapters.map((ch) =>

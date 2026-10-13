@@ -10,7 +10,7 @@ import { Preview, type FrameRef, type TextRef } from "../editor/Preview";
 import { PropertyPanel } from "../editor/PropertyPanel";
 import { applyTemplateSwitch } from "../editor/templateSwitch";
 import { applyTextEdit, reorderChapters } from "../editor/slotOps";
-import { useDeckEditor, type Timings } from "../state/useDeckEditor";
+import { useDeckEditor, type Coalesce, type Timings } from "../state/useDeckEditor";
 import { NumericReviewPanel } from "./NumericReviewPanel";
 import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
@@ -20,6 +20,11 @@ import { DirectEditPanel } from "../editor/DirectEditPanel";
 import { clampOffset, displayBoxes, editElement, frameKey, frameKeys, roleName } from "../editor/directEdit";
 
 const NEED_MODE = "직접 수정을 누르면 요소를 옮기거나 숨길 수 있습니다.";
+// 목록 편집 직후 옛 미리보기가 남은 동안은 그려진 항목과 덱의 항목이 다르다 (D3c-3 리뷰 F10)
+const REDRAWING = "미리보기를 새로 그리는 중입니다. 다 그린 뒤 다시 시도해 주세요.";
+// 직접 수정을 열 수 없는 상태(읽기 전용, 충돌, 다시 읽기 등)에서 모드가 필요한 조작을 했다 (D3c-3 리뷰 F11)
+const MODE_BLOCKED = "지금은 직접 수정을 열 수 없습니다. 읽기 전용이나 충돌, 다시 읽기가 끝난 뒤 다시 시도해 주세요.";
+const SWITCHED = "이 화면에서 되돌리기로 되찾을 수 있습니다. 전환 직전 상태는 스냅샷으로도 남습니다.";
 const MODE_GUIDE = "요소를 고르세요. 문구는 다시 누르거나 Enter, 위치는 손잡이나 방향키(Shift는 10pt)로 고칩니다. 숨기기는 Delete입니다.";
 
 const BATCH_END_CONFLICT = "생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다. '서버 내용으로 되돌리기'를 누르면 고친 내용을 보존한 뒤 새 문서를 읽습니다.";
@@ -88,6 +93,15 @@ export function EditorScreen({
   const hiddenList = useRef<HTMLElement>(null);
   const focusFrame = (target: string | null) => setFocusRequest((r) => ({ target, nonce: (r?.nonce ?? 0) + 1 }));
   useEffect(() => { onChapterChange?.(chapterId); }, [chapterId, onChapterChange]);
+  // 되돌리기나 다시 실행이 고른 요소를 숨기면 선택을 비운다. 초점이 그 요소와 함께 사라졌으면 캔버스로 옮긴다
+  // (D3c-3 리뷰 F9). 되돌리기 버튼처럼 다른 곳에 있는 초점은 옮기지 않는다(구현 기록의 판단 ②)
+  useEffect(() => {
+    if (!selected) return;
+    const hidden = editor.deck.slides.find((s) => s.chapter_id === selected.chapterId)?.direct_edits?.[selected.slot]?.hidden;
+    if (!hidden) return;
+    setSelected(null);
+    if (!document.activeElement || document.activeElement === document.body) focusFrame(null);
+  }, [editor.deck]); // eslint-disable-line react-hooks/exhaustive-deps
   const [diagramDraft, setDiagramDraft] = useState<DiagramDraft | null>(null);
   const [diagramBusy, setDiagramBusy] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
@@ -110,6 +124,7 @@ export function EditorScreen({
       if (!current.current.mounted || current.current.deck !== base || current.current.chapterId !== id) return;
       editor.apply(d => d === base ? applyTemplateSwitch(d, id, to).deck : d, {snapshot: true});
       setSelected(null);
+      setStatus(`템플릿을 바꿨습니다. ${SWITCHED}`);  // 계획 4.5 전환 뒤 안내 (D3c-3 리뷰 F14)
     } finally {
       templateBusyRef.current = false;
       if (current.current.mounted) setTemplateBusy(false);
@@ -223,8 +238,9 @@ export function EditorScreen({
   const pageH = editor.plan?.page_height_pt ?? 0;
   const hiddenCount = Object.values(edits).filter((e) => e.hidden).length;
 
-  const moveElement = (key: string, dx: number, dy: number, options: { coalesce: boolean }) => {
+  const moveElement = (key: string, dx: number, dy: number, options: { coalesce?: Coalesce }) => {
     if (!slide || !chapterId) return;
+    if (!dragAllowed) { setStatus(REDRAWING); return; }
     const c = clampOffset(slide, key, dx, dy, pageW, pageH);
     editor.apply((d) => editElement(d, chapterId, key, { dx_pt: c.dx, dy_pt: c.dy }), { coalesce: options.coalesce });
     const first = slide.frames.find((f) => frameKey(f) === key);
@@ -236,6 +252,7 @@ export function EditorScreen({
   };
   const hideElement = (key: string) => {
     if (!slide || !chapterId) return;
+    if (!dragAllowed) { setStatus(REDRAWING); return; }
     // 그리는 순서의 다음 요소로 초점을 옮긴다. 없으면 캔버스 (계획 4.5 초점 표)
     const order = [...new Set(slide.frames.map(frameKey))].filter((k) => keys[k] && !edits[k]?.hidden && k !== key);
     const at = slide.frames.findIndex((f) => frameKey(f) === key);
@@ -255,7 +272,8 @@ export function EditorScreen({
     }
   };
   const showHidden = () => {
-    if (canMode) setMode(true);
+    if (!canMode) { setStatus(MODE_BLOCKED); return; }
+    setMode(true);
     setTimeout(() => hiddenList.current?.focus(), 0);
   };
 
@@ -334,7 +352,7 @@ export function EditorScreen({
             editable={!editor.planStale && !readOnly}
             selected={selected} onSelect={setSelected} onCommitText={commitText}
             template={template} keys={keys} edits={edits} mode={mode} dragAllowed={dragAllowed} deckToken={editor.deck}
-            onMove={moveElement} onHide={hideElement} onNeedMode={() => setStatus(NEED_MODE)}
+            onMove={moveElement} onHide={hideElement} onNeedMode={() => setStatus(canMode ? NEED_MODE : MODE_BLOCKED)}
             onDragChange={(d) => { dragging.current = d; }} focusRequest={focusRequest}
             hiddenCount={hiddenCount} onShowHidden={showHidden} />
         ) : editor.measureError ? (
@@ -354,7 +372,7 @@ export function EditorScreen({
           <DirectEditPanel projectName={project.name} deck={editor.deck} chapterId={chapterId} plan={slide}
             pageW={pageW} pageH={pageH} keys={keys} selectedKey={selected?.slot ?? null} onApply={editor.apply}
             onShowFrame={(k) => { setSelected({ chapterId, slot: k }); focusFrame(k); }} onHide={hideElement}
-            onPendingChange={setPendingInput} hiddenListRef={hiddenList} />
+            onPendingChange={setPendingInput} hiddenListRef={hiddenList} locked={!dragAllowed} />
         )}
         {chapterId && (
           <PropertyPanel deck={editor.deck} chapterId={chapterId} onApply={editor.apply}

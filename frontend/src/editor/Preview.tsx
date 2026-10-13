@@ -3,6 +3,7 @@ import type { Frame, Para, SlidePlan, RenderPlan } from "../api/client";
 import { DiagramPreview } from "./DiagramPreview";
 import { ChartPreview } from "./ChartPreview";
 import { displayBoxes, frameKey, roleName, warningKey, type ElementEdit, type KeySpec } from "./directEdit";
+import type { Coalesce } from "../state/useDeckEditor";
 
 export type FrameRef = { chapterId: string; slot: string };
 export type TextRef = FrameRef & { index?: number; row?: number; col?: number };
@@ -55,7 +56,7 @@ export function Preview({
   mode?: boolean;
   dragAllowed?: boolean;
   deckToken?: unknown;  // 지금 덱 객체. 끄는 동안 바뀌면(되돌리기, 다른 탭의 반영) 놓아도 반영하지 않는다
-  onMove?: (key: string, dx: number, dy: number, options: { coalesce: boolean }) => void;
+  onMove?: (key: string, dx: number, dy: number, options: { coalesce?: Coalesce }) => void;
   onHide?: (key: string) => void;
   onNeedMode?: () => void;  // 모드 밖에서 Delete나 방향키를 눌렀다
   onDragChange?: (dragging: boolean) => void;
@@ -99,7 +100,7 @@ export function Preview({
     setDrag((current) => {
       if (commit && d.started && current && d.token === deckToken) {
         suppressClick.current = true;
-        onMove?.(d.key, d.baseDx + current.dx, d.baseDy + current.dy, { coalesce: false });
+        onMove?.(d.key, d.baseDx + current.dx, d.baseDy + current.dy, {});
       }
       return null;
     });
@@ -150,12 +151,27 @@ export function Preview({
     onLostPointerCapture: () => endDrag(false),  // pointerup 없이 잡기가 풀렸을 때만 남아 있다
   };
 
+  // 마운트할 때 이미 있던 요청은 다른 장에서 만든 것이므로 적용하지 않는다. 미리보기는 장마다 새로 마운트되고 요청은
+  // 편집 화면에 남아, 장을 바꾸면 이전 장의 숨기기가 남긴 초점이 새 장의 같은 요소를 골랐다 (D3c-3 리뷰 F8)
+  const handledFocus = useRef(focusRequest?.nonce);
   useEffect(() => {
-    if (!focusRequest) return;
+    if (!focusRequest || focusRequest.nonce === handledFocus.current) return;
+    handledFocus.current = focusRequest.nonce;
     if (focusRequest.target === null) { canvas.current?.focus(); return; }
     const el = canvas.current?.querySelector<HTMLElement>(`[data-key="${quoted(focusRequest.target)}"][tabindex="0"]`);
     (el ?? canvas.current)?.focus();
   }, [focusRequest]);
+
+  // 키로 입력란을 닫으면 초점을 그 프레임으로 돌린다. 입력란이 사라지면 초점이 문서 본문으로 빠져 다음 Tab, Delete,
+  // 방향키가 요소에 닿지 않았다 (D3c-3 리뷰 F7). 마우스로 다른 곳을 눌러 닫힌 경우(blur)는 초점을 빼앗지 않는다
+  const cancelling = useRef(false);
+  const focusFrameOf = (ref: TextRef): boolean => {
+    const f = frameOf(ref);
+    const el = f ? canvas.current?.querySelector<HTMLElement>(`[data-frame="${quoted(f.name)}"]`) : null;
+    if (!el) return false;
+    el.focus();
+    return document.activeElement === el;
+  };
 
   const commit = () => {
     // 변경 없는 확정(문단 클릭 후 Enter만 누른 경우 등)은 언두와 저장을 오염시키지 않는다
@@ -193,13 +209,12 @@ export function Preview({
   const stepEdit = (direction: 1 | -1) => {
     if (!editing) return;
     const f = frameOf(editing.ref);
-    commit();
-    if (!f) return;
-    const stops = textStops(f);
+    const stops = f ? textStops(f) : [];
     const at = stops.findIndex((s) => sameStop(s.ref, editing.ref));
     const next = stops[at + direction];
-    if (next && editable) setEditing({ ref: next.ref, text: next.text, origin: next.text });
-    else canvas.current?.querySelector<HTMLElement>(`[data-frame="${quoted(f.name)}"]`)?.focus();
+    if (next && editable) { commit(); setEditing({ ref: next.ref, text: next.text, origin: next.text }); return; }
+    // 프레임으로 초점을 옮기면 입력란의 blur가 한 번 확정한다. 옮기지 못했을 때만 여기서 확정한다
+    if (!focusFrameOf(editing.ref)) commit();
   };
 
   const renderPara = (f: Frame, p: Para, i: number) => {
@@ -297,7 +312,7 @@ export function Preview({
     const [ux, uy] = arrows[e.key];
     const step = e.shiftKey ? ARROW_STEP.large : ARROW_STEP.small;
     const edit = edits?.[ref.slot];
-    onMove?.(ref.slot, (edit?.dx_pt ?? 0) + ux * step, (edit?.dy_pt ?? 0) + uy * step, { coalesce: e.repeat });
+    onMove?.(ref.slot, (edit?.dx_pt ?? 0) + ux * step, (edit?.dy_pt ?? 0) + uy * step, { coalesce: e.repeat ? "continue" : "start" });
   };
 
   const boxes = displayBoxes(slide, edits, pageW, pageH);
@@ -321,8 +336,19 @@ export function Preview({
           color: `#${style.text_color}`,
         }}
         onClick={() => { setEditing(null); onSelect(null); }}
-        onPointerDownCapture={() => { pointerFocus.current = true; }}
-        onPointerUpCapture={() => { pointerFocus.current = false; }}
+        onPointerDownCapture={() => {
+          pointerFocus.current = true;
+          // 새 누름의 클릭은 거르지 않는다. 손잡이 끌기의 클릭은 손잡이로 가서 깃발이 남아 다음 클릭을 먹었다 (D3c-3 리뷰 F2)
+          suppressClick.current = false;
+          // 캔버스 밖에서 놓아도 깃발을 내린다. 남으면 그 뒤 키보드 초점이 요소를 고르지 않았다 (D3c-3 리뷰 F6)
+          const release = () => {
+            pointerFocus.current = false;
+            window.removeEventListener("pointerup", release, true);
+            window.removeEventListener("pointercancel", release, true);
+          };
+          window.addEventListener("pointerup", release, true);
+          window.addEventListener("pointercancel", release, true);
+        }}
       >
         {slide.diagram && <DiagramPreview page={slide.diagram} style={style} />}
         {slide.frames.map((f) => {
@@ -384,7 +410,9 @@ export function Preview({
               {f.chart ? <ChartPreview frame={f} /> : f.table ? renderTable(f) : f.paras.map((p, i) => renderPara(f, p, i))}
               {mode && isSelected && spec?.drag === "handle" && spec.kinds.includes("move") && (
                 // 글상자는 손잡이로만 끈다. 본체 누름은 문구 수정이다 (화면 시안, 계획 리뷰 화면 S4). 포인터 전용이라 Tab에서 뺀다
-                <div className="move-handle" aria-hidden tabIndex={-1} style={{ touchAction: "none" }}
+                // 손잡이는 초점을 받지 않는다. 누르면 초점이 바깥 프레임에 가서 끈 뒤에도 방향키와 Delete가 그 요소에 걸린다
+                // (D3c-3 리뷰 F3)
+                <div className="move-handle" aria-hidden style={{ touchAction: "none" }}
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => startDrag(e, ref.slot)} {...dragHandlers}>↕</div>
               )}
@@ -398,13 +426,19 @@ export function Preview({
             value={editing.text}
             onClick={(e) => e.stopPropagation()}
             onChange={(e) => setEditing({ ...editing, text: e.target.value })}
-            onBlur={commit}
+            onBlur={() => { if (!cancelling.current) commit(); }}
             onKeyDown={(e) => {
               // 한글 조합 중의 Enter는 조합을 끝내는 키라 확정하지 않는다 (계획 리뷰 화면 S28)
               if (e.nativeEvent.isComposing) return;
-              if (e.key === "Enter") { e.preventDefault(); commit(); }
+              if (e.key === "Enter") { e.preventDefault(); if (!focusFrameOf(editing.ref)) commit(); }
               if (e.key === "Tab") { e.preventDefault(); stepEdit(e.shiftKey ? -1 : 1); }
-              if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setEditing(null); }
+              if (e.key === "Escape") {
+                e.preventDefault(); e.stopPropagation();
+                cancelling.current = true;  // 초점을 옮길 때 생기는 blur가 확정하지 않게 한다
+                focusFrameOf(editing.ref);
+                cancelling.current = false;
+                setEditing(null);
+              }
             }}
           />
         )}

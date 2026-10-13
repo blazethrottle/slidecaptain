@@ -220,6 +220,8 @@ it('템플릿 전환 전에 미저장 내용을 저장하고 다음 저장에서
  await userEvent.type(screen.getByLabelText('아이브로우'),'새');
  await userEvent.selectOptions(screen.getByLabelText('템플릿'),'cards');
  await waitFor(()=>expect(screen.getByLabelText('템플릿')).toHaveValue('cards'));
+ // 전환 뒤 안내 (계획 4.5, D3c-3 리뷰 F14)
+ expect(screen.getByText(/템플릿을 바꿨습니다. 이 화면에서 되돌리기로 되찾을 수 있습니다/)).toBeInTheDocument();
  expect(api.putDeck).toHaveBeenCalledTimes(1);
  expect(vi.mocked(api.putDeck).mock.calls[0][1].slides[0].eyebrow).toBe('새');
  await act(async()=>{await flush!();});

@@ -164,11 +164,15 @@ describe("키보드와 초점", () => {
     expect(frame("conclusion")!.style.left).toBe("51px");
     fireEvent.keyDown(frame("conclusion")!, { key: "ArrowDown", shiftKey: true });
     expect(frame("conclusion")!.style.top).toBe("410px");
+    // 실제 자동 반복처럼 첫 keydown은 repeat가 아니고 그 뒤 다섯 번이 반복이다 (D3c-3 리뷰 F1)
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
     for (let i = 0; i < 5; i++) fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight", repeat: true });
-    expect(frame("conclusion")!.style.left).toBe("56px");
-    expect(screen.getAllByRole("status").some((s) => /결론 상자: 가로 56pt, 세로 410pt/.test(s.textContent ?? ""))).toBe(true);
+    expect(frame("conclusion")!.style.left).toBe("57px");
+    expect(screen.getAllByRole("status").some((s) => /결론 상자: 가로 57pt, 세로 410pt/.test(s.textContent ?? ""))).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));
-    expect(frame("conclusion")!.style.left).toBe("51px");  // 반복 다섯 번이 한 항목
+    // 누르고 있던 이동 전체(첫 누름과 반복)가 한 항목이고, 앞의 Shift 이동은 남는다
+    expect(frame("conclusion")!.style.left).toBe("51px");
+    expect(frame("conclusion")!.style.top).toBe("410px");
   });
 });
 
@@ -289,5 +293,148 @@ describe("경합과 보호", () => {
     expect(frame("conclusion")!.style.left).toBe("51px");
     fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
     expect(frame("conclusion")!.style.left).toBe("50px");
+  });
+});
+
+describe("D3c-3 리뷰 반영", () => {
+  it("입력란을 Enter로 확정하거나 Escape로 취소하면 초점이 그 프레임으로 돌아온다 (F7)", async () => {
+    await open();
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "Enter" });
+    const box = await screen.findByLabelText("내용 수정");
+    await userEvent.clear(box);
+    await userEvent.type(box, "새 결론{Enter}");
+    expect(document.activeElement).toBe(frame("conclusion"));
+    await waitFor(() => expect(lastSaved().slides[0].slots).toMatchObject({ conclusion: "새 결론" }));
+    const saves = vi.mocked(api.putDeck).mock.calls.length;
+    fireEvent.keyDown(frame("conclusion")!, { key: "Enter" });
+    const again = await screen.findByLabelText("내용 수정");
+    await userEvent.type(again, "버릴 문구");
+    fireEvent.keyDown(again, { key: "Escape" });
+    expect(screen.queryByLabelText("내용 수정")).toBeNull();
+    expect(document.activeElement).toBe(frame("conclusion"));
+    // 다음 Escape는 선택을 푼다 (Escape 우선순위의 세 번째 단계)
+    fireEvent.keyDown(frame("conclusion")!, { key: "Escape" });
+    expect(frame("conclusion")).toHaveAttribute("aria-pressed", "false");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(vi.mocked(api.putDeck).mock.calls.length).toBe(saves);  // 취소는 확정하지 않는다
+    expect(lastSaved().slides[0].slots).toMatchObject({ conclusion: "새 결론" });
+  });
+
+  it("페이지 밖 위치는 잘라서 반영하고 칸을 실제 값으로 돌리며 알린다 (F5)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const x = screen.getByRole("spinbutton", { name: "가로 위치" });
+    await userEvent.clear(x);
+    await userEvent.type(x, "-50{Enter}");
+    expect(frame("conclusion")!.style.left).toBe("0px");
+    expect(x).toHaveValue(0);
+    expect(screen.getByText("페이지 안으로 맞췄습니다(가로 0pt).")).toBeInTheDocument();
+    // 이미 0인 자리에 다시 밖의 값을 넣어 덱이 바뀌지 않아도 칸은 실제 값으로 돌아간다
+    await userEvent.clear(x);
+    await userEvent.type(x, "-80{Enter}");
+    expect(x).toHaveValue(0);
+  });
+
+  it("되돌리기가 초점이 있던 요소를 숨기면 선택을 풀고 초점을 캔버스로 옮긴다 (F9)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("bullets")!.focus());
+    fireEvent.keyDown(frame("bullets")!, { key: "Delete" });
+    await userEvent.click(screen.getByRole("button", { name: "다시 보이기" }));
+    await waitFor(() => expect(document.activeElement).toBe(frame("bullets")));
+    fireEvent.keyDown(frame("bullets")!, { key: "z", ctrlKey: true });
+    expect(frame("bullets")).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("슬라이드 미리보기")));
+    expect(screen.queryByRole("group", { name: "직접 수정" }) ?? screen.queryByRole("region", { name: "직접 수정" })).toBeNull();
+  });
+
+  it("손잡이로 끈 뒤 다른 요소를 한 번 누르면 바로 고른다 (F2), 손잡이는 초점을 받지 않는다 (F3)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    const handle = frame("conclusion")!.querySelector<HTMLElement>(".move-handle")!;
+    expect(handle).not.toHaveAttribute("tabindex");
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 130, clientY: 100 });
+    fireEvent.click(handle);  // 잡기 때문에 뒤따른 클릭은 손잡이로 간다
+    await userEvent.click(frame("footnote")!);
+    expect(frame("footnote")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("캔버스 밖에서 놓은 누름 뒤에도 키보드 초점이 요소를 고른다 (F6)", async () => {
+    await open();
+    fireEvent.pointerDown(frame("title")!, { pointerId: 1, button: 0 });
+    fireEvent.pointerUp(document.body, { pointerId: 1 });
+    act(() => frame("footnote")!.focus());
+    expect(frame("footnote")).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("장을 바꾸면 이전 장에서 만든 초점 요청을 새 장에 다시 적용하지 않는다 (F8)", async () => {
+    const two: Deck = { ...deck,
+      structure: { chapters: [deck.structure.chapters[0], { ...deck.structure.chapters[0], id: "c2", topic: "둘째 장" }] },
+      slides: [deck.slides[0], { ...deck.slides[0], chapter_id: "c2" }] };
+    const second = { ...plan.slides[0], chapter_id: "c2",
+      frames: plan.slides[0].frames.map((f) => ({ ...f, name: f.name.replace("c1:", "c2:") })) };
+    vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [plan.slides[0], second] });
+    await open({ deck: two });
+    await userEvent.click(modeButton());
+    act(() => frame("bullets")!.focus());
+    fireEvent.keyDown(frame("bullets")!, { key: "Delete" });  // 초점 요청: 결론 상자
+    await waitFor(() => expect(document.activeElement).toBe(frame("conclusion")));
+    const chapterButton = screen.getByRole("button", { name: /둘째 장/ });
+    await userEvent.click(chapterButton);
+    await waitFor(() => expect(document.querySelector('[data-frame="c2:conclusion"]')).not.toBeNull());
+    expect(document.querySelector('[data-frame="c2:conclusion"]')).toHaveAttribute("aria-pressed", "false");
+    expect(document.activeElement).toBe(chapterButton);
+  });
+});
+
+describe("D3c-3 리뷰 반영 (F10~F13)", () => {
+  it("옛 미리보기가 남은 동안 키 조작과 속성 입력을 막고 이유를 알린다 (F10)", async () => {
+    // 목록 편집 직후처럼 계획을 만든 덱과 지금 덱의 열쇠 집합이 다르면 낡은 계획이다. 여기서는 새 계획을 늦추고
+    // 아이브로우를 더해 열쇠 집합을 바꾼다
+    await open();
+    await userEvent.click(modeButton());
+    let release: (v: RenderPlan) => void = () => {};
+    vi.mocked(api.measure).mockImplementation(() => new Promise((r) => { release = r; }));
+    await userEvent.type(screen.getByLabelText("아이브로우"), "분");
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    fireEvent.keyDown(frame("conclusion")!, { key: "Delete" });
+    expect(frame("conclusion")!.style.left).toBe("50px");
+    expect(screen.getAllByRole("status").some((s) => /미리보기를 새로 그리는 중입니다. 다 그린 뒤 다시 시도해 주세요/.test(s.textContent ?? ""))).toBe(true);
+    expect(screen.getByText("미리보기를 새로 그리는 중입니다. 다 그린 뒤 고칠 수 있습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("spinbutton", { name: "가로 위치" })).toBeNull();
+    await act(async () => release(plan));
+  });
+
+  it("직접 수정을 열 수 없을 때 모서리 버튼과 모드 밖 키는 막힌 이유를 알린다 (F11)", async () => {
+    const hiddenDeck: Deck = { ...deck, slides: [{ ...deck.slides[0], direct_edits: { footnote: { hidden: true } } }] };
+    await open({ deck: hiddenDeck, readOnly: true });
+    await userEvent.click(screen.getByRole("button", { name: "숨긴 요소 1개" }));
+    expect(modeButton()).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getAllByRole("status").some((s) => /지금은 직접 수정을 열 수 없습니다/.test(s.textContent ?? ""))).toBe(true);
+  });
+
+  it("채움이 없는 요소의 흰 글자도 슬라이드 배경과 비교해 대비를 안내한다 (F12)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("title")!.focus());
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "글자 색" }), "background");
+    expect(await screen.findByText(/글자와 바탕의 대비가 낮습니다/)).toBeInTheDocument();
+  });
+
+  it("위치만 바꾸는 편집에는 글자 크기 한도를 다시 묻지 않는다 (F13)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    await waitFor(() => expect(api.fontLimit).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    await new Promise((r) => setTimeout(r, 450));
+    expect(api.fontLimit).toHaveBeenCalledTimes(1);
   });
 });

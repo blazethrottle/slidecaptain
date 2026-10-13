@@ -116,7 +116,7 @@ export function normalizeDeckEdits(deck: Deck): Deck {
 
 /** 요소 하나의 수정을 바꾼다. 값이 undefined인 칸은 지운다("원래대로", 계획 4.5). */
 export function editElement(deck: Deck, chapterId: string, key: string, patch: Partial<ElementEdit>): Deck {
-  return normalizeDeckEdits({
+  const next = normalizeDeckEdits({
     ...deck,
     slides: deck.slides.map((slide) => {
       if (slide.chapter_id !== chapterId) return slide;
@@ -127,6 +127,11 @@ export function editElement(deck: Deck, chapterId: string, key: string, patch: P
       return { ...slide, direct_edits: { ...(slide.direct_edits ?? {}), [key]: current as ElementEdit } };
     }),
   });
+  // 결과가 지금과 같으면(페이지 끝의 방향키, 지금 값과 같은 입력) 받은 덱을 돌려준다. 새 객체를 돌려주면 내용이 같은
+  // 되돌리기 항목과 저장이 생긴다 (D3c-3 리뷰 F4)
+  const before = deck.slides.find((s) => s.chapter_id === chapterId);
+  const after = next.slides.find((s) => s.chapter_id === chapterId);
+  return before && after && sameEdits(before.direct_edits, after.direct_edits ?? {}) ? deck : next;
 }
 
 /** 목록 항목 하나를 지운 뒤 순번 열쇠를 당긴다. 지운 항목의 수정은 버린다 (계획 4.2, 계획 리뷰 화면 S12). */
