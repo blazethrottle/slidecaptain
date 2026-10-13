@@ -16,6 +16,11 @@ import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
+import { DirectEditPanel } from "../editor/DirectEditPanel";
+import { clampOffset, displayBoxes, editElement, frameKey, frameKeys, roleName } from "../editor/directEdit";
+
+const NEED_MODE = "직접 수정을 누르면 요소를 옮기거나 숨길 수 있습니다.";
+const MODE_GUIDE = "요소를 고르세요. 문구는 다시 누르거나 Enter, 위치는 손잡이나 방향키(Shift는 10pt)로 고칩니다. 숨기기는 Delete입니다.";
 
 const BATCH_END_CONFLICT = "생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다. '서버 내용으로 되돌리기'를 누르면 고친 내용을 보존한 뒤 새 문서를 읽습니다.";
 import { Button } from "../ui/Button";
@@ -73,6 +78,15 @@ export function EditorScreen({
   const [chapterId, setChapterId] = useState<string | null>(
     (initialChapterId && chapters.some((c) => c.id === initialChapterId) ? initialChapterId : chapters[0]?.id) ?? null);
   const [selected, setSelected] = useState<FrameRef | null>(null);
+  // 직접 수정 모드 (D3c-3, 계획 4.5). 모드는 이동, 방향키, Delete, 서식을 연다. 고르기와 문구 수정은 모드 밖에서도 된다
+  const [mode, setMode] = useState(false);
+  const [focusRequest, setFocusRequest] = useState<{ target: string | null; nonce: number } | undefined>();
+  const [status, setStatus] = useState("");
+  const [pendingInput, setPendingInput] = useState(false);  // 확정 전 위치, 글자 크기 입력 (계획 리뷰 화면 S24)
+  const dragging = useRef(false);
+  const modeButton = useRef<HTMLButtonElement>(null);
+  const hiddenList = useRef<HTMLElement>(null);
+  const focusFrame = (target: string | null) => setFocusRequest((r) => ({ target, nonce: (r?.nonce ?? 0) + 1 }));
   useEffect(() => { onChapterChange?.(chapterId); }, [chapterId, onChapterChange]);
   const [diagramDraft, setDiagramDraft] = useState<DiagramDraft | null>(null);
   const [diagramBusy, setDiagramBusy] = useState(false);
@@ -138,8 +152,8 @@ export function EditorScreen({
   }, [onEditorReady, flush]);
 
   useEffect(() => {
-    onDirtyChange?.(diagramDraft !== null || editor.saveState !== "저장됨");
-  }, [diagramDraft, editor.saveState, onDirtyChange]);
+    onDirtyChange?.(diagramDraft !== null || editor.saveState !== "저장됨" || pendingInput);
+  }, [diagramDraft, editor.saveState, onDirtyChange, pendingInput]);
 
   // 되돌린 서버 덱(reloadFromServer)에 지금 보고 있는 장이 없으면 첫 장으로 되돌아간다
   useEffect(() => {
@@ -155,7 +169,10 @@ export function EditorScreen({
       // 인라인 편집 입력 중에는 브라우저 네이티브 undo가 동작해야 하므로 덱 undo가 끼어들지 않는다
       // (2026-08-29 최종 리뷰 발견)
       const t = e.target as HTMLElement;
-      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
+      // 입력란, 선택 상자, 편집 가능한 영역, 열린 대화 상자에서는 그 요소의 되돌리기를 쓴다. 끄는 중에는 받지 않는다
+      // (D3c-3, 계획 리뷰 화면 S6, S10)
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
+      if (dragging.current || t.closest?.('[role="dialog"], dialog')) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) { e.preventDefault(); editor.undo(); }
@@ -188,6 +205,59 @@ export function EditorScreen({
   const slide = editor.plan?.slides.find((s) => s.chapter_id === chapterId) ?? null;
   const commitText = (ref: TextRef, text: string) =>
     editor.apply((d) => applyTextEdit(d, ref, text));
+
+  const deckSlide = editor.deck.slides.find((s) => s.chapter_id === chapterId);
+  const keys = deckSlide ? frameKeys(deckSlide) : {};
+  const edits = deckSlide?.direct_edits ?? {};
+  const template = deckSlide?.slots.template;
+  // 모드를 여는 조건 (계획 4.5, 계획 리뷰 화면 S9). 깨지면 끌기를 취소하고(미리보기) 입력은 반영한 뒤(패널) 닫는다
+  const canMode = !readOnly && !editor.conflict && !editor.reloading && !templateBusy && diagramDraft === null
+    && !!slide && !slide.diagram && template !== undefined && template !== "diagram";
+  useEffect(() => { if (!canMode && mode) setMode(false); }, [canMode, mode]);
+  // 낡은 계획에서는 열쇠 집합과 목록 길이가 같을 때만 끌기를 허용한다. 목록 편집 직후의 옛 계획은 다른 항목을 그린다
+  // (재리뷰 RR15)
+  const planSlide = editor.planDeck?.slides.find((s) => s.chapter_id === chapterId);
+  const sameShape = !!planSlide && JSON.stringify(Object.keys(frameKeys(planSlide))) === JSON.stringify(Object.keys(keys));
+  const dragAllowed = !editor.planStale || sameShape;
+  const pageW = editor.plan?.page_width_pt ?? 0;
+  const pageH = editor.plan?.page_height_pt ?? 0;
+  const hiddenCount = Object.values(edits).filter((e) => e.hidden).length;
+
+  const moveElement = (key: string, dx: number, dy: number, options: { coalesce: boolean }) => {
+    if (!slide || !chapterId) return;
+    const c = clampOffset(slide, key, dx, dy, pageW, pageH);
+    editor.apply((d) => editElement(d, chapterId, key, { dx_pt: c.dx, dy_pt: c.dy }), { coalesce: options.coalesce });
+    const first = slide.frames.find((f) => frameKey(f) === key);
+    if (first) {
+      const box = displayBoxes(slide, { [key]: { dx_pt: c.dx, dy_pt: c.dy } }, pageW, pageH).get(first.name);
+      // 이동 결과는 배율과 상관없이 알린다 (재리뷰 RR12)
+      if (box) setStatus(`${roleName(key, template)}: 가로 ${Math.round(box.x)}pt, 세로 ${Math.round(box.y)}pt`);
+    }
+  };
+  const hideElement = (key: string) => {
+    if (!slide || !chapterId) return;
+    // 그리는 순서의 다음 요소로 초점을 옮긴다. 없으면 캔버스 (계획 4.5 초점 표)
+    const order = [...new Set(slide.frames.map(frameKey))].filter((k) => keys[k] && !edits[k]?.hidden && k !== key);
+    const at = slide.frames.findIndex((f) => frameKey(f) === key);
+    const next = order.find((k) => slide.frames.findIndex((f) => frameKey(f) === k) > at) ?? null;
+    editor.apply((d) => editElement(d, chapterId, key, { hidden: true }));
+    setSelected(next ? { chapterId, slot: next } : null);
+    focusFrame(next);
+    setStatus(`${roleName(key, template)}을(를) 숨겼습니다. 숨긴 요소 목록에서 다시 보이게 할 수 있습니다.`);
+  };
+  const toggleMode = () => {
+    if (mode) {
+      setMode(false);
+      setTimeout(() => modeButton.current?.focus(), 0);  // 모드 종료 뒤에는 "직접 수정" 버튼으로 (계획 4.5)
+    } else if (canMode) {
+      setMode(true);
+      setStatus("");
+    }
+  };
+  const showHidden = () => {
+    if (canMode) setMode(true);
+    setTimeout(() => hiddenList.current?.focus(), 0);
+  };
 
   return (
     <>
@@ -248,13 +318,25 @@ export function EditorScreen({
             <button onClick={editor.remeasure}>다시 그리기</button>
           </p>
         )}
+        {slide && !slide.diagram && editor.plan && (
+          <div className="direct-edit-bar">
+            <button ref={modeButton} aria-pressed={mode} disabled={!mode && !canMode} onClick={toggleMode}>
+              {mode ? "수정 완료" : "직접 수정"}</button>
+            {mode && <span className="hint">{MODE_GUIDE}</span>}
+          </div>
+        )}
+        <p role="status" className="sr-status">{status}</p>
         {slide && editor.plan ? (
           // 2026-08-29 태스크 11 리뷰 이월: 장 전환 시 편집창 잔존 방지 리마운트
           // 낡은 계획(덱이 바뀐 뒤 새 계획이 오기 전)으로는 편집을 열지 않는다 (2026-09-03 FC-05)
           <Preview key={slide.chapter_id} slide={slide} style={editor.plan.style}
             pageW={editor.plan.page_width_pt} pageH={editor.plan.page_height_pt}
             editable={!editor.planStale && !readOnly}
-            selected={selected} onSelect={setSelected} onCommitText={commitText} />
+            selected={selected} onSelect={setSelected} onCommitText={commitText}
+            template={template} keys={keys} edits={edits} mode={mode} dragAllowed={dragAllowed} deckToken={editor.deck}
+            onMove={moveElement} onHide={hideElement} onNeedMode={() => setStatus(NEED_MODE)}
+            onDragChange={(d) => { dragging.current = d; }} focusRequest={focusRequest}
+            hiddenCount={hiddenCount} onShowHidden={showHidden} />
         ) : editor.measureError ? (
           <p>미리보기를 만들지 못했습니다. 위 오류를 확인한 뒤 다시 그려 주세요.</p>
         ) : editor.deck.slides.some(s => s.chapter_id === chapterId) ? (
@@ -268,6 +350,12 @@ export function EditorScreen({
       <aside className="editor-right" inert={readOnly}>
         <button onClick={editor.undo} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
         <button onClick={editor.redo} disabled={!editor.canRedo}>다시 실행</button>
+        {mode && chapterId && (
+          <DirectEditPanel projectName={project.name} deck={editor.deck} chapterId={chapterId} plan={slide}
+            pageW={pageW} pageH={pageH} keys={keys} selectedKey={selected?.slot ?? null} onApply={editor.apply}
+            onShowFrame={(k) => { setSelected({ chapterId, slot: k }); focusFrame(k); }} onHide={hideElement}
+            onPendingChange={setPendingInput} hiddenListRef={hiddenList} />
+        )}
         {chapterId && (
           <PropertyPanel deck={editor.deck} chapterId={chapterId} onApply={editor.apply}
             onEditDiagram={() => setDiagramDraft(editDiagramDraft(editor.deck, chapterId))}

@@ -1,4 +1,5 @@
 import type { Bullet, Deck, Slots, TemplateName } from "../api/client";
+import { FILL_NAMES } from "./directEdit";
 
 type Currency = {
   conclusion?: string;
@@ -30,7 +31,7 @@ function collect(slots: Exclude<Slots, { template: "diagram" }>): Currency {
     case "callout":
       // 밴드는 문장 하나뿐이다: bullet_box/summary의 conclusion과 같은 "그 장의 결론 한 줄"
       // 의미이므로 같은 자리로 담아 다른 템플릿의 결론과 오갈 수 있게 한다
-      return { conclusion: slots.text, bullets: [], dropped: [`강조 색 역할 "${slots.tone}"`] };
+      return { conclusion: slots.text, bullets: [], dropped: [`강조 색 "${FILL_NAMES[slots.tone]}"`] };
     case "cards": {
       // 카드에는 conclusion/footnote에 대응하는 자리가 없다: 불릿만 모으고 배지, 소제목,
       // 꼬리 라벨은 각 카드별로 소실 목록에 남긴다 (2026-09-07 DB-2)

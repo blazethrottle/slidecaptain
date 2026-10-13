@@ -281,6 +281,7 @@ export function useDeckEditor(
   return {
     deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure, reloadIncomplete,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
+    planDeck,  // 계획을 만든 덱. 낡은 계획에서 끌기를 허용할지 정한다 (D3c-3, 재리뷰 RR15)
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
     apply, replace, acceptSaved, undo, redo, flushSave, remeasure, reloadFromServer, retrySave, reportConflict,

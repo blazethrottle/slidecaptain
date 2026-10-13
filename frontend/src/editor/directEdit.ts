@@ -199,7 +199,8 @@ export function displayBoxes(
       dy = Math.min(Math.max(y0 + edit.dy_pt, 0), pageH - height) - y0;
     }
     for (const b of base) {
-      boxes.set(b.f.name, { x: b.x + dx, y: b.y + dy, w: b.f.w, h: b.f.h, hidden: !!edit?.hidden });
+      // 수정값을 넘기지 않으면 계획의 숨김 표시를 따른다(편집 화면 밖의 미리보기)
+      boxes.set(b.f.name, { x: b.x + dx, y: b.y + dy, w: b.f.w, h: b.f.h, hidden: edits === undefined ? !!b.f.hidden : !!edit?.hidden });
     }
   }
   return boxes;

@@ -170,6 +170,20 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="c
 .diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .preview-holder { width: 100%; overflow: hidden; }
+/* 직접 수정 모드 (D3c-3): 고를 수 있는 요소를 점선으로 보이고, 고른 글상자의 왼쪽 위에 이동 손잡이를 둔다 */
+.preview-canvas.direct-edit .frame[role="button"]:not(.selected):not(.warned) { outline: 1px dashed var(--color-border-strong); }
+.frame:focus-visible { outline: var(--border-width-strong) solid var(--color-focus); }
+.frame.dragging { opacity: 0.85; }
+.move-handle { position: absolute; top: 0; left: 0; width: var(--size-step-number); height: var(--size-step-number);
+  display: flex; align-items: center; justify-content: center; cursor: move;
+  background: var(--color-primary); color: var(--color-on-primary); border-radius: var(--radius-sm); }
+.direct-edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.sr-status:empty { display: none; }
+.hidden-count { position: absolute; right: var(--space-1); bottom: var(--space-1); }
+.direct-edit-panel fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.swatch { display: inline-block; width: var(--space-3); height: var(--space-3); vertical-align: middle;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); }
+.field-error { display: block; color: var(--color-danger); }
 .frame.selected { outline: var(--border-width-strong) solid var(--color-primary); }
 .frame.warned { outline: var(--border-width-strong) solid var(--color-danger); }
 .frame.selected.warned { outline: var(--border-width-strong) dashed var(--color-danger); }

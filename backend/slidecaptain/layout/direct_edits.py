@@ -182,6 +182,7 @@ def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str
                 ok, bad = (mid, bad) if fits(mid) else (ok, mid)
             best = ok
     return {
+        "base_pt": largest,
         "current_pt": round(largest * current, 2),
         "fits_up_to_pt": None if best is None else math.floor(largest * best * 100) / 100,
         "min_pt": round(largest * low, 2),

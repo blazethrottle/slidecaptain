@@ -7591,6 +7591,10 @@
       },
       "FontLimit": {
         "properties": {
+          "base_pt": {
+            "type": "number",
+            "title": "Base Pt"
+          },
           "current_pt": {
             "type": "number",
             "title": "Current Pt"
@@ -7617,6 +7621,7 @@
         },
         "type": "object",
         "required": [
+          "base_pt",
           "current_pt",
           "fits_up_to_pt",
           "min_pt",

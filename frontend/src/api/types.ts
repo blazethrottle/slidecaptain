@@ -2495,6 +2495,8 @@ export interface components {
          *     가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt).
          */
         FontLimit: {
+            /** Base Pt */
+            base_pt: number;
             /** Current Pt */
             current_pt: number;
             /** Fits Up To Pt */

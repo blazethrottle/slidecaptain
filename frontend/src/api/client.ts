@@ -3,6 +3,7 @@ import { ensureConsent } from "./aiGate";
 import type { components } from "./types";
 
 export type Deck = components["schemas"]["Deck"];
+export type FontLimit = components["schemas"]["FontLimit"];
 export type DeckMeta = components["schemas"]["DeckMeta"];
 export type Chapter = components["schemas"]["Chapter"];
 export type Structure = components["schemas"]["Structure"];
@@ -312,6 +313,10 @@ export const api = {
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/deck?snapshot=${snapshot}`, {
       method: "PUT", body: JSON.stringify(deck),
     }, { etagKey: name, notify: { kind: "saved", project: name } }),
+  // 직접 수정의 글자 크기 칸: 고른 요소가 넘치지 않는 최대 크기 (D3c-2, 계획 4.5)
+  fontLimit: (name: string, deck: Deck, chapterId: string, key: string) =>
+    request<FontLimit>(`/api/projects/${enc(name)}/direct-edits/font-limit`, {
+      method: "POST", body: JSON.stringify({ deck, chapter_id: chapterId, key }) }),
   measure: (deck: Deck, projectName?: string) =>
     request<RenderPlan>(projectName ? `/api/projects/${enc(projectName)}/render-plan` : "/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
   // 확인은 저장본을 바꾸지 않는다. 취소한 요청의 늦은 응답이 이후 저장의 ETag를 되돌리면 안 된다.

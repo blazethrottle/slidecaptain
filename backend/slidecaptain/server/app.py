@@ -197,6 +197,7 @@ class FontLimit(BaseModel):
     """요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,
     가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt)."""
 
+    base_pt: float  # 배율 1일 때 가장 큰 문단의 크기. 화면은 고른 크기 / base_pt를 배율로 저장한다
     current_pt: float
     fits_up_to_pt: float | None
     min_pt: float

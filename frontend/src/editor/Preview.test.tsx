@@ -195,7 +195,8 @@ it("칸별 채움이 비면 머리행 칸들이 단일 색을 그대로 쓴다",
   const backgrounds = cells.map((c) => (c as HTMLElement).style.background);
 
   expect(backgrounds.slice(0, 2)).toEqual(["rgb(242, 242, 242)", "rgb(242, 242, 242)"]);
-  expect(backgrounds.slice(2)).toEqual(["", ""]);
+  // 다시 씀 (D3c-3, E6): 본문 칸은 PPTX의 내장 표 스타일(Medium Style 2 - Accent 1)의 표 전체 채움을 그린다
+  expect(backgrounds.slice(2)).toEqual(["rgb(233, 237, 244)", "rgb(233, 237, 244)"]);
 });
 
 const processSlide: SlidePlan = {

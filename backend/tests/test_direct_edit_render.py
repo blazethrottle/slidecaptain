@@ -342,7 +342,7 @@ def test_font_limit_reports_the_largest_size_that_does_not_overflow(client):
     deck = _deck("bullet_box", BULLETS, eyebrow="분류")
     body = {"deck": deck.model_dump(mode="json"), "chapter_id": "c1", "key": "eyebrow"}
     limit = client.post("/api/projects/p1/direct-edits/font-limit", json=body).json()
-    assert limit["current_pt"] == PRESET.font_roles.eyebrow_pt
+    assert limit["current_pt"] == limit["base_pt"] == PRESET.font_roles.eyebrow_pt
     # 아이브로우는 높이가 한 줄에 딱 맞아 키울 여유가 없다 (재리뷰 RR2 실측: 최대 배율 1.000)
     assert limit["fits_up_to_pt"] == pytest.approx(PRESET.font_roles.eyebrow_pt, abs=0.05)
     assert limit["min_pt"] == 1.0 and limit["max_pt"] > 100
