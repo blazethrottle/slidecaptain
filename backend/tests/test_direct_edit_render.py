@@ -41,6 +41,14 @@ def _plan(deck: Deck, **kw):
     return build_render_plan(deck, PRESET, METRICS, **kw)
 
 
+def _parts(path) -> dict[str, bytes]:
+    """PPTX(zip) 부품별 내용. 파일 바이트는 zip 항목의 쓰기 시각이 들어가 같은 내용도 다를 수 있다 (D3c-2 리뷰 F7)."""
+    import zipfile
+
+    with zipfile.ZipFile(path) as z:
+        return {info.filename: z.read(info) for info in z.infolist()}
+
+
 def _frames(plan) -> dict:
     return {f.name.split(":", 1)[1]: f for f in plan.slides[0].frames}
 
@@ -273,7 +281,7 @@ def test_pptx_bytes_are_unchanged_for_decks_without_edits(tmp_path, monkeypatch)
         old = tmp_path / f"{name}.old.pptx"
         write_pptx(plan, old)
         monkeypatch.setattr(pptx_writer, "_style_run", original)
-        assert new.read_bytes() == old.read_bytes(), name
+        assert _parts(new) == _parts(old), name  # zip 항목 시각(2초 단위)은 비교하지 않는다 (D3c-2 리뷰 F7)
         checked += 1
     assert checked >= 2
 
@@ -439,3 +447,147 @@ def test_warning_keys_fixture_matches_the_engine():
     for case in cases:
         assert warning_key(case["slot"], set(case["keys"])) == case["key"], case
     assert [c["slot"] for c in cases if c["key"] is None] == ["unknown_slot"]
+
+
+# -- D3c-2 리뷰 F8~F11: 변형이 살아남은 자리의 시험 ----------------------------------------------------
+
+def _lengthen(value):
+    """분량 경고가 나도록 문구를 늘인다(글자 크기와 상관없는 칸은 그대로)."""
+    if isinstance(value, str):
+        return (value + " 길게 늘여 쓴 문구입니다") * 6 if value.strip() else value
+    if isinstance(value, list):
+        return [_lengthen(v) for v in value]
+    if isinstance(value, dict):
+        return {k: v if k in ("template", "tone") else _lengthen(v) for k, v in value.items()}
+    return value
+
+
+def _sample_slides(long: bool):
+    from pydantic import ValidationError
+    from test_direct_edits import SAMPLES
+
+    for template in SAMPLES:
+        for variant in ("full", "bare"):
+            slots = {"template": template, **SAMPLES[template][variant]}
+            try:
+                yield Slide(chapter_id="c1", slots=_lengthen(slots) if long else slots)
+            except ValidationError:
+                continue
+
+
+def _element(page, key):
+    """한 요소의 문단(글, 크기, 줄)과 그 요소에 대응하는 경고."""
+    from slidecaptain.layout.direct_edits import frame_key
+
+    keys = {frame_key(f) for f in page.frames}
+    frames = [(f.name, [(p.text, p.font_pt, p.lines) for p in f.paras]) for f in page.frames if frame_key(f) == key]
+    warnings = sorted((w.slot, round(w.needed_pt, 3), round(w.available_pt, 3))
+                      for w in page.warnings if warning_key(w.slot, keys) == key)
+    return frames, warnings
+
+
+@pytest.mark.parametrize("long", [False, True])
+def test_element_scale_matches_a_globally_scaled_preset(long):
+    """요소별 배율의 문단과 경고는 프리셋 전체에 같은 배율을 준 결과와 같다 (계획 4.4, D3c-2 리뷰 F8의 M1~M4).
+
+    공통 슬롯은 기하가 글자 크기에 기대므로 뺀다(최대 크기 라우트 시험이 덮는다)."""
+    from slidecaptain.layout.templates import _font_preset, build_slide
+
+    checked = 0
+    for slide in _sample_slides(long):
+        chapter = Chapter(id="c1", topic="장 제목", template=slide.slots.template)
+        for key, spec in frame_keys(slide).items():
+            if "font" not in spec.kinds:
+                continue
+            for scale in (0.8, 1.3):
+                own = build_slide(chapter, slide.slots, 1, PRESET, METRICS, presenter="", font_scales={key: scale})
+                whole = build_slide(chapter, slide.slots, 1, _font_preset(PRESET, scale), METRICS, presenter="")
+                assert _element(own, key) == _element(whole, key), (slide.slots.template, key, scale)
+                checked += 1
+    assert checked > 40
+
+
+def test_hiding_an_element_drops_every_warning_of_that_element():
+    """카드를 숨기면 card0_heading, 단계 본문을 숨기면 step0_heading과 step0_subtitle 경고도 사라진다 (F8의 M7, M12)."""
+    warned = 0
+    for slide in _sample_slides(True):
+        deck = Deck(meta=DeckMeta(title="보고"),
+                    structure=Structure(chapters=[Chapter(id="c1", topic="장 제목", template=slide.slots.template)]), slides=[slide])
+        plan = _plan(deck)
+        keys = frame_keys(slide)
+        for key, spec in keys.items():
+            if "hide" not in spec.kinds or not any(warning_key(w.slot, keys) == key for w in plan.slides[0].warnings):
+                continue
+            warned += 1
+            payload = deck.model_dump(mode="json")
+            payload["slides"][0]["direct_edits"] = {key: {"hidden": True}}
+            hidden = _plan(Deck.model_validate(payload))
+            assert not [w.slot for w in hidden.slides[0].warnings if warning_key(w.slot, keys) == key], key
+    assert warned >= 10
+
+
+def test_fill_recomputes_text_color_for_cards_badges_and_categories():
+    """채움을 바꾸면 카드, 단계 번호, 분류 칸의 글자색을 채움에 맞춰 다시 정한다. 두 방향을 본다 (F8의 M6)."""
+    from test_direct_edits import SAMPLES
+
+    from slidecaptain.metrics.color import readable_text_color
+
+    for template, key in (("cards", "card0"), ("process", "step0_badge"), ("matrix", "row0_category")):
+        colors = set()
+        for fill in ("ink", "surface1"):
+            plan = _plan(_deck(template, SAMPLES[template]["full"], edits={key: {"fill": fill}}))
+            expected = readable_text_color(getattr(PRESET.colors, fill), light=PRESET.colors.background, dark=PRESET.colors.text)
+            assert {p.color for p in _frames(plan)[key].paras} == {expected}, (template, fill)
+            colors.add(expected)
+        assert len(colors) == 2
+
+
+def test_footnote_below_its_own_floor_warns():
+    """각주는 각주 하한(9pt)으로 본다 (F8의 M11)."""
+    plan = _plan(_deck("bullet_box", BULLETS, edits={"footnote": {"font_scale": 0.9}}))
+    [warning] = [w for w in plan.slides[0].warnings if w.slot == "footnote"]
+    assert "읽기 하한(9pt)" in warning.message and warning.kind == "font_size"
+
+
+def test_mixed_size_elements_clamp_by_their_smallest_and_largest_paragraph(tmp_path):
+    """배지(작은 글자)와 소제목이 섞인 카드에서 하한은 가장 작은 문단, 상한은 가장 큰 문단으로 자른다. 한계의 PPTX를 쓰고
+    다시 연다 (F8의 M13, M14, F9의 "한계 근처 글자 크기의 내보내기 성공", F11의 문구)."""
+    for scale, check in ((1e-6, "low"), (1e6, "high")):
+        deck = _deck("cards", CARDS, edits={"card0": {"font_scale": scale}})
+        plan = _plan(deck)
+        sizes = [p.font_pt for p in _frames(plan)["card0"].paras]
+        assert len(set(sizes)) > 1  # 크기가 섞인 요소다
+        if check == "low":
+            assert min(sizes) == pytest.approx(1.0)
+            [warning] = [w for w in plan.slides[0].warnings if w.slot == "card0" and "맞췄습니다" in w.message]
+            assert warning.message.startswith("가장 작은 글자를 1pt로 맞췄습니다")
+        else:
+            assert max(sizes) * PRESET.spacing.line_spacing <= 1584
+        out = tmp_path / f"{check}.pptx"
+        write_pptx(plan, out)
+        assert Presentation(str(out)).slides[0].shapes
+
+
+def test_text_color_applies_before_text_spans():
+    """글자 색을 바꾼 요소의 강조 밖 글은 새 색, 강조색 글은 강조색이다 (F8의 M15)."""
+    import hashlib
+
+    first = "앞부분 강조 뒷부분"
+    span = {"slot": "bullets", "index": 0, "start": 4, "end": 6, "role": "accent",
+            "text_sha256": hashlib.sha256(first.encode()).hexdigest()}
+    deck = _deck("bullet_box", {"bullets": [{"text": first}], "conclusion": "결론"}, text_spans=[span],
+                 edits={"bullets": {"text_color": "danger"}})
+    runs = _frames(_plan(deck))["bullets"].paras[0].runs
+    assert {(r.text, r.color) for r in runs} == {
+        ("앞부분 ", PRESET.colors.danger), ("강조", PRESET.colors.accent1), (" 뒷부분", PRESET.colors.danger)}
+
+
+def test_empty_cover_fields_take_no_font_scale(client):
+    """빈 표지 부제는 글이 없어 배율을 버리고, 최대 크기 라우트는 422다 (D3c-2 리뷰 F10)."""
+    deck = _deck("cover", {"title": "제목", "subtitle": ""}, edits={"subtitle": {"font_scale": 3}})
+    plan = _plan(deck)
+    assert {p.font_pt for p in _frames(plan)["subtitle"].paras} == {PRESET.font_roles.subtitle_pt}
+    body = {"deck": deck.model_dump(mode="json"), "chapter_id": "c1", "key": "subtitle"}
+    assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 422
+    body["key"] = "cover_title"
+    assert client.post("/api/projects/p1/direct-edits/font-limit", json=body).status_code == 200

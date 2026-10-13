@@ -84,7 +84,9 @@ export function DirectEditPanel({ projectName, deck, chapterId, plan, pageW, pag
 
   const spec = selectedKey ? keys[selectedKey] : undefined;
   const edit: ElementEdit = (selectedKey && edits[selectedKey]) || {};
-  const canFont = !!spec?.kinds.includes("font");
+  // 글이 없는 요소(빈 표지 부제 등)는 서버도 배율을 버리므로 칸을 보이지 않는다 (D3c-2 리뷰 F10)
+  const hasText = !!plan?.frames.some((f) => frameKey(f) === selectedKey && f.paras.some((p) => p.text.trim()));
+  const canFont = !!spec?.kinds.includes("font") && hasText;
 
   // 넘치지 않는 최대 크기는 서버가 빌더와 같은 판정식으로 계산한다 (재리뷰 RR2). 입력이 멈춘 뒤 묻는다
   // 같은 요소를 고치는 동안에는 새 응답이 올 때까지 이전 값을 둔다. 지우면 입력 칸이 사라졌다가 다시 생긴다

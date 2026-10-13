@@ -438,3 +438,16 @@ describe("D3c-3 리뷰 반영 (F10~F13)", () => {
     expect(api.fontLimit).toHaveBeenCalledTimes(1);
   });
 });
+
+it("글이 없는 요소에는 글자 크기 칸을 보이지 않고 한도도 묻지 않는다 (D3c-2 리뷰 F10)", async () => {
+  const empty = { ...plan, slides: [{ ...plan.slides[0], frames: plan.slides[0].frames.map((f) =>
+    f.name === "c1:footnote" ? { ...f, paras: [para("", 9)] } : f) }] };
+  vi.mocked(api.measure).mockResolvedValue(empty);
+  await open();
+  await userEvent.click(modeButton());
+  act(() => frame("footnote")!.focus());
+  expect(screen.getByRole("group", { name: "위치(pt, 슬라이드 왼쪽 위 기준)" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "글자 크기" })).toBeNull();
+  await new Promise((r) => setTimeout(r, 350));
+  expect(api.fontLimit).not.toHaveBeenCalled();
+});

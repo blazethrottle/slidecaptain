@@ -53,6 +53,13 @@ def _sizes_by_key(page: SlidePlan) -> dict[str, list[float]]:
     return sizes
 
 
+def _text_keys(page: SlidePlan) -> set[str]:
+    """글이 있는 요소. 빈 표지 부제처럼 빈 문단만 있는 요소는 글자 크기를 바꿀 것이 없다 (D3c-2 리뷰 F10).
+
+    크기 한계는 빈 문단까지 넣어 계산한다. 라이터가 빈 문단에도 글자 크기를 기록하므로 빼면 1pt 아래로 갈 수 있다."""
+    return {frame_key(frame) for frame in page.frames if any(p.text.strip() for p in frame.paras)}
+
+
 def scale_limits(base_sizes: list[float], preset: Preset) -> tuple[float, float]:
     """한 요소의 글자 배율 범위. 가장 작은 문단이 1pt 아래로, 가장 큰 문단의 행간이 1,584pt 위로 가지 않는다."""
     upper_pt = math.floor(SPACING_MAX_PT / preset.spacing.line_spacing)
@@ -63,24 +70,30 @@ def clamp_scales(
     scales: dict[str, float], base: SlidePlan, preset: Preset,
 ) -> tuple[dict[str, float], list[CapacityWarning]]:
     """배율을 OOXML 한계로 자르고, 자른 요소와 읽기 하한 아래로 줄인 요소에 경고를 단다 (계획 리뷰 저장 S6, S7,
-    재리뷰 RR18). 문단이 없는 요소의 배율은 버린다."""
+    재리뷰 RR18). 문단이 없거나 글이 없는 요소의 배율은 버린다."""
     sizes = _sizes_by_key(base)
+    texts = _text_keys(base)
     result: dict[str, float] = {}
     warnings: list[CapacityWarning] = []
     for key, scale in scales.items():
         base_sizes = sizes.get(key)
-        if not base_sizes:
+        if not base_sizes or key not in texts:
             continue
         low, high = scale_limits(base_sizes, preset)
         clamped = min(max(scale, low), high)
         result[key] = clamped
         largest = max(base_sizes)
         if clamped != scale:
-            warnings.append(CapacityWarning(
-                chapter_id=base.chapter_id, slot=key, kind="font_size",
-                message=f"글자 크기를 {round(largest * clamped, 2):g}pt로 맞췄습니다. PowerPoint가 받는 범위를 넘었습니다",
-                needed_pt=round(largest * scale, 2), available_pt=round(largest * clamped, 2),
-            ))
+            # 하한은 가장 작은 문단, 상한은 가장 큰 문단에 걸린다. 걸린 쪽의 크기를 말한다 (D3c-2 리뷰 F11)
+            smallest = min(base_sizes)
+            message, needed, available = (
+                (f"가장 작은 글자를 {FONT_MIN_PT:g}pt로 맞췄습니다. PowerPoint가 받는 가장 작은 크기보다 작았습니다",
+                 round(smallest * scale, 2), round(smallest * clamped, 2))
+                if clamped == low else
+                (f"가장 큰 글자를 {round(largest * clamped, 2):g}pt로 맞췄습니다. PowerPoint가 받는 범위를 넘었습니다",
+                 round(largest * scale, 2), round(largest * clamped, 2)))
+            warnings.append(CapacityWarning(chapter_id=base.chapter_id, slot=key, kind="font_size", message=message,
+                                            needed_pt=needed, available_pt=available))
         below = [(b, round(b * clamped, 2)) for b in base_sizes]
         if any((b >= BODY_MIN_PT and s < BODY_MIN_PT) or (b >= FOOTNOTE_MIN_PT and s < FOOTNOTE_MIN_PT) for b, s in below):
             floor = BODY_MIN_PT if any(b >= BODY_MIN_PT and s < BODY_MIN_PT for b, s in below) else FOOTNOTE_MIN_PT
@@ -158,8 +171,9 @@ def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str
         return build_slide(chapter, slide.slots, 1, preset, metrics, presenter=presenter,
                            eyebrow=slide.eyebrow, subtitle=slide.subtitle, font_scales=scales)
 
-    sizes = _sizes_by_key(build(None)).get(key)
-    if not sizes:
+    base = build(None)
+    sizes = _sizes_by_key(base).get(key)
+    if not sizes or key not in _text_keys(base):
         return None
     keys = frame_keys(slide)
     others = {k: e.font_scale for k, e in slide.direct_edits.items() if e.font_scale is not None and k != key}

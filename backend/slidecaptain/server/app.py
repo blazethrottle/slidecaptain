@@ -1000,7 +1000,8 @@ def create_app(
             raise HTTPException(422, "이 요소는 글자 크기를 바꿀 수 없습니다.")
         with store.locked(name):
             store.deck_etag(name)  # 프로젝트가 없으면 여기서 404
-            result = font_limit(chapter, slide, _preset_for(req.deck), metrics, req.deck.meta.presenter, req.key)
+        # 계산은 요청 본문의 덱만 쓰므로 잠금 밖에서 한다. 같은 프로젝트의 저장과 잠금을 다투지 않게 (D3c-2 리뷰 F12)
+        result = font_limit(chapter, slide, _preset_for(req.deck), metrics, req.deck.meta.presenter, req.key)
         if result is None:
             raise HTTPException(422, "이 요소에는 글자가 없습니다.")
         return FontLimit(**result)
