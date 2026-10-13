@@ -25,7 +25,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from slidecaptain import __version__
@@ -50,7 +50,7 @@ from slidecaptain.layout.direct_edits import font_limit
 from slidecaptain.models.direct_edit import frame_keys
 from slidecaptain.layout.diagram_page import DiagramRenderBlocked
 from slidecaptain.metrics.font_metrics import FontMetrics
-from slidecaptain.models.deck import Deck, Slide, Slots
+from slidecaptain.models.deck import Deck, GeneratedSlots, Slide, Slots
 from slidecaptain.models.preset import Preset, apply_overrides
 from slidecaptain.models.numeric_review import NumericReviewReport
 from slidecaptain.pipeline.numeric_review import assess_numeric_review
@@ -61,7 +61,12 @@ from slidecaptain.pipeline.auth_status import LoginStatus, check_login
 from slidecaptain.pipeline.connections import AIConnections, AISelection, AISettings, ConnectionConflict, LoginAttempt, ProviderId
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
-from slidecaptain.pipeline.relevance import chapter_relevance, structure_parts, structure_relevance
+from slidecaptain.pipeline.relevance import (
+    batch_parts, batch_relevance, chapter_relevance, structure_parts, structure_relevance,
+)
+from slidecaptain.pipeline.candidate_apply import (
+    default_drops, edited_units, length_changed_units, merge_fields, merge_slide, merge_slots, same_slide,
+)
 from slidecaptain.models.quality import QualityReport
 from slidecaptain.pipeline.service import ChapterResult, DiagramGenerationResult, DiagramGenerationUnsupported, GenerationService, StructureResult, StoryRewriteResult
 from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest, diagram_prompt
@@ -80,10 +85,11 @@ from slidecaptain.pipeline.story import StaleStoryPlan, reconcile_diagram_story_
 from slidecaptain.sources.xlsx import XlsxTooLarge, XlsxUnreadable, extract_xlsx
 from slidecaptain.pipeline.progress import SOURCES_TOTAL_MAX_CHARS, ProjectProgress, project_progress
 from slidecaptain.models.jobs import (
-    ActiveJob, ActiveJobStatus, CandidateAction, ChapterView, GenerationActiveBody, JobError, JobRequest, JobView,
+    ActiveJob, ActiveJobStatus, CandidateAction, CandidateApplyPreview, CandidateApplyRequest, ChapterView,
+    GenerationActiveBody, JobError, JobRequest, JobView,
 )
 from slidecaptain.server.jobs import (
-    FORMAT_ERROR_MESSAGE, LEDGER_WRITE_MESSAGE,
+    FORMAT_ERROR_MESSAGE, LEDGER_WRITE_MESSAGE, NOTICE_REASONS,
     real_reasons,
     GENERATION_ACTIVE_MESSAGE, SERVICE_STOPPING_MESSAGE, GenerationActive, JobFailed, JobRunner, JobSpec,
     ServiceStopping, http_error_from, new_request_id,
@@ -117,6 +123,8 @@ from slidecaptain.storage.file_store import (
 )
 
 _LOG = logging.getLogger("slidecaptain.server.app")
+_GENERATED_SLOTS = TypeAdapter(GeneratedSlots)
+_ANY_SLOTS = TypeAdapter(Slots)
 
 _STATUS_BY_ERROR = [
     (InvalidName, 422),
@@ -1833,7 +1841,9 @@ def create_app(
             await _run_chapters(name, ctx, chapter_ids, etag, revision, svc, provider_id, model)
 
         return JobSpec(kind=BATCH_KIND, project=name, request_id=request_id, params={"chapter_ids": chapter_ids},
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       selection_id=selection_id,
+                       # 장마다 관련 입력을 담는다. 내용이 있는 장의 묶음 결과를 적용 라우트로 반영할 때 판정 기준이다 (D3c-5)
+                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, batch_relevance(deck, chapter_ids)),
                        run=run, recheck=_base_recheck(name, etag, revision), chapter_ids=list(chapter_ids), batch=True)
 
     def _close_chapters(job_id: str, chapter_ids: list[str], new: str, code: str | None = None) -> None:
@@ -2152,6 +2162,10 @@ def create_app(
         current = runner.require_ledger()
         try:
             if req.chapter_id is None:
+                if row.kind in ("chapter", "condense") and req.action == "applied":
+                    # 장 후보는 적용 라우트로만 반영한다. 덱 변경 없이 applied만 남는 경로를 닫는다 (D3c-5, 리뷰 서버 S3)
+                    raise JobFailed(409, "장 후보는 반영 경로로만 반영합니다. 화면을 새로 고친 뒤 다시 반영해 주세요.",
+                                    "apply_route_required")
                 settled = current.settle_candidate(job_id, expected=row.candidate_status, new=req.action)
                 return _job_view(settled)
             # 장 후보는 화면이 반영하지 않으므로(다시 생성은 새 묶음) 버리기만 받는다
@@ -2167,6 +2181,213 @@ def create_app(
         except TransitionRejected:
             raise HTTPException(409, "처분할 결과 후보가 없거나 이미 처분했습니다.") from None
         return _job_view(_project_job(name, job_id))
+
+    # 장 후보 적용 (D3c-5, 계획 4.7, 4.8). 장 생성, 장 축약, 묶음 하위 행의 결과를 서버가 지금 덱에 합쳐 저장한다.
+    # 처분 교체와 덱 저장은 한 원장 트랜잭션 안에서 한다. 남는 틈은 "덱 저장 성공 뒤 커밋 실패" 하나이고, 같은 후보를 다시
+    # 반영하면 지금 슬라이드가 합친 결과와 같아 덱을 다시 쓰지 않고 처분만 정리한다(재리뷰 RR8)
+
+    _APPLY_BLOCKED = {
+        "chapter_missing": "이 장이 구성에서 빠져 후보를 반영할 수 없습니다.",
+        "template_changed": "이 장의 템플릿이 바뀌어 후보를 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요.",
+        "chapter_changed": "이 장의 제목이나 정의가 바뀌어 후보를 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요.",
+        "story_plan_changed": "보고 계획이나 보고 정보가 바뀌어 후보를 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요.",
+        "sources_changed": "자료가 바뀌어 후보를 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요.",
+        "slots_changed": "축약을 요청한 뒤 이 장의 내용이 바뀌어 후보를 반영할 수 없습니다. 현재 내용으로 다시 축약해 주세요.",
+    }
+
+    def _batch_running(name: str) -> bool:
+        """같은 프로젝트에 미종결 묶음이 있는가. 적용 라우트는 AI 임대를 쓰지 않아 실행기의 생성 중 검사에 걸리지 않으므로
+        따로 막는다(계획 4.8, 리뷰 서버 S6)."""
+        current = runner.require_ledger()
+        return any(row.kind == BATCH_KIND and (row.state in UNFINISHED_CHAPTER or any(
+            c.state in UNFINISHED_CHAPTER for c in current.chapters(row.id))) for row in current.list_jobs(name))
+
+    def _candidate_ref(name: str, job_id: str, chapter_id: str | None) -> dict:
+        """적용할 후보 하나: 행, 장, 처분, 관련 입력, 결과 슬롯. 대상이 아니면 409나 422로 거절한다."""
+        row = _project_job(name, job_id)
+        if _batch_running(name):
+            raise JobFailed(409, "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요.",
+                            "batch_active")
+        not_terminal = JobFailed(409, "아직 끝나지 않은 작업의 결과는 반영할 수 없습니다.", "not_terminal")
+        current = runner.require_ledger()
+        if row.kind == BATCH_KIND:
+            if chapter_id is None:
+                raise HTTPException(422, "묶음 작업의 후보는 장을 지정해 반영합니다.")
+            child = next((c for c in current.chapters(job_id) if c.chapter_id == chapter_id), None)
+            if child is None:
+                raise HTTPException(404, f"이 작업에 없는 장입니다: {chapter_id}")
+            if child.state in UNFINISHED_CHAPTER:
+                raise not_terminal
+            # 표지가 없는 D3c 이전 묶음 행은 판정 기준이 없다 (리뷰 서버 S4)
+            relevance = (batch_parts(row.relevance_hash) or {}).get(chapter_id)
+            if relevance is None:
+                raise JobFailed(409, "이전 버전에서 만든 결과라 반영 여부를 판정할 수 없습니다. 현재 입력으로 다시 생성해 주세요.",
+                                "not_applicable")
+            ref = {"kind": "chapter", "status": child.candidate_status, "result": child.result, "batch": True}
+        elif row.kind in ("chapter", "condense"):
+            target = row.params.get("chapter_id") if isinstance(row.params, dict) else None
+            if chapter_id is not None and chapter_id != target:
+                raise HTTPException(422, "작업의 장과 요청한 장이 다릅니다.")  # 리뷰 서버 S22
+            if row.state in UNFINISHED_CHAPTER:
+                raise not_terminal  # 재시작 조정이 처분 열을 덮지 않게 (리뷰 서버 S13)
+            if row.state != "succeeded" or not row.relevance_hash:
+                raise JobFailed(409, "이 작업의 결과는 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요.", "not_applicable")
+            chapter_id, relevance = target, row.relevance_hash
+            ref = {"kind": row.kind, "status": row.candidate_status, "result": row.result, "batch": False}
+        else:
+            raise JobFailed(409, "장 후보가 아닌 작업은 이 경로로 반영하지 않습니다.", "not_applicable")
+        if ref["status"] not in ("held", "stale"):
+            raise JobFailed(409, "이미 반영했거나 버린 후보입니다. 화면을 새로 고쳐 주세요.", "candidate_settled")
+        try:
+            slots = _GENERATED_SLOTS.validate_python(ref["result"]["slots"])
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(422, "저장된 후보를 지금 형식으로 읽지 못했습니다. 현재 입력으로 다시 생성해 주세요.") from None
+        return {**ref, "row": row, "chapter_id": chapter_id, "relevance": relevance, "slots": slots}
+
+    def _last_applied(name: str, chapter_id: str) -> Slots | None:
+        """그 장에 마지막으로 반영된 AI 결과(장 생성, 장 축약, 묶음 하위 행). "직접 고친 문구" 표시의 기준이다(계획 4.1).
+        원장은 행을 지우지 않으므로 반영한 후보의 결과가 남는다. 지금 형식으로 읽지 못하면 기준이 없다고 본다."""
+        current = runner.require_ledger()
+        for row in current.list_jobs(name):
+            result = None
+            if row.kind in ("chapter", "condense") and row.candidate_status == "applied" and isinstance(row.params, dict) \
+                    and row.params.get("chapter_id") == chapter_id:
+                result = row.result
+            elif row.kind == BATCH_KIND:
+                child = next((c for c in current.chapters(row.id)
+                              if c.chapter_id == chapter_id and c.candidate_status == "applied"), None)
+                result = child.result if child is not None else None
+            if result is None:
+                continue
+            try:
+                return _ANY_SLOTS.validate_python(result["slots"])
+            except (KeyError, TypeError, ValueError):
+                return None
+        return None
+
+    def _apply_plan(name: str, job_id: str, req: CandidateApplyRequest) -> dict:
+        """판정과 합치기. 프로젝트 잠금 안에서 부른다. 덱을 쓰지 않는다."""
+        ref = _candidate_ref(name, job_id, req.chapter_id)
+        chapter_id, row = ref["chapter_id"], ref["row"]
+        try:
+            deck, etag = store.load_deck_with_etag(name)
+        except ProjectNotFound:
+            raise
+        except (StorageError, OSError):
+            raise JobFailed(503, "덱을 읽지 못해 후보를 반영하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", "unknown_deck") from None
+        revision = _sources_revision(name)
+        if revision is None:
+            raise JobFailed(503, "자료를 읽지 못해 후보를 반영하지 못했습니다. 자료를 확인한 뒤 다시 시도해 주세요.",
+                            "unknown_sources")
+        reasons = _chapter_reasons(chapter_id, ref["relevance"], row.base_etag, row.sources_fingerprint,
+                                   (deck, etag, revision))
+        blocked = real_reasons(reasons)
+        current = next((s for s in deck.slides if s.chapter_id == chapter_id), None)
+        if current is not None and current.slots.template != ref["slots"].template and not blocked:
+            blocked.append("template_changed")
+        plan = {"ref": ref, "deck": deck, "etag": etag, "blocked": blocked, "current": current, "merged": None,
+                "notices": [r for r in reasons if r in NOTICE_REASONS], "edited": None, "keep": [], "drops": [],
+                "unhide": [], "result": None, "new_deck": None, "already": False}
+        if "chapter_missing" in blocked or "template_changed" in blocked:
+            return plan  # 합칠 자리가 없다. 비교 화면은 막힌 이유만 보인다
+        if current is not None:
+            plan["edited"] = edited_units(current.slots, _last_applied(name, chapter_id))
+        # 기본 선택: 다시 생성은 직접 고친 단위만 지금 문구, 장 축약은 모두 새 문구다(계획 4.1)
+        keep = req.keep_current if req.keep_current is not None else (
+            (plan["edited"] or []) if ref["kind"] == "chapter" else [])
+        try:
+            merged_slots = merge_slots(current.slots if current else None, ref["slots"], keep)
+            drops = req.drop_edits if req.drop_edits is not None else default_drops(current, merged_slots)
+            unhide = req.unhide or []
+            result = merge_slide(current, chapter_id, ref["slots"], keep_current=keep, drop_edits=drops, unhide=unhide)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+        def with_slide(slide: Slide) -> Deck:
+            slides = [slide if s.chapter_id == chapter_id else s for s in deck.slides]
+            if current is None:
+                slides.append(slide)
+            return deck.model_copy(update={"slides": slides})
+
+        new_deck = with_slide(result.slide)
+        try:
+            store.etag_for(new_deck)  # 저장과 같은 덱 검증. 비교 차트의 등록 비교 조건도 여기서 본다
+        except ValueError:
+            if result.slide.chart is None:
+                raise HTTPException(422, "합친 결과가 덱 검증을 통과하지 못했습니다. 현재 입력으로 다시 생성해 주세요.") from None
+            result = merge_slide(current, chapter_id, ref["slots"], keep_current=keep, drop_edits=drops, unhide=unhide,
+                                 keep_chart=False)
+            new_deck = with_slide(result.slide)
+        already = same_slide(current, result.slide)
+        # 축약은 요청한 슬롯과 지금 슬롯이 다르면 낡았다(리뷰 서버 S7). 이미 반영된 결과인지를 먼저 본다(재리뷰 RR8)
+        if ref["kind"] == "condense" and not already:
+            requested = row.params.get("slots") if isinstance(row.params, dict) else None
+            try:
+                same = current is not None and requested is not None and _ANY_SLOTS.dump_python(
+                    _ANY_SLOTS.validate_python(requested), mode="json") == current.slots.model_dump(mode="json")
+            except ValueError:
+                same = False
+            if not same:
+                blocked.append("slots_changed")
+        plan.update(merged=result.slide, keep=keep, drops=drops, unhide=unhide, result=result, new_deck=new_deck,
+                    already=already)
+        return plan
+
+    @app.post("/api/projects/{name}/jobs/{job_id}/apply/preview", response_model=CandidateApplyPreview)
+    def preview_candidate(name: str, job_id: str, req: CandidateApplyRequest):
+        """저장하지 않는 적용 미리 보기. 판정이 막아도 비교는 보이도록 200이다 (계획 4.8, 제품 설계 7절)."""
+        with store.locked(name):
+            plan = _apply_plan(name, job_id, req)
+        ref, current, merged = plan["ref"], plan["current"], plan["merged"]
+        warnings = []
+        if plan["new_deck"] is not None:
+            rendered = build_render_plan(plan["new_deck"], _preset_for(plan["new_deck"]), metrics,
+                                         sources=_load_sources(name, allow_empty=True))
+            warnings = next((sp.warnings for sp in rendered.slides if sp.chapter_id == ref["chapter_id"]), [])
+        result = plan["result"]
+        return CandidateApplyPreview(
+            job_id=job_id, chapter_id=ref["chapter_id"], kind=ref["kind"], base_etag=plan["etag"],
+            blocked_reasons=plan["blocked"], notices=plan["notices"], units=list(merge_fields(ref["slots"].template)),
+            edited_units=plan["edited"], keep_current=plan["keep"], drop_edits=plan["drops"], unhide=plan["unhide"],
+            length_changed_units=length_changed_units(current.slots if current else None, merged.slots) if merged else [],
+            current=current, merged=merged, warnings=warnings,
+            removed_edits=result.removed_edits if result else [], unhidden=result.unhidden if result else [],
+            removed_spans=result.removed_spans if result else 0, removed_chart=result.removed_chart if result else False,
+            already_applied=plan["already"])
+
+    @app.post("/api/projects/{name}/jobs/{job_id}/apply", response_model=Deck)
+    def apply_candidate(name: str, job_id: str, req: CandidateApplyRequest, response: Response,
+                        if_match: str | None = Header(default=None)):
+        """장 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (계획 4.8의 순서와 원자성)."""
+        if not if_match:
+            raise HTTPException(428, "반영의 기준 저장본을 확인해야 합니다. 화면을 새로 고친 뒤 다시 반영해 주세요.")
+        current_ledger = runner.require_ledger()
+        with store.locked(name):
+            plan = _apply_plan(name, job_id, req)
+            if if_match.strip('"') != plan["etag"]:
+                raise DeckConflict("다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.")
+            if plan["blocked"]:
+                code = plan["blocked"][0]
+                raise JobFailed(409, _APPLY_BLOCKED.get(code, "이 후보는 지금 반영할 수 없습니다."), code)
+            ref = plan["ref"]
+            saved = plan["etag"]
+            try:
+                with current_ledger.batch():
+                    current_ledger.apply_candidate(job_id, ref["chapter_id"] if ref["batch"] else None,
+                                                   expected=ref["status"])
+                    if not plan["already"]:
+                        saved = store.save_deck(name, plan["new_deck"], snapshot=True, expected_etag=plan["etag"])
+            except TransitionRejected:
+                raise JobFailed(409, "이미 반영했거나 버린 후보입니다. 화면을 새로 고쳐 주세요.", "candidate_settled") from None
+            except (DeckConflict, ProjectNotFound):
+                raise
+            except (StorageError, OSError) as exc:
+                # 저장하지 않았다. 트랜잭션을 되돌려 처분은 그대로다. 문구는 덱 저장의 오류와 같다
+                raise JobFailed(503, str(exc) or "덱을 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.",
+                                "deck_write_failed") from None
+            deck = store.load_deck(name) if not plan["already"] else plan["deck"]
+        response.headers["ETag"] = f'"{saved}"'
+        return deck
 
     @app.get("/api/jobs/active", response_model=ActiveJobStatus)
     def get_active_job():
@@ -2190,7 +2411,8 @@ def create_app(
         if strict:
             if chapter is None:
                 raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
-            _load_sources(name)
+            # 구성 계획 낡음을 등록 단계에서 낸다. 등록(202) 뒤 실패보다 호출 비용과 기다림이 없다 (D3c-5, E9)
+            require_current_story(deck, _load_sources(name))
         relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 
@@ -2245,7 +2467,7 @@ def create_app(
                 raise HTTPException(404, f"구조안에 없는 장입니다: {chapter_id}")
             if req.slots.template != chapter.template:
                 raise template_mismatch()
-            _load_sources(name)
+            require_current_story(deck, _load_sources(name))  # D3c-5, E9
         relevance = _chapter_relevance(deck, chapter_id)
         provider_id, model = _fixed_selection()
 

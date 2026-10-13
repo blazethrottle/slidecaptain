@@ -407,6 +407,21 @@ class JobLedger:
             self._cas_candidate("jobs", "id = ?", (job_id,), expected, new)
             return self._get_job(job_id)
 
+    def apply_candidate(self, job_id: str, chapter_id: str | None, *, expected: str) -> None:
+        """장 후보 적용 라우트 전용 처분 교체: held나 stale에서 applied로 (D3c-5, 계획 4.8).
+
+        stale -> applied는 범용 전이표(CANDIDATE_TRANSITIONS)에 넣지 않는다. 낡음 사유가 사라졌는지는 적용 라우트가 판정하고,
+        덱 저장과 같은 트랜잭션(batch)에서 이 메서드를 부른다. chapter_id가 있으면 묶음 하위 행이다.
+        """
+        if expected not in ("held", "stale"):
+            raise TransitionRejected(f"반영할 수 없는 후보 처분입니다: {expected}")
+        with self._lock, self._transaction():
+            if chapter_id is None:
+                self._cas_candidate("jobs", "id = ?", (job_id,), expected, "applied")
+            else:
+                self._cas_candidate("job_chapters", "job_id = ? AND chapter_id = ?", (job_id, chapter_id), expected,
+                                    "applied")
+
     # 묶음 하위 행
 
     def chapters(self, job_id: str) -> list[ChapterRow]:

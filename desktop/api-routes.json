@@ -281,6 +281,18 @@
     ]
   },
   {
+    "path": "/api/projects/{name}/jobs/{job_id}/apply/preview",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/projects/{name}/jobs/{job_id}/apply",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
     "path": "/api/jobs/active",
     "methods": [
       "GET"

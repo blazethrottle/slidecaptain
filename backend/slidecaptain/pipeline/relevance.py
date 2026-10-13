@@ -62,3 +62,26 @@ def chapter_relevance(deck: Deck, chapter_id: str, *, legacy: bool = False) -> s
         report = _digest({"plan": plan_dump, "meta": _prompt_meta(deck)})
         template = f"{CHAPTER_MARKER}{chapter.template}" if chapter else ""
     return "|".join([template, _digest(chapter.model_dump(mode="json") if chapter else None), report])
+
+
+BATCH_MARKER = "b1:"
+
+
+def batch_relevance(deck: Deck, chapter_ids: list[str]) -> str:
+    """묶음 부모 행의 장별 관련 입력 (D3c-5, 계획 4.8): "b1:" 뒤에 장 ID별 "c1:" 값을 담은 JSON. 묶음 장 후보를 적용 라우트로
+    반영할 때 판정 기준이 된다. 원장 형식 번호는 그대로이고, 이전 빌드의 조회는 묶음 행의 이 칸을 풀지 않는다."""
+    values = {cid: chapter_relevance(deck, cid) for cid in chapter_ids}
+    return BATCH_MARKER + json.dumps(values, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def batch_parts(value: str | None) -> dict[str, str] | None:
+    """이 빌드가 아는 묶음 해시면 장 ID별 관련 입력. 표지가 없는 D3c 이전 묶음 행이나 모르는 값은 None."""
+    if not value or not value.startswith(BATCH_MARKER):
+        return None
+    try:
+        parsed = json.loads(value[len(BATCH_MARKER):])
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
+        return None
+    return parsed

@@ -278,6 +278,35 @@ def test_d3b_build_refuses_level_four_projects_without_touching_them(store, d3b_
     assert {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()} == before
 
 
+def test_d3b_build_lists_jobs_with_batch_relevance_and_applied_candidates(store, d3b_backend):
+    """D3c는 묶음 부모의 relevance_hash에 장별 해시("b1:")를 담고 장 후보를 적용 라우트로 반영한다. 원장 형식 번호는 그대로이므로
+    같은 자료 폴더를 여는 D3b 빌드의 작업 목록이 깨지지 않아야 한다 (계획 4.2, 리뷰 저장 S27)."""
+    from fastapi.testclient import TestClient
+
+    from slidecaptain.pipeline.relevance import BATCH_MARKER
+    from slidecaptain.server.app import create_app
+    from tests import test_candidate_apply_api as apply
+    from tests import test_jobs_batch as batch
+
+    batch._project(store)
+    provider = batch.ChapterProvider([batch.slots("하나"), batch.slots("둘"), batch.slots("셋")], gate_at=2)
+    with TestClient(create_app(store, provider=provider), headers=batch.HEADERS) as client:
+        single = apply._job(client, "chapter-0001", chapter_id="c1")
+        assert apply._apply(client, store, single["id"]).status_code == 200
+        job = batch._register(client, store, ["c2", "c3"]).json()
+        assert provider.entered.wait(10)
+        current = store.load_deck("p1")
+        current.meta.presenter = "다른 창의 편집"
+        store.save_deck("p1", current, snapshot=False)
+        provider.release.set()
+        view = batch._wait(client, job["id"])
+    assert view["relevance_hash"].startswith(BATCH_MARKER)
+    assert [c["candidate_status"] for c in view["chapters"]] == ["applied", "stale"]
+    out = _run_legacy(d3b_backend, store.root, "jobs")
+    assert out["jobs"] == 200
+    assert sorted(out["kinds"]) == ["chapter", "chapters"]
+
+
 def test_legacy_app_sees_level_four_as_needing_recovery_and_the_new_app_marks_the_revert(store, legacy_backend):
     """0.2.0은 schema_version 3을 거절해 복구 필요로 본다. 0.2.0에서 복원하면 이 앱은 되돌리기 직전 덱을 표시하고
     머리에 알린다 (계획 리뷰 저장 S4: 1판대로면 표시가 0개였다)."""

@@ -3053,6 +3053,140 @@
         }
       }
     },
+    "/api/projects/{name}/jobs/{job_id}/apply/preview": {
+      "post": {
+        "summary": "Preview Candidate",
+        "description": "저장하지 않는 적용 미리 보기. 판정이 막아도 비교는 보이도록 200이다 (계획 4.8, 제품 설계 7절).",
+        "operationId": "preview_candidate_api_projects__name__jobs__job_id__apply_preview_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateApplyPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/jobs/{job_id}/apply": {
+      "post": {
+        "summary": "Apply Candidate",
+        "description": "장 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (계획 4.8의 순서와 원자성).",
+        "operationId": "apply_candidate_api_projects__name__jobs__job_id__apply_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/jobs/active": {
       "get": {
         "summary": "Get Active Job",
@@ -3870,6 +4004,232 @@
           "action"
         ],
         "title": "CandidateAction"
+      },
+      "CandidateApplyPreview": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "condense"
+            ],
+            "title": "Kind"
+          },
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag"
+          },
+          "blocked_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Reasons"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notices"
+          },
+          "units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Units"
+          },
+          "edited_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited Units"
+          },
+          "keep_current": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keep Current"
+          },
+          "drop_edits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Drop Edits"
+          },
+          "unhide": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unhide"
+          },
+          "length_changed_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Length Changed Units"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Slide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merged": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Slide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "removed_edits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed Edits"
+          },
+          "unhidden": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unhidden"
+          },
+          "removed_spans": {
+            "type": "integer",
+            "title": "Removed Spans"
+          },
+          "removed_chart": {
+            "type": "boolean",
+            "title": "Removed Chart"
+          },
+          "already_applied": {
+            "type": "boolean",
+            "title": "Already Applied"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "chapter_id",
+          "kind",
+          "base_etag",
+          "blocked_reasons",
+          "notices",
+          "units",
+          "edited_units",
+          "keep_current",
+          "drop_edits",
+          "unhide",
+          "length_changed_units",
+          "current",
+          "merged",
+          "warnings",
+          "removed_edits",
+          "unhidden",
+          "removed_spans",
+          "removed_chart",
+          "already_applied"
+        ],
+        "title": "CandidateApplyPreview",
+        "description": "적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다."
+      },
+      "CandidateApplyRequest": {
+        "properties": {
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "keep_current": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Current"
+          },
+          "drop_edits": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Edits"
+          },
+          "unhide": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unhide"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CandidateApplyRequest",
+        "description": "장 후보 적용과 미리 보기의 본문 (D3c-5, 계획 4.8). 칸을 비우면(null) 서버가 기본 선택을 쓴다: 다시 생성은 \"직접 고친\n문구\" 단위만 지금 문구, 장 축약은 모두 새 문구, 요소 수정은 길이가 바뀐 목록의 순번 요소만 지운다. 응답은 실제로 쓴 선택을\n돌려준다(계획 4.8에 없던 확장, D3c-5 기록)."
       },
       "CapacityWarning": {
         "properties": {

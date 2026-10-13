@@ -1,4 +1,74 @@
 {
+ "apply": {
+  "apply_route_required": {
+   "body": {
+    "code": "apply_route_required",
+    "detail": "장 후보는 반영 경로로만 반영합니다. 화면을 새로 고친 뒤 다시 반영해 주세요."
+   },
+   "status": 409
+  },
+  "batch_active": {
+   "body": {
+    "code": "batch_active",
+    "detail": "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요."
+   },
+   "status": 409
+  },
+  "candidate_settled": {
+   "body": {
+    "code": "candidate_settled",
+    "detail": "이미 반영했거나 버린 후보입니다. 화면을 새로 고쳐 주세요."
+   },
+   "status": 409
+  },
+  "deck_conflict": {
+   "body": {
+    "detail": "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."
+   },
+   "status": 412
+  },
+  "deck_write_failed": {
+   "body": {
+    "code": "deck_write_failed",
+    "detail": "저장 공간이 부족합니다."
+   },
+   "status": 503
+  },
+  "ledger_write_failed": {
+   "body": {
+    "code": "ledger_write_failed",
+    "detail": "작업 기록을 읽거나 쓰지 못했습니다. 잠시 뒤 다시 시도해 주세요."
+   },
+   "status": 503
+  },
+  "not_applicable": {
+   "body": {
+    "code": "not_applicable",
+    "detail": "이전 버전에서 만든 결과라 반영 여부를 판정할 수 없습니다. 현재 입력으로 다시 생성해 주세요."
+   },
+   "status": 409
+  },
+  "precondition": {
+   "body": {
+    "detail": "반영의 기준 저장본을 확인해야 합니다. 화면을 새로 고친 뒤 다시 반영해 주세요."
+   },
+   "status": 428
+  },
+  "slots_changed": {
+   "body": {
+    "code": "slots_changed",
+    "detail": "축약을 요청한 뒤 이 장의 내용이 바뀌어 후보를 반영할 수 없습니다. 현재 내용으로 다시 축약해 주세요."
+   },
+   "status": 409
+  },
+  "sources_changed": {
+   "body": {
+    "code": "sources_changed",
+    "detail": "자료가 바뀌어 후보를 반영할 수 없습니다. 현재 입력으로 다시 생성해 주세요."
+   },
+   "status": 409
+  }
+ },
  "chapters": {
   "ai_output": {
    "candidate_status": "none",

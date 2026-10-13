@@ -129,6 +129,65 @@ def _collect(tmp_path_factory) -> dict:
     return {"jobs": jobs, "chapters": chapters, "http": http}
 
 
+def _apply_bodies(tmp_path_factory) -> dict:
+    """장 후보 적용 라우트의 실제 오류 본문 (D3c-5, 계획 4.7, 4.8). 화면의 생성 패널이 코드마다 다르게 처리한다:
+    412는 충돌 경로, 5xx는 "다시 읽기" 안내, 판정 409는 낡은 후보 표시, 그 밖은 원인별 안내다."""
+    from slidecaptain.storage.file_store import FileProjectStore, StorageError
+    from tests import test_candidate_apply_api as apply
+
+    def body(response):
+        return {"status": response.status_code, "body": response.json()}
+
+    bodies = {}
+    store = FileProjectStore(tmp_path_factory.mktemp("apply"))
+    batch._project(store)
+    current = batch.slots("지금")
+    provider = batch.ChapterProvider([batch.slots("하나"), batch.slots("둘"), batch.slots("셋"), batch.slots("넷")], gate_at=3)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        first = apply._job(client, "chapter-0001")
+        bodies["precondition"] = body(apply._apply(client, store, first["id"], if_match=False))
+        bodies["deck_conflict"] = body(client.post(f"/api/projects/p1/jobs/{first['id']}/apply", json={},
+                                                   headers={"If-Match": '"old"'}))
+        store.write_source("p1", "리서치.md", "바뀐 자료")
+        bodies["sources_changed"] = body(apply._apply(client, store, first["id"]))
+        store.write_source("p1", "리서치.md", batch.SOURCES["리서치.md"])
+        bodies["apply_route_required"] = body(client.post(f"/api/projects/p1/jobs/{first['id']}/candidate",
+                                                          json={"action": "applied"}))
+        save = store.save_deck
+
+        def fail(*args, **kwargs):
+            raise StorageError("저장 공간이 부족합니다.")
+        store.save_deck = fail
+        bodies["deck_write_failed"] = body(apply._apply(client, store, first["id"]))
+        store.save_deck = save
+        ledger = client.app.state.job_runner.ledger
+        real = ledger._conn
+        ledger._conn = apply._CommitFails(real)
+        bodies["ledger_write_failed"] = body(apply._apply(client, store, first["id"]))
+        ledger._conn = real
+        assert apply._apply(client, store, first["id"]).status_code == 200
+        bodies["candidate_settled"] = body(apply._apply(client, store, first["id"]))
+        apply._save_slide(store, {"chapter_id": "c2", "slots": current})
+        condense = apply._job(client, "condense-0001", chapter_id="c2", kind="condense", slots=current)
+        apply._save_slide(store, {"chapter_id": "c2", "slots": {**current, "footnote": "더한 각주"}})
+        bodies["slots_changed"] = body(apply._apply(client, store, condense["id"]))
+        third = apply._job(client, "chapter-0002", chapter_id="c3")
+        running = batch._register(client, store, ["c1"], request_id="batch-0001")  # 이미 내용이 있어 409
+        assert running.status_code == 409
+        apply._save_slide(store, {"chapter_id": "c1", "slots": current})
+        deck = store.load_deck("p1")
+        deck.slides = [s for s in deck.slides if s.chapter_id != "c1"]
+        store.save_deck("p1", deck, snapshot=False)
+        job = batch._register(client, store, ["c1"], request_id="batch-0002").json()
+        assert provider.entered.wait(10)
+        bodies["batch_active"] = body(apply._apply(client, store, third["id"]))
+        provider.release.set()
+        batch._wait(client, job["id"])
+        ledger._conn.execute("UPDATE jobs SET relevance_hash = NULL WHERE id = ?", (job["id"],))
+        bodies["not_applicable"] = body(apply._apply(client, store, job["id"], {"chapter_id": "c1"}))
+    return bodies
+
+
 def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory, manager):
     from slidecaptain.storage.file_store import FileProjectStore
 
@@ -151,6 +210,7 @@ def test_failure_bodies_match_the_fixture_the_screen_tests_use(tmp_path_factory,
     collected["http"]["selection_changed"] = {"status": changed.status_code, "body": changed.json()}
     collected["http"]["login_required"] = {"status": logout.status_code, "body": logout.json()}
     collected["http"]["provider_missing"] = {"status": no_cli.status_code, "body": no_cli.json()}
+    collected["apply"] = _apply_bodies(tmp_path_factory)
     text = json.dumps(collected, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
     if os.environ.get("SLIDECAPTAIN_UPDATE_FIXTURES") == "1":
         FIXTURE.write_text(text, encoding="utf-8")

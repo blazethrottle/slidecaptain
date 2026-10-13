@@ -2,9 +2,10 @@
 
 from typing import Annotated, Any, Literal, Union, get_args
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from slidecaptain.models.deck import Slots
+from slidecaptain.models.deck import Slide, Slots
+from slidecaptain.models.render import CapacityWarning
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest
 from slidecaptain.pipeline.story_repair import StoryRepairRequest
@@ -207,3 +208,42 @@ class CandidateAction(BaseModel):
     action: Literal["applied", "dismissed"]
     # 묶음의 장 후보를 처분할 때 그 장 (D2b-4 리뷰 R5). 장 후보는 버리기만 한다
     chapter_id: str | None = None
+
+
+class CandidateApplyRequest(BaseModel):
+    """장 후보 적용과 미리 보기의 본문 (D3c-5, 계획 4.8). 칸을 비우면(null) 서버가 기본 선택을 쓴다: 다시 생성은 "직접 고친
+    문구" 단위만 지금 문구, 장 축약은 모두 새 문구, 요소 수정은 길이가 바뀐 목록의 순번 요소만 지운다. 응답은 실제로 쓴 선택을
+    돌려준다(계획 4.8에 없던 확장, D3c-5 기록)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chapter_id: str | None = None  # 묶음 행이면 그 장. 단독 행은 비우거나 작업의 장과 같아야 한다
+    keep_current: list[str] | None = None  # 지금 문구로 둘 반영 단위
+    drop_edits: list[str] | None = None  # 지울 요소 수정의 열쇠
+    unhide: list[str] | None = None  # 숨김을 풀 요소의 열쇠
+
+
+class CandidateApplyPreview(BaseModel):
+    """적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다."""
+
+    job_id: str
+    chapter_id: str
+    kind: Literal["chapter", "condense"]
+    base_etag: str  # 판정에 쓴 덱 ETag. 적용 요청의 If-Match로 보낸다
+    blocked_reasons: list[str]  # 반영을 막는 이유(낡음 사유 목록의 값). 비면 반영할 수 있다
+    notices: list[str]  # 막지 않고 알리기만 하는 이유(deck_changed_elsewhere)
+    units: list[str]  # 이 템플릿의 반영 단위
+    # 마지막으로 반영된 AI 결과와 지금 문구가 다른 단위. null이면 기준이 없어 표시하지 않는다(계획 4.1)
+    edited_units: list[str] | None
+    keep_current: list[str]  # 이 미리 보기에 쓴 선택
+    drop_edits: list[str]
+    unhide: list[str]
+    length_changed_units: list[str]  # 새 내용의 항목 수가 다른 목록 단위
+    current: Slide | None  # 지금 슬라이드. 장에 내용이 없으면 null
+    merged: Slide | None  # 합친 슬라이드. 장이 없거나 템플릿이 바뀌어 합칠 수 없으면 null
+    warnings: list[CapacityWarning]  # 합친 슬라이드의 분량과 글자 크기 경고
+    removed_edits: list[str]  # 수정이 모두 사라지는 요소
+    unhidden: list[str]  # 숨김이 풀리는 요소
+    removed_spans: int  # 지워지는 부분 강조 수
+    removed_chart: bool  # 비교 차트가 지워지는가
+    already_applied: bool  # 지금 슬라이드가 합친 결과와 같다. 반영하면 덱을 다시 쓰지 않고 처분만 정리한다
