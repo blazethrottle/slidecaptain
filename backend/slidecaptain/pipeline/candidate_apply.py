@@ -62,14 +62,16 @@ def _list_length(dumped: dict, fields: tuple[str, ...]) -> tuple | None:
     return lengths or None
 
 
-def edited_units(current: Slots, baseline: Slots | None) -> list[str] | None:
-    """"직접 고친 문구" 표시: 마지막으로 반영된 AI 결과(baseline)와 지금 슬롯이 다른 단위. 기준이 없거나 템플릿이 다르면 None
-    (화면은 표시 없이 모두 "새 문구"로 두고 그 사실을 적는다, 계획 4.1)."""
-    if baseline is None or baseline.template != current.template:
+def edited_units(current: Slots, baselines: list[Slots]) -> list[str] | None:
+    """"직접 고친 문구" 표시: 그 장의 마지막 기준 무효화 뒤에 반영된 AI 결과(baselines) 어느 것과도 지금 슬롯이 다른 단위.
+    반영 뒤 되돌리기로 이전 AI 결과에 돌아간 단위와 반영 때 지금 문구로 남긴 이전 AI 문구는 고친 문구가 아니다(β 묶음 리뷰
+    S2, S3). 같은 템플릿의 기준이 없으면 None(화면은 표시 없이 모두 "새 문구"로 두고 그 사실을 적는다, 계획 4.1)."""
+    bases = [_dump(b) for b in baselines if b.template == current.template]
+    if not bases:
         return None
-    now, base = _dump(current), _dump(baseline)
+    now = _dump(current)
     return [unit for unit, fields in merge_fields(current.template).items()
-            if _unit_value(now, fields) != _unit_value(base, fields)]
+            if all(_unit_value(now, fields) != _unit_value(base, fields) for base in bases)]
 
 
 def merge_slots(current: Slots | None, candidate: Slots, keep_current: list[str]) -> Slots:

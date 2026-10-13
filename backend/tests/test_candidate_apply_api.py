@@ -568,3 +568,66 @@ def test_preview_carries_both_render_plans_for_the_comparison_screen(store):
     assert "지금 결론" in texts(preview["current_plan"]) and "새 결론" in texts(preview["merged_plan"])
     assert preview["page_width_pt"] > 0 and preview["style"]["korean_font"]
     assert blank["current_plan"] is None and blank["merged_plan"]["chapter_id"] == "c2"
+
+
+# -- β 묶음 리뷰 반영 ---------------------------------------------------------------------------------------
+
+
+def _distinct(tag):
+    """단위마다 다른 문구. slots()는 각주가 늘 빈 문자열이라 각주 단위의 판정을 보지 못한다."""
+    return {"template": "bullet_box", "bullets": [{"text": f"{tag} 불릿", "level": 0}], "conclusion": f"{tag} 결론",
+            "footnote": f"{tag} 각주"}
+
+
+def test_undoing_an_apply_does_not_turn_every_unit_into_edited_text(store):
+    """반영 뒤 되돌리기는 일반 편집이다(계획 4.7의 5). 덱은 이전 AI 결과로 돌아가고 반영 기록은 남는다. 이전 결과와 같은 단위는
+    직접 고친 문구가 아니므로 다음 다시 생성의 기본 선택은 새 문구다. 마지막 기록만 기준으로 보면 모든 단위가 지금 문구로
+    남고 새 결과는 하나도 들어가지 않은 채 처분된다 (β 묶음 리뷰 S2)."""
+    _project(store)
+    provider = ChapterProvider([_distinct("A"), _distinct("B"), _distinct("C")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        before_b = _slide(store).model_dump(mode="json")
+        b = _job(client, "chapter-0002")
+        assert _apply(client, store, b["id"]).status_code == 200
+        deck = store.load_deck("p1").model_dump(mode="json")
+        deck["slides"] = [before_b if s["chapter_id"] == "c1" else s for s in deck["slides"]]
+        undo = client.put("/api/projects/p1/deck?snapshot=false", json=deck, headers={"If-Match": _etag(store)})
+        c = _job(client, "chapter-0003")
+        preview = _preview(client, c["id"]).json()
+        response = _apply(client, store, c["id"])
+    assert undo.status_code == 200, undo.text
+    assert preview["edited_units"] == [] and preview["keep_current"] == [] and not preview["already_applied"]
+    assert response.status_code == 200 and _slide(store).slots.conclusion == "C 결론"
+
+
+def test_previous_ai_text_kept_at_apply_is_not_marked_as_edited(store):
+    """반영 때 지금 문구로 남긴 단위가 이전 AI 문구면 다음 비교에서 직접 고친 문구가 아니다 (β 묶음 리뷰 S3)."""
+    _project(store)
+    provider = ChapterProvider([_distinct("A"), _distinct("B"), _distinct("C")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        b = _job(client, "chapter-0002")
+        assert _apply(client, store, b["id"], {"keep_current": ["conclusion"]}).status_code == 200
+        c = _job(client, "chapter-0003")
+        preview = _preview(client, c["id"]).json()
+    assert _slide(store).slots.conclusion == "A 결론"
+    assert preview["edited_units"] == [] and preview["merged"]["slots"]["conclusion"] == "C 결론"
+
+
+def test_condense_defaults_to_new_text_even_for_edited_units(store):
+    """장 축약은 직접 고친 단위도 기본이 새 문구다. 다시 생성만 고친 단위를 지금 문구로 둔다 (계획 4.1, β 묶음 리뷰 S5)."""
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([_distinct("A"), _distinct("짧게")])),
+                    headers=HEADERS) as client:
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        edited = {**_distinct("A"), "conclusion": "직접 고친 결론"}
+        _save_slide(store, {"chapter_id": "c1", "slots": edited})
+        view = _job(client, "condense-0001", kind="condense", slots=edited)
+        preview = _preview(client, view["id"]).json()
+    assert preview["blocked_reasons"] == []
+    assert preview["edited_units"] == ["conclusion"] and preview["keep_current"] == []
+    assert preview["merged"]["slots"]["conclusion"] == "짧게 결론"

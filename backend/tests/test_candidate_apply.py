@@ -82,12 +82,16 @@ def test_unknown_unit_and_keeping_without_a_current_slide_are_rejected():
         merge_slots(None, candidate, ["cards"])
 
 
-def test_edited_units_compare_with_the_last_applied_result():
+def test_edited_units_compare_with_every_applied_result_since_the_last_reset():
     baseline = slots("bullet_box", bullets=[{"text": "가"}], conclusion="결론", footnote="")
     current = slots("bullet_box", bullets=[{"text": "가"}], conclusion="고친 결론", footnote="")
-    assert edited_units(current, baseline) == ["conclusion"]
-    assert edited_units(current, None) is None  # 기준 없음: 표시 없이 모두 새 문구
-    assert edited_units(current, slots("summary", conclusion="결론")) is None  # 템플릿이 다르면 기준이 아니다
+    assert edited_units(current, [baseline]) == ["conclusion"]
+    assert edited_units(current, []) is None  # 기준 없음: 표시 없이 모두 새 문구
+    assert edited_units(current, [slots("summary", conclusion="결론")]) is None  # 템플릿이 다르면 기준이 아니다
+    # 어느 반영 결과와 같은 단위는 고친 문구가 아니다: 되돌리기로 이전 결과에 돌아간 단위 (β 묶음 리뷰 S2, S3)
+    later = slots("bullet_box", bullets=[{"text": "나"}], conclusion="나중 결론", footnote="")
+    assert edited_units(current, [later, baseline]) == ["conclusion"]
+    assert edited_units(baseline, [baseline, later]) == []
 
 
 def test_list_units_whose_length_changed_drop_their_indexed_edits_by_default():

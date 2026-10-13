@@ -291,6 +291,30 @@ def test_restart_after_the_save_marks_the_chapter_applied(store):
         ledger.close()
 
 
+def test_restart_after_the_save_and_a_later_edit_still_records_the_apply(store):
+    """저장 뒤 다른 곳이 덱의 다른 부분을 바꿔 목표 저장본과 다르지만 그 장의 슬롯은 결과와 같다(mark_applied_changed).
+    이 반영도 반영 순서에 남아 다음 다시 생성의 기준이 된다 (D3c-5 리뷰 F2, β 묶음 리뷰 S4)."""
+    deck = _project(store)
+    extra = {"slots": slots("보존된 결과")}
+    target_deck = deck.model_copy(update={"slides": [Slide.model_validate({"chapter_id": "c1", "slots": extra["slots"]})]})
+    extra["target"] = store.etag_for(target_deck)
+    job_id, _ = _crashed_batch(store, deck, [("c1", "validating", extra)])
+    store.save_deck("p1", target_deck, snapshot=False)
+    later = target_deck.model_copy(deep=True)
+    later.meta.presenter = "다른 창에서 고친 발표자"
+    store.save_deck("p1", later, snapshot=False)
+    assert store.deck_etag("p1") != extra["target"]
+    provider, client = _restart(store)
+    with client:
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert provider.calls == 0 and _states(view) == [("c1", "succeeded", "applied")]
+    ledger = JobLedger.open(store.root)
+    try:
+        assert ledger.last_apply("p1", "c1") == ("applied", extra["slots"])
+    finally:
+        ledger.close()
+
+
 def test_restart_marks_a_sent_chapter_without_result_as_unknown(store):
     deck = _project(store)
     job_id, _ = _crashed_batch(store, deck, [("c1", "running", {"sent": True}), ("c2", "queued", {})])

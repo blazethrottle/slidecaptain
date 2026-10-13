@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { api, ApiError, notifyProject, type Deck, type ProjectProgress } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
+import { previewOf } from "../test/compare";
 import { batchView, chapterResult, chapterView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { StoryPlanRecoveryGuidance } from "./StoryPlanRecoveryGuidance";
@@ -15,7 +16,8 @@ vi.mock("../api/client", async (importOriginal) => {
     getDeck: vi.fn(), listSources: vi.fn(), readSource: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
     listSnapshots: vi.fn(), listExports: vi.fn(), listDrafts: vi.fn(), saveDraft: vi.fn(), getActiveJob: vi.fn(),
     listJobs: vi.fn(), getDocumentChangeBasis: vi.fn(), peekDeckEtag: vi.fn(), getStatus: vi.fn(), prepareAi: vi.fn(), startChapters: vi.fn(),
-    getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn(), uploadSource: vi.fn(), restoreSnapshot: vi.fn() } };
+    getJob: vi.fn(), getAISettings: vi.fn(), getProgress: vi.fn(), uploadSource: vi.fn(), restoreSnapshot: vi.fn(),
+    previewCandidate: vi.fn(), applyCandidate: vi.fn() } };
 });
 
 const STAGES = ["보고 목적", "자료", "구성", "편집", "검토와 내보내기"];
@@ -1025,5 +1027,34 @@ describe("다른 앱의 되돌림 안내 (D3c-1, 계획 4.2 E8)", () => {
     unmount();
     await openProject();
     expect(screen.queryByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeNull();
+  });
+});
+
+describe("β 묶음 리뷰 반영", () => {
+  it("구성 단계의 반영이 5xx면 배너는 반영 결과를 확인하지 못했다고 알리고 다른 창의 저장으로 적지 않는다 (리뷰 G8, β 묶음 리뷰 S6)", async () => {
+    const BODY = { template: "bullet_box" as const, bullets: [{ text: "지금", level: 0 as const }], conclusion: "결", footnote: "" };
+    const NEW = { ...BODY, bullets: [{ text: "새 불릿", level: 0 as const }] };
+    const deck: Deck = { ...deckWith(["하나"]), structure: { chapters: [
+      { id: "c1", topic: "주제", conclusion: "", template: "bullet_box", source_refs: [] },
+      { id: "c2", topic: "둘째 장", conclusion: "", template: "bullet_box", source_refs: [] }] } };
+    deck.slides = [...deck.slides, { chapter_id: "c2", eyebrow: "", subtitle: "", slots: BODY }];
+    const stale = batchView([chapterView("c2", "failed", { candidate_status: "stale", result: chapterResult(NEW),
+      error: { error_class: "base_changed", status: null, detail: null, code: "base_changed" } })],
+    { id: "job-b", state: "failed", outcome: "chain_broken" });
+    vi.mocked(api.getDeck).mockResolvedValue(deck);
+    vi.mocked(api.listJobs).mockResolvedValue([stale]);
+    vi.mocked(api.getJob).mockResolvedValue(stale);
+    vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(deck.slides[1], NEW));
+    vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(503, "덱을 저장하지 못했습니다."));
+    await openProject();
+    await userEvent.click(stageButton("구성"));
+    await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
+    const apply = within(await screen.findByRole("dialog")).getByRole("button", { name: "반영" });
+    await waitFor(() => expect(apply).toBeEnabled());
+    await userEvent.click(apply);
+    // 부모 배너는 다시 읽기 버튼을 가진 경고다. 구성 화면도 같은 문구를 따로 보이므로 버튼으로 배너를 고른다
+    const reload = await screen.findByRole("button", { name: "서버 내용 다시 읽기" });
+    expect(reload.closest("p[role='alert']")).toHaveTextContent("반영 결과를 확인하지 못했습니다. 서버 내용을 다시 읽어 주세요.");
+    expect(screen.queryByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).toBeNull();
   });
 });

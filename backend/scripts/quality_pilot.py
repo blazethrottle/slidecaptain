@@ -224,13 +224,14 @@ def _workflow(client, output, data, report):
 
     report["stage"] = "chapter"
     base = request("GET", "/deck")
-    generated = job("chapter", {"chapter_id": BODY, "instructions": data["chapter_instructions"]})["result"]
+    chapter = job("chapter", {"chapter_id": BODY, "instructions": data["chapter_instructions"]})
+    generated = chapter["result"]
     _write(output / "chapter-result.json", generated)
     _expect(generated["status"] == "ok", "장 생성 응답을 적용하지 못했습니다.")
-    deck = base.json()
-    slide = next(s for s in deck["slides"] if s["chapter_id"] == BODY)
-    slide["slots"] = generated["slots"]
-    request("PUT", "/deck", json=deck, headers={"If-Match": base.headers["etag"]})
+    # 제품과 같은 반영 경로(합치기, 반영 기록, 처분)로 넣는다. 덱 PUT으로 슬롯만 바꾸면 그 경로를 재지 않는다(β 묶음 리뷰 S10)
+    request("POST", f"/jobs/{chapter['id']}/apply", json={}, headers={"If-Match": base.headers["etag"]})
+    _expect(request("GET", f"/jobs/{chapter['id']}").json()["candidate_status"] == "applied",
+            "장 결과를 반영했지만 처분이 applied가 아닙니다.")
     before = request("GET", "/deck")
     _write(output / "before-rewrite.json", before.json())
     # The service intentionally preserves a valid draft when condensing fails.

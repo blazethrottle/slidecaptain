@@ -175,10 +175,11 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
     void run("condense", { slots: slide.slots, instructions });
   };
 
-  // 반영을 막는 낡음: 서버 판정에 더해, 축약은 요청한 슬롯과 지금 슬롯이 다르면 낡았다(화면 판정, 계획서 5.8)
+  // 반영을 막는 낡음: 서버 판정에 더해, 축약은 요청한 슬롯과 지금 슬롯이 다르면 낡았다(화면 판정, 계획서 5.8).
+  // 지금 슬롯이 이미 그 결과면 낡음이 아니다. 서버도 이미 반영된 결과를 먼저 보아 정리를 허용한다(계획 4.8, β 묶음 리뷰 S11)
   const reasons = job ? blockingReasons(job) : [];
   if (job?.kind === "condense" && slide
-      && !sameSlots((job.params as { slots?: Slots }).slots, slide.slots)) {
+      && !sameSlots((job.params as { slots?: Slots }).slots, slide.slots) && !sameSlots(result?.slots, slide.slots)) {
     reasons.push("slots_changed");
   }
   for (const r of refused) if (!reasons.includes(r)) reasons.push(r);

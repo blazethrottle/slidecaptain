@@ -2194,17 +2194,18 @@ def create_app(
         return {**ref, "row": row, "chapter_id": chapter_id, "relevance": relevance, "slots": slots,
                 "batch_active": _batch_running(name)}
 
-    def _last_applied(name: str, chapter_id: str) -> Slots | None:
-        """그 장에 마지막으로 반영된 AI 결과. "직접 고친 문구" 표시의 기준이다(계획 4.1). 반영 기록(원장의 chapter_applies)의
-        순서로 고른다. 작업 행의 등록 순서는 반영 순서가 아니다(D3c-5 리뷰 F2). 마지막 기록이 기준 무효화이거나, 기록이
-        없거나(이 기록이 생기기 전에 반영한 장), 지금 형식으로 읽지 못하면 기준이 없다: 표시 없이 모두 새 문구다."""
-        record = runner.require_ledger().last_apply(name, chapter_id)
-        if record is None or record[0] != "applied":
-            return None
-        try:
-            return _ANY_SLOTS.validate_python(record[1])
-        except (TypeError, ValueError):
-            return None
+    def _applied_baselines(name: str, chapter_id: str) -> list[Slots]:
+        """그 장의 마지막 기준 무효화 뒤에 반영된 AI 결과들. "직접 고친 문구" 표시의 기준이다(계획 4.1). 반영 기록(원장의
+        chapter_applies)으로 고른다. 작업 행의 등록 순서는 반영 순서가 아니다(D3c-5 리뷰 F2). 마지막 하나가 아니라 전부를
+        보는 것은 반영 뒤 되돌리기와 지금 문구로 남긴 이전 AI 문구를 고친 문구로 세지 않기 위해서다(β 묶음 리뷰 S2, S3).
+        기록이 없는 장(이 기록이 생기기 전에 반영한 장)은 기준이 없고, 지금 형식으로 읽지 못한 기록은 기준에서 뺀다."""
+        baselines = []
+        for raw in runner.require_ledger().applies_since_reset(name, chapter_id):
+            try:
+                baselines.append(_ANY_SLOTS.validate_python(raw))
+            except (TypeError, ValueError):
+                continue
+        return baselines
 
     def _apply_plan(name: str, job_id: str, req: CandidateApplyRequest) -> dict:
         """판정과 합치기. 프로젝트 잠금 안에서 부른다. 덱을 쓰지 않는다."""
@@ -2234,7 +2235,7 @@ def create_app(
         if "chapter_missing" in blocked or "template_changed" in blocked:
             return plan  # 합칠 자리가 없다. 비교 화면은 막힌 이유만 보인다
         if current is not None:
-            plan["edited"] = edited_units(current.slots, _last_applied(name, chapter_id))
+            plan["edited"] = edited_units(current.slots, _applied_baselines(name, chapter_id))
         # 기본 선택: 다시 생성은 직접 고친 단위만 지금 문구, 장 축약은 모두 새 문구다(계획 4.1)
         keep = req.keep_current if req.keep_current is not None else (
             (plan["edited"] or []) if ref["kind"] == "chapter" else [])

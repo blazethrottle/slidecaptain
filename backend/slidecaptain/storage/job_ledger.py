@@ -467,6 +467,15 @@ class JobLedger:
             return None
         return row["kind"], None if row["slots"] is None else json.loads(row["slots"])
 
+    def applies_since_reset(self, project: str, chapter_id: str) -> list[Any]:
+        """그 장의 마지막 기준 무효화 뒤에 반영된 결과의 슬롯들(반영 순서). 무효화 뒤 반영이 없으면 빈 목록."""
+        with self._lock, self._reading():
+            rows = self._conn.execute(
+                "SELECT slots FROM chapter_applies WHERE project = ? AND chapter_id = ? AND kind = 'applied' AND seq > "
+                "COALESCE((SELECT MAX(seq) FROM chapter_applies WHERE project = ? AND chapter_id = ? AND kind = 'reset'), 0) "
+                "ORDER BY seq", (_nfc(project), chapter_id, _nfc(project), chapter_id)).fetchall()
+        return [json.loads(row["slots"]) for row in rows if row["slots"] is not None]
+
     # 묶음 하위 행
 
     def chapters(self, job_id: str) -> list[ChapterRow]:

@@ -1766,11 +1766,12 @@ it("구성 화면의 반영이 412면 부모의 충돌 경로로 보낸다 (계�
   expect(screen.queryByRole("dialog")).toBeNull();
 });
 
-it("구성 화면의 반영 5xx는 충돌이 아니라 결과를 확인하지 못했다고 부모에 알린다 (리뷰 G8, V13)", async () => {
+// 500은 처리하지 못한 서버 예외다. 덱이 저장되었을 수 있으므로 503과 같이 다룬다 (β 묶음 리뷰 S7)
+it.each([500, 503])("구성 화면의 반영 %i는 충돌이 아니라 결과를 확인하지 못했다고 부모에 알린다 (리뷰 G8, V13)", async (status) => {
   const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
   vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
   vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2));
-  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(503, "덱을 저장하지 못했습니다."));
+  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(status, "덱을 저장하지 못했습니다."));
   const onConflict = vi.fn();
   const onApplyUnconfirmed = vi.fn();
   render(<Harness initial={initial} onConflict={onConflict} onApplyUnconfirmed={onApplyUnconfirmed} />);

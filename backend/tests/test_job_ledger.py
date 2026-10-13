@@ -675,7 +675,11 @@ def test_apply_candidate_takes_only_held_or_stale_and_records_keep_their_order(t
         ledger.record_apply("p1", "c1", "job-b", {"template": "summary", "conclusion": "B"})
         ledger.record_apply("p1", "c1", "job-a", {"template": "summary", "conclusion": "A"})
         assert ledger.last_apply("p1", "c1") == ("applied", {"template": "summary", "conclusion": "A"})
+        assert [s["conclusion"] for s in ledger.applies_since_reset("p1", "c1")] == ["B", "A"]
         ledger.record_reset("p1", ["c1"])
         assert ledger.last_apply("p1", "c1") == ("reset", None) and ledger.last_apply("p1", "c2") is None
+        assert ledger.applies_since_reset("p1", "c1") == [] and ledger.applies_since_reset("p1", "c2") == []
+        ledger.record_apply("p1", "c1", "job-c", {"template": "summary", "conclusion": "C"})
+        assert ledger.applies_since_reset("p1", "c1") == [{"template": "summary", "conclusion": "C"}]
     finally:
         ledger.close()

@@ -182,6 +182,17 @@ it.each([
   expect(screen.queryByRole("alert")).toBeNull();  // 안내는 편집기의 충돌 배너 하나다
 });
 
+it("처리하지 못한 서버 예외(500)도 반영 결과를 모르는 경우로 다시 읽게 한다 (계획 4.7의 6, β 묶음 리뷰 S7)", async () => {
+  answer(okResult);
+  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(500, "Internal Server Error"));
+  const onConflict = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await applyThroughCompare();
+  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(APPLY_UNCONFIRMED));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 // 서버 판정이 반영을 막은 코드와 그 표시 (D3c-5, 리뷰 F5와 F7). 실제 본문이 고정 파일에 없는 코드는 같은 모양으로 만든다
 const BLOCKED: [string, string][] = [
   ["sources_changed", "자료가 바뀌었습니다"], ["slots_changed", "이 장의 내용이 바뀌었습니다"],
@@ -290,6 +301,16 @@ it("축약 후보는 요청한 슬롯과 지금 슬롯이 다르면 반영하지
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   expect(await screen.findByText(/이 장의 내용이 바뀌었습니다/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
+});
+
+it("지금 슬롯이 이미 축약 결과면 낡은 후보로 안내하지 않고 정리할 수 있게 한다 (계획 4.8, β 묶음 리뷰 S11)", async () => {
+  // 덱 저장은 끝났고 처분 기록 전에 끊겨 후보가 held로 남은 경우: 덱은 결과와 같고 요청 슬롯과는 다르다
+  const applied = { ...deck, slides: [{ ...deck.slides[0], slots: okResult.slots! }] };
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("condense", { target: "c1",
+    params: { chapter_id: "c1", slots: deck.slides[0].slots }, result: okResult as unknown as Record<string, unknown> })]);
+  render(<GeneratePanel project={project} deck={applied} chapterId="c1" {...H} />);
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
+  expect(screen.queryByText(/이전 입력 기준 후보입니다/)).toBeNull();
 });
 
 it("다른 AI 생성이 진행 중이면 그 작업을 취소할 수 있다", async () => {

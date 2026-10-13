@@ -78,3 +78,32 @@ def test_explicit_migration_uses_old_evidence_hash_and_current_source(store):
     assert applied.status_code==200,applied.text
     assert store.load_deck("one").structure.story_plan.evidence[0].source_id=="moved.md"
     assert len(store.list_snapshots("one"))==1
+
+
+def _record_applies(client,deck):
+    """장마다 반영 기록 하나를 남긴다. 반영 뒤 바뀐 장은 기준 무효화가 마지막 기록이어야 한다 (D3c-5 리뷰 F3)."""
+    ledger=client.app.state.job_runner.ledger
+    for slide in deck.slides:ledger.record_apply("one",slide.chapter_id,"job-x",slide.slots.model_dump(mode="json"))
+    return ledger
+
+
+def _reset_chapters(ledger,before,after):
+    changed=[b.chapter_id for b,a in zip(before.slides,after.slides) if b.model_dump(mode="json")!=a.model_dump(mode="json")]
+    assert changed,"이 시험은 슬라이드를 바꾸는 반영이어야 한다"
+    return {cid:ledger.last_apply("one",cid) for cid in changed}
+
+
+def test_document_change_apply_resets_the_baseline_of_changed_chapters(store):
+    """β 묶음 리뷰 S4(B5): 문서 변경 반영이 바꾼 장의 "직접 고친 문구" 기준을 없앤다."""
+    client,deck,sources=setup(store)
+    with client:
+        ledger=_record_applies(client,deck)
+        current,headers=basis(client,store)
+        candidate=deck.model_dump(mode="json");candidate["slides"][0]["subtitle"]="명시적 교체"
+        body={"candidate":candidate,"expected_source_fingerprint":current["sources_fingerprint"]}
+        preview=client.post("/api/projects/one/document-changes/preview",json=body,headers=headers).json()
+        body.update(candidate=preview["candidate"],confirmation_token=preview["confirmation_token"],
+                    acknowledged_loss_ids=[item["id"] for item in preview["losses"]])
+        assert client.post("/api/projects/one/document-changes/apply",json=body,headers=headers).status_code==200
+        records=_reset_chapters(ledger,deck,store.load_deck("one"))
+    assert set(records.values())=={("reset",None)}
