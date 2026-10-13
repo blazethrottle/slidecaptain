@@ -1,8 +1,10 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AiConsentDeclined, api, ApiError, type ChapterResult, type Deck } from "../api/client";
+import { applyThroughCompare, compareDialog, previewOf } from "../test/compare";
 import { jobView } from "../test/jobs";
 import { emptyUsage, expectUsageCollapsed } from "../test/usage";
+import { STALE_BASE } from "./CandidateCompareDialog";
 import { APPLY_UNCONFIRMED, GeneratePanel } from "./GeneratePanel";
 import fixture from "../../../backend/tests/fixtures/failure-bodies.json";
 
@@ -32,7 +34,7 @@ function measuredUsage(): ChapterResult["usage"] {
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
   return { ...mod, api: { ...mod.api, prepareAi: vi.fn(), startJob: vi.fn(), getJob: vi.fn(), listJobs: vi.fn(),
-    settleCandidate: vi.fn(), cancelJob: vi.fn(), applyCandidate: vi.fn() } };
+    settleCandidate: vi.fn(), cancelJob: vi.fn(), applyCandidate: vi.fn(), previewCandidate: vi.fn() } };
 });
 
 // D2b-5b: 재생성과 축약은 작업 API로 등록하고 결과를 조회한다
@@ -40,6 +42,8 @@ beforeEach(() => {
   vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
   vi.mocked(api.listJobs).mockResolvedValue([]);
   vi.mocked(api.settleCandidate).mockResolvedValue(jobView("chapter"));
+  // 비교 화면의 미리 보기: 기본 선택은 모두 새 문구다 (D3c-6)
+  vi.mocked(api.previewCandidate).mockImplementation(async () => previewOf(deck.slides[0], okResult.slots!));
   // 반영 직전 재조회의 기본 응답: 입력이 바뀌지 않은 후보 (D2b-β 리뷰 R9)
   vi.mocked(api.getJob).mockImplementation(async (_name, id) => jobView("chapter", { id, target: "c1",
     result: okResult as unknown as Record<string, unknown> }));
@@ -86,36 +90,79 @@ it("반영은 남은 편집을 저장한 뒤 서버가 후보를 합치게 하�
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText(/8888/)).toBeInTheDocument();  // 수치 경고
   expect(screen.getByText(/축약했습니다/)).toBeInTheDocument();  // condensed 표시
-  expect(screen.getByText("반영한 뒤 되돌리면 덱은 돌아가지만 이 결과는 다시 반영할 수 없습니다.")).toBeInTheDocument();
-  await userEvent.click(screen.getByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(onApplied).toHaveBeenCalledWith(saved, deck));
-  expect(order).toEqual(["flush", "apply"]);
-  expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1");  // 선택은 서버의 기본값이다(비교 화면은 D3c-6)
+  // 비교 화면을 열기 전과 반영 직전에 저장한다 (계획 4.7의 1)
+  expect(order).toEqual(["flush", "flush", "apply"]);
+  expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1", { keep_current: [], drop_edits: [], unhide: [] });
   expect(api.settleCandidate).not.toHaveBeenCalled();  // 처분은 서버가 덱 저장과 함께 바꾼다
   expect(onApplyBusyChange.mock.calls).toEqual([[true], [false]]);
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
+  // 연 버튼이 사라졌으므로 초점은 패널의 다시 생성 버튼으로 간다(문서 맨 앞으로 빠지지 않는다)
+  await waitFor(() => expect(screen.getByRole("button", { name: "이 장 다시 생성" })).toHaveFocus());
+});
+
+it("비교 화면에서 고친 선택이 미리 보기와 반영 요청에 그대로 실린다 (D3c-6)", async () => {
+  answer(okResult);
+  vi.mocked(api.previewCandidate).mockImplementation(async (_n, _j, body) => previewOf(deck.slides[0], okResult.slots!,
+    { edited_units: ["conclusion"], keep_current: body?.keep_current ?? ["conclusion"] }));
+  vi.mocked(api.applyCandidate).mockResolvedValue(deck);
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByRole("button", { name: "비교하고 반영" }));
+  const dialog = await compareDialog();
+  // 기본은 직접 고친 결론을 지금 문구로 둔다. 바꾸면 바뀌는 곳의 수를 반영 버튼 옆에 보인다
+  const conclusion = within(dialog).getByRole("group", { name: /결론 상자/ });
+  expect(within(conclusion).getByRole("radio", { name: "지금 문구 유지" })).toBeChecked();
+  await userEvent.click(within(conclusion).getByRole("radio", { name: "새 문구 사용" }));
+  await waitFor(() => expect(api.previewCandidate).toHaveBeenLastCalledWith("p1", "job-1",
+    { keep_current: [], drop_edits: [], unhide: [] }));
+  expect(await within(dialog).findByText("직접 고친 문구 1곳이 새 문구로 바뀝니다.")).toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole("button", { name: "반영" }));
+  await waitFor(() => expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1",
+    { keep_current: [], drop_edits: [], unhide: [] }));
 });
 
 it("반영 직전 저장을 기다리는 동안 장을 옮기면 반영을 요청하지 않는다 (리뷰 F7)", async () => {
   answer(okResult);
+  let calls = 0;
   let finish: (ok: boolean) => void = () => {};
-  const onFlush = () => new Promise<boolean>((res) => { finish = res; });
+  const onFlush = () => (++calls === 1 ? Promise.resolve(true) : new Promise<boolean>((res) => { finish = res; }));
   const { rerender } = render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onFlush={onFlush} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" {...H} onFlush={onFlush} />);
   finish(true);
   await new Promise((r) => setTimeout(r, 20));
   expect(api.applyCandidate).not.toHaveBeenCalled();
 });
 
-it("반영 직전 저장이 실패하면 서버에 반영을 요청하지 않는다 (계획 4.7의 1)", async () => {
+it("비교 화면을 열기 전 저장이 실패하면 열지 않고 반영도 요청하지 않는다 (계획 4.7의 1)", async () => {
   answer(okResult);
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onFlush={async () => false} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
-  await waitFor(() => expect(screen.getByText("반영")).toBeEnabled());
+  await userEvent.click(await screen.findByRole("button", { name: "비교하고 반영" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "비교하고 반영" })).toBeEnabled());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(api.previewCandidate).not.toHaveBeenCalled();
   expect(api.applyCandidate).not.toHaveBeenCalled();
+});
+
+it("이 탭이 모르는 저장본으로 계산한 비교는 보이지 않고 충돌 경로로 보낸다 (계획 4.7의 1)", async () => {
+  answer(okResult);
+  const { resetEtags } = await import("../api/client");
+  resetEtags();
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(deck), { status: 200, headers: { ETag: '"mine"' } })));
+  await api.getDeck("p1");
+  vi.unstubAllGlobals();
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(deck.slides[0], okResult.slots!, { base_etag: "other" }));
+  const onConflict = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByRole("button", { name: "비교하고 반영" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(STALE_BASE));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  resetEtags();
 });
 
 it.each([
@@ -128,7 +175,7 @@ it.each([
   const onConflict = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(onConflict).toHaveBeenCalledWith(message));
   expect(screen.queryByRole("alert")).toBeNull();  // 안내는 편집기의 충돌 배너 하나다
 });
@@ -148,9 +195,9 @@ it.each(BLOCKED)("서버가 %s로 반영을 막으면 반영 대신 이전 입�
   const onConflict = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   expect(await screen.findByText(new RegExp(`이전 입력 기준 후보입니다\\(${label}\\)`))).toBeInTheDocument();
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
   expect(screen.getByText("현재 입력으로 다시 생성")).toBeInTheDocument();
   expect(api.getJob).toHaveBeenCalledWith("p1", "job-1");
   expect(onConflict).not.toHaveBeenCalled();
@@ -161,9 +208,9 @@ it("다른 탭이 먼저 처분한 후보는 결과를 닫고 그 사실을 알�
   vi.mocked(api.applyCandidate).mockRejectedValue(applyError("candidate_settled"));
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies.candidate_settled.body.detail);
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
 });
 
 it("묶음 실행 중이면 안내하고 반영 버튼은 남겨 묶음이 끝난 뒤 다시 누를 수 있다", async () => {
@@ -171,9 +218,9 @@ it("묶음 실행 중이면 안내하고 반영 버튼은 남겨 묶음이 끝�
   vi.mocked(api.applyCandidate).mockRejectedValue(applyError("batch_active"));
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   expect(await screen.findByRole("alert")).toHaveTextContent(applyBodies.batch_active.body.detail);
-  expect(screen.getByText("반영")).toBeEnabled();
+  expect(screen.getByRole("button", { name: "비교하고 반영" })).toBeEnabled();
 });
 
 it("다시 열면 처분하지 않은 지난 결과를 보이고 반영할 수 있다", async () => {
@@ -183,7 +230,7 @@ it("다시 열면 처분하지 않은 지난 결과를 보이고 반영할 수 �
   const onApplied = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onApplied={onApplied} />);
   expect(await screen.findByText("이전에 만든 결과가 있습니다.")).toBeInTheDocument();
-  await userEvent.click(screen.getByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(onApplied).toHaveBeenCalled());
   expect(api.startJob).not.toHaveBeenCalled();
 });
@@ -202,7 +249,7 @@ it("재생성 중 다른 장으로 옮겼다 돌아오면 끝난 결과가 보�
   vi.mocked(api.getJob).mockResolvedValue(jobView("chapter", { target: "c1",
     result: okResult as unknown as Record<string, unknown> }));
   rerender(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} pollIntervalMs={0} />);
-  expect(await screen.findByText("반영")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
   expect(api.startJob).toHaveBeenCalledTimes(1);  // 다시 생성하지 않았다
 });
 
@@ -212,10 +259,16 @@ it("관련 입력이 바뀐 후보는 반영 대신 이전 입력 기준 후보�
   answer(okResult, "chapter", { id: "job-2" });
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   expect(await screen.findByText(/이전 입력 기준 후보입니다\(이 장의 템플릿이 바뀌었습니다\)/)).toBeInTheDocument();
-  expect(screen.queryByText("반영")).toBeNull();
-  await userEvent.click(screen.getByText("후보 보기"));
-  expect(screen.getByText(/새 내용/)).toBeInTheDocument();
-  await userEvent.click(screen.getByText("현재 입력으로 다시 생성"));
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
+  // 막힌 후보도 비교는 보인다. 반영 버튼은 잠기고 다시 생성은 비교 화면을 닫은 뒤 부른다 (계획 4.8)
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(deck.slides[0], okResult.slots!,
+    { blocked_reasons: ["template_changed"] }));
+  await userEvent.click(screen.getByRole("button", { name: "비교 보기" }));
+  const dialog = await compareDialog();
+  expect(within(dialog).getByRole("group", { name: /본문 불릿/ })).toHaveTextContent("새 내용");
+  expect(within(dialog).getByRole("button", { name: "반영" })).toBeDisabled();
+  await userEvent.click(within(dialog).getByRole("button", { name: "현재 입력으로 다시 생성" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() => expect(api.startJob).toHaveBeenCalled());
   expect(vi.mocked(api.startJob).mock.calls[0][1].kind).toBe("chapter");
 });
@@ -225,7 +278,7 @@ it("덱의 다른 부분만 바뀐 후보는 안내만 하고 반영할 수 있�
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText("덱의 다른 부분이 바뀌었지만 이 장의 입력은 그대로입니다.")).toBeInTheDocument();
-  expect(screen.getByText("반영")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
 });
 
 it("축약 후보는 요청한 슬롯과 지금 슬롯이 다르면 반영하지 않는다", async () => {
@@ -234,7 +287,7 @@ it("축약 후보는 요청한 슬롯과 지금 슬롯이 다르면 반영하지
     result: okResult as unknown as Record<string, unknown> })]);
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   expect(await screen.findByText(/이 장의 내용이 바뀌었습니다/)).toBeInTheDocument();
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
 });
 
 it("다른 AI 생성이 진행 중이면 그 작업을 취소할 수 있다", async () => {
@@ -287,7 +340,7 @@ it("형식 오류는 원문과 재시도 경로를 보여주고 버리기 전까
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText(/형식에 맞게 읽지 못했습니다/)).toBeInTheDocument();
   expect(screen.getByText("이상한 원문")).toBeInTheDocument();
-  expect(screen.queryByText("반영")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
 });
 
 it("장을 전환하면 이전 장의 결과 패널이 사라진다", async () => {
@@ -295,9 +348,9 @@ it("장을 전환하면 이전 장의 결과 패널이 사라진다", async () =
   const { rerender } = render(
     <GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
-  expect(await screen.findByText("반영")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
   rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" {...H} />);
-  expect(screen.queryByText("반영")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
 });
 
 // AI 전송 고지 취소 (계획서 B3): 취소는 실패가 아니므로 role=alert가 아닌 안내 문구로 보인다
@@ -392,7 +445,7 @@ it("서버가 키 순서와 기본값을 바꿔 저장한 축약 요청도 지�
     slots: { footnote: "", conclusion: sent.conclusion, bullets: sent.bullets, template: "bullet_box" } } });
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   await userEvent.click(screen.getByText("이 장 축약"));
-  expect(await screen.findByText("반영")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
 });
 
 it("서버가 낡은 후보로 기록한 결과는 반영 대신 다시 생성을 보인다 (리뷰 R10)", async () => {
@@ -400,7 +453,7 @@ it("서버가 낡은 후보로 기록한 결과는 반영 대신 다시 생성�
     result: okResult as unknown as Record<string, unknown> })]);
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} />);
   expect(await screen.findByText(/만드는 동안 입력이 바뀌었던 후보입니다/)).toBeInTheDocument();
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
 });
 
 it("조회가 실패하면 확인하지 못했다고 알리고 계속 조회한다", async () => {
@@ -410,7 +463,7 @@ it("조회가 실패하면 확인하지 못했다고 알리고 계속 조회한�
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} pollIntervalMs={30} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   expect(await screen.findByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeInTheDocument();
-  expect(await screen.findByText("반영")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
   expect(screen.queryByText("작업 상태를 확인하지 못했습니다. 계속 확인합니다.")).toBeNull();
 });
 
@@ -440,11 +493,11 @@ it("반영 직전에 입력이 바뀐 후보는 서버가 막고 이전 입력 �
     result: okResult as unknown as Record<string, unknown> }));
   const onApplied = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onApplied={onApplied} />);
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   expect(await screen.findByText(/이전 입력 기준 후보입니다\(자료가 바뀌었습니다\)/)).toBeInTheDocument();
   expect(api.getJob).toHaveBeenCalledWith("p1", "job-e");
   expect(onApplied).not.toHaveBeenCalled();
-  expect(screen.queryByText("반영")).toBeNull();
+  expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
 });
 
 // D3a-4 리뷰 R25, R8과 묶음 리뷰 A8: 실패 안내는 같은 일을 하는 버튼을 하나 더 두지 않고 위쪽 버튼을 가리킨다

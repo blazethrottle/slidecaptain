@@ -13,6 +13,7 @@ import { Button } from "../ui/Button";
 import { Diagnostics } from "../ui/Diagnostics";
 import { describeAiOutput, describeFailure, type FailureDescription } from "../ui/failure";
 import { FailureNotice } from "../ui/FailureNotice";
+import { CandidateCompareDialog, STALE_BASE, type CompareSelection } from "./CandidateCompareDialog";
 
 // 취소는 실패가 아니다 (계획서 B3): StructureScreen의 취소 안내와 같은 문구다
 const AI_CONSENT_CANCELLED_NOTICE = "전송을 취소했습니다. 필요하면 다시 시도해 주세요.";
@@ -52,7 +53,12 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   const [cancelNotice, setCancelNotice] = useState("");  // AI 전송 취소 안내 (role=alert 아님)
   // 반영을 시도했을 때 서버가 막은 이유. 다시 조회한 작업에 없을 수 있어(축약 슬롯, 이전 버전 결과) 따로 둔다 (D3c-5 리뷰 F5)
   const [refused, setRefused] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);  // 비교 화면이 열려 있다 (D3c-6)
+  const compareButton = useRef<HTMLButtonElement>(null);
+  const regenerateButton = useRef<HTMLButtonElement>(null);
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
+  const chapterIndex = deck.structure.chapters.findIndex((ch) => ch.id === chapterId);
+  const chapterTitle = chapterIndex >= 0 ? `${chapterIndex + 1}장 ${deck.structure.chapters[chapterIndex].topic}` : "이 장";
   const deckRef = useRef(deck);
   deckRef.current = deck;
   const chapterIdRef = useRef(chapterId);
@@ -89,6 +95,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
     setStoryStale(false);
     setCancelNotice("");
     setRefused([]);
+    setComparing(false);
     setBusy(false);
     const controller = new AbortController();
     follow.current = controller;
@@ -185,7 +192,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   // 서버가 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (D3c-5, 계획 4.7, 4.8). 판정(입력이 바뀐
   // 후보, 축약 뒤 바뀐 슬롯)도 서버가 저장 직전에 한다. 비교 화면(D3c-6)이 생기기 전까지는 서버의 기본 선택으로 반영한다:
   // 다시 생성은 직접 고친 문구만 지금 문구로 두고, 축약은 모두 새 문구다. 위치와 서식 수정은 남는다
-  const applyResult = async () => {
+  const applyResult = async (selection: CompareSelection) => {
     if (!result || result.status !== "ok" || !result.slots || busy || !job) return;
     const requestedChapterId = chapterId;
     const candidate = job;
@@ -197,7 +204,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       if (!await onFlush()) return;  // 저장 실패나 충돌이면 진행하지 않는다. 편집기의 안내가 보인다
       if (chapterIdRef.current !== requestedChapterId) return;
       const base = deckRef.current;
-      const saved = await api.applyCandidate(project.name, candidate.id);
+      const saved = await api.applyCandidate(project.name, candidate.id, selection);
       onApplied(saved, base);
       if (chapterIdRef.current !== requestedChapterId) return;
       setResult(null);
@@ -226,6 +233,21 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
     } finally {
       onApplyBusyChange?.(false);
       if (chapterIdRef.current === requestedChapterId) setBusy(false);
+      setComparing(false);  // 결과(충돌 안내, 낡은 후보, 원인별 안내)는 이 패널과 편집기가 보인다
+    }
+  };
+
+  // 비교 화면을 열기 전에 남은 편집을 저장한다. 미리 보기는 서버 저장본으로 계산하므로 저장하지 않으면 "지금"이 화면과
+  // 다르다 (계획 4.7의 1). 저장이 실패하면 열지 않는다
+  const openCompare = async () => {
+    if (!result || result.status !== "ok" || busy || !job) return;
+    const requestedChapterId = chapterId;
+    setBusy(true);
+    try {
+      if (!await onFlush()) return;
+      if (chapterIdRef.current === requestedChapterId) setComparing(true);
+    } finally {
+      if (chapterIdRef.current === requestedChapterId) setBusy(false);
     }
   };
 
@@ -239,7 +261,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
         </label>
       </div>
       <div className="actions">
-        <button onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
+        <button ref={regenerateButton} onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
         <button onClick={condense} disabled={busy || !slide}>이 장 축약</button>
       </div>
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
@@ -258,7 +280,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       {result && result.status === "ok" && reasons.length > 0 && (
         <div className="generate-result">
           <p>이전 입력 기준 후보입니다({reasonText(reasons)}). 반영하지 않고 현재 입력으로 다시 생성해 주세요.</p>
-          <details><summary>후보 보기</summary><pre>{slotsText(result.slots)}</pre></details>
+          <button ref={compareButton} onClick={() => void openCompare()} disabled={busy}>비교 보기</button>
           {(job?.kind !== "condense" || slide) && (
             <button onClick={() => (job?.kind === "condense" ? condense() : void regenerate())}>현재 입력으로 다시 생성</button>
           )}
@@ -280,11 +302,18 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
               자료에서 찾지 못한 수치: {result.unverified_numbers.join(", ")}. 반영 전에 확인해 주세요.
             </p>
           )}
-          <button onClick={() => void applyResult()} disabled={busy}>반영</button>
+          {/* 반영은 비교 화면에서 단위마다 고른 뒤에 한다 (D3c-6, 계획 4.8) */}
+          <button ref={compareButton} onClick={() => void openCompare()} disabled={busy}>비교하고 반영</button>
           <Button variant="danger" onClick={dismiss}>버리기</Button>
-          {/* 계획 4.7의 5: 반영 뒤 되돌리기는 일반 편집이다. 처분은 applied로 남는다 */}
-          <p className="hint">반영한 뒤 되돌리면 덱은 돌아가지만 이 결과는 다시 반영할 수 없습니다.</p>
         </div>
+      )}
+      {comparing && job && result?.status === "ok" && result.slots && (
+        <CandidateCompareDialog projectName={project.name} jobId={job.id} title={chapterTitle}
+          candidateSlots={result.slots} returnFocus={compareButton} fallbackFocus={regenerateButton}
+          onApply={(selection) => applyResult(selection)}
+          onRegenerate={job.kind === "condense" ? (slide ? condense : undefined) : () => void regenerate()}
+          onStaleBase={() => { setComparing(false); onConflict(STALE_BASE); }}
+          onClose={() => setComparing(false)} />
       )}
       {/* F5 리뷰 반영: usage는 상태와 무관하게 항상 채워지는 필수 필드다(C2/C3 가정 6). 형식 오류면 실패 안내의
           진단 상세에, 그 밖에는 따로 접힌 진단 상세에 둔다 (D3a-4, R12) */}

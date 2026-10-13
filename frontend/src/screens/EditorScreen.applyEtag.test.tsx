@@ -4,6 +4,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, resetEtags, type ChapterResult, type Deck, type RenderPlan } from "../api/client";
+import { applyThroughCompare, previewOf } from "../test/compare";
 import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { EditorScreen } from "./EditorScreen";
@@ -46,6 +47,10 @@ it("적용은 마지막 저장 ETag로 보내고, 응답 ETag로 다음 저장�
   let resolveApply: (r: Response) => void = () => {};
   vi.stubGlobal("fetch", vi.fn(async (path: string, init: RequestInit) => {
     const headers = new Headers(init?.headers);
+    if (path.includes("/apply/preview")) {  // 비교 화면의 미리 보기: 이 탭이 마지막으로 저장한 저장본 기준
+      return new Response(JSON.stringify(previewOf(deck.slides[0], result.slots!, { base_etag: `E${puts.length}` })),
+        { status: 200 });
+    }
     if (path.includes("/apply")) {
       applies.push(headers.get("If-Match"));
       return new Promise<Response>((res) => { resolveApply = res; });
@@ -75,7 +80,7 @@ it("적용은 마지막 저장 ETag로 보내고, 응답 ETag로 다음 저장�
   };
   await edit("옛불릿", "고친불릿");
   await waitFor(() => expect(puts).toEqual([{ ifMatch: '"E0"', bullet: "고친불릿" }]));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(applies).toEqual(['"E1"']));  // 반영 직전 저장의 ETag
   fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });  // 실제 브라우저에서는 inert가 초점을 body로 옮긴다
   resolveApply(new Response(JSON.stringify(applied), { status: 200, headers: { ETag: '"EAPPLY"' } }));

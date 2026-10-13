@@ -4142,6 +4142,37 @@
           "already_applied": {
             "type": "boolean",
             "title": "Already Applied"
+          },
+          "page_width_pt": {
+            "type": "number",
+            "title": "Page Width Pt"
+          },
+          "page_height_pt": {
+            "type": "number",
+            "title": "Page Height Pt"
+          },
+          "style": {
+            "$ref": "#/components/schemas/RenderStyle"
+          },
+          "current_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlidePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merged_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlidePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -4165,7 +4196,12 @@
           "unhidden",
           "removed_spans",
           "removed_chart",
-          "already_applied"
+          "already_applied",
+          "page_width_pt",
+          "page_height_pt",
+          "style",
+          "current_plan",
+          "merged_plan"
         ],
         "title": "CandidateApplyPreview",
         "description": "적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다."

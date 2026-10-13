@@ -534,3 +534,21 @@ html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
 .review-parts { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
 .review-part-name { display: inline-block; min-width: var(--width-part-label); }
 .swatch-legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+/* 장 후보 비교 화면 (D3c-6, 계획 4.8). 넓은 창에서는 지금과 반영 뒤의 미리보기를 나란히, 좁은 창에서는 위아래로 둔다. 반영 버튼은
+   대화 상자 아래에 붙여 내용이 길어도 첫 화면 안에 남는다 */
+.compare-overlay { position: fixed; inset: 0; background: var(--color-overlay); display: flex; align-items: center;
+  justify-content: center; z-index: 120; }
+.compare-dialog { background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-4) 0;
+  box-sizing: border-box; width: 100%; max-width: var(--width-dialog-wide); max-height: 100dvh; overflow-y: auto;
+  box-shadow: var(--shadow-dialog); overflow-wrap: anywhere; }
+.compare-dialog h2 { margin-top: 0; }
+.compare-previews { display: grid; gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--width-editor-right)), 1fr)); }
+.compare-previews figure { margin: 0; min-width: 0; }
+.compare-unit, .compare-edit { border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-2); min-width: 0; }
+.compare-texts { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--width-editor-right)), 1fr)); }
+.compare-texts pre { white-space: pre-wrap; margin: var(--space-1) 0; font: inherit; }
+.compare-badge { color: var(--color-warning); font-weight: normal; }
+.compare-actions { position: sticky; bottom: 0; background: var(--color-panel); border-top: 1px solid var(--color-border);
+  padding-block: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.compare-actions p { margin: 0; flex-basis: 100%; }

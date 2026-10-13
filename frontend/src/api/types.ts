@@ -1162,6 +1162,13 @@ export interface components {
             removed_chart: boolean;
             /** Already Applied */
             already_applied: boolean;
+            /** Page Width Pt */
+            page_width_pt: number;
+            /** Page Height Pt */
+            page_height_pt: number;
+            style: components["schemas"]["RenderStyle"];
+            current_plan: components["schemas"]["SlidePlan"] | null;
+            merged_plan: components["schemas"]["SlidePlan"] | null;
         };
         /**
          * CandidateApplyRequest

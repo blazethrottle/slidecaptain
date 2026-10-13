@@ -2363,11 +2363,17 @@ def create_app(
         with store.locked(name):
             plan = _apply_plan(name, job_id, req)
         ref, current, merged = plan["ref"], plan["current"], plan["merged"]
-        warnings = []
+        sources = _load_sources(name, allow_empty=True)
+
+        def chapter_plan(deck: Deck):
+            rendered = build_render_plan(deck, _preset_for(deck), metrics, sources=sources)
+            return rendered, next((sp for sp in rendered.slides if sp.chapter_id == ref["chapter_id"]), None)
+
+        base_render, current_plan = chapter_plan(plan["deck"])
+        merged_plan, warnings = None, []
         if plan["new_deck"] is not None:
-            rendered = build_render_plan(plan["new_deck"], _preset_for(plan["new_deck"]), metrics,
-                                         sources=_load_sources(name, allow_empty=True))
-            warnings = next((sp.warnings for sp in rendered.slides if sp.chapter_id == ref["chapter_id"]), [])
+            base_render, merged_plan = chapter_plan(plan["new_deck"])
+            warnings = merged_plan.warnings if merged_plan is not None else []
         result = plan["result"]
         return CandidateApplyPreview(
             job_id=job_id, chapter_id=ref["chapter_id"], kind=ref["kind"], base_etag=plan["etag"],
@@ -2377,7 +2383,9 @@ def create_app(
             current=current, merged=merged, warnings=warnings,
             removed_edits=result.removed_edits if result else [], unhidden=result.unhidden if result else [],
             removed_spans=result.removed_spans if result else 0, removed_chart=result.removed_chart if result else False,
-            already_applied=plan["already"])
+            already_applied=plan["already"], page_width_pt=base_render.page_width_pt,
+            page_height_pt=base_render.page_height_pt, style=base_render.style,
+            current_plan=current_plan if current is not None else None, merged_plan=merged_plan)
 
     @app.post("/api/projects/{name}/jobs/{job_id}/apply", response_model=Deck)
     def apply_candidate(name: str, job_id: str, req: CandidateApplyRequest, response: Response,

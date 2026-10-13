@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Union, get_args
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from slidecaptain.models.deck import Slide, Slots
-from slidecaptain.models.render import CapacityWarning
+from slidecaptain.models.render import CapacityWarning, RenderStyle, SlidePlan
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.diagram_generation import GenerateDiagramRequest
 from slidecaptain.pipeline.story_repair import StoryRepairRequest
@@ -247,3 +247,9 @@ class CandidateApplyPreview(BaseModel):
     removed_spans: int  # 지워지는 부분 강조 수
     removed_chart: bool  # 비교 차트가 지워지는가
     already_applied: bool  # 지금 슬라이드가 합친 결과와 같다. 반영하면 덱을 다시 쓰지 않고 처분만 정리한다
+    # 비교 화면의 좌우 미리보기 (D3c-6). 서버가 경고를 내려고 렌더한 계획을 함께 돌려준다. 보이는 것과 저장될 것이 같다
+    page_width_pt: float
+    page_height_pt: float
+    style: RenderStyle
+    current_plan: SlidePlan | None  # 지금 덱의 이 장. 내용이 없으면 null
+    merged_plan: SlidePlan | None  # 합친 덱의 이 장. 합칠 수 없으면 null

@@ -506,3 +506,20 @@ def test_batch_apply_to_an_empty_chapter_becomes_the_baseline(store):
         preview = _preview(client, again["id"]).json()
     assert _slide(store).slots.conclusion == "묶음"
     assert preview["edited_units"] == [] and preview["merged"]["slots"]["conclusion"] == "다시"
+
+
+def test_preview_carries_both_render_plans_for_the_comparison_screen(store):
+    """비교 화면의 좌우 미리보기는 서버가 저장할 것과 같은 계획으로 그린다 (D3c-6)."""
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("새 결론")])), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("지금 결론")})
+        view = _job(client, "chapter-0001")
+        preview = _preview(client, view["id"], {"keep_current": ["bullets"]}).json()
+        empty = _job(client, "chapter-0002", chapter_id="c2")
+        blank = _preview(client, empty["id"]).json()
+
+    def texts(plan):
+        return " ".join(p["text"] for f in plan["frames"] for p in f["paras"])
+    assert "지금 결론" in texts(preview["current_plan"]) and "새 결론" in texts(preview["merged_plan"])
+    assert preview["page_width_pt"] > 0 and preview["style"]["korean_font"]
+    assert blank["current_plan"] is None and blank["merged_plan"]["chapter_id"] == "c2"

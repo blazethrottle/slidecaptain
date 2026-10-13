@@ -4,6 +4,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type ChapterResult, type Deck, type RenderPlan } from "../api/client";
 import { deferred } from "../test/fixtures";
+import { applyThroughCompare, previewOf } from "../test/compare";
 import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { EditorScreen } from "./EditorScreen";
@@ -13,7 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
   return {
     ...mod,
     api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(), listDrafts: vi.fn(), listJobs: vi.fn(),
-      applyCandidate: vi.fn() },
+      applyCandidate: vi.fn(), previewCandidate: vi.fn() },
   };
 });
 
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.mocked(api.getPreset).mockReturnValue(new Promise(() => {}));  // 디자인 패널의 프리셋은 이 시험과 무관하다
   vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { target: "c1",
     result: result as unknown as Record<string, unknown> })]);
+  vi.mocked(api.previewCandidate).mockImplementation(async () => previewOf(deck.slides[0], result.slots!));
 });
 
 it("적용 중에는 편집 화면을 잠그고, 응답 덱을 저장본으로 받아 다시 저장하지 않는다", async () => {
@@ -56,7 +58,7 @@ it("적용 중에는 편집 화면을 잠그고, 응답 덱을 저장본으로 �
   vi.mocked(api.applyCandidate).mockReturnValue(pending.promise);
   const onDeckChange = vi.fn();
   render(<EditorScreen project={project} deck={deck} onDeckChange={onDeckChange} timings={{ measureMs: 0, saveMs: 0 }} />);
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(document.querySelector(".editor-screen")).toHaveAttribute("inert"));
   pending.resolve(saved);
   await waitFor(() => expect(document.querySelector(".editor-screen")).not.toHaveAttribute("inert"));
@@ -71,7 +73,7 @@ it("적용 결과를 확인하지 못하면 충돌 안내로 자동 저장을 �
   const { ApiError } = await import("../api/client");
   vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(503, "작업 기록을 읽거나 쓰지 못했습니다.", "ledger_write_failed"));
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   expect(await screen.findByText(/반영 결과를 확인하지 못했습니다\. 서버 내용을 다시 읽어 주세요\./)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
 });
@@ -83,7 +85,7 @@ it("요청 중 충돌이 생기면 응답 덱을 받지 않아 충돌 안내와 
   const view = (signal: number) => <EditorScreen project={project} deck={deck} onDeckChange={onDeckChange}
     conflictSignal={signal} timings={{ measureMs: 0, saveMs: 0 }} />;
   const { rerender } = render(view(0));
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(api.applyCandidate).toHaveBeenCalled());
   rerender(view(1));  // 그사이 다른 탭의 묶음이 끝나 저장본이 바뀌었다
   const notice = await screen.findByText(/서버 내용으로 되돌리기|다른 곳에서/, { selector: "[role=alert]" });
@@ -101,7 +103,7 @@ it("적용 중에는 단계 이동 전 저장이 거절되고 부모에 떠날 �
   const onBusyChange = vi.fn();
   render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
     onEditorReady={(f) => { flush = f; }} onBusyChange={onBusyChange} />);
-  await userEvent.click(await screen.findByText("반영"));
+  await applyThroughCompare();
   await waitFor(() => expect(document.querySelector(".editor-screen")).toHaveAttribute("inert"));
   expect(onBusyChange).toHaveBeenLastCalledWith(true);
   expect(await flush!()).toBe(false);
