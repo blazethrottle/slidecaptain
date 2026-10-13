@@ -63,3 +63,53 @@ def test_summary_route_reads_the_draft_without_restoring_it(store):
     assert response.status_code == 200 and [c["label"] for c in response.json()["changed_chapters"]] == ["1장 주제 1"]
     assert missing.status_code == 404
     assert (store.root / "p1" / "deck.json").read_bytes() == before
+
+
+def test_design_values_and_document_review_are_reported_and_only_a_whole_match_is_clean(store):
+    """복원은 덱 전체를 쓰므로 디자인 값과 검토 기록만 다른 보존본도 "다른 점이 없다"가 아니다 (D3c-6 리뷰 G4)."""
+    current = _deck(store)
+    data = current.model_dump(mode="json")
+    data["meta"]["preset_overrides"] = {"font_scale": 1.1}
+    design = summarize_draft(current, data, "editor")
+    assert design.design_changed and not design.report_info_changed and not design.review_changed
+    data = current.model_dump(mode="json")
+    data["document_review"] = {"reason": "document_replacement", "base_fingerprint": "a" * 64,
+                               "changed_paths": ["slides/0"]}
+    review = summarize_draft(current, data, "editor")
+    assert review.review_changed and not review.design_changed
+    same = summarize_draft(current, current.model_dump(mode="json"), "editor")
+    assert not same.design_changed and not same.review_changed and same.current_readable
+
+
+def test_chapter_order_ignores_added_chapters_and_a_changed_topic_is_a_changed_chapter(store):
+    current = _deck(store)
+    data = current.model_dump(mode="json")
+    data["structure"]["chapters"].append({**data["structure"]["chapters"][2], "id": "c9", "topic": "더한 장"})
+    added = summarize_draft(current, data, "editor")
+    assert [c.label for c in added.added_chapters] == ["4장 더한 장"] and not added.order_changed  # 리뷰 V22
+    data = current.model_dump(mode="json")
+    del data["structure"]["chapters"][1]  # 가운데 장만 빠진 보존본도 순서 차이가 아니다(리뷰 V22)
+    data["slides"] = [sl for sl in data["slides"] if sl["chapter_id"] != "c2"]
+    assert summarize_draft(current, data, "editor").readable
+    removed = summarize_draft(current, data, "editor")
+    assert [c.label for c in removed.removed_chapters] == ["2장 주제 2"] and not removed.order_changed
+    data = current.model_dump(mode="json")
+    data["structure"]["chapters"][2]["topic"] = "바꾼 주제"  # 슬라이드가 없는 장: 장 정의만 다르다
+    topic = summarize_draft(current, data, "editor")
+    assert [c.label for c in topic.changed_chapters] == ["3장 바꾼 주제"]  # 리뷰 V23
+
+
+def test_unreadable_saved_deck_summarizes_a_whole_restore_even_for_purpose_drafts(store):
+    """저장본을 읽지 못하면 복원은 보존본 전체를 쓴다. 요약도 그렇게 말한다 (D3c-6 리뷰 G10)."""
+    current = _deck(store)
+    data = current.model_dump(mode="json")
+    purpose = summarize_draft(None, data, "purpose")
+    assert purpose.readable and not purpose.purpose_only and not purpose.current_readable
+    assert [c.label for c in purpose.added_chapters] == ["1장 주제 1", "2장 주제 2", "3장 주제 3"]
+    store.save_deck("p1", current, snapshot=False)
+    info = store.save_draft("p1", deck=data, reason="conflict", source="purpose", base_etag=None)
+    (store.root / "p1" / "deck.json").write_text("{", encoding="utf-8")  # 저장본을 읽지 못한다(리뷰 V24)
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        response = client.get(f"/api/projects/p1/drafts/{info.id}/summary")
+    assert response.status_code == 200, response.text
+    assert response.json()["current_readable"] is False and response.json()["purpose_only"] is False

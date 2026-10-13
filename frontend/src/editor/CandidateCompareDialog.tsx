@@ -1,7 +1,9 @@
 // 장 후보 비교 화면 (D3c-6, 계획 4.7, 4.8). AI가 만든 새 내용은 이 화면에서 반영 단위마다 "지금 문구 유지"와 "새 문구 사용"을
 // 고른 뒤에 반영한다. 기본 선택은 서버의 미리 보기가 정한다(다시 생성은 직접 고친 문구만 지금 문구, 축약은 모두 새 문구). 그 뒤의
-// 미리 보기와 반영은 이 화면의 선택을 그대로 보낸다. 서버가 반영 시점에 기본값을 다시 계산하면 사용자가 본 것과 다른 결과가
-// 저장될 수 있기 때문이다. 문서 맨 위층(포털)에 그리고 열려 있는 동안 앱 화면을 비활성으로 둔다(크게 보기와 같은 방식)
+// 미리 보기는 고른 문구 단위와 사용자가 건드린 요소 수정만 보낸다. 건드리지 않은 요소 수정은 서버가 지금 선택으로 기본값을 다시
+// 계산한다(목록 길이가 바뀌면 순번 요소 수정을 지운다, 리뷰 G2). 반영은 마지막 미리 보기가 돌려준 실제 선택과 그 기준 저장본을
+// 보낸다. 사용자가 본 결과와 다른 것이 저장되지 않게 하기 위해서다(리뷰 G1). 문서 맨 위층(포털)에 그리고 열려 있는 동안 앱
+// 화면을 비활성으로 둔다(크게 보기와 같은 방식)
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError, savedEtag, type CandidateApplyPreview, type Slots } from "../api/client";
@@ -12,6 +14,7 @@ import { unitName, unitText } from "./mergeUnits";
 import { Preview } from "./Preview";
 
 export type CompareSelection = { keep_current: string[]; drop_edits: string[]; unhide: string[] };
+type EditChoice = "keep" | "drop" | "unhide";
 
 const BATCH_ACTIVE = "장 생성 묶음이 진행 중이라 지금은 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요.";
 export const STALE_BASE = "이 화면이 연 뒤 다른 곳에서 먼저 저장했습니다. 서버 내용을 다시 읽은 뒤 비교해 주세요.";
@@ -19,22 +22,43 @@ const FOCUSABLE = 'button:not(:disabled), input:not(:disabled), select:not(:disa
 
 const strip = (etag: string | undefined) => etag?.replace(/^W\//, "").replace(/"/g, "");
 
+// Tab이 멈추는 곳. 라디오 묶음은 브라우저에서 한 곳(고른 라디오, 없으면 첫 라디오)이므로 하나로 센다(리뷰 G3)
+function tabStops(box: HTMLElement | null): HTMLElement[] {
+  const all = Array.from(box?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter((el) => !el.closest("[inert]"));
+  const groups = new Set<string>();
+  return all.filter((el) => {
+    if (!(el instanceof HTMLInputElement) || el.type !== "radio" || !el.name) return true;
+    if (groups.has(el.name)) return false;
+    groups.add(el.name);
+    return true;
+  }).map((el) => (el instanceof HTMLInputElement && el.type === "radio" && el.name ? groupStop(all, el.name) : el));
+}
+
+function groupStop(all: HTMLElement[], name: string): HTMLElement {
+  const radios = all.filter((el): el is HTMLInputElement => el instanceof HTMLInputElement && el.type === "radio" && el.name === name);
+  return radios.find((r) => r.checked) ?? radios[0];
+}
+
 export function CandidateCompareDialog({ projectName, jobId, chapterId, title, candidateSlots, onApply, onRegenerate,
-  onStaleBase, onClose, returnFocus, fallbackFocus }: {
+  regenerateHint, onStaleBase, onClose, returnFocus, fallbackFocus }: {
   projectName: string;
   jobId: string;
   chapterId?: string;  // 묶음 행이면 그 장. 단독 행은 비운다
   title: string;  // 장 이름 (예: "2장 시장 현황")
   candidateSlots: Slots;  // 새 문구. 미리 보기 응답에는 지금과 합친 결과만 있다
-  onApply: (selection: CompareSelection) => Promise<void>;  // 반영과 그 결과 처리는 부르는 화면이 한다(4.7)
+  // 반영과 그 결과 처리는 부르는 화면이 한다(4.7). baseEtag는 미리 보기의 기준 저장본이다. If-Match로 보내야 미리 보기 뒤에
+  // 바뀐 저장본에 반영되지 않는다(리뷰 G1)
+  onApply: (selection: CompareSelection, baseEtag: string) => Promise<void>;
   onRegenerate?: () => void;  // 막힌 판정의 "현재 입력으로 다시 생성". 이 화면을 닫은 뒤 부른다(동의 창이 앱 화면 안에 뜬다)
+  regenerateHint?: string;  // 다시 생성을 이 화면에서 열 수 없을 때 갈 길(리뷰 G9)
   onStaleBase: () => void;  // 이 탭이 모르는 저장본이 서버에 있다. 부르는 화면의 충돌 경로로 보낸다
   onClose: () => void;
   returnFocus?: RefObject<HTMLElement | null>;
   fallbackFocus?: RefObject<HTMLElement | null>;  // 연 버튼이 사라졌을 때(반영 성공) 초점을 받을 곳
 }) {
   const [preview, setPreview] = useState<CandidateApplyPreview | null>(null);
-  const [selection, setSelection] = useState<CompareSelection | null>(null);
+  const [keep, setKeep] = useState<string[] | null>(null);  // 고른 문구 단위. 첫 응답 전에는 서버 기본값
+  const [choices, setChoices] = useState<Record<string, EditChoice>>({});  // 사용자가 건드린 요소 수정만
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
@@ -45,19 +69,20 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const load = async (chosen: CompareSelection | null) => {
+  const load = async (units: string[] | null, edits: Record<string, EditChoice>) => {
     const mine = ++seq.current;
     setLoading(true);
     setError("");
     try {
-      const body = { ...(chapterId ? { chapter_id: chapterId } : {}), ...(chosen ?? {}) };
+      const body = { ...(chapterId ? { chapter_id: chapterId } : {}), ...(units ? { keep_current: units } : {}),
+        ...(Object.keys(edits).length > 0 ? { edit_choices: edits } : {}) };
       const next = await api.previewCandidate(projectName, jobId, body);
       if (mine !== seq.current) return;
       // 미리 보기는 서버 저장본으로 계산한다. 이 탭이 모르는 저장본이면 "지금"이 화면과 다르다 (계획 4.7의 1)
       const known = strip(savedEtag(projectName));
       if (known && known !== next.base_etag) { onStaleBase(); return; }
       setPreview(next);
-      setSelection({ keep_current: next.keep_current, drop_edits: next.drop_edits, unhide: next.unhide });
+      setKeep(next.keep_current);
     } catch (e) {
       if (mine === seq.current) setError(e instanceof ApiError ? e.message : "비교 내용을 불러오지 못했습니다. 다시 열어 주세요.");
     } finally {
@@ -65,7 +90,10 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
     }
   };
 
-  useEffect(() => { void load(null); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void load(null, {});
+    return () => { seq.current++; };  // 닫은 뒤 도착한 응답은 버린다. 닫은 화면에서 충돌 안내를 띄우지 않는다(리뷰 G18)
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const opener = returnFocus?.current ?? (document.activeElement as HTMLElement | null);
@@ -82,10 +110,13 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
         return;
       }
       if (e.key !== "Tab") return;
-      const stops = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
-        .filter((el) => !el.closest("[inert]"));
+      const stops = tabStops(dialogRef.current);
       if (stops.length === 0) return;
-      const at = stops.indexOf(document.activeElement as HTMLElement);
+      const active = document.activeElement as HTMLElement | null;
+      // 고르지 않은 라디오에 초점이 있어도 그 묶음의 정지점으로 본다
+      const at = active instanceof HTMLInputElement && active.type === "radio" && active.name
+        ? stops.findIndex((el) => el instanceof HTMLInputElement && el.name === active.name)
+        : stops.indexOf(active as HTMLElement);
       if (e.shiftKey && (at <= 0)) { e.preventDefault(); stops[stops.length - 1].focus(); }
       else if (!e.shiftKey && (at === -1 || at === stops.length - 1)) { e.preventDefault(); stops[0].focus(); }
     };
@@ -99,26 +130,27 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
     };
   }, [returnFocus, fallbackFocus]);
 
-  const choose = (next: CompareSelection) => {
-    setSelection(next);
-    void load(next);
+  const toggleUnit = (unit: string, keepIt: boolean) => {
+    if (!keep) return;
+    const rest = keep.filter((u) => u !== unit);
+    const next = keepIt ? [...rest, unit] : rest;
+    setKeep(next);
+    void load(next, choices);
   };
-  const toggleUnit = (unit: string, keep: boolean) => {
-    if (!selection) return;
-    const rest = selection.keep_current.filter((u) => u !== unit);
-    choose({ ...selection, keep_current: keep ? [...rest, unit] : rest });
-  };
-  const setEdit = (key: string, how: "keep" | "drop" | "unhide") => {
-    if (!selection) return;
-    choose({ ...selection, drop_edits: [...selection.drop_edits.filter((k) => k !== key), ...(how === "drop" ? [key] : [])],
-      unhide: [...selection.unhide.filter((k) => k !== key), ...(how === "unhide" ? [key] : [])] });
+  const setEdit = (key: string, how: EditChoice) => {
+    if (!keep) return;
+    const next = { ...choices, [key]: how };
+    setChoices(next);
+    void load(keep, next);
   };
 
   const apply = async () => {
-    if (!selection || applying) return;
+    if (!preview || applying) return;
     setApplying(true);
     try {
-      await onApply(selection);
+      // 마지막 미리 보기의 실제 선택이다. 반영은 로딩과 오류가 없을 때만 열리므로 화면의 선택과 같다
+      await onApply({ keep_current: preview.keep_current, drop_edits: preview.drop_edits, unhide: preview.unhide },
+        preview.base_etag);
     } finally {
       setApplying(false);
     }
@@ -129,9 +161,12 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
   const batchActive = blocked.includes("batch_active");
   const reasons = blocked.filter((r) => r !== "batch_active");
   const edited = preview?.edited_units ?? null;
-  const replacing = edited && selection ? edited.filter((u) => !selection.keep_current.includes(u)).length : 0;
+  const replacing = edited && keep ? edited.filter((u) => !keep.includes(u)).length : 0;
   const currentEdits = preview?.current?.direct_edits ?? {};
-  const canApply = !!preview && !!selection && !loading && !applying && blocked.length === 0 && preview.merged !== null;
+  // 다시 계산한 미리 보기가 실패하면 화면의 선택과 미리 보기가 다르므로 반영하지 않는다(리뷰 G5)
+  const canApply = !!preview && !error && !loading && !applying && blocked.length === 0 && preview.merged !== null;
+  const editHow = (key: string): EditChoice => choices[key]
+    ?? (preview?.drop_edits.includes(key) ? "drop" : preview?.unhide.includes(key) ? "unhide" : "keep");
 
   return createPortal(
     <div className="compare-overlay">
@@ -145,7 +180,8 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
           {reasons.length > 0 && (
             <div role="status" className="notice-warning">
               <p>이전 입력 기준 후보라 반영할 수 없습니다({reasonText(reasons)}). 비교는 볼 수 있습니다.</p>
-              {onRegenerate && <Button onClick={() => { onClose(); onRegenerate(); }}>현재 입력으로 다시 생성</Button>}
+              {onRegenerate ? <Button onClick={() => { onClose(); onRegenerate(); }}>현재 입력으로 다시 생성</Button>
+                : regenerateHint && <p>{regenerateHint}</p>}
             </div>
           )}
           {preview.notices.includes("deck_changed_elsewhere") && (
@@ -184,7 +220,7 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
           <section>
             <h3>문구</h3>
             {preview.units.map((unit) => {
-              const keep = selection?.keep_current.includes(unit) ?? false;
+              const kept = keep?.includes(unit) ?? false;
               const isEdited = edited?.includes(unit) ?? false;
               return (
                 <fieldset key={unit} className="compare-unit" disabled={applying}>
@@ -195,9 +231,9 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
                     <div><strong>지금</strong><pre>{unitText(preview.current?.slots, template, unit) || "(없음)"}</pre></div>
                     <div><strong>새 문구</strong><pre>{unitText(candidateSlots, template, unit) || "(없음)"}</pre></div>
                   </div>
-                  <label><input type="radio" name={`unit-${unit}`} checked={keep} disabled={!preview.current}
+                  <label><input type="radio" name={`unit-${unit}`} checked={kept} disabled={!preview.current}
                     onChange={() => toggleUnit(unit, true)} /> 지금 문구 유지</label>
-                  <label><input type="radio" name={`unit-${unit}`} checked={!keep}
+                  <label><input type="radio" name={`unit-${unit}`} checked={!kept}
                     onChange={() => toggleUnit(unit, false)} /> 새 문구 사용</label>
                 </fieldset>
               );
@@ -207,11 +243,15 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
             <section>
               <h3>위치와 서식 수정</h3>
               {Object.entries(currentEdits).map(([key, edit]) => {
-                const how = selection?.drop_edits.includes(key) ? "drop" : selection?.unhide.includes(key) ? "unhide" : "keep";
+                const how = editHow(key);
                 const name = roleName(key, template);
+                // 합친 결과에 이 요소가 없으면 무엇을 골라도 수정이 사라진다. 고를 수 없게 두고 그 사실을 적는다(리뷰 G13)
+                // removed_edits에는 지우기로 고른 열쇠도 든다. 고르지 않았는데 사라지는 열쇠만 자리가 없는 것이다
+                const gone = preview.removed_edits.includes(key) && !preview.drop_edits.includes(key);
                 return (
-                  <fieldset key={key} className="compare-edit" disabled={applying}>
+                  <fieldset key={key} className="compare-edit" disabled={applying || gone}>
                     <legend>{name}의 위치와 서식{edit.hidden ? " (숨김)" : ""}</legend>
+                    {gone && <p className="hint">새 내용에 이 요소가 없어 반영하면 수정이 사라집니다.</p>}
                     <label><input type="radio" name={`edit-${key}`} checked={how === "keep"}
                       onChange={() => setEdit(key, "keep")} /> 유지</label>
                     {edit.hidden && <label><input type="radio" name={`edit-${key}`} checked={how === "unhide"}
@@ -221,8 +261,6 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
                   </fieldset>
                 );
               })}
-              {preview.removed_edits.length > 0 && (
-                <p className="hint">새 내용에 없는 요소의 수정은 반영하면 사라집니다: {preview.removed_edits.map((k) => roleName(k, template)).join(", ")}</p>)}
             </section>
           )}
           {(preview.removed_spans > 0 || preview.removed_chart) && (

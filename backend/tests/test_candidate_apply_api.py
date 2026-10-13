@@ -134,6 +134,33 @@ def test_list_items_whose_count_changed_lose_their_indexed_edits_by_default(stor
     assert set(_slide(store).direct_edits) == {"title"}
 
 
+def test_length_notice_follows_the_candidate_and_unchosen_edits_follow_the_selected_units(store):
+    """직접 고친 목록은 처음에 지금 문구라 길이가 그대로지만, 안내는 후보 기준으로 보이고 새 문구로 바꾸면 순번 요소 수정의
+    기본 지우기가 다시 계산된다. 사용자가 고른 열쇠만 그 선택을 따른다 (D3c-6 리뷰 G2)."""
+    _project(store)
+    cards4 = {"template": "cards", "cards": [{"heading": h} for h in "ABCD"]}
+    cards3 = {"template": "cards", "cards": [{"heading": h} for h in "XYZ"]}
+    deck = store.load_deck("p1")
+    deck.structure.chapters[0].template = "cards"
+    store.save_deck("p1", deck, snapshot=False)
+    with TestClient(create_app(store, provider=ChapterProvider([cards4, cards3])), headers=HEADERS) as client:
+        first = _job(client, "chapter-0001")
+        assert _apply(client, store, first["id"]).status_code == 200
+        edited = {"template": "cards", "cards": [{"heading": h} for h in ["A2", "B", "C", "D"]]}
+        _save_slide(store, {"chapter_id": "c1", "slots": edited, "direct_edits": {"card1": {"dx_pt": 30, "dy_pt": 0}}})
+        second = _job(client, "chapter-0002")
+        initial = _preview(client, second["id"]).json()
+        switched = _preview(client, second["id"], {"keep_current": []}).json()
+        kept = _preview(client, second["id"], {"keep_current": [], "edit_choices": {"card1": "keep"}}).json()
+        response = _apply(client, store, second["id"], {"keep_current": [], "edit_choices": {"card1": "keep"}})
+    assert (initial["keep_current"], initial["length_changed_units"], initial["drop_edits"]) == (["cards"], ["cards"], [])
+    assert (switched["length_changed_units"], switched["drop_edits"]) == (["cards"], ["card1"])
+    assert kept["drop_edits"] == []
+    assert response.status_code == 200, response.text
+    slide = _slide(store)
+    assert [c.heading for c in slide.slots.cards] == ["X", "Y", "Z"] and set(slide.direct_edits) == {"card1"}
+
+
 def test_condense_takes_all_new_text_and_is_blocked_when_the_slots_changed_after_the_request(store):
     _project(store)
     current = {**slots("길게 쓴 내용"), "conclusion": "직접 고친 결론"}

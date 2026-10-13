@@ -27,6 +27,11 @@ class DraftSummary(BaseModel):
     report_info_changed: bool
     order_changed: bool
     story_plan_changed: bool
+    # D3c-6 리뷰 G4, G10: 복원은 덱 전체를 쓰므로 디자인 값과 문서 검토 기록의 차이도 알린다. 저장본을 읽지 못하면
+    # 복원은 보존본 전체를 쓰고(보고 목적 보존본도) 요약의 장 목록은 모두 "생기는 장"이 된다
+    design_changed: bool = False
+    review_changed: bool = False
+    current_readable: bool = True
 
 
 def _labels(deck: Deck) -> dict[str, str]:
@@ -44,20 +49,21 @@ def _slide_parts(deck: Deck) -> dict[str, tuple[dict, dict]]:
 
 
 def summarize_draft(current: Deck | None, draft: object, source: str) -> DraftSummary:
-    empty = DraftSummary(readable=False, purpose_only=source == "purpose", changed_chapters=[], added_chapters=[],
-                         removed_chapters=[], direct_edit_chapters=[], report_info_changed=False, order_changed=False,
-                         story_plan_changed=False)
+    empty = DraftSummary(readable=False, purpose_only=source == "purpose" and current is not None, changed_chapters=[],
+                         added_chapters=[], removed_chapters=[], direct_edit_chapters=[], report_info_changed=False,
+                         order_changed=False, story_plan_changed=False, current_readable=current is not None)
     try:
         restored = Deck.model_validate(draft)
     except (ValidationError, ValueError, TypeError):
         return empty
     now_meta = current.meta.model_dump(mode="json") if current else {}
     then_meta = restored.meta.model_dump(mode="json")
-    if source == "purpose":
+    if source == "purpose" and current is not None:  # 저장본을 읽지 못하면 복원은 보존본 전체를 쓴다(file_store.restore_draft)
         changed = any(now_meta.get(k) != then_meta.get(k) for k in PURPOSE_SCREEN_FIELDS)
         return empty.model_copy(update={"readable": True, "report_info_changed": changed})
-    now_meta.pop("preset_overrides", None)  # 디자인 값은 보고 정보가 아니다
-    then_meta.pop("preset_overrides", None)
+    design_changed = now_meta.pop("preset_overrides", None) != then_meta.pop("preset_overrides", None)  # 디자인 값은 따로 알린다
+    review_now = current.document_review.model_dump(mode="json") if current and current.document_review else None
+    review_then = restored.document_review.model_dump(mode="json") if restored.document_review else None
     now_labels = _labels(current) if current else {}
     then_labels = _labels(restored)
     now_chapters = {c.id: c.model_dump(mode="json") for c in current.structure.chapters} if current else {}
@@ -81,4 +87,5 @@ def summarize_draft(current: Deck | None, draft: object, source: str) -> DraftSu
         added_chapters=[ChapterLabel(id=cid, label=label) for cid, label in then_labels.items() if cid not in now_labels],
         removed_chapters=[ChapterLabel(id=cid, label=label) for cid, label in now_labels.items() if cid not in then_labels],
         direct_edit_chapters=edited, report_info_changed=now_meta != then_meta, order_changed=now_order != common,
-        story_plan_changed=plan_now != plan_then)
+        story_plan_changed=plan_now != plan_then, design_changed=current is not None and design_changed,
+        review_changed=current is not None and review_now != review_then, current_readable=current is not None)

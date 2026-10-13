@@ -309,7 +309,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       const saved=await api.applyDocumentChange(projectName,{candidate:replacement.preview.candidate,
         expected_source_fingerprint:replacement.basis.sources_fingerprint,
         confirmation_token:replacement.preview.confirmation_token,acknowledged_loss_ids:lossChecks},replacement.basis.base_etag);
-      if(requestId===serial.current && live.current && currentDeck.current===base && !currentBlocked.current)onApply(saved,base,draft.id,true);
+      // 서버에 저장된 결과다. 조건과 관계없이 넘기고 받을지는 편집 화면이 판정한다: 여기서 버리면 응답 ETag만 캐시에 남아
+      // 다음 자동 저장이 이 반영을 덮는다 (D3c-6 리뷰 G11, D3c-5 리뷰 F1과 같은 모양)
+      onApply(saved,base,draft.id,true);
     } catch(error) {
       if(requestId===serial.current && live.current) {
         setErrors([messageOf(error)]);

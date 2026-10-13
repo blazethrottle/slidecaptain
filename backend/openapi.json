@@ -4309,6 +4309,25 @@
               }
             ],
             "title": "Unhide"
+          },
+          "edit_choices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "keep",
+                    "drop",
+                    "unhide"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Choices"
           }
         },
         "additionalProperties": false,
@@ -6791,6 +6810,21 @@
           "story_plan_changed": {
             "type": "boolean",
             "title": "Story Plan Changed"
+          },
+          "design_changed": {
+            "type": "boolean",
+            "title": "Design Changed",
+            "default": false
+          },
+          "review_changed": {
+            "type": "boolean",
+            "title": "Review Changed",
+            "default": false
+          },
+          "current_readable": {
+            "type": "boolean",
+            "title": "Current Readable",
+            "default": true
           }
         },
         "type": "object",

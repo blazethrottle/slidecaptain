@@ -2338,6 +2338,9 @@ def create_app(
             merged_slots = merge_slots(current.slots if current else None, ref["slots"], keep)
             drops = req.drop_edits if req.drop_edits is not None else default_drops(current, merged_slots)
             unhide = req.unhide or []
+            for key, how in (req.edit_choices or {}).items():  # 사용자가 고른 열쇠만 덮어쓴다(D3c-6 리뷰 G2)
+                drops = [k for k in drops if k != key] + ([key] if how == "drop" else [])
+                unhide = [k for k in unhide if k != key] + ([key] if how == "unhide" else [])
             result = merge_slide(current, chapter_id, ref["slots"], keep_current=keep, drop_edits=drops, unhide=unhide)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
@@ -2392,7 +2395,8 @@ def create_app(
             job_id=job_id, chapter_id=ref["chapter_id"], kind=ref["kind"], base_etag=plan["etag"],
             blocked_reasons=plan["blocked"], notices=plan["notices"], units=list(merge_fields(ref["slots"].template)),
             edited_units=plan["edited"], keep_current=plan["keep"], drop_edits=plan["drops"], unhide=plan["unhide"],
-            length_changed_units=length_changed_units(current.slots if current else None, merged.slots) if merged else [],
+            # 후보와 비교한다. 지금 문구로 둔 단위에도 안내가 보여야 바꾸기 전에 안다(D3c-6 리뷰 G2)
+            length_changed_units=length_changed_units(current.slots if current else None, ref["slots"]) if merged else [],
             current=current, merged=merged, warnings=warnings,
             removed_edits=result.removed_edits if result else [], unhidden=result.unhidden if result else [],
             removed_spans=result.removed_spans if result else 0, removed_chart=result.removed_chart if result else False,

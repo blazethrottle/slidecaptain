@@ -203,6 +203,9 @@ export function EditorScreen({
       // (D3c-3, 계획 리뷰 화면 S6, S10)
       if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable) return;
       if (dragging.current || t.closest?.('[role="dialog"], dialog')) return;
+      // 모달(비교 화면 등)이 열린 동안에는 초점이 body로 빠져도 막는다. 앱 화면의 inert는 window의 키 수신을 막지 않는다.
+      // 비교 화면 뒤에서 덱이 바뀌면 화면의 "지금"과 저장본이 달라진다 (D3c-6 리뷰 G1)
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
       if (key === "z" && !e.shiftKey) { e.preventDefault(); editor.undo(); }

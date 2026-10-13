@@ -1205,6 +1205,10 @@ export interface components {
             drop_edits?: string[] | null;
             /** Unhide */
             unhide?: string[] | null;
+            /** Edit Choices */
+            edit_choices?: {
+                [key: string]: "keep" | "drop" | "unhide";
+            } | null;
         };
         /**
          * CapacityWarning
@@ -2279,6 +2283,21 @@ export interface components {
             order_changed: boolean;
             /** Story Plan Changed */
             story_plan_changed: boolean;
+            /**
+             * Design Changed
+             * @default false
+             */
+            design_changed: boolean;
+            /**
+             * Review Changed
+             * @default false
+             */
+            review_changed: boolean;
+            /**
+             * Current Readable
+             * @default true
+             */
+            current_readable: boolean;
         };
         /**
          * ElementEdit

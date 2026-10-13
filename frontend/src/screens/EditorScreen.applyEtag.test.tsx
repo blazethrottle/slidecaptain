@@ -4,7 +4,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, resetEtags, type ChapterResult, type Deck, type RenderPlan } from "../api/client";
-import { applyThroughCompare, previewOf } from "../test/compare";
+import { compareDialog, previewOf } from "../test/compare";
 import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { EditorScreen } from "./EditorScreen";
@@ -40,7 +40,7 @@ const plan = (text: string): RenderPlan => ({
 
 afterEach(() => vi.unstubAllGlobals());
 
-it("적용은 마지막 저장 ETag로 보내고, 응답 ETag로 다음 저장을 보내며, 적용 중 되돌리기는 덱을 바꾸지 않는다", async () => {
+it("적용은 미리 보기의 기준 저장본으로 보내고, 응답 ETag로 다음 저장을 보내며, 적용 중 되돌리기는 덱을 바꾸지 않는다", async () => {
   resetEtags();
   const puts: { ifMatch: string | null; bullet: string }[] = [];
   const applies: (string | null)[] = [];
@@ -80,8 +80,17 @@ it("적용은 마지막 저장 ETag로 보내고, 응답 ETag로 다음 저장�
   };
   await edit("옛불릿", "고친불릿");
   await waitFor(() => expect(puts).toEqual([{ ifMatch: '"E0"', bullet: "고친불릿" }]));
-  await applyThroughCompare();
-  await waitFor(() => expect(applies).toEqual(['"E1"']));  // 반영 직전 저장의 ETag
+  await userEvent.click(await screen.findByRole("button", { name: "비교하고 반영" }));
+  const dialog = await compareDialog();
+  const apply = await within(dialog).findByRole("button", { name: "반영" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  // 비교 화면 안의 글자를 누르면 초점이 body로 간다. 그때의 되돌리기가 뒤의 덱을 바꾸지 않는다 (리뷰 G1)
+  fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });
+  await new Promise((r) => setTimeout(r, 30));
+  expect(puts).toHaveLength(1);
+  expect(preview().getByText("고친불릿")).toBeInTheDocument();
+  await userEvent.click(apply);
+  await waitFor(() => expect(applies).toEqual(["E1"]));  // 미리 보기의 기준 저장본(반영 직전 저장의 ETag와 같다, 리뷰 G1)
   fireEvent.keyDown(document.body, { key: "z", ctrlKey: true });  // 실제 브라우저에서는 inert가 초점을 body로 옮긴다
   resolveApply(new Response(JSON.stringify(applied), { status: 200, headers: { ETag: '"EAPPLY"' } }));
   expect(await preview().findByText("새불릿")).toBeInTheDocument();

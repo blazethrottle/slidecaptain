@@ -79,7 +79,8 @@ it("0.2.0 같은 다른 앱이 되돌리기 직전의 덱을 구별해 보인다
 
 
 const SAME = { readable: true, purpose_only: false, changed_chapters: [], added_chapters: [], removed_chapters: [],
-  direct_edit_chapters: [], report_info_changed: false, order_changed: false, story_plan_changed: false };
+  direct_edit_chapters: [], report_info_changed: false, order_changed: false, story_plan_changed: false,
+  design_changed: false, review_changed: false, current_readable: true };
 const draft = { id: "draft-20261008-100000-000001", saved_at: "2026-10-08T10:00:00+09:00",
   reason: "generation_unsaved" as const, source: "structure_approval" as const, base_etag: null };
 
@@ -129,6 +130,37 @@ it("차이 요약 문장: 읽을 수 없는 보존본, 보고 목적 보존본, 
   expect(draftSummaryText({ ...SAME, purpose_only: true, report_info_changed: true }))
     .toBe("보고 정보가 저장본과 다릅니다. 복원하면 보고 정보만 바뀝니다.");
   expect(draftSummaryText(SAME)).toBe("저장본과 다른 점이 없습니다.");
+});
+
+it("차이 요약 문장: 보고 정보가 같은 보고 목적 보존본, 디자인 값과 검토 기록, 읽지 못한 저장본, 장 번호 기준 (리뷰 G4, G10, G16)", () => {
+  expect(draftSummaryText({ ...SAME, purpose_only: true })).toBe("보고 정보가 저장본과 같습니다. 복원해도 바뀌는 것이 없습니다.");
+  expect(draftSummaryText({ ...SAME, design_changed: true, review_changed: true }))
+    .toBe("저장본과 다른 점:\n디자인 값이 다릅니다.\n문서 검토 기록이 다릅니다.");
+  expect(draftSummaryText({ ...SAME, current_readable: false, added_chapters: [{ id: "c1", label: "1장 주제" }] }))
+    .toBe("저장본을 읽지 못해 차이를 비교하지 못했습니다. 복원하면 보존본 전체로 저장본을 바꿉니다.");
+  const mixed = { ...SAME, changed_chapters: [{ id: "c2", label: "1장 시장" }], removed_chapters: [{ id: "c1", label: "1장 개요" }] };
+  expect(draftSummaryText(mixed)).toContain("장 번호는 복원 뒤 기준이고, 사라지는 장만 지금 저장본 기준입니다.");
+  expect(draftSummaryText({ ...SAME, removed_chapters: mixed.removed_chapters })).not.toContain("장 번호는");
+});
+
+it("요약을 받지 못하면 그 사실을 확인 창에 적고, 받는 동안 복원을 잠그며 확인 뒤 잠금 이유를 다시 본다 (리뷰 G20)", async () => {
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  vi.mocked(api.listDrafts).mockResolvedValue([draft]);
+  let fail: (e: Error) => void = () => {};
+  vi.mocked(api.getDraftSummary).mockImplementation(() => new Promise((_res, rej) => { fail = rej; }));
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const { rerender } = render(<RecoveryScreen project={project} onBack={() => {}} />);
+  const button = await screen.findByRole("button", { name: "이 변경으로 복원" });
+  await userEvent.click(button);
+  expect(button).toBeDisabled();
+  expect(screen.getByText("저장본과의 차이를 확인하고 있습니다.")).toBeInTheDocument();
+  rerender(<RecoveryScreen project={project} onBack={() => {}} restoreLockedReason="장 생성 묶음이 진행 중입니다." />);
+  fail(new Error("요약 실패"));
+  await waitFor(() => expect(confirm).toHaveBeenCalled());
+  expect(confirm.mock.calls[0][0]).toContain("저장본과의 차이를 확인하지 못했습니다.");
+  expect(api.restoreDraft).not.toHaveBeenCalled();
+  expect(await screen.findByRole("alert")).toHaveTextContent("장 생성 묶음이 진행 중입니다.");
+  confirm.mockRestore();
 });
 
 it("보존한 변경은 확인 뒤 고른 것만 지운다 (D2a-2)", async () => {

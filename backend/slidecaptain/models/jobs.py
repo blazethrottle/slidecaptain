@@ -221,6 +221,9 @@ class CandidateApplyRequest(BaseModel):
     keep_current: list[str] | None = None  # 지금 문구로 둘 반영 단위
     drop_edits: list[str] | None = None  # 지울 요소 수정의 열쇠
     unhide: list[str] | None = None  # 숨김을 풀 요소의 열쇠
+    # 사용자가 직접 고른 요소 수정만 담는다(D3c-6 리뷰 G2). 담지 않은 열쇠는 위 두 칸(비우면 기본값)을 따르므로, 문구 단위를
+    # 바꿔 목록 길이가 달라지면 고르지 않은 순번 요소 수정의 기본 지우기가 다시 계산된다
+    edit_choices: dict[str, Literal["keep", "drop", "unhide"]] | None = None
 
 
 class CandidateApplyPreview(BaseModel):
@@ -238,7 +241,7 @@ class CandidateApplyPreview(BaseModel):
     keep_current: list[str]  # 이 미리 보기에 쓴 선택
     drop_edits: list[str]
     unhide: list[str]
-    length_changed_units: list[str]  # 새 내용의 항목 수가 다른 목록 단위
+    length_changed_units: list[str]  # 새 내용(후보)과 지금의 항목 수가 다른 목록 단위. 고른 선택과 관계없다(D3c-6 리뷰 G2)
     current: Slide | None  # 지금 슬라이드. 장에 내용이 없으면 null
     merged: Slide | None  # 합친 슬라이드. 장이 없거나 템플릿이 바뀌어 합칠 수 없으면 null
     warnings: list[CapacityWarning]  # 합친 슬라이드의 분량과 글자 크기 경고

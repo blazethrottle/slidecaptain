@@ -407,10 +407,12 @@ export const api = {
     request<CandidateApplyPreview>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply/preview`, {
       method: "POST", body: JSON.stringify(body),
     }),
-  applyCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}) =>
+  // baseEtag는 비교 화면이 본 미리 보기의 기준 저장본이다. 주면 마지막 저장 ETag 대신 If-Match로 보낸다: 미리 보기 뒤에 저장본이
+  // 바뀌었으면 412로 충돌 경로에 들어가 사용자가 본 것과 다른 결과가 저장되지 않는다 (D3c-6 리뷰 G1)
+  applyCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}, baseEtag?: string) =>
     request<Deck>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply`, {
       method: "POST", body: JSON.stringify(body),
-    }, { etagKey: name, notify: { kind: "saved", project: name } }),
+    }, { etagKey: name, expectedEtag: baseEtag, notify: { kind: "saved", project: name } }),
   // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
   dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
     request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {

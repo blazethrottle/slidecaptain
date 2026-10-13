@@ -94,12 +94,13 @@ it("반영은 남은 편집을 저장한 뒤 서버가 후보를 합치게 하�
   await waitFor(() => expect(onApplied).toHaveBeenCalledWith(saved, deck));
   // 비교 화면을 열기 전과 반영 직전에 저장한다 (계획 4.7의 1)
   expect(order).toEqual(["flush", "flush", "apply"]);
-  expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1", { keep_current: [], drop_edits: [], unhide: [] });
+  // 미리 보기가 돌려준 실제 선택과 그 기준 저장본으로 반영한다 (리뷰 G1)
+  expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1", { keep_current: [], drop_edits: [], unhide: [] }, "e0");
   expect(api.settleCandidate).not.toHaveBeenCalled();  // 처분은 서버가 덱 저장과 함께 바꾼다
   expect(onApplyBusyChange.mock.calls).toEqual([[true], [false]]);
   expect(screen.queryByRole("button", { name: "비교하고 반영" })).toBeNull();
-  // 연 버튼이 사라졌으므로 초점은 패널의 다시 생성 버튼으로 간다(문서 맨 앞으로 빠지지 않는다)
-  await waitFor(() => expect(screen.getByRole("button", { name: "이 장 다시 생성" })).toHaveFocus());
+  // 연 버튼이 사라졌으므로 초점은 패널 제목으로 간다(문서 맨 앞으로 빠지지 않는다. 다시 생성 중에도 비활성이 되지 않는다)
+  await waitFor(() => expect(screen.getByRole("heading", { name: "AI 다시 쓰기" })).toHaveFocus());
 });
 
 it("비교 화면에서 고친 선택이 미리 보기와 반영 요청에 그대로 실린다 (D3c-6)", async () => {
@@ -115,12 +116,13 @@ it("비교 화면에서 고친 선택이 미리 보기와 반영 요청에 그�
   const conclusion = within(dialog).getByRole("group", { name: /결론 상자/ });
   expect(within(conclusion).getByRole("radio", { name: "지금 문구 유지" })).toBeChecked();
   await userEvent.click(within(conclusion).getByRole("radio", { name: "새 문구 사용" }));
-  await waitFor(() => expect(api.previewCandidate).toHaveBeenLastCalledWith("p1", "job-1",
-    { keep_current: [], drop_edits: [], unhide: [] }));
+  await waitFor(() => expect(api.previewCandidate).toHaveBeenLastCalledWith("p1", "job-1", { keep_current: [] }));
   expect(await within(dialog).findByText("직접 고친 문구 1곳이 새 문구로 바뀝니다.")).toBeInTheDocument();
-  await userEvent.click(within(dialog).getByRole("button", { name: "반영" }));
+  const apply = within(dialog).getByRole("button", { name: "반영" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  await userEvent.click(apply);
   await waitFor(() => expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-1",
-    { keep_current: [], drop_edits: [], unhide: [] }));
+    { keep_current: [], drop_edits: [], unhide: [] }, "e0"));
 });
 
 it("반영 직전 저장을 기다리는 동안 장을 옮기면 반영을 요청하지 않는다 (리뷰 F7)", async () => {
@@ -514,4 +516,23 @@ it("실패 안내는 위쪽의 다시 생성과 축약 버튼을 가리키고 �
   expect(alert).toHaveTextContent("지금 할 수 있는 일: 위의 '이 장 다시 생성'이나 '이 장 축약'을 다시 눌러 주세요.");
   expect(within(alert).queryAllByRole("button")).toHaveLength(0);
   expect(screen.getAllByRole("button", { name: "이 장 축약" })).toHaveLength(1);
+});
+
+it("비교를 열기 전 저장을 기다리는 사이 장을 옮기면 비교 화면을 열지 않는다 (D3c-6 리뷰 V11)", async () => {
+  answer(okResult);
+  let flushed: (ok: boolean) => void = () => {};
+  const onFlush = vi.fn(() => new Promise<boolean>((res) => { flushed = res; }));
+  const { rerender } = render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onFlush={onFlush} />);
+  await userEvent.click(screen.getByText("이 장 다시 생성"));
+  await userEvent.click(await screen.findByRole("button", { name: "비교하고 반영" }));
+  await waitFor(() => expect(onFlush).toHaveBeenCalled());
+  // 옮겨 간 장에도 처분하지 않은 후보가 있다. 검사가 없으면 그 장의 비교 화면이 사용자 조작 없이 열린다
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { id: "job-2", target: "c2",
+    result: okResult as unknown as Record<string, unknown>, state: "succeeded", candidate_status: "held" })]);
+  rerender(<GeneratePanel project={project} deck={deck} chapterId="c2" {...H} onFlush={onFlush} />);
+  expect(await screen.findByRole("button", { name: "비교하고 반영" })).toBeInTheDocument();
+  flushed(true);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(api.previewCandidate).not.toHaveBeenCalled();
 });

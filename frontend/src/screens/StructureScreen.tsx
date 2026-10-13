@@ -115,7 +115,8 @@ function chapterEvidence(plan: StoryPlan | null, chapter: Chapter): { kind: "pla
     .map((item) => ({ key: item.id, text: `${item.source_id}: ${item.excerpt}` })) };
 }
 
-export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onScreenReady, onDirtyChange,
+export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyChange, onConflict, onApplyUnconfirmed, onScreenReady,
+  onDirtyChange,
   onSaveStatusChange, onJobRegistered, onJobFollowed, focusChapterId, brief, onBriefChange, limitations = [], readOnly = false,
   readOnlyNotice = false, registeredJobs, seenJobFailures, failuresSince = 0, pollIntervalMs = 1000, onEditPurpose,
   editPurposeDisabled = false }: {
@@ -125,6 +126,8 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   onDone: () => void;
   onBusyChange?: (busy: boolean) => void;  // 승인 중 순차 생성 진행을 부모(ProjectView)에 알려 다른 탭 진입을 막는다
   onConflict?: () => void;  // 승인 루프의 putDeck이 412를 받으면 부모가 배너를 띄운다
+  // 장 후보 반영의 5xx: 저장되었는지 모른다. 부모 배너가 "다른 곳에서 먼저 저장"이 아니라 그 사실을 알린다(D3c-6 리뷰 G8)
+  onApplyUnconfirmed?: () => void;
   // 떠나기 전 확인. "declined"는 사용자가 머물기를 골랐다는 뜻이라 부모가 실패 안내를 띄우지 않는다
   onScreenReady?: (flush: () => Promise<boolean | "declined">) => void;
   onDirtyChange?: (dirty: boolean) => void;
@@ -874,22 +877,24 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
   // 승인 전 구조안 초안은 그대로 둔다. 반영은 슬라이드만 바꾸므로 그 뒤 승인이 반영된 슬라이드를 계승한다
   const [comparing, setComparing] = useState<string | null>(null);
   const compareOpener = useRef<HTMLElement | null>(null);
+  const compareFallback = useRef<HTMLElement | null>(null);  // 반영 성공으로 연 버튼이 사라지면 그 장의 주제 입력(리뷰 G6)
   const candidateRow = (chapterId: string) => job && showJob && !busy
     ? job.chapters.find((c) => c.chapter_id === chapterId && (c.candidate_status === "held" || c.candidate_status === "stale")
       && !["queued", "running", "validating", "cancel_requested"].includes(c.state) && c.result)
     : undefined;
-  const applyCompare = async (chapterId: string, selection: CompareSelection) => {
+  const applyCompare = async (chapterId: string, selection: CompareSelection, baseEtag: string) => {
     if (!job) return;
     const batch = job;
     try {
-      const saved = await api.applyCandidate(project.name, batch.id, { chapter_id: chapterId, ...selection });
+      const saved = await api.applyCandidate(project.name, batch.id, { chapter_id: chapterId, ...selection }, baseEtag);
       if (!mounted.current) return;
       onDeckChange(saved);
       setJob(await api.getJob(project.name, batch.id).catch(() => batch));
     } catch (e) {
       if (!mounted.current) return;
       if (e instanceof ApiError && (e.status === 412 || e.status >= 500)) {
-        onConflict?.();
+        if (e.status === 412 || !onApplyUnconfirmed) onConflict?.();
+        else onApplyUnconfirmed();
         setError(e.status === 412 ? e.message : APPLY_UNCONFIRMED);
       } else {
         setError(messageOf(e));
@@ -919,10 +924,11 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
         return (
           <CandidateCompareDialog projectName={project.name} jobId={job.id} chapterId={comparing}
             title={index >= 0 ? `${index + 1}장 ${deck.structure.chapters[index].topic}` : "이 장"}
-            candidateSlots={slots} returnFocus={compareOpener}
-            onApply={(selection) => applyCompare(comparing, selection)}
+            candidateSlots={slots} returnFocus={compareOpener} fallbackFocus={compareFallback}
+            onApply={(selection, baseEtag) => applyCompare(comparing, selection, baseEtag)}
             // 내용이 있는 장은 묶음으로 다시 생성하지 않는다(이미 내용이 있는 장은 등록이 거절된다). 편집 단계에서 다시 생성한다
             onRegenerate={empty ? () => void regenerateChapter(comparing) : undefined}
+            regenerateHint="편집 단계의 '이 장 다시 생성'으로 현재 입력 기준 후보를 만들어 주세요."
             onStaleBase={() => { setComparing(null); onConflict?.(); setError(STALE_BASE); }}
             onClose={() => setComparing(null)} />
         );
@@ -1082,8 +1088,13 @@ export function StructureScreen({ project, deck, onDeckChange, onDone, onBusyCha
                     )}
                     {candidateRow(c.id) && (<>
                       {/* 내용이 있는 장의 후보도 비교 화면에서 단위마다 골라 반영한다 (D3c-6, 계획 4.8) */}
-                      <button aria-label={`${n}번 장 후보 비교`}
-                        onClick={(e) => { compareOpener.current = e.currentTarget; setComparing(c.id); }}>비교 보기</button>
+                      <button aria-label={`${n}번 장 후보 비교 보기`}
+                        onClick={(e) => {
+                          compareOpener.current = e.currentTarget;
+                          compareFallback.current = e.currentTarget.closest<HTMLElement>("[data-chapter-id]")
+                            ?.querySelector<HTMLElement>("input:not(:disabled)") ?? null;
+                          setComparing(c.id);
+                        }}>비교 보기</button>
                       <Button variant="danger" aria-label={`${n}번 장 후보 버리기`} onClick={() => void dismissCandidate(c.id)}>후보 버리기</Button>
                     </>)}
                   </div>

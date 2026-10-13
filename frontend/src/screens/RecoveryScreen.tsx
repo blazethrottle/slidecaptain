@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
@@ -165,6 +165,8 @@ function JobCandidates({ project, deck, onOpen }: {
 // 보존본 복원 전 차이 요약의 문장 (D3c-6, E7). 바뀌는 것만 줄마다 적는다
 export function draftSummaryText(summary: DraftSummary): string {
   if (!summary.readable) return "이 보존본은 지금 형식으로 읽을 수 없어 차이를 요약하지 못했습니다.";
+  // 저장본을 읽지 못하면 복원은 보존본 전체를 쓴다(보고 목적 보존본도). 모든 장이 "생기는 장"이 되므로 목록 대신 그 사실을 알린다(리뷰 G10)
+  if (!summary.current_readable) return "저장본을 읽지 못해 차이를 비교하지 못했습니다. 복원하면 보존본 전체로 저장본을 바꿉니다.";
   if (summary.purpose_only) {
     return summary.report_info_changed ? "보고 정보가 저장본과 다릅니다. 복원하면 보고 정보만 바뀝니다."
       : "보고 정보가 저장본과 같습니다. 복원해도 바뀌는 것이 없습니다.";
@@ -178,6 +180,11 @@ export function draftSummaryText(summary: DraftSummary): string {
     summary.report_info_changed && "보고 정보가 다릅니다.",
     summary.order_changed && "장 순서가 다릅니다.",
     summary.story_plan_changed && "구성 계획이 다릅니다.",
+    summary.design_changed && "디자인 값이 다릅니다.",  // 복원은 덱 전체를 쓰므로 알린다(리뷰 G4)
+    summary.review_changed && "문서 검토 기록이 다릅니다.",
+    // 사라지는 장만 지금 저장본의 번호다. 한 창 안에서 같은 장이 다른 번호로 불릴 수 있어 기준을 밝힌다(리뷰 G16)
+    summary.removed_chapters.length > 0 && (summary.changed_chapters.length > 0 || summary.added_chapters.length > 0
+      || summary.direct_edit_chapters.length > 0) && "장 번호는 복원 뒤 기준이고, 사라지는 장만 지금 저장본 기준입니다.",
   ].filter(Boolean);
   return lines.length > 0 ? `저장본과 다른 점:\n${lines.join("\n")}` : "저장본과 다른 점이 없습니다.";
 }
@@ -203,14 +210,26 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
     .catch((e) => setDraftError(`보존한 변경 목록을 읽지 못했습니다. ${messageOf(e)}`));
   useEffect(() => { void loadDrafts(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 요약을 받는 동안 다른 탭의 묶음이 시작될 수 있다. 확인 뒤에 지금 잠금 이유를 다시 본다(리뷰 G20)
+  const lockedRef = useRef(restoreLockedReason);
+  lockedRef.current = restoreLockedReason;
+  const [summarizing, setSummarizing] = useState(false);
   const restoreDraft = async (id: string) => {
     // 복원 전에 서버 저장본과의 차이를 같은 확인 창에 보인다 (D3c-6, E7). 요약을 받지 못해도 복원은 고를 수 있다
-    const summary = await api.getDraftSummary(project.name, id).then(draftSummaryText,
-      () => "저장본과의 차이를 확인하지 못했습니다.");
+    if (summarizing) return;
+    setSummarizing(true);
+    let summary: string;
+    try {
+      summary = await api.getDraftSummary(project.name, id).then(draftSummaryText,
+        () => "저장본과의 차이를 확인하지 못했습니다.");
+    } finally {
+      setSummarizing(false);
+    }
     const ok = window.confirm(
       `이 보존본으로 복원합니다. ${summary}\n\n복원하면 지금 저장본(다른 곳의 변경 포함)은 복원 직전 시점의 스냅샷으로 남습니다. 계속할까요?`,
     );
     if (!ok) return;
+    if (lockedRef.current) { setDraftError(lockedRef.current); return; }
     try {
       await api.restoreDraft(project.name, id);
       onBack();
@@ -282,6 +301,7 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
         <p>다른 곳의 저장과 충돌했거나 저장하지 못한 내용입니다. 자동으로 지우지 않습니다.
           복원하면 지금 저장본(다른 곳의 변경 포함)은 복원 직전 시점의 스냅샷으로 남습니다.</p>
         {draftError && <p role="alert">{draftError}</p>}
+        {summarizing && <p role="status">저장본과의 차이를 확인하고 있습니다.</p>}
         {drafts === null ? (draftError ? null : <p>불러오는 중...</p>) : drafts.length === 0 ? (
           <p>보존한 변경이 없습니다.</p>
         ) : (
@@ -289,7 +309,7 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
             {drafts.map((d) => (
               <li key={d.id}>
                 {formatSavedAt(d.saved_at)} {describeDraft(d)}{" "}
-                <Button variant="danger" onClick={() => void restoreDraft(d.id)} disabled={!!restoreLockedReason}
+                <Button variant="danger" onClick={() => void restoreDraft(d.id)} disabled={!!restoreLockedReason || summarizing}
                   title={restoreLockedReason}>이 변경으로 복원</Button>{" "}
                 <Button variant="danger" onClick={() => void deleteDraft(d.id)}>이 보존본 지우기</Button>
               </li>

@@ -732,7 +732,7 @@ it("이전 입력 기준 후보는 내용을 볼 수 있고, 구성 계획 보�
   render(<StructureScreen project={project} deck={deckWith([CH1, CH2], [])} onDeckChange={() => {}} onDone={() => {}} />);
   // 후보는 비교 화면에서 본다 (D3c-6). 내용이 없는 장이라 "지금"은 비어 있다
   vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(null, COVER, { units: ["title", "subtitle", "date"] }));
-  await userEvent.click(await screen.findByRole("button", { name: "1번 장 후보 비교" }));
+  await userEvent.click(await screen.findByRole("button", { name: "1번 장 후보 비교 보기" }));
   const dialog = await screen.findByRole("dialog", { name: "1장 표지: 새 내용과 비교" });
   expect(within(dialog).getByRole("group", { name: "표지 제목" })).toHaveTextContent("제목");  // 후보 슬롯의 글자
   await userEvent.keyboard("{Escape}");
@@ -804,7 +804,7 @@ it("취소 뒤 도착한 결과도 후보로 보고 버릴 수 있다 (D2b-4 리
     error: { error_class: "cancelled", status: null, detail: null, code: null } })],
   { state: "cancelled", outcome: "cancelled" })]);
   render(<StructureScreen project={project} deck={deckWith([CH1], [])} onDeckChange={() => {}} onDone={() => {}} />);
-  expect(await screen.findByRole("button", { name: "1번 장 후보 비교" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "1번 장 후보 비교 보기" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "1번 장 후보 버리기" })).toBeInTheDocument();
 });
 
@@ -1707,9 +1707,19 @@ function staleBodyCandidate() {
   { id: "job-b", state: "failed", outcome: "chain_broken" });
 }
 
-function Harness({ initial, onConflict }: { initial: Deck; onConflict?: () => void }) {
+function Harness({ initial, onConflict, onApplyUnconfirmed }: { initial: Deck; onConflict?: () => void;
+  onApplyUnconfirmed?: () => void }) {
   const [deck, setDeck] = useState(initial);
-  return <StructureScreen project={project} deck={deck} onDeckChange={setDeck} onDone={() => {}} onConflict={onConflict} />;
+  return <StructureScreen project={project} deck={deck} onDeckChange={setDeck} onDone={() => {}} onConflict={onConflict}
+    onApplyUnconfirmed={onApplyUnconfirmed} />;
+}
+
+async function applyInDialog(chapter = 2) {
+  await userEvent.click(await screen.findByRole("button", { name: `${chapter}번 장 후보 비교 보기` }));
+  const dialog = await screen.findByRole("dialog");
+  const apply = within(dialog).getByRole("button", { name: "반영" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  await userEvent.click(apply);
 }
 
 it("내용이 있는 장의 묶음 후보를 비교 화면에서 반영하면 초안은 남고, 그 뒤 승인이 반영된 슬라이드를 계승한다 (계획 4.7)", async () => {
@@ -1722,14 +1732,16 @@ it("내용이 있는 장의 묶음 후보를 비교 화면에서 반영하면 �
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   render(<Harness initial={initial} />);
   await userEvent.type(screen.getByLabelText("1번 장 주제"), " 수정");  // 승인 전 초안
-  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교" }));
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
   const dialog = await screen.findByRole("dialog", { name: "2장 본문: 새 내용과 비교" });
   const apply = within(dialog).getByRole("button", { name: "반영" });
   await waitFor(() => expect(apply).toBeEnabled());
   await userEvent.click(apply);
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(api.applyCandidate).toHaveBeenCalledWith("p1", "job-b",
-    { chapter_id: "c2", keep_current: [], drop_edits: [], unhide: [] });
+    { chapter_id: "c2", keep_current: [], drop_edits: [], unhide: [] }, "e0");
+  // 연 버튼이 사라졌으므로 초점은 그 장의 주제 입력으로 간다 (리뷰 G6)
+  await waitFor(() => expect(screen.getByLabelText("2번 장 주제")).toHaveFocus());
   expect(screen.getByLabelText("1번 장 주제")).toHaveValue("표지 수정");  // 반영 뒤에도 초안이 남는다
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
@@ -1745,13 +1757,92 @@ it("구성 화면의 반영이 412면 부모의 충돌 경로로 보낸다 (계�
   vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(412, "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."));
   const onConflict = vi.fn();
   render(<Harness initial={initial} onConflict={onConflict} />);
-  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교" }));
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
   const dialog = await screen.findByRole("dialog");
   const apply = within(dialog).getByRole("button", { name: "반영" });
   await waitFor(() => expect(apply).toBeEnabled());
   await userEvent.click(apply);
   await waitFor(() => expect(onConflict).toHaveBeenCalled());
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("구성 화면의 반영 5xx는 충돌이 아니라 결과를 확인하지 못했다고 부모에 알린다 (리뷰 G8, V13)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2));
+  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(503, "덱을 저장하지 못했습니다."));
+  const onConflict = vi.fn();
+  const onApplyUnconfirmed = vi.fn();
+  render(<Harness initial={initial} onConflict={onConflict} onApplyUnconfirmed={onApplyUnconfirmed} />);
+  await applyInDialog();
+  await waitFor(() => expect(onApplyUnconfirmed).toHaveBeenCalled());
+  expect(onConflict).not.toHaveBeenCalled();
+  expect(screen.getByText("반영 결과를 확인하지 못했습니다. 서버 내용을 다시 읽어 주세요.")).toBeInTheDocument();
+});
+
+it("판정 409면 오류를 보이고 묶음을 다시 조회한다 (리뷰 V14)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2));
+  vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(409, "이 후보는 지금 반영할 수 없습니다.", { code: "sources_changed" } as never));
+  batchGetJob.mockResolvedValue(staleBodyCandidate());
+  render(<Harness initial={initial} />);
+  await applyInDialog();
+  expect(await screen.findByText("이 후보는 지금 반영할 수 없습니다.")).toBeInTheDocument();
+  await waitFor(() => expect(batchGetJob).toHaveBeenCalledWith("p1", "job-b"));
+});
+
+it("비교 화면이 이 탭이 모르는 저장본을 보면 닫고 부모의 충돌 경로로 보낸다 (리뷰 V12)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2, { base_etag: "다른 저장본" }));
+  const client = await import("../api/client");
+  const known = vi.spyOn(client, "savedEtag").mockReturnValue('"e0"');
+  const onConflict = vi.fn();
+  render(<Harness initial={initial} onConflict={onConflict} />);
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
+  await waitFor(() => expect(onConflict).toHaveBeenCalled());
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByText(/이 화면이 연 뒤 다른 곳에서 먼저 저장했습니다/)).toBeInTheDocument();
+  known.mockRestore();
+});
+
+it("내용이 없는 장의 막힌 후보는 비교 화면에서 다시 생성하고, 내용이 있는 장은 편집 단계로 안내한다 (리뷰 V15, G9)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(null, BODY2, { blocked_reasons: ["base_changed"] }));
+  render(<Harness initial={initial} />);
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(await within(dialog).findByRole("button", { name: "현재 입력으로 다시 생성" })).toBeInTheDocument();
+  expect(within(dialog).queryByText(/편집 단계의 '이 장 다시 생성'/)).toBeNull();
+});
+
+it("내용이 있는 장의 막힌 후보에는 편집 단계의 다시 생성을 안내한다 (리뷰 G9)", async () => {
+  const initial = deckWith([CH1, CH2], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY }]);
+  vi.mocked(api.listJobs).mockResolvedValueOnce([staleBodyCandidate()]);
+  vi.mocked(api.previewCandidate).mockResolvedValue(previewOf(initial.slides[1], BODY2, { blocked_reasons: ["base_changed"] }));
+  render(<Harness initial={initial} />);
+  await userEvent.click(await screen.findByRole("button", { name: "2번 장 후보 비교 보기" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(await within(dialog).findByText("편집 단계의 '이 장 다시 생성'으로 현재 입력 기준 후보를 만들어 주세요.")).toBeInTheDocument();
+  expect(within(dialog).queryByRole("button", { name: "현재 입력으로 다시 생성" })).toBeNull();
+});
+
+it("재승인 문구는 직접 수정이 있는 장만 세고, 둘 이상이면 예시 뒤에 \"등\"을 붙인다 (리뷰 V16, V17)", async () => {
+  const CH3B = { ...CH2, id: "c3", topic: "셋째" };
+  const CH4 = { ...CH2, id: "c4", topic: "넷째" };
+  const initial = deckWith([CH1, CH2, CH3B, CH4], [{ chapter_id: "c1", slots: COVER }, { chapter_id: "c2", slots: BODY },
+    { chapter_id: "c3", slots: BODY }, { chapter_id: "c4", slots: BODY }]);
+  initial.slides[2] = { ...initial.slides[2], direct_edits: { conclusion: { dx_pt: 5, dy_pt: 0 } } };
+  initial.slides[3] = { ...initial.slides[3], direct_edits: { bullets: { dx_pt: 5, dy_pt: 0 } } };
+  render(<StructureScreen project={project} deck={initial} onDeckChange={() => {}} onDone={() => {}} />);
+  for (const n of [2, 3, 4]) await userEvent.selectOptions(screen.getByLabelText(`${n}번 장 템플릿`), "summary");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
+  expect(confirm.mock.calls[0][0]).toBe("구조안 변경으로 기존 장 내용 3개가 사라집니다. 이 가운데 2개 장(3장 셋째 등)은 직접 수정한 위치와 서식도 함께 사라집니다. "
+    + "승인 직전 상태는 스냅샷으로 남아 복구 화면에서 되돌릴 수 있습니다. 계속할까요?");
+  confirm.mockRestore();
 });
 
 it("직접 수정이 있는 장을 지우는 재승인은 같은 확인 창에 그 사실을 합쳐 알린다 (계획 4.8, 리뷰 화면 S33)", async () => {

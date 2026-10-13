@@ -55,7 +55,8 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   const [refused, setRefused] = useState<string[]>([]);
   const [comparing, setComparing] = useState(false);  // 비교 화면이 열려 있다 (D3c-6)
   const compareButton = useRef<HTMLButtonElement>(null);
-  const regenerateButton = useRef<HTMLButtonElement>(null);
+  // 비교 화면이 닫힐 때 연 버튼이 사라졌으면(반영 성공, 다시 생성) 초점을 받는 곳. 생성 중에도 비활성이 되지 않는 제목이다(리뷰 G7)
+  const heading = useRef<HTMLHeadingElement>(null);
   const slide = deck.slides.find((s) => s.chapter_id === chapterId);
   const chapterIndex = deck.structure.chapters.findIndex((ch) => ch.id === chapterId);
   const chapterTitle = chapterIndex >= 0 ? `${chapterIndex + 1}장 ${deck.structure.chapters[chapterIndex].topic}` : "이 장";
@@ -190,9 +191,9 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   };
 
   // 서버가 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (D3c-5, 계획 4.7, 4.8). 판정(입력이 바뀐
-  // 후보, 축약 뒤 바뀐 슬롯)도 서버가 저장 직전에 한다. 비교 화면(D3c-6)이 생기기 전까지는 서버의 기본 선택으로 반영한다:
-  // 다시 생성은 직접 고친 문구만 지금 문구로 두고, 축약은 모두 새 문구다. 위치와 서식 수정은 남는다
-  const applyResult = async (selection: CompareSelection) => {
+  // 후보, 축약 뒤 바뀐 슬롯)도 서버가 저장 직전에 한다. 선택은 비교 화면(D3c-6)이 마지막 미리 보기에서 받은 실제 선택이고,
+  // baseEtag는 그 미리 보기의 기준 저장본이다(리뷰 G1)
+  const applyResult = async (selection: CompareSelection, baseEtag: string) => {
     if (!result || result.status !== "ok" || !result.slots || busy || !job) return;
     const requestedChapterId = chapterId;
     const candidate = job;
@@ -204,7 +205,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       if (!await onFlush()) return;  // 저장 실패나 충돌이면 진행하지 않는다. 편집기의 안내가 보인다
       if (chapterIdRef.current !== requestedChapterId) return;
       const base = deckRef.current;
-      const saved = await api.applyCandidate(project.name, candidate.id, selection);
+      const saved = await api.applyCandidate(project.name, candidate.id, selection, baseEtag);
       onApplied(saved, base);
       if (chapterIdRef.current !== requestedChapterId) return;
       setResult(null);
@@ -253,7 +254,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
 
   return (
     <section className="generate-panel">
-      <h4>AI 다시 쓰기</h4>
+      <h4 ref={heading} tabIndex={-1}>AI 다시 쓰기</h4>
       <div className="field">
         <label>지시사항 (선택)
           <textarea aria-label="재생성 지시사항" value={instructions}
@@ -261,7 +262,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
         </label>
       </div>
       <div className="actions">
-        <button ref={regenerateButton} onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
+        <button onClick={regenerate} disabled={busy}>이 장 다시 생성</button>
         <button onClick={condense} disabled={busy || !slide}>이 장 축약</button>
       </div>
       {busy && <p>생성 중입니다. 잠시 기다려 주세요 (최대 5분)...</p>}
@@ -309,8 +310,8 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       )}
       {comparing && job && result?.status === "ok" && result.slots && (
         <CandidateCompareDialog projectName={project.name} jobId={job.id} title={chapterTitle}
-          candidateSlots={result.slots} returnFocus={compareButton} fallbackFocus={regenerateButton}
-          onApply={(selection) => applyResult(selection)}
+          candidateSlots={result.slots} returnFocus={compareButton} fallbackFocus={heading}
+          onApply={(selection, baseEtag) => applyResult(selection, baseEtag)}
           onRegenerate={job.kind === "condense" ? (slide ? condense : undefined) : () => void regenerate()}
           onStaleBase={() => { setComparing(false); onConflict(STALE_BASE); }}
           onClose={() => setComparing(false)} />

@@ -14,6 +14,7 @@ import { ReviewScreen } from "./ReviewScreen";
 import { AiStatusLine } from "../ui/AiStatusLine";
 import { JobAnnouncer, SaveAnnouncer, StatusIndicator, type SaveStatus } from "../ui/StatusIndicator";
 import { SourcesScreen } from "./SourcesScreen";
+import { APPLY_UNCONFIRMED } from "../editor/GeneratePanel";
 import { EMPTY_BRIEF, StructureScreen, type StructureBrief } from "./StructureScreen";
 import { batchSummary, JOB_STAGE, stageLimitations, stageProgress, stageStatus, type Stage } from "./stageStatus";
 
@@ -30,7 +31,7 @@ export const STAGES: ReadonlyArray<{ id: Stage; label: string }> = [
 // 덱의 사본을 들고 저장하는 단계. 묶음 종결 뒤 미저장 사본이 있으면 충돌 안내, 없으면 새 덱으로 다시 마운트한다.
 // 자료와 검토 단계는 덱을 읽기만 하므로 덱만 다시 읽는다 (계획 4.1 β R1 분기)
 const DECK_COPY_STAGES: ReadonlySet<Stage> = new Set(["purpose", "structure", "editor"]);
-type Conflict = null | "other" | "batch_here";
+type Conflict = null | "other" | "batch_here" | "unconfirmed";  // unconfirmed: 반영 요청의 5xx (D3c-6 리뷰 G8)
 
 export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }: {
   project: ProjectInfo; onBack: () => void; jobPollMs?: number;
@@ -779,7 +780,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
           <p role="alert">
             {conflict === "batch_here"
               ? "생성한 장이 문서에 반영되었습니다. 이 화면의 저장하지 않은 변경은 필요하면 복사해 둔 뒤 서버 내용을 다시 읽어 주세요."
-              : "다른 창이나 프로그램에서 먼저 저장되었습니다."}{" "}
+              : conflict === "unconfirmed" ? APPLY_UNCONFIRMED : "다른 창이나 프로그램에서 먼저 저장되었습니다."}{" "}
             {/* 다른 이동 버튼과 같은 조건으로 잠근다: 업로드 진행 중 눌러 자료 화면이 통째로
                 언마운트되면, 나중에 응답한 업로드 결과가 화면에 영구히 반영되지 않는다(B 묶음
                 최종 리뷰 major F-1) */}
@@ -820,6 +821,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
           <StructureScreen key={screenKeyValue} project={project} deck={deck} onDeckChange={setDeck}
             onDone={() => { setError(""); setSaveStatus(null); setFocusChapter(null); setStage("editor"); }}
             onBusyChange={setGenerating} onConflict={onConflict} brief={structureBrief} onBriefChange={setStructureBrief}
+            onApplyUnconfirmed={() => { justConflicted.current = true; setConflict("unconfirmed"); }}
             onScreenReady={f => { flushScreen.current = f; }} onDirtyChange={setDirty}
             onSaveStatusChange={setSaveStatus} onJobRegistered={onJobRegistered} onJobFollowed={onJobFollowed}
             focusChapterId={focusChapter}

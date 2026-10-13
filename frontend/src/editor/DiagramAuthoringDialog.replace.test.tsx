@@ -118,13 +118,14 @@ it.each(["basis", "preview"])("%s 늦은 응답은 새 폼 입력의 검사 결�
   expect(ui.onApply).not.toHaveBeenCalled();
 });
 
-it("적용 응답이 새 저장본 뒤에 도착하면 이전 후보를 인계하지 않는다", async () => {
+it("적용 응답이 새 저장본 뒤에 도착해도 저장된 결과는 처음 기준과 함께 넘겨 편집 화면이 판정한다 (D3c-6 리뷰 G11)", async () => {
   const pending = deferred<Deck>(); vi.mocked(api.applyDocumentChange).mockReturnValue(pending.promise);
   const ui = open(); await checkCandidate(); await confirmAll();
   await userEvent.click(screen.getByRole("button", { name: "도식 적용" }));
   ui.rerender(<DiagramAuthoringDialog {...ui.props} deck={fresh()} />);
   await act(async () => pending.resolve(confirmation().candidate));
-  expect(ui.onApply).not.toHaveBeenCalled();
+  // 서버에 저장된 결과다. 여기서 버리면 다음 자동 저장이 덮는다. 기준(ui.deck)이 지금 덱과 다르므로 편집 화면이 충돌로 보낸다
+  expect(ui.onApply).toHaveBeenCalledWith(confirmation().candidate, ui.deck, "synthetic-flow", true);
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("AI 교체 후보");
 });
 
@@ -171,7 +172,7 @@ it("적용 중 unmount되어도 실제 요청이 끝날 때까지 소유한 busy
   expect(ui.onBusyChange).toHaveBeenLastCalledWith(true);
   await act(async () => pending.resolve(confirmation().candidate));
   expect(ui.onBusyChange).toHaveBeenLastCalledWith(false);
-  expect(ui.onApply).not.toHaveBeenCalled();
+  expect(ui.onApply).toHaveBeenCalledWith(confirmation().candidate, ui.deck, "synthetic-flow", true);  // 저장된 결과는 넘긴다(리뷰 G11)
 });
 
 it("적용 중 폼 편집·닫기·Escape를 차단하고 확정된 후보의 저장 응답을 인계한다", async () => {
