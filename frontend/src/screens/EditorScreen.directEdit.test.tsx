@@ -85,6 +85,13 @@ describe("모드", () => {
     expect(modeButton()).toHaveTextContent("직접 수정");
   });
 
+  it("막대는 편집 영역의 첫 자식이라 쌓인 배치에서 장 목록보다 먼저 보이고 Tab 순서도 같다 (α 랩업 배치 A)", async () => {
+    await open();
+    const bar = modeButton().closest(".direct-edit-bar");
+    expect(bar?.parentElement).toHaveClass("editor-screen");
+    expect(bar?.parentElement?.firstElementChild).toBe(bar);
+  });
+
   it("읽기 전용에서는 모드를 열 수 없다", async () => {
     await open({ readOnly: true });
     expect(modeButton()).toBeDisabled();

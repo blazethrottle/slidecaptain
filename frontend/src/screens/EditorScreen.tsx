@@ -286,6 +286,15 @@ export function EditorScreen({
       {/* 묶음 전에 고친 내용이 남아 있으면 그 결과를 알린다 (D3a-β 리뷰 B2) */}
       {editor.saveState === "저장 대기" && " 고친 내용은 생성이 끝난 뒤 다시 저장합니다. 그사이 문서가 바뀌었으면 충돌 안내가 뜨고, 서버 내용으로 되돌릴 때 고친 내용을 보존합니다."}</p>}
     <div className="editor-screen" inert={diagramDraft !== null || diagramBusy || templateBusy || editor.reloading}>
+      {/* 막대는 편집 영역의 첫 자식이다: 쌓인 배치에서 장 목록보다 위에 와 512×360에서도 첫 화면 안에 남고,
+          넓은 배치에서는 격자 영역으로 가운데 열 위에 둔다 (α 랩업 배치 A) */}
+      {slide && !slide.diagram && editor.plan && (
+        <div className="direct-edit-bar">
+          <button ref={modeButton} aria-pressed={mode} disabled={!mode && !canMode} onClick={toggleMode}>
+            {mode ? "수정 완료" : "직접 수정"}</button>
+          {mode && <span className="hint">{MODE_GUIDE}</span>}
+        </div>
+      )}
       <aside className="editor-left">
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
           onSelect={(id) => { setChapterId(id); setSelected(null); }}
@@ -335,13 +344,6 @@ export function EditorScreen({
           <p role="alert">{editor.measureError}{" "}
             <button onClick={editor.remeasure}>다시 그리기</button>
           </p>
-        )}
-        {slide && !slide.diagram && editor.plan && (
-          <div className="direct-edit-bar">
-            <button ref={modeButton} aria-pressed={mode} disabled={!mode && !canMode} onClick={toggleMode}>
-              {mode ? "수정 완료" : "직접 수정"}</button>
-            {mode && <span className="hint">{MODE_GUIDE}</span>}
-          </div>
         )}
         <p role="status" className="sr-status">{status}</p>
         {slide && editor.plan ? (

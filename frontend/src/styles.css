@@ -191,8 +191,15 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="c
 .preview-canvas.stale { opacity: 0.55; }  /* 낡은 계획: 새 계획이 올 때까지 편집이 열리지 않는다 */
 
 /* 캔버스의 논리 폭이 가운데 열의 최소 폭이 되어 속성 패널을 화면 밖으로 밀지 않게 한다. */
-.editor-screen { display: grid; grid-template-columns: var(--width-editor-left) minmax(0, 1fr) var(--width-editor-right); gap: var(--space-3); }
-.editor-center { min-width: 0; }
+.editor-screen { display: grid; grid-template-columns: var(--width-editor-left) minmax(0, 1fr) var(--width-editor-right);
+  grid-template-rows: auto 1fr; grid-template-areas: "left bar right" "left center right"; column-gap: var(--space-3); }
+.editor-center { min-width: 0; grid-area: center; }
+/* 직접 수정 막대는 편집 영역의 첫 자식이고 격자 영역으로 놓는다 (α 랩업 배치 A). 넓은 배치에서는 가운데 열 위(창 위쪽 끝에서
+   97px)에 두어 1100×800의 속성 패널 제목이 첫 화면 안에 남고, 쌓인 배치에서는 장 목록 위에 두어 512×360에서도 첫 화면
+   안이다. 막대가 없는 장(도식, 계획 전)에서 빈 행이 캔버스를 내리지 않도록 행 간격은 0이고 간격은 각 영역의 여백으로 준다 */
+.direct-edit-bar { grid-area: bar; }
+.editor-left { grid-area: left; }
+.editor-right { grid-area: right; }
 /* 편집 화면의 쌓임은 뷰포트가 아니라 본문 폭으로 정한다 (D3a-2, 계획 4.1). 단계 목록이 생기면 같은 뷰포트에서
    본문이 좁아지기 때문이다.
    - 1080px: 세 열 배치의 캔버스가 1024x720 두 열 배치에서 잰 캔버스 폭(556px)보다 좁아지지 않는 본문 폭이다
@@ -202,16 +209,18 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="c
    - 748px: 뷰포트 780px에서 단계 목록이 가로 띠가 되고 본문 좌우 여백 16px씩을 뺀 폭. 이하이면 세 영역을
      쌓는다. 뷰포트 781~984px(단계 목록 188px, 본문 여백 24px씩)도 본문 폭이 748px 이하라 한 열이다 */
 @container stage (max-width: 1080px) {
-  .editor-screen { grid-template-columns: var(--width-editor-left) minmax(0, 1fr); }
-  .editor-right { grid-column: 1 / -1; padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+  .editor-screen { grid-template-columns: var(--width-editor-left) minmax(0, 1fr); grid-template-rows: auto 1fr auto;
+    grid-template-areas: "left bar" "left center" "right right"; }
+  .editor-right { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 }
 @container stage (max-width: 748px) {
-  .editor-screen { grid-template-columns: minmax(0, 1fr); }
+  .editor-screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "bar" "left" "center" "right"; }
   .editor-left, .editor-right { min-width: 0; overflow-wrap: anywhere; }
+  .editor-center { margin-top: var(--space-3); }
   .editor-left .chapter-list { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; padding: 0; margin: 0 0 var(--space-2); }
   .editor-left .chapter-list li { flex: 0 1 var(--width-editor-left); min-width: 0; max-width: 100%; }
   .editor-left .chapter-list button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-  .editor-right { padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+  .editor-right { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 }
 .warn-badge { color: var(--color-danger); }
 
