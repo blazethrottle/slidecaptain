@@ -123,7 +123,8 @@ describe("후보형 작업 중 (계획 4.4 표 첫 행)", () => {
     vi.mocked(api.getActiveJob).mockResolvedValue(status(null));
     vi.mocked(api.listJobs).mockResolvedValue([jobView("structure", { id: "job-s", result: structureResult([CH1]) })]);
     await waitFor(() => expect(screen.getByRole("button", { name: "AI 연결 및 모델" })).toBeEnabled());
-    expect(dispatchBeforeUnload()).toBe(false);
+    // 경고 처리기는 렌더 뒤의 효과에서 다시 등록된다. 버튼이 풀린 같은 순간에는 옛 처리기가 남아 있을 수 있다(Windows CI 간헐 실패)
+    await waitFor(() => expect(dispatchBeforeUnload()).toBe(false));
     await userEvent.click(stageButton("구성"));
     expect(await screen.findByText(/이전에 만든 구조안 후보를 불러왔습니다/)).toBeInTheDocument();
     expect(screen.getByLabelText("1번 장 주제")).toHaveValue("첫 장");
