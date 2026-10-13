@@ -138,7 +138,26 @@ def test_shrinking_below_the_reading_floor_warns_but_is_allowed():
     plan = _plan(_deck("bullet_box", BULLETS, edits={"bullets": {"font_scale": 0.9}}))
     assert min(p.font_pt for p in _frames(plan)["bullets"].paras) < 12
     [warning] = [w for w in plan.slides[0].warnings if "읽기 하한" in w.message]
-    assert warning.slot == "bullets"
+    assert (warning.slot, warning.kind) == ("bullets", "font_size")
+
+
+def test_font_size_warnings_are_reported_apart_from_layout_capacity():
+    """일부러 줄인 글자는 분량 넘침이 아니다. 용량 항목은 통과로 두고 글자 크기 항목을 따로 보인다 (D3c-2 리뷰 F3)."""
+    deck = _deck("bullet_box", BULLETS, edits={"bullets": {"font_scale": 0.9}, "footnote": {"font_scale": 0.01}})
+    plan = _plan(deck)
+    kinds = sorted((w.slot, w.kind) for w in plan.slides[0].warnings)
+    assert kinds == [("bullets", "font_size"), ("footnote", "font_size"), ("footnote", "font_size")]  # 하한 둘과 자르기 하나
+    report = assess_quality(deck, PRESET, plan)
+    checks = {c.name: c for c in report.checks}
+    assert checks["layout_capacity"].status == "passed" and "용량 경고 0건" in checks["layout_capacity"].detail
+    assert (checks["font_size"].status, checks["font_size"].failed, checks["font_size"].chapter_ids) == ("failed", 3, ["c1"])
+    plain = _deck("bullet_box", BULLETS)
+    plain_plan = _plan(plain)
+    assert "font_size" not in {c.name for c in assess_quality(plain, PRESET, plain_plan).checks}
+    # 종류 칸은 기본값이면 직렬화에서 빠진다: 수정값이 없는 덱의 렌더 계획 바이트가 그대로다
+    long = _deck("bullet_box", {**BULLETS, "conclusion": "아주 긴 결론 " * 40})
+    dumped = _plan(long).model_dump(mode="json")["slides"][0]["warnings"]
+    assert dumped and all("kind" not in w for w in dumped)
 
 
 # -- 색 -------------------------------------------------------------------------------------
@@ -233,7 +252,9 @@ def test_plans_without_edits_have_no_new_fields():
 
 
 def test_pptx_bytes_are_unchanged_for_decks_without_edits(tmp_path, monkeypatch):
-    """글자 크기는 1/100pt 반올림으로 바꿨지만 지금 프리셋 크기에서는 버림과 같아 바이트가 그대로다 (재리뷰 RR1)."""
+    """글자 크기는 1/100pt 반올림으로 바꿨지만 기본 프리셋의 크기에서는 버림과 같아 바이트가 그대로다 (재리뷰 RR1).
+
+    덱별 디자인 값에 18.4pt 같은 소수 크기를 넣은 덱은 바뀐다. 아래 시험이 그 범위를 고정한다 (D3c-2 리뷰 F1)."""
     original = pptx_writer._style_run
 
     def floor_style_run(run, para, style):
@@ -255,6 +276,19 @@ def test_pptx_bytes_are_unchanged_for_decks_without_edits(tmp_path, monkeypatch)
         assert new.read_bytes() == old.read_bytes(), name
         checked += 1
     assert checked >= 2
+
+
+def test_decimal_design_sizes_are_written_rounded_not_floored(tmp_path):
+    """수정값이 없어도 디자인 값의 소수 크기는 반올림으로 기록돼 0.2.0의 버림보다 0.01pt 크다 (D3c-2 리뷰 F1).
+
+    그 덱의 PPTX 바이트는 이 개정판에서 바뀐다. 내보내기 지문은 덱과 렌더 계획으로 계산하므로 바뀌지 않는다."""
+    preset = PRESET.model_copy(update={"font_roles": PRESET.font_roles.model_copy(update={"title_pt": 18.4, "footnote_pt": 9.2})})
+    deck = _deck("bullet_box", BULLETS)
+    out = tmp_path / "decimal.pptx"
+    write_pptx(build_render_plan(deck, preset, METRICS), out)
+    xml = Presentation(str(out)).slides[0].shapes._spTree.xml
+    assert 'sz="1840"' in xml and 'sz="920"' in xml
+    assert 'sz="1839"' not in xml and 'sz="919"' not in xml
 
 
 def test_pptx_matches_the_plan_for_edited_elements(tmp_path):
@@ -299,6 +333,20 @@ def test_hidden_evidence_check_appears_only_when_evidence_is_hidden():
     [check] = [c for c in report.checks if c.name == "hidden_evidence"]
     assert (check.status, check.failed, check.chapter_ids) == ("failed", 1, ["c1"])
     assert report.status == "needs_revision"
+
+
+def test_hidden_numeric_text_is_evidence_even_when_numeric_review_did_not_run():
+    # 구성 계획이 없는 덱: 수치 검토는 not_run(missing_plan)이고 평가 항목이 비지만 숫자 문구의 숨김은 잡는다 (D3c-2 리뷰 F2)
+    deck = _deck("bullet_box", {"bullets": [{"text": "매출 20% 증가"}, {"text": "고객 만족"}], "conclusion": "영업이익 35억 원 달성"},
+                 edits={"bullets": {"hidden": True}, "conclusion": {"hidden": True}})
+    report = assess_quality(deck, PRESET, _plan(deck))
+    assert (report.numeric_review.status, report.numeric_review.reason) == ("not_run", "missing_plan")
+    [check] = [c for c in report.checks if c.name == "hidden_evidence"]
+    assert check.failed == 2
+    # 장 번호, 장 제목, 우리말 요소 이름으로 적고 내부 열쇠는 쓰지 않는다 (D3c-2 리뷰 F6)
+    assert "1장 장 제목의 본문 불릿, 결론 상자" in check.detail and "bullets" not in check.detail
+    plain = _deck("bullet_box", {"bullets": [{"text": "고객 만족"}, {"text": "품질 개선"}], "conclusion": "결론"}, edits={"bullets": {"hidden": True}})
+    assert "hidden_evidence" not in [c.name for c in assess_quality(plain, PRESET, _plan(plain)).checks]
 
 
 def test_numeric_paths_map_to_element_keys():
@@ -349,6 +397,31 @@ def test_font_limit_reports_the_largest_size_that_does_not_overflow(client):
     body["key"] = "title"
     title = client.post("/api/projects/p1/direct-edits/font-limit", json=body).json()
     assert title["fits_up_to_pt"] > PRESET.font_roles.title_pt
+
+
+def test_font_limit_counts_bold_span_width_like_the_engine():
+    """굵게 강조한 요소도 보인 최대 크기로 저장하면 그 요소에 경고가 없다 (D3c-2 리뷰 F4, 리뷰 실측 8개 중 4개 경고)."""
+    import hashlib
+
+    from slidecaptain.layout.direct_edits import font_limit
+
+    warned = []
+    for n in range(1, 9):
+        first = ("가나다라마바사 아자차카 타파하 " * n).strip()
+        span = {"slot": "bullets", "index": 0, "start": 0, "end": len(first), "role": "bold",
+                "text_sha256": hashlib.sha256(first.encode()).hexdigest()}
+        deck = _deck("bullet_box", {"bullets": [{"text": first}, {"text": "둘째 항목 문장"}], "conclusion": "결론"},
+                     text_spans=[span])
+        limit = font_limit(deck.structure.chapters[0], deck.slides[0], PRESET, METRICS, "", "bullets")
+        if limit["fits_up_to_pt"] is None:
+            continue
+        payload = deck.model_dump(mode="json")
+        payload["slides"][0]["direct_edits"] = {"bullets": {"font_scale": limit["fits_up_to_pt"] / limit["base_pt"]}}
+        edited = Deck.model_validate(payload)
+        keys = frame_keys(edited.slides[0])
+        if any(warning_key(w.slot, keys) == "bullets" for w in _plan(edited).slides[0].warnings):
+            warned.append(n)
+    assert warned == []
 
 
 def test_font_limit_rejects_elements_without_font_and_unknown_chapters(client):

@@ -1076,7 +1076,14 @@ export interface components {
             /** Chapter Id */
             chapter_id?: string | null;
         };
-        /** CapacityWarning */
+        /**
+         * CapacityWarning
+         * @description 레이아웃 경고. 분량 경고(capacity)의 needed_pt와 available_pt는 필요한 높이와 가용 높이다.
+         *
+         *     글자 크기 경고(font_size, 직접 수정의 배율, D3c-2)는 같은 두 칸에 기준 크기와 실제 크기를 담는다: 읽기 하한 경고는
+         *     하한과 줄인 크기, PowerPoint 범위로 자른 경고는 요청한 크기와 자른 크기다. 품질 보고는 두 종류를 다른 항목으로 센다
+         *     (D3c-2 리뷰 F3). kind는 기본값이면 직렬화에서 빼므로 수정값이 없는 덱의 렌더 계획은 그대로다.
+         */
         CapacityWarning: {
             /** Chapter Id */
             chapter_id: string;
@@ -1088,6 +1095,11 @@ export interface components {
             needed_pt: number;
             /** Available Pt */
             available_pt: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind?: "capacity" | "font_size";
         };
         /** Card */
         Card: {

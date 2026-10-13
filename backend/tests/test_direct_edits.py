@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from slidecaptain.layout.templates import build_slide
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Slide, Structure
-from slidecaptain.models.direct_edit import ElementEdit, frame_keys, normalize_edits
+from slidecaptain.models.direct_edit import ElementEdit, frame_keys, normalize_edits, role_name
 from slidecaptain.models.preset import Preset
 from slidecaptain.storage import project_format
 from slidecaptain.storage.file_store import FileProjectStore
@@ -113,7 +113,8 @@ def test_frame_keys_fixture_is_current():
     expected = json.loads(KEYS_FIXTURE.read_text(encoding="utf-8"))
     actual = [
         {"template": t, "variant": v, "common": c,
-         "keys": {k: {"kinds": sorted(spec.kinds), "drag": spec.drag} for k, spec in frame_keys(_slide(t, v, c)).items()}}
+         "keys": {k: {"kinds": sorted(spec.kinds), "drag": spec.drag, "name": role_name(k, t)}
+                 for k, spec in frame_keys(_slide(t, v, c)).items()}}
         for t, v, c in _configs()
     ]
     assert actual == expected["cases"]

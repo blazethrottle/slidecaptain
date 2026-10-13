@@ -8,12 +8,12 @@ import hashlib
 import json
 
 from slidecaptain.models.deck import Deck
-from slidecaptain.models.direct_edit import EVIDENCE_KEYS, numeric_path_key
+from slidecaptain.models.direct_edit import EVIDENCE_KEYS, numeric_path_key, role_name
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.quality import QualityCheck, QualityReport
 from slidecaptain.models.render import RenderPlan
-from slidecaptain.pipeline.numeric_review import assess_numeric_review
+from slidecaptain.pipeline.numeric_review import assess_numeric_review, numeric_fields
 
 _NUMERIC_NOT_RUN = {
     "missing_plan": "보고 계획이 없어 대조하지 않았습니다.",
@@ -35,14 +35,20 @@ class QualityExportBlocked(ValueError):
         super().__init__(reason)
 
 
-def _hidden_evidence(deck: Deck, numeric) -> list[tuple[str, str]]:
-    """숨긴 근거 표시(장 ID, 요소 열쇠). 각주와 표 묶음, 수치 검토가 평가한 칸이 든 요소다 (D3c 계획 4.3, 4.6)."""
+def _hidden_evidence(deck: Deck) -> list[tuple[str, str]]:
+    """숨긴 근거 표시(장 ID, 요소 열쇠). 각주와 표 묶음, 숫자가 든 칸이 있는 요소다 (D3c 계획 4.3, 4.6).
+
+    숫자 칸은 수치 검토의 평가 항목이 아니라 숫자가 든 칸 전체로 정한다. 평가 항목은 구성 계획이 없거나 자료가 바뀌면
+    비므로, 같은 숨김이 자료 상태에 따라 잡히기도 하고 빠지기도 했다 (D3c-2 리뷰 F2)."""
+    paths: dict[str, list[str]] = {}
+    for chapter_id, path, _ in numeric_fields(deck):
+        paths.setdefault(chapter_id, []).append(path)
     found: list[tuple[str, str]] = []
     for slide in deck.slides:
         hidden = [key for key, edit in slide.direct_edits.items() if edit.hidden]
         if not hidden:
             continue
-        numeric_keys = {numeric_path_key(slide, item.path) for item in numeric.items if item.chapter_id == slide.chapter_id}
+        numeric_keys = {numeric_path_key(slide, path) for path in paths.get(slide.chapter_id, [])}
         found.extend((slide.chapter_id, key) for key in hidden if key in EVIDENCE_KEYS or key in numeric_keys)
     return found
 
@@ -71,8 +77,11 @@ def assess_quality(
     expected = [chapter.id for chapter in deck.structure.chapters]
     rendered = {slide.chapter_id for slide in plan.slides}
     missing = [chapter_id for chapter_id in expected if chapter_id not in rendered]
-    warning_chapters = [slide.chapter_id for slide in plan.slides if slide.warnings]
-    warning_count = sum(len(slide.warnings) for slide in plan.slides)
+    # 직접 수정의 글자 크기 경고는 분량 넘침이 아니므로 용량 항목에 세지 않고 따로 보인다 (D3c-2 리뷰 F3)
+    capacity = {s.chapter_id: [w for w in s.warnings if w.kind == "capacity"] for s in plan.slides}
+    font_size = {s.chapter_id: [w for w in s.warnings if w.kind == "font_size"] for s in plan.slides}
+    warning_chapters = [chapter_id for chapter_id, found in capacity.items() if found]
+    warning_count = sum(len(found) for found in capacity.values())
     checks = [
         QualityCheck(
             name="nonempty_output", status="passed" if plan.slides else "failed",
@@ -105,14 +114,30 @@ def assess_quality(
             f"확인 필요 {numeric.unresolved}개입니다. 자유로운 문장의 의미는 검수하지 않았습니다."
         ),
     ))
-    hidden = _hidden_evidence(deck, numeric)
+    font_chapters = [chapter_id for chapter_id, found in font_size.items() if found]
+    if font_chapters:
+        # 글자 크기 경고가 있을 때만 넣는다. 수정값이 없는 덱의 보고는 그대로다
+        count = sum(len(found) for found in font_size.values())
+        checks.append(QualityCheck(
+            name="font_size", status="failed", evaluated=count, failed=count, chapter_ids=font_chapters,
+            detail=f"글자 크기 경고 {count}건입니다. 직접 수정에서 읽기 하한(본문 12pt, 각주 9pt) 아래로 줄였거나 "
+                   "PowerPoint가 받는 범위로 맞춘 요소가 있습니다. 읽기에 문제가 없는지 확인해 주세요.",
+        ))
+    hidden = _hidden_evidence(deck)
     if hidden:
         # 숨긴 근거 표시가 있을 때만 넣는다. 늘 넣으면 대상 0인 통과가 되거나 모든 덱의 보고가 바뀐다 (D3c-2, 재리뷰 RR11)
-        evidence = [key for _, key in hidden]
+        # 사용자가 찾아갈 수 있게 장 번호와 장 제목, 우리말 요소 이름으로 적는다 (D3c-2 리뷰 F6)
+        order = {chapter.id: (index, chapter) for index, chapter in enumerate(deck.structure.chapters, 1)}
+        templates = {slide.chapter_id: slide.slots.template for slide in deck.slides}
+        places = []
+        for chapter_id in dict.fromkeys(chapter_id for chapter_id, _ in hidden):
+            index, chapter = order[chapter_id]
+            names = ", ".join(role_name(key, templates[chapter_id]) for c, key in hidden if c == chapter_id)
+            places.append(f"{index}장{f' {chapter.topic}' if chapter.topic.strip() else ''}의 {names}")
         checks.append(QualityCheck(
             name="hidden_evidence", status="failed", evaluated=len(hidden), failed=len(hidden),
             chapter_ids=list(dict.fromkeys(chapter_id for chapter_id, _ in hidden)),
-            detail=f"근거 표시(각주, 표, 숫자가 든 문구) {len(hidden)}개를 숨겼습니다({', '.join(evidence)}). "
+            detail=f"근거 표시(각주, 표, 숫자가 든 문구) {len(hidden)}개를 숨겼습니다: {'; '.join(places)}. "
                    "숨긴 채로 내보내도 되는지 확인해 주세요. 숨긴 문구는 계속 검토합니다.",
         ))
     for name, detail in (

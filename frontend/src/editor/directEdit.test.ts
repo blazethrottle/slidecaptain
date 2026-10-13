@@ -22,7 +22,10 @@ function sample(template: string, variant: string, common: boolean): Slide {
 it("요소 열쇠와 받는 수정 종류가 서버 frame_keys와 같다 (고정 파일 60개 구성, 공백만 있는 칸 포함)", () => {
   expect(keysFixture.cases.length).toBe(60);
   for (const c of keysFixture.cases) {
-    expect(frameKeys(sample(c.template, c.variant, c.common)), `${c.template} ${c.variant} ${c.common}`).toEqual(c.keys);
+    const keys = Object.fromEntries(Object.entries(c.keys).map(([k, spec]) => [k, { kinds: spec.kinds, drag: spec.drag }]));
+    expect(frameKeys(sample(c.template, c.variant, c.common)), `${c.template} ${c.variant} ${c.common}`).toEqual(keys);
+    // 우리말 역할 이름도 서버 role_name과 같다. 품질 보고 문구가 서버 쪽 표를 쓴다 (D3c-2 리뷰 F6)
+    for (const [k, spec] of Object.entries(c.keys)) expect(roleName(k, c.template), k).toBe(spec.name);
   }
 });
 

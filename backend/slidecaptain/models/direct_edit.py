@@ -8,6 +8,7 @@
 이 모듈은 모델 모듈(deck.py)이 가져다 쓰므로 슬롯 클래스를 가져오지 않고 `template` 값과 속성으로 판정한다.
 """
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_serializer, model_validator
@@ -175,6 +176,29 @@ def normalize_edits(edits: dict[str, ElementEdit], keys: dict[str, KeySpec]) -> 
 
 # 근거 표시인 요소(계획 4.3): 각주와 표 묶음은 늘 근거이고, 그 밖의 요소는 수치 검토가 평가한 칸이 들어 있으면 근거다
 EVIDENCE_KEYS = frozenset({"footnote", "table"})
+
+# 요소의 우리말 역할 이름. 화면의 roleName(editor/directEdit.ts)과 같은 표이고 고정 파일 frame-keys.json으로 묶는다.
+# 품질 보고 문구가 내부 열쇠 대신 쓴다 (D3c-2 리뷰 F6)
+_FIXED_NAMES = {
+    "title": "장 제목", "eyebrow": "제목 위 분류", "subtitle": "제목 아래 한 문장", "bullets": "본문 불릿", "points": "요점 목록",
+    "conclusion": "결론 상자", "footnote": "각주", "table": "표", "text": "강조 밴드 문구", "left_card": "왼쪽 카드",
+    "right_card": "오른쪽 카드", "cover_title": "표지 제목", "date": "날짜", "presenter": "보고자", "section_no": "구분 번호",
+    "section_title": "구분 제목", "page_number": "쪽 번호",
+}
+
+
+def role_name(key: str, template: str | None = None) -> str:
+    if template == "cover" and key == "subtitle":
+        return "표지 부제"
+    if key in _FIXED_NAMES:
+        return _FIXED_NAMES[key]
+    if m := re.fullmatch(r"card(\d+)", key):
+        return f"{int(m[1]) + 1}번 카드"
+    if m := re.fullmatch(r"step(\d+)(_badge|_labels)?", key):
+        return f"{int(m[1]) + 1}단계 " + {"_badge": "번호", "_labels": "라벨"}.get(m[2] or "", "본문")
+    if m := re.fullmatch(r"row(\d+)_(category|primary|items)", key):
+        return f"{int(m[1]) + 1}번 행 " + {"category": "분류", "primary": "대표 항목", "items": "나열"}[m[2]]
+    return key
 _LIST_KEYS = {"cards": "card", "steps": "step", "rows": "row"}
 
 

@@ -77,7 +77,7 @@ def clamp_scales(
         largest = max(base_sizes)
         if clamped != scale:
             warnings.append(CapacityWarning(
-                chapter_id=base.chapter_id, slot=key,
+                chapter_id=base.chapter_id, slot=key, kind="font_size",
                 message=f"글자 크기를 {round(largest * clamped, 2):g}pt로 맞췄습니다. PowerPoint가 받는 범위를 넘었습니다",
                 needed_pt=round(largest * scale, 2), available_pt=round(largest * clamped, 2),
             ))
@@ -85,7 +85,7 @@ def clamp_scales(
         if any((b >= BODY_MIN_PT and s < BODY_MIN_PT) or (b >= FOOTNOTE_MIN_PT and s < FOOTNOTE_MIN_PT) for b, s in below):
             floor = BODY_MIN_PT if any(b >= BODY_MIN_PT and s < BODY_MIN_PT for b, s in below) else FOOTNOTE_MIN_PT
             warnings.append(CapacityWarning(
-                chapter_id=base.chapter_id, slot=key,
+                chapter_id=base.chapter_id, slot=key, kind="font_size",
                 message=f"읽기 하한({floor:g}pt) 아래로 줄였습니다. 인쇄나 화면에서 읽기 어려울 수 있습니다",
                 needed_pt=floor, available_pt=min(s for _, s in below),
             ))
@@ -147,9 +147,10 @@ def drop_hidden_warnings(page: SlidePlan, edits: dict[str, ElementEdit], keys) -
 def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str) -> dict | None:
     """고른 요소가 경고 없이 받는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 화면이 글자 크기 칸 옆에 보인다.
 
-    크기 조절이 없으므로 상자 높이는 그대로다. 그 요소에 붙는 용량 경고가 없는 가장 큰 배율을 빌더와 같은 판정식으로
-    찾는다(이분 탐색). 다른 요소의 배율은 지금 값을 둔다. 문단이 없는 요소는 None이다.
+    크기 조절이 없으므로 상자 높이는 그대로다. 그 요소에 붙는 용량 경고가 없는 가장 큰 배율을 엔진과 같은 판정식(빌더와
+    부분 강조)으로 찾는다(이분 탐색). 다른 요소의 배율은 지금 값을 둔다. 문단이 없는 요소는 None이다.
     """
+    from slidecaptain.layout.expression import apply_text_spans
     from slidecaptain.layout.templates import build_slide
     from slidecaptain.models.direct_edit import frame_keys
 
@@ -166,6 +167,13 @@ def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str
 
     def fits(scale: float) -> bool:
         page = build({**others, key: scale})
+        if slide.text_spans:
+            # 엔진처럼 부분 강조까지 적용한 뒤 본다. 굵은 글자의 실제 폭으로 다시 끊으면 넘칠 수 있다 (D3c-2 리뷰 F4).
+            # 강조를 적용할 수 없는 덱은 엔진의 렌더도 실패하므로 여기서는 빌더 경고만 본다
+            try:
+                apply_text_spans(slide, page, preset, metrics)
+            except ValueError:
+                pass
         return not any(warning_key(w.slot, keys) == key for w in page.warnings)
 
     edit = slide.direct_edits.get(key)
