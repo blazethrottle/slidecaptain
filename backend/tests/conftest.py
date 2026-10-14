@@ -21,9 +21,14 @@ def _patch_testclient_base_url() -> None:
 
     starlette TestClient의 기본 base_url은 `http://testserver`다. 종전에는 이 이름을 운영
     TrustedHost 허용 목록에 넣어 시험을 통과시켰는데, 그러면 실제 서버도 `Host: testserver`를
-    받아들인다. 시험 파일 42곳이 TestClient를 직접 만들므로 파일마다 base_url을 적는 대신 여기
-    한 곳에서 기본값을 바꾼다. base_url을 명시한 호출(`test_api_protection.py`의 Host 검사)은
-    그대로 그 값을 쓴다.
+    받아들인다. pytest 시험 파일 40개(생성 213줄)가 TestClient를 직접 만들므로 파일마다 base_url을
+    적는 대신 여기 한 곳에서 기본값을 바꾼다. base_url을 명시한 호출(`test_api_protection.py`의
+    Host 검사)은 그대로 그 값을 쓴다.
+
+    이 교체는 pytest 프로세스 안에서만 적용된다. pytest 밖에서 TestClient를 만드는 코드
+    (`scripts/quality_pilot.py`, `tests/measure_jobs.py`, multiprocessing spawn 자식)는 반드시
+    `base_url="http://127.0.0.1"`을 명시한다. `test_quality_pilot.py`의 별도 프로세스 시험이 이를 지킨다
+    (2026-10-14 머지 전 리뷰 PM-01: 이 보정 없이 두 스크립트가 모든 요청에 400을 받았다).
     """
     original_init = TestClient.__init__
     if getattr(original_init, "_slidecaptain_base_url_patch", False):

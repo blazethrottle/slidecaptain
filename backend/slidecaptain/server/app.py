@@ -768,7 +768,8 @@ def create_app(
 
     # DNS 리바인딩 방지. 운영 허용 목록에 시험용 이름을 두지 않는다 (2026-10-14 최종 리뷰 SV-11:
     # 종전의 testserver는 점 없는 이름이라 브라우저가 보낼 수 있고 같은 망의 이름 해석이 답할 수 있었다.
-    # 시험은 tests/conftest.py가 TestClient의 기본 base_url을 127.0.0.1로 돌린다)
+    # pytest 시험은 tests/conftest.py가 TestClient의 기본 base_url을 127.0.0.1로 돌린다. pytest 밖에서
+    # TestClient를 만드는 스크립트는 base_url을 직접 명시해야 한다)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
     @app.middleware("http")

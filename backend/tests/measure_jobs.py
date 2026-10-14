@@ -61,7 +61,8 @@ def ledger_writes(tmp: Path) -> dict:
         setattr(JobLedger, name, timed(name))
     try:
         provider = ChapterProvider([slots(f"장 {i}") for i in range(5)])
-        with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        # pytest 가 모으지 않는 측정 스크립트라 conftest 의 기본 Host 변경이 적용되지 않는다 (SV-11, PM-01)
+        with TestClient(create_app(store, provider=provider), base_url="http://127.0.0.1", headers=HEADERS) as client:
             durations.clear()
             started = time.perf_counter()
             view = _wait(client, _register(client, store, [f"c{i}" for i in range(1, 6)]).json()["id"])

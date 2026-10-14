@@ -347,7 +347,8 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
         connection = _PilotConnection(bounded, model, real)
         manager = AIConnections(output / "ai-settings.json", initial=chosen, connections={ai_provider: connection})
         _, selection, _ = manager.selected_status()
-        with TestClient(create_app(store, ai_connections=manager), headers={
+        # pytest 밖에서도 도는 스크립트라 conftest 의 기본 Host 변경이 적용되지 않는다. 허용 Host 를 명시한다 (SV-11, PM-01)
+        with TestClient(create_app(store, ai_connections=manager), base_url="http://127.0.0.1", headers={
             "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "X-AI-Selection": selection,
         }) as client:
             _workflow(client, output, data, report)

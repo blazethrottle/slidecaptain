@@ -273,3 +273,29 @@ def test_job_wait_limit_stops_the_pilot(tmp_path, monkeypatch):
     assert result["status"] == "blocked"
     assert result["stage"] == "chapter"
     assert result["error"] == "chapter 작업이 0.3초 안에 끝나지 않았습니다."
+
+
+def test_offline_pilot_runs_as_a_separate_process(tmp_path):
+    """`python -m scripts.quality_pilot --offline`을 pytest 밖 프로세스로 돌린다 (2026-10-14 머지 전 리뷰 PM-01).
+
+    conftest 가 TestClient 의 기본 Host 를 127.0.0.1 로 돌리는 것은 pytest 프로세스 안에서만 적용된다.
+    같은 프로세스에서 `run_pilot`을 부르는 시험은 그 보정을 물려받아, 독립 실행 명령이 400 으로 멈추는
+    회귀(운영 허용 목록에서 testserver 를 뺀 뒤 스크립트가 base_url 을 적지 않은 상태)를 잡지 못했다.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    output = tmp_path / "pilot"
+    env = {k: v for k, v in os.environ.items() if k != "SLIDECAPTAIN_CLAUDE_CLI"}
+    env["SLIDECAPTAIN_CLAUDE_CLI"] = str(tmp_path / "missing-claude")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.quality_pilot", "--output", str(output), "--offline", "--max-calls", "5"],
+        cwd=str(Path(__file__).resolve().parents[1]), env=env, capture_output=True, text=True, timeout=300,
+    )
+    report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    assert completed.returncode == 0, completed.stdout[-2000:] + completed.stderr[-2000:]
+    assert report["status"] == "completed", report
+    assert report["stage"] == "done"
