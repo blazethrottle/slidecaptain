@@ -4,7 +4,7 @@
 
 ## 1. 개요
 
-- 저장소: `~/Projects/slidecaptain`(Mac Mini). `feat/windows-feedback-revision`을 main에 `--no-ff`로 합쳤다. 머지 커밋 `2d80f5e`, 합친 브랜치의 마지막 커밋 `487a9a4`. main의 CI는 run 38536817059(push 시점 진행 중. 다음 세션은 `gh run list --branch main --limit 3`으로 이 run과 핸드오프 커밋의 run이 두 OS에서 성공했는지 확인한다).
+- 저장소: `~/Projects/slidecaptain`(Mac Mini). `feat/windows-feedback-revision`을 main에 `--no-ff`로 합쳤다. 머지 커밋 `2d80f5e`, 합친 브랜치의 마지막 커밋 `487a9a4`. main의 CI는 머지 커밋 run 38536817059와 인계 커밋 `8ea1a98` run 38536981271이 모두 Windows와 macOS에서 성공했다. HEAD `8ea1a98`은 origin/main과 같다.
 - 2026-10-14 사용자 결정: 브랜치 전체 최종 리뷰(세 번째 품질 관문의 첫 실행) 결과에 따라 선택지 A(문서 정정과 보안 수정을 넣고 합친다. C1은 합친 뒤)를 골랐다. 이 선택은 D3 관문 판정(C1 뒤)보다 머지를 앞세운 결정이다.
 - 단계 경계: 머지 랩업 보고를 사용자에게 했고, 다음 작업(C1 방향 ① 계획서)은 사용자 승인 뒤에 새 브랜치에서 시작한다.
 
@@ -19,6 +19,7 @@
 | `2763999` | 머지 전 리뷰 PM-01: pytest 밖 스크립트 둘(`scripts/quality_pilot.py`, `tests/measure_jobs.py`)의 base_url 명시, 별도 프로세스 파일럿 시험 1건 |
 | `487a9a4` | 머지 전 리뷰 PM-02~PM-11: 정정 문단 사실 오류 5건, nit 23건 표, 적용 기록, 관례 문구 |
 | `2d80f5e` | main 머지 커밋 |
+| `8ea1a98` | 이 핸드오프와 루트 `CLAUDE.md` 최신 인계 줄 (main) |
 
 - 검증(`487a9a4`): 백엔드 2,854건 통과(건너뜀 2), 공개 저장소 감사 0건, `tests/measure_jobs.py` 독립 실행 정상, CI 두 OS 통과(run 38534900473). `149aadd`도 두 OS 통과(run 38532349440).
 - 리뷰: 3관점 리뷰어 3명(storage, server, screen)과 메인 세션 종합, 머지 전 묶음 리뷰 1명. 보고서는 `~/Projects/slidecaptain-work/final-review-20261014/`(`review-storage.md`, `review-server.md`, `review-screen.md`, `review-premerge.md`, `synthesis.md`, `carryover-master.md`). 종합은 저장소 `docs/qa/2026-10-14-final-branch-review.md`.
