@@ -5,15 +5,17 @@ projects/<프로젝트명>/
   sources/       # 입력 자료 원문 (수치 대조의 기준)
   snapshots/     # 저장 시점 스냅샷
   exports/       # 내보낸 PPTX
+  manifest.json  # 형식 기록 (D2a-1, storage/project_format.py). 판정은 덱 내용으로 한다
 
 - 저장은 원자적: 같은 폴더의 임시 파일에 쓴 뒤 os.replace로 교체
 - 저장마다 직전 deck.json을 스냅샷으로 보존 (복구 경로)
 """
 
 import hashlib
+import json
+import logging
 import os
 import re
-import shutil
 import tempfile
 import threading
 import unicodedata
@@ -22,19 +24,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_serializer
+
+from slidecaptain.models.direct_edit import omittable as _omittable
 
 from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.models.diagram import _evidence_input
 from slidecaptain.models.preset import Preset
+from slidecaptain.models.report_purpose import PURPOSE_SCREEN_FIELDS
+from slidecaptain.storage import project_format
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
 _SNAPSHOT_RE = re.compile(r"^deck-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
+_DRAFT_RE = re.compile(r"^draft-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
+# 보존본 한 건의 덱 크기 상한. 독립 앱 브리지의 요청 본문 상한(desktop/runtime.cjs MAX_FILE)과 같다
+DRAFT_MAX_BYTES = 20 * 1024 * 1024
 # save_deck과 restore_snapshot이 같은 문구를 축자 중복으로 썼다 (A1 리뷰 minor, A2에서 상수로 묶는다)
 _DECK_CONFLICT_MESSAGE = (
     "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다. "
-    "화면을 새로고침한 뒤 다시 편집해 주세요."
+    "서버 내용을 다시 읽은 뒤 이어서 편집해 주세요. 편집 단계의 저장하지 않은 변경은 다시 읽을 때 보존합니다."
 )
 
 
@@ -62,6 +71,32 @@ class SnapshotNotFound(StorageError):
     pass
 
 
+class DraftNotFound(StorageError):
+    pass
+
+
+class DraftTooLarge(StorageError):
+    """보존본이 상한(DRAFT_MAX_BYTES)을 넘는다 (D2a-2. A가 413으로 매핑한다)."""
+
+
+class DeckUnreadable(StorageError):
+    """deck.json을 덱으로 읽지 못했다(복구 필요). 이름 검증 같은 다른 저장소 오류와 구별한다 (D2a 최종 리뷰 F1)."""
+
+
+class ProjectFormatTooNew(StorageError):
+    """이 앱이 읽을 수 있는 것보다 새 형식의 프로젝트 (D2a-1). 모르는 필드를 버린 채 열거나
+    내보내지 않도록 모든 접근을 거절한다. 파일은 바꾸지 않는다."""
+
+    code = "project_format_too_new"
+
+
+class ProjectManifestUnreadable(ProjectFormatTooNew):
+    """형식 기록(manifest.json)을 이 앱이 해석할 수 없다 (D2a-1 리뷰 R2, R4). 덮어쓰면 이후 앱의
+    기록이 사라지므로 더 새 형식과 같이 열지 않는다."""
+
+    code = "project_manifest_unreadable"
+
+
 class SourceNotFound(StorageError):
     pass
 
@@ -79,12 +114,48 @@ class ProjectInfo(BaseModel):
     name: str
     title: str
     updated_at: str  # ISO 8601
-    status: Literal["ok", "needs_recovery"] = "ok"
+    status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"] = "ok"
+    # 다른 앱(0.2.0)이 이 앱만 읽는 덱을 이전 내용으로 되돌렸고 그 뒤 이 앱의 저장이 아직 없다 (D3c-1, 계획 4.2 E8).
+    # 저장하면 형식 기록이 되돌림을 기록하고 이 값은 거짓이 된다(재리뷰 RR19). 거짓이면 응답에서 뺀다
+    reverted_by_other_app: bool = Field(default=False, json_schema_extra=_omittable)
+
+    @model_serializer(mode="wrap")
+    def _omit_false(self, handler):
+        data = handler(self)
+        if not self.reverted_by_other_app:
+            data.pop("reverted_by_other_app", None)
+        return data
 
 
 class SnapshotInfo(BaseModel):
     id: str  # 파일 이름에서 확장자를 뺀 것 (예: deck-20260828-153000-123456)
     saved_at: str
+    # pre_migration: 등급 1 덱을 처음 올리기 직전의 복사본 (0.2.0으로 되돌릴 지점).
+    # before_revert: 0.2.0 같은 다른 앱이 이 앱만 읽는 등급(3 이상) 덱을 되돌리기 직전의 덱 (D3b-1, D3c-1, 되찾을 지점)
+    kind: Literal["snapshot", "pre_migration", "before_revert"] = "snapshot"
+
+
+class DraftInfo(BaseModel):
+    """충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."""
+
+    id: str  # draft-<시각>[-n]
+    saved_at: str
+    # 저장 요청은 아래 값만 받는다(SaveDraftRequest). 목록은 이후 버전이 늘린 값도 그대로 보인다
+    # (리뷰 R5: 모르는 값 때문에 보존본이 목록에서 사라지거나 다음 보존이 실패하지 않게)
+    reason: str  # conflict | generation_unsaved
+    source: str  # editor | structure_approval | purpose
+    base_etag: str | None = None  # 이 편집이 기준으로 삼은 저장본. 서버 쪽 변경과 비교할 때 쓴다
+
+
+_NEWER_FORMAT_MESSAGE = (
+    "이 프로젝트는 더 새 버전의 SlideCaptain이 만들었습니다. 이 버전에서는 열 수 없습니다. "
+    "프로젝트 파일은 바꾸지 않았습니다. 새 버전의 앱으로 열어 주세요."
+)
+_UNREADABLE_MANIFEST_MESSAGE = (
+    "이 프로젝트의 형식 기록 파일(manifest.json)을 읽지 못했습니다. 기록을 지우지 않도록 프로젝트를 "
+    "열지 않았습니다. 새 버전의 앱으로 열거나, 파일을 다른 곳에 보관한 뒤 지우면 다시 열 수 있습니다."
+)
+_LOG = logging.getLogger("slidecaptain.storage.file_store")
 
 
 def _nfc(value: str) -> str:
@@ -190,10 +261,20 @@ class ProjectStore(Protocol):
         self, name: str, deck: Deck, snapshot: bool = True, expected_etag: str | None = None
     ) -> str: ...
     def snapshot_now(self, name: str) -> None: ...
+    def etag_for(self, deck: Deck) -> str: ...
     def list_snapshots(self, name: str) -> list[SnapshotInfo]: ...
     def restore_snapshot(
         self, name: str, snapshot_id: str, expected_etag: str | None = None
     ) -> tuple[Deck, str]: ...
+    def save_draft(
+        self, name: str, *, deck: object, reason: str, source: str, base_etag: str | None
+    ) -> DraftInfo: ...
+    def list_drafts(self, name: str) -> list[DraftInfo]: ...
+    def restore_draft(
+        self, name: str, draft_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]: ...
+    def read_draft(self, name: str, draft_id: str) -> dict: ...
+    def delete_draft(self, name: str, draft_id: str) -> None: ...
     def list_sources(self, name: str) -> list[str]: ...
     def read_source(self, name: str, filename: str) -> str: ...
     def write_source(self, name: str, filename: str, text: str) -> None: ...
@@ -206,6 +287,22 @@ class ProjectStore(Protocol):
     def append_usage(self, name: str, line: str) -> None: ...
     def load_global_preset(self) -> Preset: ...
     def save_global_preset(self, preset: Preset) -> None: ...
+
+
+def _with_computed_schema_version(deck: object) -> object:
+    """보존본의 schema_version을 덱 내용으로 바로잡는다 (D3c-1, 계획 리뷰 저장 S20).
+
+    화면이 첫 저장 전에 보존한 덱은 직접 수정이 있어도 옛 버전 값을 들고 있을 수 있다. 그대로 두면 이전 빌드가
+    그 보존본을 복원하며 수정값을 버린다. 검증에 성공하는 덱만 그 값 하나를 바꾸고 나머지 원문은 그대로 둔다.
+    봉투의 내용 해시는 바로잡은 뒤의 덱으로 계산한다(재리뷰 RR21).
+    """
+    if not isinstance(deck, dict):
+        return deck
+    try:
+        version = Deck.model_validate(deck).schema_version
+    except (ValueError, ValidationError):
+        return deck
+    return deck if deck.get("schema_version") == version else {**deck, "schema_version": version}
 
 
 class FileProjectStore:
@@ -264,6 +361,7 @@ class FileProjectStore:
         d = self.root / name
         if not (d / "deck.json").exists():
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
+        self._require_supported_format(d)
         return d
 
     def _project_dir_any(self, name: str) -> Path:
@@ -272,25 +370,141 @@ class FileProjectStore:
         d = self.root / name
         if not d.is_dir():
             raise ProjectNotFound(f"프로젝트를 찾지 못했습니다: {name}")
+        self._require_supported_format(d)
         return d
+
+    def _require_supported_format(self, project_dir: Path) -> None:
+        state = project_format.manifest_state(project_dir)
+        if state == "newer":
+            raise ProjectFormatTooNew(_NEWER_FORMAT_MESSAGE)
+        if state == "unreadable":
+            raise ProjectManifestUnreadable(_UNREADABLE_MANIFEST_MESSAGE)
+
+    @staticmethod
+    def _deck_bytes(deck: Deck) -> bytes:
+        return deck.model_dump_json(indent=2).encode("utf-8")
 
     def _write_deck(self, project_dir: Path, deck: Deck) -> str:
         """deck.json을 원자적으로 쓰고 그 바이트의 SHA-256 16진수(ETag)를 돌려준다."""
-        data = deck.model_dump_json(indent=2).encode("utf-8")
+        data = self._deck_bytes(deck)
         self._atomic_write(project_dir, "deck.json", data, prefix=".deck-", suffix=".tmp")
         return hashlib.sha256(data).hexdigest()
 
-    def _snapshot_current(self, project_dir: Path) -> None:
+    def _snapshot_current(self, project_dir: Path) -> str | None:
+        """현재 deck.json을 스냅샷으로 남기고 그 ID를 돌려준다. 임시 파일에 쓴 뒤 교체하므로
+        중간에 끊겨도 잘린 스냅샷이 목록에 남지 않는다 (D2a-1, 이전 전 복사본이 복구 지점이다)."""
         src = project_dir / "deck.json"
         if not src.exists():
-            return
+            return None
+        data = src.read_bytes()
+        source_stat = src.stat()
+        snapshots_dir = project_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        dst = project_dir / "snapshots" / f"deck-{ts}.json"
+        stem = f"deck-{ts}"
         n = 1
-        while dst.exists():  # 같은 마이크로초 충돌 백스톱
-            dst = project_dir / "snapshots" / f"deck-{ts}-{n}.json"
+        while (snapshots_dir / f"{stem}.json").exists():  # 같은 마이크로초 충돌 백스톱
+            stem = f"deck-{ts}-{n}"
             n += 1
-        shutil.copy2(src, dst)
+        self._atomic_write(snapshots_dir, f"{stem}.json", data, prefix=".snapshot-", suffix=".tmp")
+        try:
+            # 복사(copy2)였을 때처럼 원본 덱의 수정 시각을 남긴다: 복구 필요 목록이 이 시각을 쓴다
+            os.utime(snapshots_dir / f"{stem}.json", ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
+        except OSError:
+            pass  # 시각 복사 실패는 복구 지점의 내용과 무관하다
+        return stem
+
+    def _write_deck_recorded(self, project_dir: Path, deck: Deck, *, snapshot: bool) -> str:
+        """덱을 쓰고 형식 기록을 덱 내용 등급에 맞춘다 (D2a-1, D3b-1).
+
+        디스크의 덱이 등급 1이고 새 덱이 2 이상이면, 화면의 스냅샷 요청과 관계없이 먼저 스냅샷을 남긴다.
+        단 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같으면 생략한다: 자동 저장이 같은 등급 1 상태와 등급
+        3을 오갈 때 강제 스냅샷이 쌓이지 않게 하고(리뷰 S13), 등급 1에서 무엇이든 바뀌면(이 앱의 편집이든 0.2.0의
+        편집이든) 다시 복구 지점을 남긴다(재리뷰 RR2, D3b-1 리뷰 R5). 등급 3 이상 저장은 덱 교체 전에 쓰려는 덱과 직전
+        덱의 지문을 manifest에 남긴다(되돌림 표시, D3b-1 리뷰 R1). 등급이 오르는 저장은 pending 기록과 함께 manifest 번호를 먼저 올리고 덱을 교체한다
+        (0.2.0도 열지 못하는 깨진 덱에서 오르는 저장은 기록 없이 번호만 먼저 올린다).
+        이 앱만 읽는 등급(3 이상)에서는 manifest 번호가 이전 빌드를 막는 유일한 장치이기 때문이다(재리뷰 RR6). 내려가는 저장은
+        pending 기록을 옛 번호로 먼저 남기고 덱을 교체한 뒤 번호를 내린다. 끊기면 다음 쓰기가 덱 내용으로
+        pending을 마무리한다.
+        """
+        deck_path = project_dir / "deck.json"
+        old_bytes = deck_path.read_bytes() if deck_path.exists() else None
+        old = project_format.deck_format_of_bytes(old_bytes) if old_bytes is not None else None
+        new = project_format.deck_format(deck)
+        prior = project_format.read_manifest(project_dir)
+        revert_id = project_format.find_revert_snapshot(project_dir, prior)
+        manifest = project_format.reconcile(prior, old, revert_snapshot_id=revert_id)
+        old_etag = hashlib.sha256(old_bytes).hexdigest() if old_bytes is not None else None
+        if new >= 3:  # 이 앱만 읽는 등급 (D3c-1에서 4까지)
+            # 덱 교체 전에 남긴다. 아래의 pending 기록이나 미리 쓰기가 이 값을 함께 쓴다 (D3b-1 리뷰 R1)
+            manifest.last_written_etag = hashlib.sha256(self._deck_bytes(deck)).hexdigest()
+            manifest.prior_written_etag = old_etag
+        if old is not None and new > old:
+            if old == 1:
+                # 생략은 디스크 덱이 가장 최근 0.2.0 복구 지점과 바이트가 같을 때만이다(첫 올림은 복구 지점이 없어
+                # 언제나 남긴다). 등급 1에서 오르는 저장의 복구 지점을 "새 형식으로 바꾸기 전"으로 기록하는 것은 0.2.0이
+                # 실제로 열 수 있는 덱일 때만이다 (리뷰 R9: 깨진 덱 제외, 최종 리뷰 F16)
+                unchanged = project_format.latest_restore_point(project_dir, manifest) == old_bytes
+                snapshot_id = self._snapshot_current(project_dir) if (snapshot or not unchanged) else None
+                legacy_ok = project_format.legacy_readable(old_bytes)
+            else:
+                # 화면이 요청한 스냅샷은 만들되 기록에는 남기지 않는다. 이 앱은 등급 1에서 오른 기록만 0.2.0 복구 지점으로
+                # 쓰는데, 중간 빌드는 형식을 보지 않고 모든 완료 기록의 스냅샷을 "새 형식으로 바꾸기 전"으로 표시한다
+                # (α 묶음 리뷰 A8: 0.2.0이 열지 못하는 등급 2 스냅샷이 복구 지점처럼 보였다)
+                if snapshot:
+                    self._snapshot_current(project_dir)
+                snapshot_id = None
+                legacy_ok = True
+            if legacy_ok:
+                etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
+                    at=project_format.now_iso(), kind="upgrade", from_format=old, to_format=new,
+                    snapshot_id=snapshot_id, status="pending",
+                ), raise_to=new)
+            else:
+                # 0.2.0도 열지 못하는 깨진 덱에서 오르는 저장은 기록을 남기지 않는다(리뷰 R9). 번호는 먼저 올린다
+                manifest.format_version = new
+                project_format.write_manifest(project_dir, manifest, self._atomic_write)
+                etag = self._write_deck(project_dir, deck)
+        elif old is not None and new < old:
+            # 등급이 내려가는 저장도 덱 교체 전에 pending을 남긴다. 그래야 마지막 기록이 실패해도 다음
+            # 쓰기가 이 앱의 저장으로 마무리하고, 0.2.0의 외부 되돌림으로 잘못 기록하지 않는다 (최종 리뷰 F3)
+            snapshot_id = self._snapshot_current(project_dir) if snapshot else None
+            etag = self._write_with_pending(project_dir, deck, manifest, project_format.MigrationRecord(
+                at=project_format.now_iso(), kind="downgrade", from_format=old, to_format=new,
+                snapshot_id=snapshot_id, status="pending",
+            ))
+        else:
+            if snapshot:
+                self._snapshot_current(project_dir)
+            if new >= 3:
+                # 디스크 덱을 읽지 못한 경우(old=None)에도 번호를 먼저 올린다. 이 쓰기가 이전 빌드를 막는다 (D3c-1 리뷰 F2)
+                manifest.format_version = max(manifest.format_version, new)
+                project_format.write_manifest(project_dir, manifest, self._atomic_write)  # 쓰려는 덱의 지문을 먼저
+            etag = self._write_deck(project_dir, deck)
+        manifest.format_version = new
+        # 덱 교체가 끝났다: 직전 덱의 지문을 지운다. 등급 3 이상이 아니면 두 값 모두 쓰이지 않으므로 비워 일반 저장이
+        # manifest를 다시 쓰지 않게 한다
+        manifest.prior_written_etag = None
+        manifest.last_written_etag = etag if new >= 3 else None
+        try:
+            project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        except OSError:
+            # 덱은 이미 저장됐다. 기록 실패를 저장 실패로 돌려주면 화면이 새 ETag를 모른 채 다시
+            # 저장해 자기 저장과 충돌한다(리뷰 R5). 다음 쓰기의 reconcile이 기록을 바로잡는다. 등급이 오른
+            # 저장이면 manifest 번호는 이미 올라가 있다
+            _LOG.warning("형식 기록(manifest.json) 쓰기 실패: %s", project_dir, exc_info=True)
+        return etag
+
+    def _write_with_pending(self, project_dir: Path, deck: Deck, manifest, record, raise_to: int | None = None) -> str:
+        """pending 이전 기록을 먼저 쓰고 덱을 교체한다. 완료 기록은 호출자의 마지막 manifest 쓰기가 남긴다.
+        raise_to가 있으면 그 기록과 함께 manifest 번호를 먼저 올린다 (D3b-1, 재리뷰 RR6)."""
+        manifest.migrations.append(record)
+        if raise_to is not None:
+            manifest.format_version = raise_to
+        project_format.write_manifest(project_dir, manifest, self._atomic_write)
+        etag = self._write_deck(project_dir, deck)
+        record.status = "done"
+        return etag
 
     # -- 프로젝트 ----------------------------------------------------------
 
@@ -317,13 +531,25 @@ class FileProjectStore:
             (d / "snapshots").mkdir()
             (d / "exports").mkdir()
             (d / "uploads").mkdir()  # 원본 업로드 보존 (계획서 B2, sources/는 AI 입력용 추출본만 둔다)
-            self._write_deck(d, Deck(meta=DeckMeta(title=title or name)))
+            self._write_deck_recorded(d, Deck(meta=DeckMeta(title=title or name)), snapshot=False)
             return self._info(d)
 
     def list_projects(self) -> list[ProjectInfo]:
         infos = []
         for d in sorted(self.root.iterdir()):
             if not d.is_dir():
+                continue
+            state = project_format.manifest_state(d)
+            if state in ("newer", "unreadable"):  # 덱 검증보다 먼저: 복구 필요로 잘못 안내하지 않는다
+                manifest_path = d / project_format.MANIFEST_NAME
+                mtime = datetime.fromtimestamp(manifest_path.stat().st_mtime).astimezone()
+                infos.append(ProjectInfo(
+                    name=_nfc(d.name),
+                    title=("(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)" if state == "newer"
+                           else "(형식 기록 파일을 읽을 수 없는 프로젝트입니다)"),
+                    updated_at=mtime.isoformat(timespec="seconds"),
+                    status="newer_format" if state == "newer" else "unreadable_manifest",
+                ))
                 continue
             if (d / "deck.json").exists():
                 infos.append(self._info(d))
@@ -343,15 +569,17 @@ class FileProjectStore:
     def _info(self, d: Path) -> ProjectInfo:
         # d.name은 실제 폴더 이름(Finder가 만든 것이면 NFD일 수 있다)이라 응답 직전에 NFC로 맞춘다 (A4).
         deck_path = d / "deck.json"
-        status: Literal["ok", "needs_recovery"] = "ok"
+        status: Literal["ok", "needs_recovery", "newer_format", "unreadable_manifest"] = "ok"
         try:
             title = Deck.model_validate_json(deck_path.read_text(encoding="utf-8")).meta.title
         except (ValueError, ValidationError):
             title = "(deck.json 읽기 실패: 스냅샷 복구가 필요합니다)"
             status = "needs_recovery"
         mtime = datetime.fromtimestamp(deck_path.stat().st_mtime).astimezone()
+        reverted = status == "ok" and project_format.find_revert_snapshot(d, project_format.read_manifest(d)) is not None
         return ProjectInfo(
-            name=_nfc(d.name), title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status
+            name=_nfc(d.name), title=title, updated_at=mtime.isoformat(timespec="seconds"), status=status,
+            reverted_by_other_app=reverted,
         )
 
     # -- 덱 ---------------------------------------------------------------
@@ -362,7 +590,7 @@ class FileProjectStore:
         try:
             return Deck.model_validate_json((d / "deck.json").read_text(encoding="utf-8"))
         except (ValueError, ValidationError) as e:
-            raise StorageError(
+            raise DeckUnreadable(
                 f"프로젝트 {name}의 deck.json을 읽지 못했습니다. "
                 f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
             ) from e
@@ -380,7 +608,7 @@ class FileProjectStore:
         try:
             deck = Deck.model_validate_json(data)
         except (ValueError, ValidationError) as e:
-            raise StorageError(
+            raise DeckUnreadable(
                 f"프로젝트 {name}의 deck.json을 읽지 못했습니다. "
                 f"스냅샷 복구 기능으로 이전 저장 시점으로 되돌릴 수 있습니다. 원인: {e}"
             ) from e
@@ -398,9 +626,12 @@ class FileProjectStore:
                 current = hashlib.sha256((d / "deck.json").read_bytes()).hexdigest()
                 if current != expected_etag:
                     raise DeckConflict(_DECK_CONFLICT_MESSAGE)
-            if snapshot:
-                self._snapshot_current(d)
-            return self._write_deck(d, deck)
+            return self._write_deck_recorded(d, deck, snapshot=snapshot)
+
+    def etag_for(self, deck: Deck) -> str:
+        """save_deck이 이 덱을 쓰면 될 ETag. 저장과 같은 검증과 직렬화를 쓴다 (D2b-4, 계획서 5.7 ④)."""
+        deck = Deck.model_validate(_evidence_input(deck))
+        return hashlib.sha256(deck.model_dump_json(indent=2).encode("utf-8")).hexdigest()
 
     def snapshot_now(self, name: str) -> None:
         """의미 시점 스냅샷 (단계 4 결정 1): 내보내기 직전 등 명시적 복구 지점."""
@@ -412,14 +643,24 @@ class FileProjectStore:
 
     def list_snapshots(self, name: str) -> list[SnapshotInfo]:
         name = _nfc(name)
+        with self.locked(name):  # 쓰기 도중의 manifest와 덱을 섞어 읽지 않는다 (D3b-1 리뷰 R9)
+            return self._list_snapshots(name)
+
+    def _list_snapshots(self, name: str) -> list[SnapshotInfo]:
         d = self._project_dir_any(name)
+        pre_migration = project_format.pre_migration_snapshot_ids(d)
+        before_revert = project_format.revert_snapshot_ids(d)  # 쓰기 전이어도 읽기만으로 감지한다 (재리뷰 RR3)
         infos = []
         for p in sorted((d / "snapshots").glob("deck-*.json")):
             m = _SNAPSHOT_RE.match(p.stem)
             if m is None:
                 continue
             ts = datetime.strptime(m.group(1), "%Y%m%d-%H%M%S-%f").astimezone()
-            infos.append(SnapshotInfo(id=p.stem, saved_at=ts.isoformat(timespec="seconds")))
+            infos.append(SnapshotInfo(
+                id=p.stem, saved_at=ts.isoformat(timespec="seconds"),
+                kind="before_revert" if p.stem in before_revert
+                else "pre_migration" if p.stem in pre_migration else "snapshot",
+            ))
         return infos
 
     def restore_snapshot(
@@ -443,9 +684,167 @@ class FileProjectStore:
                 raise StorageError(
                     f"스냅샷 {snapshot_id}을 읽지 못했습니다. 다른 스냅샷을 골라 주세요. 원인: {e}"
                 ) from e
-            self._snapshot_current(d)  # 복원 직전 상태도 스냅샷으로 남긴다
-            etag = self._write_deck(d, deck)
+            # 복원 직전 상태도 스냅샷으로 남긴다. 형식이 바뀌면 형식 기록도 함께 쓴다 (D2a-1)
+            etag = self._write_deck_recorded(d, deck, snapshot=True)
             return deck, etag
+
+    # -- 미저장본 보존 (D2a-2) ---------------------------------------------------
+
+    def _draft_path(self, project_dir: Path, draft_id: str) -> Path:
+        if not _DRAFT_RE.match(draft_id):
+            raise InvalidName(f"보존한 변경의 식별자가 올바르지 않습니다: {draft_id!r}")
+        return project_dir / "drafts" / f"{draft_id}.json"
+
+    @staticmethod
+    def _draft_info(envelope: dict) -> DraftInfo:
+        return DraftInfo.model_validate({k: envelope.get(k) for k in DraftInfo.model_fields})
+
+    def save_draft(
+        self, name: str, *, deck: object, reason: str, source: str, base_etag: str | None
+    ) -> DraftInfo:
+        """덱 원문을 검증하지 않고 보존한다. 검증에 실패한 덱도 사용자 내용이라 버리지 않는다.
+        같은 내용은 새로 만들지 않는다. 개수 상한과 자동 삭제는 없다."""
+        name = _nfc(name)
+        deck = _with_computed_schema_version(deck)
+        # 화면이 보내는 압축 JSON과 같은 기준으로 잰다(리뷰 R7: 브리지 상한과 측정 대상을 맞춘다)
+        deck_bytes = json.dumps(deck, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        content_sha256 = hashlib.sha256(deck_bytes).hexdigest()
+        with self.locked(name):
+            d = self._project_dir(name)  # 존재와 형식 검사를 크기 검사보다 먼저 한다
+            if len(deck_bytes) > DRAFT_MAX_BYTES:
+                raise DraftTooLarge(
+                    "보존할 변경이 너무 커서 저장하지 못했습니다. 변경 내용을 복사해 따로 보관해 주세요."
+                )
+            drafts_dir = d / "drafts"
+            drafts_dir.mkdir(exist_ok=True)
+            # 연속 클릭 병합: 내용, 사유, 출처, 기준 저장본이 모두 같은 요청만 묶는다 (리뷰 R4)
+            key = (content_sha256, reason, source, base_etag)
+            for existing in self._read_draft_envelopes(drafts_dir):
+                existing_key = (existing.get("content_sha256"), existing.get("reason"),
+                                existing.get("source"), existing.get("base_etag"))
+                if existing_key == key:
+                    try:
+                        return self._draft_info(existing)
+                    except ValidationError:
+                        continue  # 모양이 맞지 않는 보존본은 건너뛰고 새로 만든다 (리뷰 R5)
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+            stem = f"draft-{ts}"
+            n = 1
+            while (drafts_dir / f"{stem}.json").exists():  # 같은 마이크로초 충돌 백스톱
+                stem = f"draft-{ts}-{n}"
+                n += 1
+            envelope = {
+                "id": stem,
+                "saved_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+                "reason": reason,
+                "source": source,
+                "base_etag": base_etag,
+                "content_sha256": content_sha256,
+                "deck": deck,
+            }
+            info = self._draft_info(envelope)  # 사유와 출처의 값 검증을 쓰기 전에 한다
+            data = json.dumps(envelope, ensure_ascii=False, indent=2).encode("utf-8")
+            self._atomic_write(drafts_dir, f"{stem}.json", data, prefix=".draft-", suffix=".tmp")
+            return info
+
+    @staticmethod
+    def _read_draft_envelopes(drafts_dir: Path) -> list[dict]:
+        envelopes = []
+        if not drafts_dir.is_dir():
+            return envelopes
+
+        def order(path: Path) -> tuple[str, int]:
+            # 파일 이름 정렬은 "-1"을 원래 이름보다 앞에 둔다. 시각과 충돌 번호로 정렬한다 (리뷰 R6)
+            m = _DRAFT_RE.match(path.stem)
+            suffix = path.stem[len(f"draft-{m.group(1)}"):] if m else ""
+            return (m.group(1) if m else "", int(suffix[1:]) if suffix else 0)
+
+        for path in sorted(drafts_dir.glob("draft-*.json"), key=order):
+            if not _DRAFT_RE.match(path.stem):
+                continue
+            try:
+                envelope = json.loads(path.read_bytes())
+            except (OSError, ValueError):
+                continue  # 읽을 수 없는 보존본은 목록에서 빼되 지우지 않는다
+            if isinstance(envelope, dict) and envelope.get("id") == path.stem:
+                envelopes.append(envelope)
+        return envelopes
+
+    def list_drafts(self, name: str) -> list[DraftInfo]:
+        name = _nfc(name)
+        d = self._project_dir_any(name)
+        infos = []
+        for envelope in self._read_draft_envelopes(d / "drafts"):
+            try:
+                infos.append(self._draft_info(envelope))
+            except ValidationError:
+                continue
+        return infos
+
+    def restore_draft(
+        self, name: str, draft_id: str, expected_etag: str | None = None
+    ) -> tuple[Deck, str]:
+        """보존본의 덱을 검증해 저장본으로 쓴다. 복원 직전 덱은 스냅샷으로 남고 보존본은 그대로 둔다."""
+        name = _nfc(name)
+        with self.locked(name):
+            d = self._project_dir_any(name)
+            if expected_etag is not None:
+                deck_path = d / "deck.json"
+                current = hashlib.sha256(deck_path.read_bytes()).hexdigest() if deck_path.exists() else None
+                if current != expected_etag:
+                    raise DeckConflict(_DECK_CONFLICT_MESSAGE)
+            path = self._draft_path(d, draft_id)
+            if not path.is_file():
+                raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+            try:
+                envelope = json.loads(path.read_bytes())
+                deck = Deck.model_validate(_evidence_input(Deck.model_validate(envelope["deck"])))
+            except (OSError, ValueError, KeyError, TypeError, ValidationError) as e:
+                raise StorageError(
+                    "보존한 변경을 덱으로 읽지 못해 복원하지 않았습니다. 현재 저장본은 바뀌지 않았습니다. "
+                    f"원인: {e}"
+                ) from e
+            if envelope.get("source") == "purpose":
+                # 보고 목적 화면은 본문을 고치지 않으므로 보고 정보만 되찾는다. 덱 전체를 쓰면 그 탭이 본 옛 장과
+                # 슬라이드가 다른 곳의 변경을 되돌린다 (D3b-5 리뷰 R15). 메타도 보고 정보 칸만 얹는다: 메타 전체를 쓰면
+                # 다른 곳에서 바꾼 디자인 값이 되돌아갔다 (β 묶음 리뷰 B6). 지금 덱을 읽지 못하면 보존본 전체로 복원한다
+                try:
+                    current = self.load_deck(name)
+                except StorageError:
+                    current = None
+                if current is not None:
+                    body = current.model_dump(mode="json")
+                    kept = deck.meta.model_dump(mode="json")
+                    meta = {k: v for k, v in body["meta"].items() if k not in PURPOSE_SCREEN_FIELDS}
+                    meta.update({k: kept[k] for k in PURPOSE_SCREEN_FIELDS if k in kept})
+                    deck = Deck.model_validate({**body, "meta": meta})
+            etag = self._write_deck_recorded(d, deck, snapshot=True)
+            return deck, etag
+
+    def read_draft(self, name: str, draft_id: str) -> dict:
+        """보존본의 봉투(정보와 덱 원문)를 검증 없이 읽는다. 복원 전 차이 요약에 쓴다 (D3c-6, E7)."""
+        name = _nfc(name)
+        d = self._project_dir_any(name)
+        path = self._draft_path(d, draft_id)
+        if not path.is_file():
+            raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+        try:
+            envelope = json.loads(path.read_bytes())
+        except (OSError, ValueError) as e:
+            raise StorageError(f"보존한 변경을 읽지 못했습니다. 원인: {e}") from e
+        if not isinstance(envelope, dict):
+            raise StorageError("보존한 변경의 모양이 올바르지 않습니다.")
+        return envelope
+
+    def delete_draft(self, name: str, draft_id: str) -> None:
+        """사용자가 고른 보존본 하나만 지운다."""
+        name = _nfc(name)
+        with self.locked(name):
+            d = self._project_dir_any(name)
+            path = self._draft_path(d, draft_id)
+            if not path.is_file():
+                raise DraftNotFound(f"보존한 변경을 찾지 못했습니다: {draft_id}")
+            path.unlink()
 
     # -- 입력 자료 ----------------------------------------------------------
 

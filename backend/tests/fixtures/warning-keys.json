@@ -1,0 +1,3274 @@
+{
+ "_comment": "D3c-3: 용량 경고 slot에서 요소 열쇠로 가는 대응(layout/direct_edits.warning_key). 화면의 warningKey가 같은 결과를 내는지 지킨다. test_direct_edit_render.py가 다시 만든다",
+ "cases": [
+  {
+   "keys": [
+    "cover_title",
+    "date",
+    "presenter",
+    "subtitle"
+   ],
+   "slot": "cover_title",
+   "key": "cover_title"
+  },
+  {
+   "keys": [
+    "cover_title",
+    "date",
+    "presenter",
+    "subtitle"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "cover_title",
+    "date",
+    "presenter",
+    "subtitle"
+   ],
+   "slot": "date",
+   "key": "date"
+  },
+  {
+   "keys": [
+    "cover_title",
+    "date",
+    "presenter",
+    "subtitle"
+   ],
+   "slot": "presenter",
+   "key": "presenter"
+  },
+  {
+   "keys": [
+    "section_no",
+    "section_title"
+   ],
+   "slot": "section_no",
+   "key": "section_no"
+  },
+  {
+   "keys": [
+    "section_no",
+    "section_title"
+   ],
+   "slot": "section_title",
+   "key": "section_title"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "points",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "points",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "points",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "points",
+    "subtitle",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "points",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "points",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "footnote",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "footnote",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "footnote",
+    "title"
+   ],
+   "slot": "footnote",
+   "key": "footnote"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "title"
+   ],
+   "slot": "footnote",
+   "key": "footnote"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "bullets",
+    "conclusion",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "footnote",
+    "table",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "footnote",
+    "table",
+    "title"
+   ],
+   "slot": "table",
+   "key": "table"
+  },
+  {
+   "keys": [
+    "footnote",
+    "table",
+    "title"
+   ],
+   "slot": "footnote",
+   "key": "footnote"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "table",
+   "key": "table"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "footnote",
+   "key": "footnote"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "footnote",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "table",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "table",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "left_card_heading",
+   "key": "left_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "left_card",
+   "key": "left_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "right_card_heading",
+   "key": "right_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "left_card",
+    "right_card",
+    "title"
+   ],
+   "slot": "right_card",
+   "key": "right_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "conclusion",
+   "key": "conclusion"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "left_card_heading",
+   "key": "left_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "left_card",
+   "key": "left_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "right_card_heading",
+   "key": "right_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "right_card",
+   "key": "right_card"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "conclusion",
+    "eyebrow",
+    "left_card",
+    "right_card",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "text",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "text",
+    "title"
+   ],
+   "slot": "text",
+   "key": "text"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "text",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "text",
+    "title"
+   ],
+   "slot": "text",
+   "key": "text"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "text",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "subtitle",
+    "text",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card0_badge",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card0_heading",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card0_tail",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card1_heading",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card1",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card2_heading",
+   "key": "card2"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "title"
+   ],
+   "slot": "card3_heading",
+   "key": "card3"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card0_badge",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card0_heading",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card0_tail",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card1_heading",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card1",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card2_heading",
+   "key": "card2"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card3_heading",
+   "key": "card3"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "card2",
+    "card3",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "title"
+   ],
+   "slot": "card0_heading",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "title"
+   ],
+   "slot": "card1_heading",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card0_heading",
+   "key": "card0"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "card1_heading",
+   "key": "card1"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "card0",
+    "card1",
+    "eyebrow",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step0_heading",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step0_subtitle",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step0_labels_0",
+   "key": "step0_labels"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step1_heading",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step1_subtitle",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step1_labels_0",
+   "key": "step1_labels"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step2_heading",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step2_subtitle",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step2_labels_0",
+   "key": "step2_labels"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step3_heading",
+   "key": "step3"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step3_subtitle",
+   "key": "step3"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step3_labels_0",
+   "key": "step3_labels"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step4_heading",
+   "key": "step4"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step4_subtitle",
+   "key": "step4"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step4_labels_0",
+   "key": "step4_labels"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step5_heading",
+   "key": "step5"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step5_subtitle",
+   "key": "step5"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "title"
+   ],
+   "slot": "step5_labels_0",
+   "key": "step5_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step0_heading",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step0_subtitle",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step0_labels_0",
+   "key": "step0_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step1_heading",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step1_subtitle",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step1_labels_0",
+   "key": "step1_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step2_heading",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step2_subtitle",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step2_labels_0",
+   "key": "step2_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step3_heading",
+   "key": "step3"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step3_subtitle",
+   "key": "step3"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step3_labels_0",
+   "key": "step3_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step4_heading",
+   "key": "step4"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step4_subtitle",
+   "key": "step4"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step4_labels_0",
+   "key": "step4_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step5_heading",
+   "key": "step5"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step5_subtitle",
+   "key": "step5"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step5_labels_0",
+   "key": "step5_labels"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step0_labels",
+    "step1",
+    "step1_badge",
+    "step1_labels",
+    "step2",
+    "step2_badge",
+    "step2_labels",
+    "step3",
+    "step3_badge",
+    "step3_labels",
+    "step4",
+    "step4_badge",
+    "step4_labels",
+    "step5",
+    "step5_badge",
+    "step5_labels",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "title"
+   ],
+   "slot": "step0_heading",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "title"
+   ],
+   "slot": "step1_heading",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "title"
+   ],
+   "slot": "step2_heading",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step0_heading",
+   "key": "step0"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step1_heading",
+   "key": "step1"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "step2_heading",
+   "key": "step2"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "step0",
+    "step0_badge",
+    "step1",
+    "step1_badge",
+    "step2",
+    "step2_badge",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row0_category",
+   "key": "row0_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row0_primary",
+   "key": "row0_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row0_items",
+   "key": "row0_items"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row1_category",
+   "key": "row1_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row1_primary",
+   "key": "row1_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row1_items",
+   "key": "row1_items"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row2_category",
+   "key": "row2_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row2_primary",
+   "key": "row2_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row2_items",
+   "key": "row2_items"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row3_category",
+   "key": "row3_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row3_primary",
+   "key": "row3_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row3_items",
+   "key": "row3_items"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row4_category",
+   "key": "row4_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row4_primary",
+   "key": "row4_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row4_items",
+   "key": "row4_items"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row5_category",
+   "key": "row5_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row5_primary",
+   "key": "row5_primary"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "title"
+   ],
+   "slot": "row5_items",
+   "key": "row5_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row0_category",
+   "key": "row0_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row0_primary",
+   "key": "row0_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row0_items",
+   "key": "row0_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row1_category",
+   "key": "row1_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row1_primary",
+   "key": "row1_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row1_items",
+   "key": "row1_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row2_category",
+   "key": "row2_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row2_primary",
+   "key": "row2_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row2_items",
+   "key": "row2_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row3_category",
+   "key": "row3_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row3_primary",
+   "key": "row3_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row3_items",
+   "key": "row3_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row4_category",
+   "key": "row4_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row4_primary",
+   "key": "row4_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row4_items",
+   "key": "row4_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row5_category",
+   "key": "row5_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row5_primary",
+   "key": "row5_primary"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row5_items",
+   "key": "row5_items"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row0_items",
+    "row0_primary",
+    "row1_category",
+    "row1_items",
+    "row1_primary",
+    "row2_category",
+    "row2_items",
+    "row2_primary",
+    "row3_category",
+    "row3_items",
+    "row3_primary",
+    "row4_category",
+    "row4_items",
+    "row4_primary",
+    "row5_category",
+    "row5_items",
+    "row5_primary",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "title"
+   ],
+   "slot": "row0_category",
+   "key": "row0_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "title"
+   ],
+   "slot": "row1_category",
+   "key": "row1_category"
+  },
+  {
+   "keys": [
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "title"
+   ],
+   "slot": "row2_category",
+   "key": "row2_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "title",
+   "key": "title"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row0_category",
+   "key": "row0_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row1_category",
+   "key": "row1_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "row2_category",
+   "key": "row2_category"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "eyebrow",
+   "key": "eyebrow"
+  },
+  {
+   "keys": [
+    "eyebrow",
+    "row0_category",
+    "row1_category",
+    "row2_category",
+    "subtitle",
+    "title"
+   ],
+   "slot": "subtitle",
+   "key": "subtitle"
+  },
+  {
+   "keys": [
+    "table"
+   ],
+   "slot": "chart",
+   "key": "table"
+  },
+  {
+   "keys": [
+    "table"
+   ],
+   "slot": "chart_conditions",
+   "key": "table"
+  },
+  {
+   "keys": [
+    "bullets",
+    "title"
+   ],
+   "slot": "bullets_span",
+   "key": "bullets"
+  },
+  {
+   "keys": [
+    "title"
+   ],
+   "slot": "unknown_slot",
+   "key": null
+  }
+ ]
+}

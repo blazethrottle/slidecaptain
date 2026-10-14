@@ -53,3 +53,12 @@ it("does not invent a numeric verdict for a legacy record", () => {
   render(<ExportQualitySummary result={legacy} />);
   expect(screen.getByRole("region")).toHaveTextContent("이 기록에는 계산 문구 대조 결과가 없습니다.");
 });
+
+it("숨긴 근거 표시의 장과 요소를 표를 펼치지 않아도 보인다 (D3c-2 리뷰 F6)", () => {
+  const base = result("matched");
+  const detail = "근거 표시(각주, 표, 숫자가 든 문구) 1개를 숨겼습니다: 2장 매출 현황의 각주. 숨긴 채로 내보내도 되는지 확인해 주세요.";
+  base.quality = { ...base.quality, status: "needs_revision", checks: [...base.quality.checks,
+    { name: "hidden_evidence", status: "failed", evaluated: 1, failed: 1, chapter_ids: ["c2"], detail }] };
+  render(<ExportQualitySummary result={base} />);
+  expect(screen.getByRole("region")).toHaveTextContent("2장 매출 현황의 각주");
+});

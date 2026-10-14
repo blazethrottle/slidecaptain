@@ -15,6 +15,7 @@ from slidecaptain.pipeline.service import GenerationService
 from slidecaptain.pipeline.story import parse_story_structure, require_current_story
 from slidecaptain.server.app import create_app
 from test_story_plan import HEADERS, SLOTS, StubProvider
+from tests.job_runs import post_generation
 
 
 SOURCE = "synthetic.md"
@@ -258,7 +259,7 @@ def test_comparison_api_save_reload_and_generation_context(store):
     client = TestClient(create_app(store, provider=provider), headers=HEADERS)
     assert client.post("/api/projects", json={"name": "synthetic", "title": META.title}).status_code == 201
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": SOURCES[SOURCE]}).status_code == 200
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF.model_dump(mode="json")})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF.model_dump(mode="json")})
     assert response.status_code == 200 and response.json()["status"] == "ok"
     deck = client.get("/api/projects/synthetic/deck").json()
     deck["structure"] = response.json()["structure"]
@@ -266,7 +267,7 @@ def test_comparison_api_save_reload_and_generation_context(store):
     assert client.get("/api/projects/synthetic/deck").json() == deck
     assert deck["structure"]["story_plan"]["comparison_results"][0]["status"] == "incompatible"
     for suffix, body in [("", {}), ("/condense", {"slots": SLOTS})]:
-        generated = client.post(f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
+        generated = post_generation(client, f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
         assert generated.status_code == 200
         prompt = provider.calls[-1][0]
         assert '"comparison_id": "cmp1"' in prompt and "unit_mismatch" in prompt
@@ -285,5 +286,5 @@ def test_comparison_api_save_reload_and_generation_context(store):
     assert client.post(f"/api/projects/synthetic/snapshots/{snapshots[-1]['id']}/restore").json() == deck
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": SOURCES[SOURCE] + "\n조건 변경"}).status_code == 200
     for suffix, body in [("", {}), ("/condense", {"slots": SLOTS})]:
-        assert client.post(f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body).status_code == 409
+        assert post_generation(client, f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body).status_code == 409
     assert len(provider.calls) == 3

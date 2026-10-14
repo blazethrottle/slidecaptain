@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type AppStatus } from "../api/client";
 import { ProjectList } from "./ProjectList";
@@ -28,6 +28,27 @@ it("프로젝트 목록과 복구 필요 표지를 보여준다", async () => {
   render(<ProjectList onOpen={() => {}} />);
   expect(await screen.findByText("주간 보고")).toBeInTheDocument();
   expect(screen.getByText("복구 필요")).toBeInTheDocument();
+});
+
+it("열 때 목록을 다시 읽어 그 사이 생긴 되돌림 표시로 연다 (D3c-1 리뷰 F8)", async () => {
+  vi.mocked(api.listProjects)
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok" }])
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok", reverted_by_other_app: true }]);
+  const onOpen = vi.fn();
+  render(<ProjectList onOpen={onOpen} />);
+  await userEvent.click(await screen.findByText("주간 보고"));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ name: "p1", reverted_by_other_app: true })));
+});
+
+it("다시 읽지 못하면 지금 목록의 정보로 연다", async () => {
+  vi.mocked(api.listProjects)
+    .mockResolvedValueOnce([{ name: "p1", title: "주간 보고", updated_at: "", status: "ok" }])
+    .mockRejectedValueOnce(new Error("서버 중단"));
+  const onOpen = vi.fn();
+  render(<ProjectList onOpen={onOpen} />);
+  await userEvent.click(await screen.findByText("주간 보고"));
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ name: "p1" })));
+  expect(onOpen.mock.calls[0][0].reverted_by_other_app).toBeUndefined();
 });
 
 it("새 프로젝트를 만들고 연다", async () => {
@@ -124,4 +145,37 @@ it("새 프로젝트의 이름과 제목 입력이 각각 한 줄을 차지한�
   expect(name).not.toBeNull();
   expect(title).not.toBeNull();
   expect(name).not.toBe(title);
+});
+
+it("더 새 형식 프로젝트에는 새 버전 필요 표지를 보여준다 (D2a-1)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { name: "p3", title: "(더 새 버전의 SlideCaptain이 만든 프로젝트입니다)", updated_at: "", status: "newer_format" },
+  ]);
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("새 버전 필요")).toBeInTheDocument();
+});
+
+it("형식 기록을 읽을 수 없는 프로젝트에는 기록 확인 필요 표지를 보여준다 (D2a-1 리뷰 R2)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([
+    { name: "p4", title: "(형식 기록 파일을 읽을 수 없는 프로젝트입니다)", updated_at: "", status: "unreadable_manifest" },
+  ]);
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("기록 확인 필요")).toBeInTheDocument();
+});
+
+it("자료 폴더 경로와 프로젝트 수를 보인다 (D2a-3)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([]);
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...LOGGED_IN, data_dir: { path: "/data/slidecaptain-projects", project_count: 3, lock: "held" } });
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText("자료 폴더: /data/slidecaptain-projects (프로젝트 3개)")).toBeInTheDocument();
+  expect(screen.queryByText(/파일 잠금을 지원하지 않아/)).toBeNull();
+});
+
+it("자료 폴더가 잠금을 지원하지 않으면 두 개 실행하지 말라고 알린다 (D2a-3)", async () => {
+  vi.mocked(api.listProjects).mockResolvedValue([]);
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ...LOGGED_IN, data_dir: { path: "/Volumes/공유/projects", project_count: 0, lock: "unsupported" } });
+  render(<ProjectList onOpen={() => {}} />);
+  expect(await screen.findByText(/파일 잠금을 지원하지 않아 잠금 없이 실행 중입니다/)).toBeInTheDocument();
 });

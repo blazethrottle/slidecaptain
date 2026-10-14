@@ -16,6 +16,47 @@ from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
 
 
+def _patch_testclient_base_url() -> None:
+    """TestClient의 기본 Host를 운영 허용 목록 안의 127.0.0.1로 돌린다 (2026-10-14 최종 리뷰 SV-11).
+
+    starlette TestClient의 기본 base_url은 `http://testserver`다. 종전에는 이 이름을 운영
+    TrustedHost 허용 목록에 넣어 시험을 통과시켰는데, 그러면 실제 서버도 `Host: testserver`를
+    받아들인다. pytest 시험 파일 40개(생성 213줄)가 TestClient를 직접 만들므로 파일마다 base_url을
+    적는 대신 여기 한 곳에서 기본값을 바꾼다. base_url을 명시한 호출(`test_api_protection.py`의
+    Host 검사)은 그대로 그 값을 쓴다.
+
+    이 교체는 pytest 프로세스 안에서만 적용된다. pytest 밖에서 TestClient를 만드는 코드
+    (`scripts/quality_pilot.py`, `tests/measure_jobs.py`, multiprocessing spawn 자식)는 반드시
+    `base_url="http://127.0.0.1"`을 명시한다. `test_quality_pilot.py`의 별도 프로세스 시험이 이를 지킨다
+    (2026-10-14 머지 전 리뷰 PM-01: 이 보정 없이 두 스크립트가 모든 요청에 400을 받았다).
+    """
+    original_init = TestClient.__init__
+    if getattr(original_init, "_slidecaptain_base_url_patch", False):
+        return
+
+    def patched_init(self, app, base_url="http://127.0.0.1", *args, **kwargs):
+        original_init(self, app, base_url, *args, **kwargs)
+
+    patched_init._slidecaptain_base_url_patch = True  # type: ignore[attr-defined]
+    TestClient.__init__ = patched_init  # type: ignore[method-assign]
+
+
+_patch_testclient_base_url()
+
+
+@pytest.fixture
+def symlink_or_skip():
+    """Skip only Windows accounts without symbolic-link creation permission."""
+    def create(path, target, *, target_is_directory=False):
+        try:
+            path.symlink_to(target, target_is_directory=target_is_directory)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("Windows account lacks symbolic-link creation permission (WinError 1314)")
+            raise
+    return create
+
+
 @pytest.fixture
 def store(tmp_path):
     return FileProjectStore(tmp_path / "projects")
@@ -53,3 +94,10 @@ def isolated_font_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "isolated_home")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated_home" / "AppData" / "Local"))
     monkeypatch.setattr(installer, "_system_font_dirs", lambda: [])
+
+
+def pytest_sessionfinish(session, exitstatus):
+    # 래퍼 이전 대응표의 범주 기록 (D3c-7). D3C7_MIGRATION_OUT이 없으면 아무것도 쓰지 않는다
+    from tests.job_runs import write_records
+
+    write_records()

@@ -5,6 +5,7 @@ import json
 
 from pydantic import Field
 
+from slidecaptain.models.report_purpose import purpose_prompt_values
 from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Structure, GeneratedTemplateName
 from slidecaptain.models.comparison import EvidenceComparison
 from slidecaptain.models.derivation import Derivation
@@ -61,6 +62,10 @@ def story_fingerprint(
         "chapters": [ch.model_dump(mode="json") for ch in chapters],
         "sources": {name: _text_hash(text) for name, text in sources.items()},
     }
+    # 보고 목적 값은 지시문이 읽는 것만 넣고, 비어 있으면 넣지 않아 기존 계획의 지문이 그대로다 (D3b-2, 리뷰 V5, S8)
+    purpose = purpose_prompt_values(meta)
+    if purpose:
+        payload["purpose"] = purpose
     return _text_hash(json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
 
 
@@ -70,8 +75,10 @@ def require_current_story(deck: Deck, sources: dict[str, str]) -> None:
         plan, deck.meta, deck.structure.chapters, sources,
     ):
         raise StaleStoryPlan(
-            "보고 정보, 구조안, 자료 또는 보고 계획이 바뀌었습니다. "
-            "수정 내용은 보존되어 있습니다. 보고 질문으로 구조안을 다시 생성해 주세요."
+            # 장 내용을 지우지 않는 재작성 경로를 함께 알린다. 보고 목적 값도 계획을 낡게 한다 (α 묶음 리뷰 A6)
+            "보고 정보(보고 목적 포함), 장 구성, 자료 또는 보고 계획이 바뀌었습니다. 수정 내용은 보존되어 있습니다. "
+            "장 내용을 지키려면 구성 단계의 ‘기존 편집을 보존하며 계획 재작성’으로 계획을 다시 만들고, "
+            "처음부터 다시 만들려면 보고 질문으로 구조안을 다시 생성해 주세요."
         )
 
 
@@ -245,6 +252,7 @@ def story_input_block(brief: ReportBrief, sources: dict[str, str], *, preserve_c
 {brief.model_dump_json()}
 
 - 질문에 답하는 핵심 주장을 answer_claim_ids로 지정한다. 자유 문자열 요약으로 주장 연결을 대신하지 않는다.
+- answer_claim_ids의 모든 ID는 role이 answer인 장의 claim_ids에도 연결한다. action이나 evidence 역할 장에만 연결하면 안 된다. 템플릿 이름과 role은 별개다.
 - evidence에는 자료 파일명과 아래 [L번호]의 행 범위(line_start, line_end, 양끝 포함)를 적는다.
   발췌와 자료 리비전은 코드가 원문에서 만든다. 이를 생성하지 않는다. value는 해당 범위의 원문 표기를 그대로 쓰고 없는 값/단위/기간/주체/분모는 null로 남긴다.
 - claims는 고유 id, statement, kind(fact/inference/proposal/unknown), evidence_ids, caveats를 가진다.

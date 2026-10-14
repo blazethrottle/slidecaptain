@@ -1,13 +1,41 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api } from "../api/client";
+import { api, type JobView, type StructureResult } from "../api/client";
+import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { comparisonDeck, derivedDeck, storyDeck } from "../test/story";
 import { StructureScreen } from "./StructureScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), generateChapter: vi.fn(), putDeck: vi.fn() } };
+  return { ...mod, api: { ...mod.api, startJob: vi.fn(), settleCandidate: vi.fn(), putDeck: vi.fn(), prepareAi: vi.fn(),
+    startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+});
+
+// D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
+// 승인 직전에 구조안 후보를 다시 조회한다 (D3a-5). 기본 생성이 만든 후보는 ID로 돌려주고 묶음 조회는 batchGetJob이 맡는다
+const batchGetJob = vi.fn<typeof api.getJob>();
+const structureCandidates = new Map<string, JobView>();
+beforeEach(() => {
+  structureCandidates.clear();
+  batchGetJob.mockReset();
+  vi.mocked(api.getJob).mockImplementation((name, id) =>
+    structureCandidates.has(id) ? Promise.resolve(structureCandidates.get(id)!) : batchGetJob(name, id));
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateStructure(name, body.params as Record<string, unknown>);
+    const failed = result.status !== "ok";
+    const view = jobView("structure", { id: "job-structure", project: name, result: result as unknown as Record<string, unknown>,
+      state: failed ? "failed" : "succeeded", candidate_status: failed ? "none" : "held" });
+    structureCandidates.set(view.id, view);
+    return view;
+  });
+});
+
+beforeEach(() => {
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.listJobs).mockResolvedValue([]);
 });
 
 const project = { name: "synthetic", title: "합성 보고", updated_at: "", status: "ok" as const };
@@ -19,12 +47,17 @@ function generated(structure = storyDeck().structure) {
 it.each([storyDeck, comparisonDeck, derivedDeck])("질문을 계획 요청으로 보내고 근거와 비교 계약을 승인 저장에 보존한다 (%#)", async (makeDeck) => {
   const deck = makeDeck();
   const empty = { ...deck, structure: { chapters: [] } };
-  vi.mocked(api.generateStructure).mockResolvedValue(generated(deck.structure));
+  generateStructure.mockResolvedValue(generated(deck.structure));
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockResolvedValue({ status: "ok", usage: emptyUsage(), raw_text: "", warnings: [], unverified_numbers: [], format_retried: false, condensed: false,
-    slots: { template: "summary", conclusion: "비용 확인 후 판단", points: [] } });
+  const final = batchView(deck.structure.chapters.map((c) => chapterView(c.id, "succeeded",
+    { result: chapterResult({ template: "summary", conclusion: "비용 확인 후 판단", points: [] }) })), { project: "synthetic" });
+  vi.mocked(api.startChapters).mockResolvedValueOnce({ ...final, state: "running", outcome: null });
+  vi.mocked(batchGetJob).mockResolvedValueOnce(final);
+  // 서버 묶음이 모든 장을 적용한 덱
+  vi.mocked(api.getDeck).mockResolvedValue({ ...deck, slides: deck.structure.chapters.map((c) => ({ chapter_id: c.id,
+    eyebrow: "", subtitle: "", slots: { template: "summary" as const, conclusion: "비용 확인 후 판단", points: [] } })) });
   const onDone = vi.fn();
-  render(<StructureScreen project={project} deck={empty} onDeckChange={() => {}} onDone={onDone} />);
+  render(<StructureScreen project={project} deck={empty} onDeckChange={() => {}} onDone={onDone} pollIntervalMs={0} />);
   await userEvent.type(screen.getByLabelText("보고 질문"), "운영을 확대할 것인가?");
   await userEvent.click(screen.getByRole("button", { name: "구조안 생성" }));
   expect(await screen.findByRole("region", { name: "보고 계획" })).toHaveTextContent("확대 비용은 얼마인가?");
@@ -36,13 +69,13 @@ it.each([storyDeck, comparisonDeck, derivedDeck])("질문을 계획 요청으로
   if (deck.structure.story_plan!.derivations.length > 0) {
     expect(screen.getByRole("region", { name: "수치 계산" })).toHaveTextContent("계산 불가");
   }
-  expect(api.generateStructure).toHaveBeenCalledWith("synthetic", expect.objectContaining({ brief: deck.structure.story_plan!.brief }));
+  expect(generateStructure).toHaveBeenCalledWith("synthetic", expect.objectContaining({ brief: deck.structure.story_plan!.brief }));
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
-  for (const [, saved] of vi.mocked(api.putDeck).mock.calls) {
-    expect(saved.structure.story_plan).toEqual(deck.structure.story_plan);
-  }
-  expect(vi.mocked(api.putDeck).mock.calls.at(-1)![1].slides).toHaveLength(1);
+  // 화면은 승인 반영 1회만 저장하고, 장 내용은 서버의 묶음 작업이 같은 계획 아래에서 만든다
+  expect(vi.mocked(api.putDeck).mock.calls).toHaveLength(1);
+  expect(vi.mocked(api.putDeck).mock.calls[0][1].structure.story_plan).toEqual(deck.structure.story_plan);
+  expect(vi.mocked(api.startChapters).mock.calls[0][1]).toEqual(deck.structure.chapters.map((c) => c.id));
 });
 
 it("다시 연 계획의 질문을 복원하고 수동 구조안 수정에도 계획을 보존한다", async () => {
@@ -60,6 +93,9 @@ it("다시 연 계획의 질문을 복원하고 수동 구조안 수정에도 �
   expect(saved.structure.chapters[0].topic).toBe("수동 수정");
   expect(saved.structure.story_plan).toEqual(deck.structure.story_plan);
   expect(saved.slides).toEqual(deck.slides);
+  // 모든 장의 내용을 계승했으므로 AI 생성도, AI 전송 동의 확인도 하지 않는다
+  expect(api.prepareAi).not.toHaveBeenCalled();
+  expect(api.startChapters).not.toHaveBeenCalled();
 });
 
 it("질문이 바뀌면 옛 계획을 승인하기 전에 재생성을 요구한다", async () => {
@@ -71,9 +107,9 @@ it("질문이 바뀌면 옛 계획을 승인하기 전에 재생성을 요구한
 
 it("질문을 비워 기존 방식으로 재생성하면 옛 계획을 새 구조안에 붙이지 않는다", async () => {
   const deck = storyDeck();
-  vi.mocked(api.generateStructure).mockResolvedValue(generated({ chapters: deck.structure.chapters }));
+  generateStructure.mockResolvedValue(generated({ chapters: deck.structure.chapters }));
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockResolvedValue({ status: "format_error", usage: emptyUsage(), raw_text: "실패", warnings: [], unverified_numbers: [], format_retried: true, condensed: false });
+  vi.mocked(api.startChapters).mockRejectedValue(new Error("시험에서는 생성하지 않는다"));
   render(<StructureScreen project={project} deck={deck} onDeckChange={() => {}} onDone={() => {}} />);
   await userEvent.clear(screen.getByLabelText("보고 질문"));
   await userEvent.click(screen.getByRole("button", { name: "다시 생성" }));

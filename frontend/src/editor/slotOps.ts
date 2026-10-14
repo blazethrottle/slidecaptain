@@ -1,4 +1,5 @@
 import type { Deck, Slots } from "../api/client";
+import { shiftListKeys } from "./directEdit";
 import type { TextRef } from "./Preview";
 
 function updateSlide(deck: Deck, chapterId: string, f: (s: Slots) => Slots): Deck {
@@ -237,6 +238,24 @@ export function setSlideField(deck: Deck, chapterId: string, field: 'eyebrow' | 
 }
 
 export function changeTemplateItems(deck: Deck, chapterId: string, action: 'add' | 'remove', index?: number): Deck {
+  const next = changeItems(deck, chapterId, action, index);
+  if (action !== 'remove' || index === undefined) return next;
+  // 지운 항목 뒤의 직접 수정이 이웃 항목으로 옮겨 붙지 않게 순번 열쇠를 같은 편집에서 당긴다 (D3c-3, 계획 4.2).
+  // 최소 개수라 지우지 못했으면 옮기지 않는다
+  const count = (d: Deck) => {
+    const s = d.slides.find(x => x.chapter_id === chapterId)?.slots;
+    return s?.template === 'cards' ? s.cards.length : s?.template === 'process' ? s.steps.length
+      : s?.template === 'matrix' ? s.rows.length : -1;
+  };
+  if (count(next) !== count(deck) - 1) return next;
+  const prefix = ({ cards: 'card', process: 'step', matrix: 'row' } as const)[
+    next.slides.find(s => s.chapter_id === chapterId)?.slots.template as 'cards' | 'process' | 'matrix'];
+  if (!prefix) return next;
+  return {...next, slides: next.slides.map(s => s.chapter_id === chapterId && s.direct_edits
+    ? {...s, direct_edits: shiftListKeys(s.direct_edits, prefix, index)} : s)};
+}
+
+function changeItems(deck: Deck, chapterId: string, action: 'add' | 'remove', index?: number): Deck {
   return editTemplateSlots(deck, chapterId, s => {
     const change = <T,>(items: T[], min: number, max: number, item: T): T[] => {
       if (action === 'add') return items.length < max ? [...items, item] : items;

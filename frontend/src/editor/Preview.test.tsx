@@ -195,7 +195,8 @@ it("칸별 채움이 비면 머리행 칸들이 단일 색을 그대로 쓴다",
   const backgrounds = cells.map((c) => (c as HTMLElement).style.background);
 
   expect(backgrounds.slice(0, 2)).toEqual(["rgb(242, 242, 242)", "rgb(242, 242, 242)"]);
-  expect(backgrounds.slice(2)).toEqual(["", ""]);
+  // 다시 씀 (D3c-3, E6): 본문 칸은 PPTX의 내장 표 스타일(Medium Style 2 - Accent 1)의 표 전체 채움을 그린다
+  expect(backgrounds.slice(2)).toEqual(["rgb(233, 237, 244)", "rgb(233, 237, 244)"]);
 });
 
 const processSlide: SlidePlan = {
@@ -231,4 +232,99 @@ it("process 단계의 라벨 넘침 경고가 라벨 프레임에 강조를 붙�
   // 경고를 제목/부제 프레임에도 함께 매칭한다. 이는 이번 수정 대상인 리뷰 발견 1과는 다른,
   // 형제 프레임 이름이 서로의 접두어가 되는 기존 구조적 한계라 이 커밋의 범위 밖이다.)
   expect(container.querySelector('[data-frame="c5:step0_badge"]')).not.toHaveClass("warned");
+});
+
+it("미리보기 표 칸은 화면 글자색이 아니라 프리셋 글자색을 쓴다 (D2a-4, 리뷰 R6)", () => {
+  // 표 칸은 글자색을 따로 지정하지 않아 캔버스의 색을 물려받는다. 화면 토큰이 새어 PPTX와 달라지면 안 된다.
+  // 프리셋 색을 화면 색과 다른 값으로 두어, 캔버스가 아닌 표 칸의 계산 색으로 확인한다
+  const tableSlide: SlidePlan = {
+    chapter_id: "c1", template: "table", warnings: [],
+    frames: [{ name: "c1:table", x: 50, y: 92, w: 860, h: 400, fill: null, border: null,
+      valign: "top", paras: [],
+      table: {
+        col_widths_pt: [200, 660], header: ["구분", "내용"], rows: [["A", "값"]],
+        font_pt: 12, header_fill: "F2F2F2", row_heights_pt: [22.8, 22.8],
+        header_lines: [["구분"], ["내용"]], cell_lines: [[["A"], ["값"]]],
+        header_fills: [], body_fills: [],
+      } }],
+  };
+  render(<Preview slide={tableSlide} style={{ ...style, text_color: "123456" }} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  expect(getComputedStyle(screen.getByText("값")).color).toBe("rgb(18, 52, 86)");
+});
+
+it("직접 수정으로 숨긴 프레임은 그리지 않는다 (D3c-2)", () => {
+  const hidden: SlidePlan = { ...slide, frames: slide.frames.map((f) =>
+    f.name === "c1:bullets" ? { ...f, hidden: true, base_x: f.x, base_y: f.y } : f) };
+  const { container } = render(<Preview slide={hidden} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  expect(container.querySelector('[data-frame="c1:bullets"]')).toBeNull();
+  expect(screen.queryByText("첫 불릿")).toBeNull();
+  expect(screen.getByText("장 제목")).toBeInTheDocument();
+});
+
+it("표 칸은 오른쪽과 아래 선만 그려 안쪽 선이 1pt다 (D3c-3 리뷰 F20)", () => {
+  const table = {
+    col_widths_pt: [200, 330], header: ["구분", "A안"], rows: [["비용", "높음"]], font_pt: 12, header_fill: "F2F2F2",
+    row_heights_pt: [22.8, 22.8], header_lines: [["구분"], ["A안"]], cell_lines: [[["비용"], ["높음"]]], header_fills: [], body_fills: [],
+  };
+  const plan: SlidePlan = { chapter_id: "c3", template: "table", warnings: [],
+    frames: [{ name: "c3:table", x: 50, y: 92, w: 530, h: 200, fill: null, border: null, valign: "top", paras: [], table }] };
+  const { container } = render(<Preview slide={plan} style={style} pageW={960} pageH={540}
+    selected={null} onSelect={() => {}} onCommitText={() => {}} />);
+  const cell = Array.from(container.querySelectorAll<HTMLElement>('[data-frame="c3:table"] div')).find((el) => el.style.width !== "")!;
+  expect(cell.style.borderRight).toBe("1px solid rgb(255, 255, 255)");
+  expect(cell.style.borderBottom).toBe("1px solid rgb(255, 255, 255)");
+  expect(cell.style.borderTop).toBe("");
+  expect(cell.style.borderLeft).toBe("");
+});
+
+it("배지가 있는 카드의 접근 이름은 소제목을 쓰고, 묶음의 나머지 프레임은 버튼이 아니다 (D3c-3 리뷰 F21)", () => {
+  const para = (text: string, font_pt: number) => ({ text, level: 0, font_pt, bold: true, color: "202020",
+    align: "left" as const, bullet: false, lines: [text] });
+  const plan: SlidePlan = { chapter_id: "c1", template: "cards", warnings: [], frames: [
+    { name: "c1:card0", x: 50, y: 92, w: 200, h: 200, fill: null, border: null, valign: "top", table: null,
+      paras: [para("1", 9), para("소제목", 12)] },
+    { name: "c1:chart", x: 300, y: 92, w: 300, h: 150, fill: null, border: null, valign: "top", table: null, paras: [] },
+    { name: "c1:chart_conditions", x: 300, y: 250, w: 300, h: 20, fill: null, border: null, valign: "top", table: null,
+      paras: [para("조건", 9)] },
+  ] };
+  render(<Preview slide={plan} style={style} pageW={960} pageH={540} selected={{ chapterId: "c1", slot: "card0" }}
+    onSelect={() => {}} onCommitText={() => {}} />);
+  expect(screen.getByRole("button", { name: "1번 카드, 소제목" })).toHaveAttribute("aria-current", "true");
+  expect(screen.getAllByRole("button", { name: /^표/ })).toHaveLength(1);
+});
+
+describe("α 리뷰 반영", () => {
+  const para = (text: string, font_pt: number, bullet = false) => ({ text, level: 0, font_pt, bold: false, color: "202020",
+    align: "left" as const, bullet, lines: [text] });
+  const card: SlidePlan = { chapter_id: "c1", template: "cards", warnings: [], frames: [
+    { name: "c1:card0", x: 50, y: 92, w: 200, h: 200, fill: null, border: null, valign: "top", table: null,
+      paras: [para("1", 9), para("A", 12), para("가 항목", 12, true)] },
+  ] };
+
+  it("배지를 비운 입력의 Tab은 옛 계획의 다음 칸을 열지 않고 프레임으로 돌아간다 (A1)", async () => {
+    const commits: unknown[] = [];
+    const { container } = render(<Preview slide={card} style={style} pageW={960} pageH={540} editable
+      selected={{ chapterId: "c1", slot: "card0" }} onSelect={() => {}} onCommitText={(ref, text) => commits.push([ref, text])} />);
+    const frame = container.querySelector<HTMLElement>('[data-frame="c1:card0"]')!;
+    frame.focus();
+    await userEvent.keyboard("{Enter}");
+    const box = screen.getByLabelText("내용 수정");
+    await userEvent.clear(box);
+    await userEvent.keyboard("{Tab}");
+    expect(commits).toEqual([[{ chapterId: "c1", slot: "card0", index: 0 }, ""]]);
+    expect(screen.queryByLabelText("내용 수정")).toBeNull();
+    expect(document.activeElement).toBe(frame);
+  });
+
+  it("빈 칸이 생기지 않는 입력의 Tab은 다음 칸을 연다", async () => {
+    const { container } = render(<Preview slide={card} style={style} pageW={960} pageH={540} editable
+      selected={{ chapterId: "c1", slot: "card0" }} onSelect={() => {}} onCommitText={() => {}} />);
+    container.querySelector<HTMLElement>('[data-frame="c1:card0"]')!.focus();
+    await userEvent.keyboard("{Enter}");
+    await userEvent.type(screen.getByLabelText("내용 수정"), "2");
+    await userEvent.keyboard("{Tab}");
+    expect(screen.getByLabelText("내용 수정")).toHaveValue("A");
+  });
 });

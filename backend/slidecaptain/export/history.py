@@ -253,11 +253,11 @@ def read_export_history(
         with _pin_directory(directory, identity) as reader:
             ids = _scan(reader)
             if export_id is not None and export_id not in ids:
-                raise HistoryNotFound("내보내기 이력을 찾지 못했습니다. 목록을 새로고침해 주세요.")
+                raise HistoryNotFound("내보내기 이력을 찾지 못했습니다. '이력 새로고침'을 눌러 목록을 다시 읽어 주세요.")
             selected = [export_id] if export_id is not None else ids[offset:offset + limit]
             results = [_inspect(directory, name, current_fingerprint, reader=reader) for name in selected]
     elif export_id is not None:
-        raise HistoryNotFound("내보내기 이력을 찾지 못했습니다. 목록을 새로고침해 주세요.")
+        raise HistoryNotFound("내보내기 이력을 찾지 못했습니다. '이력 새로고침'을 눌러 목록을 다시 읽어 주세요.")
     if _directory_identity(directory) != identity:
         raise HistoryReadError("조회 중 출력 폴더가 바뀌었습니다. 다시 조회해 주세요.")
     context = dict(

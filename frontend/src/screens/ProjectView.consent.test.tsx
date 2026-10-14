@@ -5,7 +5,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { revokeConsent } from "../api/aiGate";
 import type { AppStatus, Deck } from "../api/client";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
+import { defaultProgress } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
 
 const project = { name: "p1", title: "제목", updated_at: "", status: "ok" as const };
@@ -37,11 +39,19 @@ function stubFetch(): ReturnType<typeof vi.fn> {
     if (method === "GET" && url.endsWith("/api/status")) {
       return new Response(JSON.stringify(STATUS), { status: 200 });
     }
-    if (method === "POST" && url.endsWith("/generate/structure")) {
-      return new Response(JSON.stringify({
+    // D2b-5b: 구조안 생성은 작업 API로 등록한다. 등록 응답이 곧 끝난 작업이다
+    if (method === "GET" && url.endsWith("/api/jobs/active")) {
+      return new Response(JSON.stringify({ active: null, ledger_available: true }), { status: 200 });
+    }
+    if (method === "GET" && url.endsWith("/api/projects/p1/jobs")) return new Response("[]", { status: 200 });
+    if (method === "GET" && url.endsWith("/api/projects/p1/progress")) {  // D3a-3 리뷰 R6
+      return new Response(JSON.stringify(defaultProgress()), { status: 200 });
+    }
+    if (method === "POST" && url.endsWith("/api/projects/p1/jobs")) {
+      return new Response(JSON.stringify(jobView("structure", { result: {
         status: "ok", structure: { chapters: [] }, usage: emptyUsage(),
         raw_text: "", unverified_numbers: [], format_retried: false,
-      }), { status: 200 });
+      } })), { status: 202 });
     }
     throw new Error(`스텁되지 않은 요청: ${method} ${url}`);
   });
@@ -52,7 +62,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 async function openStructureTab() {
   render(<ProjectView project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "구조안" }));
+  await userEvent.click(await screen.findByRole("button", { name: "구성" }));
   await screen.findByRole("button", { name: "구조안 생성" });
 }
 
@@ -64,11 +74,12 @@ it("첫 구조안 생성 클릭에 대화 상자가 뜨고, 취소하면 요청�
   await screen.findByRole("dialog");
   // 대화 상자가 열린 동안 탭 버튼이 잠긴다 (계획서 B3)
   expect(screen.getByRole("button", { name: "자료" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "구조안" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "구성" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "보고 목적에서 고치기" })).toBeDisabled();  // D3b-7 리뷰 R11, 변형 S17
   await userEvent.click(screen.getByRole("button", { name: "취소" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(screen.getByRole("button", { name: "자료" })).not.toBeDisabled();
-  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/generate/structure"))).toBe(false);
+  expect(fetchMock.mock.calls.some(([u, init]) => String(u).endsWith("/api/projects/p1/jobs") && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   const notice = await screen.findByText("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
   expect(notice.closest('[role="alert"]')).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
@@ -82,7 +93,7 @@ it("동의하면 요청이 나가고 대화 상자가 닫히며, 두 번째 클�
   await screen.findByRole("dialog");
   await userEvent.click(screen.getByRole("button", { name: "전송에 동의하고 계속" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/generate/structure"))).toBe(true);
+  expect(fetchMock.mock.calls.some(([u, init]) => String(u).endsWith("/api/projects/p1/jobs") && (init as RequestInit | undefined)?.method === "POST")).toBe(true);
   // 두 번째 클릭은 이미 동의한 탭이라 대화 상자 없이 곧장 나간다 (스텁 응답이 빈 구조안이라
   // 버튼 문구는 그대로 "구조안 생성"이다)
   const before = fetchMock.mock.calls.length;

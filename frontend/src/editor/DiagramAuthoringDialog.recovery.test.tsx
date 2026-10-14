@@ -96,7 +96,7 @@ it("아직 적용하지 않은 새 도식을 저장된 도식으로 세지 않�
   vi.mocked(api.reconcileDiagramStory).mockRejectedValue(staleError());
   open(deck, true);
   await userEvent.click(reviewButton());
-  expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/구조안 탭에서.*다시 생성/);
+  expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/구성 단계에서.*다시 생성/);
   expect(recovery()).not.toHaveTextContent(/전체 구조안 다시 생성은 아직 지원하지 않습니다/);
   expect(screen.getByLabelText("도식 제목")).toHaveValue("아직 적용하지 않은 도식");
 });

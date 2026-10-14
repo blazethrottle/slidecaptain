@@ -58,7 +58,16 @@ class AISettings(BaseModel):
 
 
 class ConnectionConflict(ValueError):
-    pass
+    """연결 선택이나 신원이 바뀌었거나 로그인 중이다. code는 던지는 자리마다 붙인다 (D3a-4, 계획 4.3)."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        if code not in CONNECTION_CONFLICT_CODES:  # 최적화 실행(-O)에서도 검사한다 (D3a-4 리뷰 R19)
+            raise ValueError(f"모르는 연결 충돌 코드: {code}")
+        self.code = code
+
+
+CONNECTION_CONFLICT_CODES = frozenset({"selection_changed", "login_pending", "identity_changed", "settings_busy"})
 
 
 class ClaudeConnection:
@@ -72,7 +81,8 @@ class ClaudeConnection:
     def status(self):
         status = check_login()
         if status.logged_in and status.auth_method != "claude.ai":
-            return LoginStatus(error="Claude 구독 로그인이 필요합니다. Claude Code의 현재 API 인증 설정을 확인해 주세요.")
+            return LoginStatus(error="Claude 구독 로그인이 필요합니다. Claude Code의 현재 API 인증 설정을 확인해 주세요.",
+                               error_code="login_required")
         return status
 
     def models(self):
@@ -87,7 +97,7 @@ class ClaudeConnection:
             return self._attempt
         cli = resolve_cli_path()
         if cli is None:
-            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 설치 후 연결 상태를 다시 확인해 주세요.")
+            raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 설치 후 연결 상태를 다시 확인해 주세요.", code="provider_missing")
         # The unmodified client opens and completes its own browser flow. No
         # login URL, codes, credentials or terminal output are relayed by us.
         try:
@@ -96,7 +106,7 @@ class ClaudeConnection:
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except OSError:
-            raise ProviderNotAvailable("Claude Code 로그인 창을 열지 못했습니다.") from None
+            raise ProviderNotAvailable("Claude Code 로그인 창을 열지 못했습니다.", code="provider_missing") from None
         self._started = time.monotonic()
         self._attempt = LoginAttempt(state="pending", message=(
             "Claude Code가 연 공식 브라우저에서 로그인해 주세요. 창이 열리지 않으면 "
@@ -171,7 +181,7 @@ class AIConnections:
 
     def _idle(self):
         if self._active:
-            raise ConnectionConflict("AI 생성이 진행 중입니다. 완료 후 연결 설정을 변경해 주세요.")
+            raise ConnectionConflict("AI 생성이 진행 중입니다. 완료 후 연결 설정을 변경해 주세요.", code="settings_busy")
 
     def settings(self):
         with self._lock:
@@ -263,19 +273,29 @@ class AIConnections:
     def generation(self, selection_id: str | None):
         with self._lock:
             if selection_id != self.selection_id:
-                raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+                raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
             self._idle()
             connection = self.connections[self.selection.provider]
             if connection.login_status().state == "pending":
-                raise ConnectionConflict("로그인을 완료한 뒤 생성해 주세요.")
+                raise ConnectionConflict("로그인을 완료한 뒤 생성해 주세요.", code="login_pending")
             status = connection.status()
             self._observe_identity(self.selection.provider, status)
             if selection_id != self.selection_id:
-                raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.")
+                raise ConnectionConflict("AI 연결 상태가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="identity_changed")
+            # 로그인 안 됨과 확인하지 못함을 가른다. 확인하지 못함은 상태 확인이 가른 원인 코드를 싣는다 (D3a-4 리뷰 R2)
+            if status.logged_in is False:
+                raise ProviderNotAvailable(status.error or "AI 연결에 로그인되어 있지 않습니다.", code="login_required")
+            if status.logged_in is not True and status.error_code == "provider_missing":
+                raise ProviderNotAvailable(status.error or "AI 도구를 찾지 못했습니다.", code="provider_missing")
+            if status.logged_in is not True and status.error_code == "provider_timeout":
+                raise ProviderNotAvailable(status.error or "AI 연결 상태 확인이 시간 안에 끝나지 않았습니다.",
+                                           code="provider_timeout")
+            if status.logged_in is not True and status.error_code == "login_required":
+                raise ProviderNotAvailable(status.error or "구독 로그인을 확인해 주세요.", code="login_required")
             if status.logged_in is not True:
-                raise ProviderNotAvailable(status.error or "AI 연결 화면에서 먼저 로그인해 주세요.")
+                raise ProviderNotAvailable(status.error or "AI 연결 상태를 확인하지 못했습니다.", code="provider_call_failed")
             if self.selection.model not in {m.id for m in connection.models()}:
-                raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.")
+                raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.", code="model_unavailable")
             provider = connection.provider(self.selection.model)
             self._active += 1
         try:

@@ -6,12 +6,14 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from scripts.quality_pilot import BudgetedProvider, _PilotConnection, main, run_pilot, scenario
+from scripts import quality_pilot
+from scripts.quality_pilot import BudgetedProvider, OfflineProvider, _PilotConnection, main, run_pilot, scenario
 from slidecaptain.models.deck import Deck
 from slidecaptain.pipeline.connections import AIConnections
 from slidecaptain.pipeline.provider import CallUsage, ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
+from tests.job_runs import post_generation
 
 
 class CountingProvider:
@@ -167,7 +169,7 @@ def test_pilot_connection_enforces_consent_and_selection_before_calls(tmp_path, 
     bounded = BudgetedProvider(provider, max_calls=5)
     manager = AIConnections(tmp_path / "settings.json", connections={"claude": _PilotConnection(bounded, "sonnet")})
     with TestClient(create_app(store, ai_connections=manager), headers={"X-Requested-With": "SlideCaptain"}) as client:
-        response = client.post("/api/projects/quality-pilot/generate/chapter/pilot-action", json={}, headers=headers)
+        response = post_generation(client, "/api/projects/quality-pilot/generate/chapter/pilot-action", json={}, headers=headers)
     assert response.status_code == status
     assert provider.calls == 0
 
@@ -231,3 +233,69 @@ def test_journal_failure_after_response_stops_next_dispatch(tmp_path, monkeypatc
     result = run_pilot(tmp_path / "journal-failure", mode="offline", max_calls=5, provider=provider)
     assert result["status"] == "blocked"
     assert provider.calls == 1
+
+
+class _SourceChangingProvider:
+    """오프라인 응답을 내되 재작성 호출(스키마에 chapter_order가 있음) 중에 자료를 더한다."""
+
+    def __init__(self, sources_dir):
+        self.inner, self.sources_dir = OfflineProvider(), sources_dir
+
+    async def complete(self, prompt, schema):
+        if "chapter_order" in schema.get("properties", {}):
+            (self.sources_dir / "added-while-rewriting.md").write_text("새 합성 자료", encoding="utf-8")
+        return await self.inner.complete(prompt, schema)
+
+
+def test_rewrite_candidate_made_stale_while_drawing_stops_the_pilot(tmp_path):
+    # 래퍼는 이 경우 412나 409로 멈췄다. 작업 API에서는 후보가 낡음으로 남으므로 파일럿이 후보 상태를 본다 (D3c-7 리뷰 H4)
+    output = tmp_path / "stale-rewrite"
+    provider = _SourceChangingProvider(output / "projects" / "quality-pilot" / "sources")
+    result = run_pilot(output, mode="offline", max_calls=5, provider=provider)
+    assert result["status"] == "blocked"
+    assert result["stage"] == "rewrite_preview"
+    assert result["error"] == "재작성 후보가 만드는 동안 입력이 바뀌어 낡았습니다."
+    assert (output / "rewrite-result.json").exists()
+    assert not (output / "applied-deck.json").exists()
+
+
+class _SlowProvider:
+    # 0.3초 안에 호출까지 갔는지는 러너 부하에 따라 다르므로 호출 수는 보지 않는다
+    async def complete(self, prompt, schema):
+        await asyncio.sleep(30)  # 대기 상한을 넘긴다. 파일럿이 끝나면 앱 종료가 이 호출을 취소한다
+        raise AssertionError("취소되어야 합니다")
+
+
+def test_job_wait_limit_stops_the_pilot(tmp_path, monkeypatch):
+    monkeypatch.setattr(quality_pilot, "JOB_WAIT_SECONDS", 0.3)
+    provider = _SlowProvider()
+    result = run_pilot(tmp_path / "slow", mode="offline", max_calls=5, provider=provider)
+    assert result["status"] == "blocked"
+    assert result["stage"] == "chapter"
+    assert result["error"] == "chapter 작업이 0.3초 안에 끝나지 않았습니다."
+
+
+def test_offline_pilot_runs_as_a_separate_process(tmp_path):
+    """`python -m scripts.quality_pilot --offline`을 pytest 밖 프로세스로 돌린다 (2026-10-14 머지 전 리뷰 PM-01).
+
+    conftest 가 TestClient 의 기본 Host 를 127.0.0.1 로 돌리는 것은 pytest 프로세스 안에서만 적용된다.
+    같은 프로세스에서 `run_pilot`을 부르는 시험은 그 보정을 물려받아, 독립 실행 명령이 400 으로 멈추는
+    회귀(운영 허용 목록에서 testserver 를 뺀 뒤 스크립트가 base_url 을 적지 않은 상태)를 잡지 못했다.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    output = tmp_path / "pilot"
+    env = {k: v for k, v in os.environ.items() if k != "SLIDECAPTAIN_CLAUDE_CLI"}
+    env["SLIDECAPTAIN_CLAUDE_CLI"] = str(tmp_path / "missing-claude")
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [sys.executable, "-m", "scripts.quality_pilot", "--output", str(output), "--offline", "--max-calls", "5"],
+        cwd=str(Path(__file__).resolve().parents[1]), env=env, capture_output=True, text=True, timeout=300,
+    )
+    report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    assert completed.returncode == 0, completed.stdout[-2000:] + completed.stderr[-2000:]
+    assert report["status"] == "completed", report
+    assert report["stage"] == "done"

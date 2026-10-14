@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api, messageOf, type ExportQualification, type IndependentReviewRequest } from "../api/client";
 import type { ReviewLeaveGuard } from "./ReviewRecordsPanel";
+import { Button } from "../ui/Button";
 
-type Props = { projectName: string; exportId: string; readOnly?: boolean; busy?: boolean;
+// lockedReason: 내보내기 밖의 이유로 잠글 때 보이는 이유 (D3a-5 리뷰 R18: 장 생성 묶음 중)
+type Props = { projectName: string; exportId: string; readOnly?: boolean; busy?: boolean; lockedReason?: string;
   onBusyChange?: (busy: boolean) => void; onDirtyChange?: (dirty: boolean) => void; onLeaveReady?: (guard: ReviewLeaveGuard | null) => void };
 const renderNames = { not_run: "미수행", rendered: "실행됨", failed: "실행 실패", stale: "현재 출력에 적용 불가", unavailable: "확인 불가" };
 const reviewNames = { not_run: "미수행", passed: "서명 검수 통과", needs_revision: "수정 필요", stale: "현재 출력에 적용 불가", unavailable: "확인 불가" };
@@ -11,7 +13,8 @@ export function ExportQualificationPanel(props: Props) {
   return <Qualification key={`${props.projectName}/${props.exportId}`} {...props} />;
 }
 
-function Qualification({ projectName, exportId, readOnly = false, busy = false, onBusyChange, onDirtyChange, onLeaveReady }: Props) {
+function Qualification({ projectName, exportId, readOnly = false, busy: exporting = false, lockedReason, onBusyChange, onDirtyChange, onLeaveReady }: Props) {
+  const busy = exporting || !!lockedReason;
   const [basis, setBasis] = useState<ExportQualification | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -98,6 +101,7 @@ function Qualification({ projectName, exportId, readOnly = false, busy = false, 
   return <section aria-label="제출본 검수와 게시" className="qualification-panel">
     <h4>제출본 검수와 게시</h4>
     <p>실제 PowerPoint 출력과 등록된 독립 검수 기록을 확인합니다. 수동 통과 입력만으로 제출본을 승인하지 않습니다.</p>
+    {lockedReason && <p>{lockedReason}</p>}
     {loading && <p role="status">현재 출력과 검수 기준 확인 중...</p>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
@@ -117,7 +121,7 @@ function Qualification({ projectName, exportId, readOnly = false, busy = false, 
         onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>
       {file && <p>선택한 검수 파일: {file.name}</p>}
       <button disabled={disabled || !file || !basis?.can_import_review} onClick={() => void run("review")}>독립 검수 기록 확인</button>
-      <button disabled={disabled || !basis?.final_export_allowed} onClick={() => void run("publish")}>검수한 파일을 제출본으로 게시</button>
+      <Button variant="danger" disabled={disabled || !basis?.final_export_allowed} onClick={() => void run("publish")}>검수한 파일을 제출본으로 게시</Button>
     </>}
   </section>;
 }

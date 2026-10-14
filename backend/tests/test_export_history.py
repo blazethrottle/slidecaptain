@@ -56,13 +56,13 @@ def test_history_roundtrip_is_read_only_and_does_not_approve_quality(client, sto
     assert {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()} == before
 
 
-@pytest.mark.parametrize("change", ["source", "deck", "preset"])
+@pytest.mark.parametrize("change", ["source", "deck", "preset", "move"])
 def test_input_edits_invalidate_history_without_changing_original_and_restore_matches(client, store, change):
     exported = publish(client, store)
     before = Path(exported["quality_path"]).read_bytes()
     if change == "source":
         target = store.root / "synthetic/sources/synthetic.md"
-    elif change == "deck":
+    elif change in ("deck", "move"):
         target = store.root / "synthetic/deck.json"
     else:
         store.save_global_preset(store.load_global_preset())
@@ -74,6 +74,10 @@ def test_input_edits_invalidate_history_without_changing_original_and_restore_ma
         data = json.loads(original)
         if change == "deck":
             data["meta"]["title"] = "Renamed report"
+        elif change == "move":
+            # 위치만 옮긴 덱도 기존 내보내기 기록을 낡음으로 만든다 (D3c 계획 4.6, D3c-2 리뷰 F9)
+            data["schema_version"] = 3
+            data["slides"][0]["direct_edits"] = {"title": {"dx_pt": 5, "dy_pt": 0}}
         else:
             data["colors"]["accent"] = "BB0000"
         target.write_text(json.dumps(data), encoding="utf-8")
@@ -198,13 +202,13 @@ def test_bad_record_ids_are_rejected(client, store, name):
 
 
 @pytest.mark.parametrize("component", ["pptx", "quality.json"])
-def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, component):
+def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, component, symlink_or_skip):
     exported = publish(client, store)
     path = Path(exported["path"] if component == "pptx" else exported["quality_path"])
     outside = tmp_path / "private.txt"
     outside.write_text("PRIVATE CONTENT", encoding="utf-8")
     path.unlink()
-    path.symlink_to(outside)
+    symlink_or_skip(path, outside)
     response = detail(client, exported)
     assert response.status_code == 200
     item = response.json()["item"]
@@ -213,11 +217,11 @@ def test_file_symlinks_never_expose_external_bytes(client, store, tmp_path, comp
     assert outside.read_text(encoding="utf-8") == "PRIVATE CONTENT"
 
 
-def test_exports_symlink_is_not_followed(client, store, tmp_path):
+def test_exports_symlink_is_not_followed(client, store, tmp_path, symlink_or_skip):
     setup_project(store)
     directory = store.exports_dir("synthetic")
     directory.rmdir()
-    directory.symlink_to(tmp_path, target_is_directory=True)
+    symlink_or_skip(directory, tmp_path, target_is_directory=True)
     assert client.get(BASE).status_code == 422
 
 

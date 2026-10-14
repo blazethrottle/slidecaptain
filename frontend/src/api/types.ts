@@ -94,6 +94,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{name}/direct-edits/font-limit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Direct Edit Font Limit
+         * @description 고른 요소가 넘치지 않는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 렌더 계획 직렬화를 바꾸지 않도록 따로 묻는다.
+         */
+        post: operations["direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/render-plan": {
         parameters: {
             query?: never;
@@ -219,23 +239,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/story-plan/rewrite": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Preview Story Rewrite */
-        post: operations["preview_story_rewrite_api_projects__name__story_plan_rewrite_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{name}/story-plan/rewrite/apply": {
         parameters: {
             query?: never;
@@ -247,23 +250,6 @@ export interface paths {
         put?: never;
         /** Apply Story Rewrite */
         post: operations["apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{name}/story-plan/repair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Preview Story Repair */
-        post: operations["preview_story_repair_api_projects__name__story_plan_repair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -333,6 +319,29 @@ export interface paths {
         put?: never;
         /** Create Export Review */
         post: operations["create_export_review_api_projects__name__exports__export_id__reviews_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Progress
+         * @description 단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.
+         *
+         *     한 번의 프로젝트 잠금 안에서 덱과 자료를 한 번 읽고, 현재 입력 fingerprint는 내보내기 기록이
+         *     있을 때만 한 번 계산한다. 단계 계산, 파일 현재성, 검수 기준이 같은 저장본을 근거로 한다 (최종 리뷰 F4)
+         */
+        get: operations["get_progress_api_projects__name__progress_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -419,6 +428,78 @@ export interface paths {
         /** Restore Snapshot */
         post: operations["restore_snapshot_api_projects__name__snapshots__snapshot_id__restore_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Drafts */
+        get: operations["list_drafts_api_projects__name__drafts_get"];
+        put?: never;
+        /** Save Draft */
+        post: operations["save_draft_api_projects__name__drafts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts/{draft_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Draft */
+        post: operations["restore_draft_api_projects__name__drafts__draft_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts/{draft_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Draft Summary
+         * @description 보존본을 복원하기 전에 서버 저장본과의 차이를 요약한다 (D3c-6, E7). 저장본을 읽지 못하면 모든 장이 더해진다.
+         */
+        get: operations["draft_summary_api_projects__name__drafts__draft_id__summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Draft */
+        delete: operations["delete_draft_api_projects__name__drafts__draft_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -606,41 +687,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/generate/diagram": {
+    "/api/projects/{name}/jobs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Jobs */
+        get: operations["list_jobs_api_projects__name__jobs_get"];
         put?: never;
-        /** Generate Diagram */
-        post: operations["generate_diagram_api_projects__name__generate_diagram_post"];
+        /** Create Job */
+        post: operations["create_job_api_projects__name__jobs_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/generate/structure": {
+    "/api/projects/{name}/jobs/{job_id}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Get Job */
+        get: operations["get_job_api_projects__name__jobs__job_id__get"];
         put?: never;
-        /** Generate Structure */
-        post: operations["generate_structure_api_projects__name__generate_structure_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/generate/chapter/{chapter_id}": {
+    "/api/projects/{name}/jobs/{job_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -649,15 +731,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Chapter */
-        post: operations["generate_chapter_api_projects__name__generate_chapter__chapter_id__post"];
+        /** Cancel Job */
+        post: operations["cancel_job_api_projects__name__jobs__job_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{name}/generate/chapter/{chapter_id}/condense": {
+    "/api/projects/{name}/jobs/{job_id}/candidate": {
         parameters: {
             query?: never;
             header?: never;
@@ -666,8 +748,65 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Condense Chapter */
-        post: operations["condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post"];
+        /** Settle Candidate */
+        post: operations["settle_candidate_api_projects__name__jobs__job_id__candidate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}/apply/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Candidate
+         * @description 저장하지 않는 적용 미리 보기. 판정이 막아도 비교는 보이도록 200이다 (계획 4.8, 제품 설계 7절).
+         */
+        post: operations["preview_candidate_api_projects__name__jobs__job_id__apply_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{name}/jobs/{job_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Candidate
+         * @description 장 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (계획 4.8의 순서와 원자성).
+         */
+        post: operations["apply_candidate_api_projects__name__jobs__job_id__apply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/active": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Active Job */
+        get: operations["get_active_job_api_jobs_active_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -702,6 +841,41 @@ export interface components {
             /** Busy */
             busy: boolean;
         };
+        /**
+         * ActiveJob
+         * @description 서비스 전체에서 실행 중인 작업 하나의 요약. 409 generation_active 응답에도 같은 모양이 실린다.
+         */
+        ActiveJob: {
+            /** Id */
+            id: string;
+            /** Project */
+            project: string;
+            /** Kind */
+            kind: string;
+            /** Target */
+            target: string | null;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "queued" | "running" | "cancel_requested";
+            /** Created At */
+            created_at: string;
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            /** Step */
+            step?: ("connecting" | "generating" | "retrying_format") | null;
+            /** Step Started At */
+            step_started_at?: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds?: number | null;
+        };
+        /** ActiveJobStatus */
+        ActiveJobStatus: {
+            active: components["schemas"]["ActiveJob"] | null;
+            /** Ledger Available */
+            ledger_available: boolean;
+        };
         /** AppStatus */
         AppStatus: {
             /**
@@ -721,6 +895,7 @@ export interface components {
              * @description 로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)
              */
             checked_at: string;
+            data_dir?: components["schemas"]["DataDirStatus"] | null;
         };
         /** ApplyStoryRewriteRequest */
         ApplyStoryRewriteRequest: {
@@ -849,7 +1024,98 @@ export interface components {
              */
             tone: "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger";
         };
-        /** CapacityWarning */
+        /** CandidateAction */
+        CandidateAction: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "applied" | "dismissed";
+            /** Chapter Id */
+            chapter_id?: string | null;
+        };
+        /**
+         * CandidateApplyPreview
+         * @description 적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다.
+         */
+        CandidateApplyPreview: {
+            /** Job Id */
+            job_id: string;
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "chapter" | "condense";
+            /** Base Etag */
+            base_etag: string;
+            /** Blocked Reasons */
+            blocked_reasons: string[];
+            /** Notices */
+            notices: string[];
+            /** Units */
+            units: string[];
+            /** Edited Units */
+            edited_units: string[] | null;
+            /** Keep Current */
+            keep_current: string[];
+            /** Drop Edits */
+            drop_edits: string[];
+            /** Unhide */
+            unhide: string[];
+            /** Length Changed Units */
+            length_changed_units: string[];
+            current: components["schemas"]["Slide"] | null;
+            merged: components["schemas"]["Slide"] | null;
+            /** Warnings */
+            warnings: components["schemas"]["CapacityWarning"][];
+            /** Removed Edits */
+            removed_edits: string[];
+            /** Unhidden */
+            unhidden: string[];
+            /** Removed Spans */
+            removed_spans: number;
+            /** Removed Chart */
+            removed_chart: boolean;
+            /** Already Applied */
+            already_applied: boolean;
+            /** Page Width Pt */
+            page_width_pt: number;
+            /** Page Height Pt */
+            page_height_pt: number;
+            style: components["schemas"]["RenderStyle"];
+            current_plan: components["schemas"]["SlidePlan"] | null;
+            merged_plan: components["schemas"]["SlidePlan"] | null;
+        };
+        /**
+         * CandidateApplyRequest
+         * @description 장 후보 적용과 미리 보기의 본문 (D3c-5, 계획 4.8). 칸을 비우면(null) 서버가 기본 선택을 쓴다: 다시 생성은 "직접 고친
+         *     문구" 단위만 지금 문구, 장 축약은 모두 새 문구, 요소 수정은 길이가 바뀐 목록의 순번 요소만 지운다. 응답은 실제로 쓴 선택을
+         *     돌려준다(계획 4.8에 없던 확장, D3c-5 기록).
+         */
+        CandidateApplyRequest: {
+            /** Chapter Id */
+            chapter_id?: string | null;
+            /** Keep Current */
+            keep_current?: string[] | null;
+            /** Drop Edits */
+            drop_edits?: string[] | null;
+            /** Unhide */
+            unhide?: string[] | null;
+            /** Edit Choices */
+            edit_choices?: {
+                [key: string]: "keep" | "drop" | "unhide";
+            } | null;
+        };
+        /**
+         * CapacityWarning
+         * @description 레이아웃 경고. 분량 경고(capacity)의 needed_pt와 available_pt는 필요한 높이와 가용 높이다.
+         *
+         *     글자 크기 경고(font_size, 직접 수정의 배율, D3c-2)는 같은 두 칸에 기준 크기와 실제 크기를 담는다: 읽기 하한 경고는
+         *     하한과 줄인 크기, PowerPoint 범위로 자른 경고는 요청한 크기와 자른 크기다. 품질 보고는 두 종류를 다른 항목으로 센다
+         *     (D3c-2 리뷰 F3). kind는 기본값이면 직렬화에서 빼므로 수정값이 없는 덱의 렌더 계획은 그대로다.
+         */
         CapacityWarning: {
             /** Chapter Id */
             chapter_id: string;
@@ -861,6 +1127,11 @@ export interface components {
             needed_pt: number;
             /** Available Pt */
             available_pt: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind?: "capacity" | "font_size";
         };
         /** Card */
         Card: {
@@ -939,6 +1210,34 @@ export interface components {
              */
             source_refs: string[];
         };
+        /** ChapterJobParams */
+        ChapterJobParams: {
+            /** Chapter Id */
+            chapter_id: string;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** ChapterJobRequest */
+        ChapterJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chapter";
+            params: components["schemas"]["ChapterJobParams"];
+        };
+        /** ChapterLabel */
+        ChapterLabel: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+        };
         /** ChapterResult */
         ChapterResult: {
             /**
@@ -974,6 +1273,54 @@ export interface components {
              */
             condensed: boolean;
             usage: components["schemas"]["GenerationUsage"];
+        };
+        /**
+         * ChapterView
+         * @description 장 생성 묶음의 장 하나 (D2b-4, α 묶음 리뷰 A8).
+         */
+        ChapterView: {
+            /** Chapter Id */
+            chapter_id: string;
+            /** Position */
+            position: number;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /**
+             * Candidate Status
+             * @enum {string}
+             */
+            candidate_status: "none" | "held" | "delivered" | "applied" | "stale" | "dismissed";
+            error: components["schemas"]["JobError"] | null;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+        };
+        /**
+         * ChaptersJobParams
+         * @description 장 생성 묶음 (D2b-4). 화면이 승인 반영 PUT 뒤의 ETag를 If-Match로 주어 등록한다.
+         */
+        ChaptersJobParams: {
+            /** Chapter Ids */
+            chapter_ids: string[];
+        };
+        /** ChaptersJobRequest */
+        ChaptersJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "chapters";
+            params: components["schemas"]["ChaptersJobParams"];
         };
         /** ChartPlan */
         ChartPlan: {
@@ -1202,8 +1549,10 @@ export interface components {
             /** Evidence Id */
             evidence_id?: string | null;
         };
-        /** CondenseChapterRequest */
-        CondenseChapterRequest: {
+        /** CondenseJobParams */
+        CondenseJobParams: {
+            /** Chapter Id */
+            chapter_id: string;
             /** Slots */
             slots: components["schemas"]["CoverSlots"] | components["schemas"]["SummarySlots"] | components["schemas"]["BulletBoxSlots"] | components["schemas"]["TableSlots"] | components["schemas"]["CompareSlots"] | components["schemas"]["DividerSlots"] | components["schemas"]["CalloutSlots"] | components["schemas"]["CardsSlots"] | components["schemas"]["ProcessSlots"] | components["schemas"]["MatrixSlots"] | components["schemas"]["DiagramSlots"];
             /**
@@ -1211,6 +1560,17 @@ export interface components {
              * @default
              */
             instructions: string;
+        };
+        /** CondenseJobRequest */
+        CondenseJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "condense";
+            params: components["schemas"]["CondenseJobParams"];
         };
         /**
          * CoverSlots
@@ -1246,6 +1606,21 @@ export interface components {
              */
             title: string;
         };
+        /**
+         * DataDirStatus
+         * @description 자료 폴더 표시 (D2a-3, 기술 설계 3절의 "발견한 경로 제시"). 폴더를 바꾸는 화면은 D6이다.
+         */
+        DataDirStatus: {
+            /** Path */
+            path: string;
+            /** Project Count */
+            project_count: number;
+            /**
+             * Lock
+             * @enum {string}
+             */
+            lock: "held" | "unsupported" | "none";
+        };
         /** Deck */
         Deck: {
             /**
@@ -1276,7 +1651,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results" | "ir";
             /**
              * Audience
              * @default
@@ -1293,6 +1668,18 @@ export interface components {
              */
             preset_overrides: {
                 [key: string]: unknown;
+            };
+            /** Report Type Confirmed */
+            report_type_confirmed?: boolean;
+            /** Key Message */
+            key_message?: string;
+            /** Desired Outcome */
+            desired_outcome?: ("facts" | "business_plan" | "persuasion" | "other") | null;
+            /** Desired Outcome Other */
+            desired_outcome_other?: string;
+            /** Report Details */
+            report_details?: {
+                [key: string]: string;
             };
         };
         /** Derivation */
@@ -1481,6 +1868,17 @@ export interface components {
              * @constant
              */
             layout_variant: "flow_horizontal";
+        };
+        /** DiagramJobRequest */
+        DiagramJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "diagram";
+            params: components["schemas"]["GenerateDiagramRequest"];
         };
         /** DiagramNode */
         DiagramNode: {
@@ -1736,6 +2134,76 @@ export interface components {
              * @constant
              */
             requires_independent_review: true;
+        };
+        /**
+         * DraftInfo
+         * @description 충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2).
+         */
+        DraftInfo: {
+            /** Id */
+            id: string;
+            /** Saved At */
+            saved_at: string;
+            /** Reason */
+            reason: string;
+            /** Source */
+            source: string;
+            /** Base Etag */
+            base_etag?: string | null;
+        };
+        /** DraftSummary */
+        DraftSummary: {
+            /** Readable */
+            readable: boolean;
+            /** Purpose Only */
+            purpose_only: boolean;
+            /** Changed Chapters */
+            changed_chapters: components["schemas"]["ChapterLabel"][];
+            /** Added Chapters */
+            added_chapters: components["schemas"]["ChapterLabel"][];
+            /** Removed Chapters */
+            removed_chapters: components["schemas"]["ChapterLabel"][];
+            /** Direct Edit Chapters */
+            direct_edit_chapters: components["schemas"]["ChapterLabel"][];
+            /** Report Info Changed */
+            report_info_changed: boolean;
+            /** Order Changed */
+            order_changed: boolean;
+            /** Story Plan Changed */
+            story_plan_changed: boolean;
+            /**
+             * Design Changed
+             * @default false
+             */
+            design_changed: boolean;
+            /**
+             * Review Changed
+             * @default false
+             */
+            review_changed: boolean;
+            /**
+             * Current Readable
+             * @default true
+             */
+            current_readable: boolean;
+        };
+        /**
+         * ElementEdit
+         * @description 요소 하나의 수정. 칸은 모두 선택이다. 효과가 없는 값은 슬라이드 검증이 버린다(normalize_edits).
+         */
+        ElementEdit: {
+            /** Dx Pt */
+            dx_pt?: number | null;
+            /** Dy Pt */
+            dy_pt?: number | null;
+            /** Font Scale */
+            font_scale?: (number) | null;
+            /** Text Color */
+            text_color?: ("text" | "accent" | "accent1" | "accent2" | "danger" | "ok" | "ink" | "ink_soft" | "background") | null;
+            /** Fill */
+            fill?: ("box_fill" | "ink" | "ink_soft" | "accent1" | "accent2" | "danger" | "ok" | "surface1" | "surface2" | "surface3" | "surface_danger") | null;
+            /** Hidden */
+            hidden?: boolean | null;
         };
         /** Evidence */
         Evidence: {
@@ -2098,6 +2566,34 @@ export interface components {
             render: components["schemas"]["NativeRenderRecord"];
             independent_review: components["schemas"]["IndependentReviewRecord"];
         };
+        /**
+         * FontLimit
+         * @description 요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,
+         *     가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt).
+         */
+        FontLimit: {
+            /** Base Pt */
+            base_pt: number;
+            /** Current Pt */
+            current_pt: number;
+            /** Fits Up To Pt */
+            fits_up_to_pt: number | null;
+            /** Min Pt */
+            min_pt: number;
+            /** Max Pt */
+            max_pt: number;
+        };
+        /**
+         * FontLimitRequest
+         * @description 직접 수정의 글자 크기 칸이 묻는 요소 (D3c-2, 계획 4.5). 덱은 편집 화면이 지금 보는 덱이다(저장 전 포함).
+         */
+        FontLimitRequest: {
+            deck: components["schemas"]["Deck"];
+            /** Chapter Id */
+            chapter_id: string;
+            /** Key */
+            key: string;
+        };
         /** FontRoles */
         FontRoles: {
             /**
@@ -2197,14 +2693,12 @@ export interface components {
             radius_pt?: number | null;
             /** Border Width Pt */
             border_width_pt?: number | null;
-        };
-        /** GenerateChapterRequest */
-        GenerateChapterRequest: {
-            /**
-             * Instructions
-             * @default
-             */
-            instructions: string;
+            /** Base X */
+            base_x?: number | null;
+            /** Base Y */
+            base_y?: number | null;
+            /** Hidden */
+            hidden?: boolean;
         };
         /** GenerateDiagramRequest */
         GenerateDiagramRequest: {
@@ -2231,16 +2725,16 @@ export interface components {
              */
             instructions: string;
         };
-        /** GenerateStructureRequest */
-        GenerateStructureRequest: {
-            /** Target Chapters */
-            target_chapters?: number | null;
+        /** GenerationActiveBody */
+        GenerationActiveBody: {
+            /** Detail */
+            detail: string;
             /**
-             * Instructions
-             * @default
+             * Code
+             * @constant
              */
-            instructions: string;
-            brief?: components["schemas"]["ReportBrief"] | null;
+            code: "generation_active";
+            active: components["schemas"]["ActiveJob"];
         };
         /**
          * GenerationUsage
@@ -2347,6 +2841,84 @@ export interface components {
             /** Signature */
             signature: string;
         };
+        /** JobError */
+        JobError: {
+            /** Error Class */
+            error_class: ("input" | "ai_output" | "connection" | "base_changed" | "cancelled" | "ledger" | "storage" | "internal") | null;
+            /** Status */
+            status: number | null;
+            /** Detail */
+            detail: string | null;
+            /** Code */
+            code: string | null;
+            /** Raw Error Class */
+            raw_error_class?: string | null;
+        };
+        /** JobView */
+        JobView: {
+            /** Id */
+            id: string;
+            /** Project */
+            project: string;
+            /** Kind */
+            kind: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "queued" | "running" | "validating" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted" | "remote_completion_unknown";
+            /** Target */
+            target: string | null;
+            /** Params */
+            params: {
+                [key: string]: unknown;
+            };
+            /**
+             * Candidate Status
+             * @enum {string}
+             */
+            candidate_status: "none" | "held" | "delivered" | "applied" | "stale" | "dismissed";
+            /** Outcome */
+            outcome: string | null;
+            /**
+             * Owner
+             * @enum {string}
+             */
+            owner: "this_instance" | "other_instance";
+            /** Created At */
+            created_at: string;
+            /** Started At */
+            started_at: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Provider */
+            provider: string | null;
+            /** Model */
+            model: string | null;
+            /** Base Etag */
+            base_etag: string | null;
+            /** Current Etag */
+            current_etag: string | null;
+            /** Relevance Hash */
+            relevance_hash: string | null;
+            /** Stale Reasons */
+            stale_reasons: ("unknown_deck" | "deck_changed" | "unknown_sources" | "sources_changed" | "chapter_missing" | "template_changed" | "chapter_changed" | "story_plan_changed" | "structure_input_changed" | "structure_applied_basis_changed" | "deck_changed_elsewhere")[];
+            /** Cancel Requested */
+            cancel_requested: boolean;
+            error: components["schemas"]["JobError"] | null;
+            /** Result */
+            result: {
+                [key: string]: unknown;
+            } | null;
+            /** Chapters */
+            chapters: components["schemas"]["ChapterView"][];
+            /** Step */
+            step?: ("connecting" | "generating" | "retrying_format") | null;
+            /** Step Started At */
+            step_started_at?: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds?: number | null;
+        };
         /** LoginAttempt */
         LoginAttempt: {
             /**
@@ -2374,6 +2946,8 @@ export interface components {
             cli_version?: string | null;
             /** Error */
             error?: string | null;
+            /** Error Code */
+            error_code?: string | null;
         };
         /** LossItem */
         LossItem: {
@@ -2824,7 +3398,21 @@ export interface components {
              * @default ok
              * @enum {string}
              */
-            status: "ok" | "needs_recovery";
+            status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
+            /** Reverted By Other App */
+            reverted_by_other_app?: boolean;
+        };
+        /** ProjectProgress */
+        ProjectProgress: {
+            /**
+             * Project Status
+             * @enum {string}
+             */
+            project_status: "ok" | "needs_recovery" | "newer_format" | "unreadable_manifest";
+            /** Stages */
+            stages?: components["schemas"]["StageProgress"][] | null;
+            /** Jobs */
+            jobs?: components["schemas"]["JobView"][] | null;
         };
         /** ProviderSettings */
         ProviderSettings: {
@@ -2980,6 +3568,17 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** RepairJobRequest */
+        RepairJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "repair";
+            params: components["schemas"]["StoryRepairRequest"];
+        };
         /** ReportBrief */
         ReportBrief: {
             /** Decision Question */
@@ -2994,7 +3593,7 @@ export interface components {
              * @default research
              * @enum {string}
              */
-            report_type: "research" | "approval" | "strategy";
+            report_type: "research" | "approval" | "strategy" | "weekly" | "business" | "monthly" | "data" | "project" | "results" | "ir";
             /**
              * Reading Profile
              * @default 미지정
@@ -3022,6 +3621,24 @@ export interface components {
             /** Resolved */
             resolved: boolean;
         };
+        /** ReviewPart */
+        ReviewPart: {
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "auto_checks" | "human_review" | "file";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_started" | "ready" | "needs_review";
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: ("title_missing" | "report_type_unconfirmed" | "key_message_missing" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
+        };
         /** ReviewVerdict */
         ReviewVerdict: {
             /**
@@ -3037,6 +3654,26 @@ export interface components {
             /** Note */
             note: string;
         };
+        /** RewriteJobParams */
+        RewriteJobParams: {
+            brief: components["schemas"]["ReportBrief"];
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+        };
+        /** RewriteJobRequest */
+        RewriteJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rewrite";
+            params: components["schemas"]["RewriteJobParams"];
+        };
         /**
          * RewriteReview
          * @description 재작성 당시 보존한 본문 기록. 후속 편집의 검수 승인 원장이 아니다.
@@ -3047,14 +3684,28 @@ export interface components {
             /** Preserved Chapter Ids */
             preserved_chapter_ids: string[];
         };
-        /** RewriteStoryRequest */
-        RewriteStoryRequest: {
-            brief: components["schemas"]["ReportBrief"];
+        /**
+         * SaveDraftRequest
+         * @description 충돌이나 저장 실패로 반영하지 못한 덱의 보존 요청 (D2a-2). 덱은 원문 그대로 보존하고
+         *     복원할 때 검증한다.
+         */
+        SaveDraftRequest: {
             /**
-             * Instructions
-             * @default
+             * Reason
+             * @enum {string}
              */
-            instructions: string;
+            reason: "conflict" | "generation_unsaved";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "editor" | "structure_approval" | "purpose";
+            /** Base Etag */
+            base_etag?: string | null;
+            /** Deck */
+            deck: {
+                [key: string]: unknown;
+            };
         };
         /** SemanticRelatedText */
         SemanticRelatedText: {
@@ -3143,6 +3794,10 @@ export interface components {
             chart?: components["schemas"]["ChartSpec"] | null;
             /** Text Spans */
             text_spans?: components["schemas"]["TextSpan"][];
+            /** Direct Edits */
+            direct_edits?: {
+                [key: string]: components["schemas"]["ElementEdit"];
+            };
         };
         /** SlidePlan */
         SlidePlan: {
@@ -3165,6 +3820,12 @@ export interface components {
             id: string;
             /** Saved At */
             saved_at: string;
+            /**
+             * Kind
+             * @default snapshot
+             * @enum {string}
+             */
+            kind: "snapshot" | "pre_migration" | "before_revert";
         };
         /**
          * SourceLocator
@@ -3424,6 +4085,30 @@ export interface components {
              */
             matrix_items_gap: number;
         };
+        /** StageProgress */
+        StageProgress: {
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "purpose" | "sources" | "structure" | "editing" | "review";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "not_started" | "ready" | "needs_review";
+            /**
+             * Reasons
+             * @default []
+             */
+            reasons: ("title_missing" | "report_type_unconfirmed" | "key_message_missing" | "sources_unreadable" | "sources_missing" | "sources_over_limit" | "extraction_review_unavailable" | "chapters_missing" | "plan_missing" | "stale_story_plan" | "chapters_unwritten" | "no_export" | "artifact_mismatch" | "artifact_missing" | "artifact_unreadable" | "artifact_unverified" | "input_stale" | "input_legacy" | "input_unavailable" | "quality_needs_revision" | "draft_checks_only" | "review_records_unreadable" | "manual_pass_not_final" | "review_not_run" | "review_needs_revision" | "review_stale" | "review_unavailable" | "export_history_unreadable" | "auto_checks_pending" | "human_review_pending" | "file_pending")[];
+            /** Written Chapters */
+            written_chapters?: number | null;
+            /** Total Chapters */
+            total_chapters?: number | null;
+            /** Parts */
+            parts?: components["schemas"]["ReviewPart"][] | null;
+        };
         /** StoryChapter */
         StoryChapter: {
             /** Chapter Id */
@@ -3583,6 +4268,28 @@ export interface components {
             chapters: components["schemas"]["Chapter"][];
             story_plan?: components["schemas"]["StoryPlan"] | null;
         };
+        /** StructureJobParams */
+        StructureJobParams: {
+            /** Target Chapters */
+            target_chapters?: number | null;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions: string;
+            brief?: components["schemas"]["ReportBrief"] | null;
+        };
+        /** StructureJobRequest */
+        StructureJobRequest: {
+            /** Request Id */
+            request_id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "structure";
+            params: components["schemas"]["StructureJobParams"];
+        };
         /** StructureResult */
         StructureResult: {
             /**
@@ -3606,6 +4313,8 @@ export interface components {
              * @default false
              */
             format_retried: boolean;
+            /** Format Issue */
+            format_issue?: ("answer_not_in_summary" | "invalid_response") | null;
             usage: components["schemas"]["GenerationUsage"];
         };
         /** SummarySlots */
@@ -4088,6 +4797,41 @@ export interface operations {
             };
         };
     };
+    direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FontLimitRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontLimit"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     measure_deck_api_render_plan_post: {
         parameters: {
             query?: never;
@@ -4339,45 +5083,6 @@ export interface operations {
             };
         };
     };
-    preview_story_rewrite_api_projects__name__story_plan_rewrite_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "if-match"?: string | null;
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RewriteStoryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoryRewriteResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     apply_story_rewrite_api_projects__name__story_plan_rewrite_apply_post: {
         parameters: {
             query?: never;
@@ -4402,45 +5107,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deck"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    preview_story_repair_api_projects__name__story_plan_repair_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                "if-match"?: string | null;
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
-            path: {
-                name: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StoryRepairRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoryRepairResult"];
                 };
             };
             /** @description Validation Error */
@@ -4623,6 +5289,37 @@ export interface operations {
             };
         };
     };
+    get_progress_api_projects__name__progress_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectProgress"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_qualification_api_projects__name__exports__export_id__qualification_get: {
         parameters: {
             query?: never;
@@ -4790,6 +5487,170 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_drafts_api_projects__name__drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_draft_api_projects__name__drafts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveDraftRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_draft_api_projects__name__drafts__draft_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    draft_summary_api_projects__name__drafts__draft_id__summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_draft_api_projects__name__drafts__draft_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                draft_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OkResponse"];
                 };
             };
             /** @description Validation Error */
@@ -5192,7 +6053,38 @@ export interface operations {
             };
         };
     };
-    generate_diagram_api_projects__name__generate_diagram_post: {
+    list_jobs_api_projects__name__jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_job_api_projects__name__jobs_post: {
         parameters: {
             query?: never;
             header?: {
@@ -5207,17 +6099,26 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GenerateDiagramRequest"];
+                "application/json": components["schemas"]["StructureJobRequest"] | components["schemas"]["ChapterJobRequest"] | components["schemas"]["CondenseJobRequest"] | components["schemas"]["DiagramJobRequest"] | components["schemas"]["RewriteJobRequest"] | components["schemas"]["RepairJobRequest"] | components["schemas"]["ChaptersJobRequest"];
             };
         };
         responses: {
             /** @description Successful Response */
-            200: {
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DiagramGenerationResult"];
+                    "application/json": components["schemas"]["JobView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationActiveBody"];
                 };
             };
             /** @description Validation Error */
@@ -5231,23 +6132,17 @@ export interface operations {
             };
         };
     };
-    generate_structure_api_projects__name__generate_structure_post: {
+    get_job_api_projects__name__jobs__job_id__get: {
         parameters: {
             query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
+            header?: never;
             path: {
                 name: string;
+                job_id: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerateStructureRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5255,7 +6150,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["StructureResult"];
+                    "application/json": components["schemas"]["JobView"];
                 };
             };
             /** @description Validation Error */
@@ -5269,24 +6164,17 @@ export interface operations {
             };
         };
     };
-    generate_chapter_api_projects__name__generate_chapter__chapter_id__post: {
+    cancel_job_api_projects__name__jobs__job_id__cancel_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
+            header?: never;
             path: {
                 name: string;
-                chapter_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["GenerateChapterRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5294,7 +6182,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChapterResult"];
+                    "application/json": components["schemas"]["JobView"];
                 };
             };
             /** @description Validation Error */
@@ -5308,22 +6196,19 @@ export interface operations {
             };
         };
     };
-    condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post: {
+    settle_candidate_api_projects__name__jobs__job_id__candidate_post: {
         parameters: {
             query?: never;
-            header?: {
-                "x-ai-consent"?: string | null;
-                "x-ai-selection"?: string | null;
-            };
+            header?: never;
             path: {
                 name: string;
-                chapter_id: string;
+                job_id: string;
             };
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CondenseChapterRequest"];
+                "application/json": components["schemas"]["CandidateAction"];
             };
         };
         responses: {
@@ -5333,7 +6218,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChapterResult"];
+                    "application/json": components["schemas"]["JobView"];
                 };
             };
             /** @description Validation Error */
@@ -5343,6 +6228,100 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_candidate_api_projects__name__jobs__job_id__apply_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandidateApplyPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_candidate_api_projects__name__jobs__job_id__apply_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "if-match"?: string | null;
+            };
+            path: {
+                name: string;
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CandidateApplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_job_api_jobs_active_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActiveJobStatus"];
                 };
             };
         };

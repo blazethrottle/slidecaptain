@@ -1,4 +1,5 @@
 import type { Bullet, Deck, Slots, TemplateName } from "../api/client";
+import { FILL_NAMES } from "./directEdit";
 
 type Currency = {
   conclusion?: string;
@@ -30,7 +31,7 @@ function collect(slots: Exclude<Slots, { template: "diagram" }>): Currency {
     case "callout":
       // 밴드는 문장 하나뿐이다: bullet_box/summary의 conclusion과 같은 "그 장의 결론 한 줄"
       // 의미이므로 같은 자리로 담아 다른 템플릿의 결론과 오갈 수 있게 한다
-      return { conclusion: slots.text, bullets: [], dropped: [`강조 색 역할 "${slots.tone}"`] };
+      return { conclusion: slots.text, bullets: [], dropped: [`강조 색 "${FILL_NAMES[slots.tone]}"`] };
     case "cards": {
       // 카드에는 conclusion/footnote에 대응하는 자리가 없다: 불릿만 모으고 배지, 소제목,
       // 꼬리 라벨은 각 카드별로 소실 목록에 남긴다 (2026-09-07 DB-2)
@@ -182,12 +183,28 @@ export function applyTemplateSwitch(deck: Deck, chapterId: string, to: TemplateN
   const expressionLosses: string[] = [];
   if (slide?.chart) expressionLosses.push(`차트 표시 (${slide.chart.kind === 'bar' ? '가로' : '세로'} 막대, 비교 ${slide.chart.comparison_id})`);
   if (slide?.text_spans?.length) expressionLosses.push(`부분 강조 ${slide.text_spans.length}개`);
+  // 직접 수정은 요소 열쇠가 템플릿마다 다르므로 비운다. 전환 전 확인 목록에 올린다 (D3c-3, 계획 리뷰 화면 S11)
+  const edits = Object.values(slide?.direct_edits ?? {});
+  if (edits.length) {
+    // 실제로 있는 수정 종류만 적는다 (D3c-3 리뷰 F14)
+    const kinds = [
+      edits.some((e) => e.dx_pt != null || e.dy_pt != null) && "위치",
+      edits.some((e) => e.font_scale != null) && "글자 크기",
+      edits.some((e) => e.text_color != null || e.fill != null) && "색",
+      edits.some((e) => e.hidden) && "숨김",
+    ].filter(Boolean);
+    expressionLosses.push(`직접 수정 ${edits.length}건(${kinds.join(", ")})`);
+  }
   const next: Deck = {
     ...deck,
     structure: { ...deck.structure, chapters: deck.structure.chapters.map((ch) =>
       ch.id === chapterId ? { ...ch, template: to } : ch) },
     slides: result
-      ? deck.slides.map((s) => (s.chapter_id === chapterId ? { ...s, slots: result.slots, ...(s.chart ? { chart: null } : {}), ...(s.text_spans?.length ? { text_spans: [] } : {}) } : s))
+      ? deck.slides.map((s) => {
+        if (s.chapter_id !== chapterId) return s;
+        const { direct_edits: _cleared, ...rest } = s;
+        return { ...rest, slots: result.slots, ...(s.chart ? { chart: null } : {}), ...(s.text_spans?.length ? { text_spans: [] } : {}) };
+      })
       : deck.slides,
   };
   return { deck: next, dropped: [...(result?.dropped ?? []), ...expressionLosses] };

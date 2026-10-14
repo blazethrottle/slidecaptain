@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, type Deck, type DiagramGenerationResult,
   type GenerationUsage, type RenderPlan, type StoryPlan, type DocumentChangePreview, type DocumentChangeBasis } from "../api/client";
+import { runJob, settle, staleError } from "../api/jobs";
 import { formatUsage } from "../api/usage";
+import { Diagnostics } from "../ui/Diagnostics";
+import { describeAiOutput, describeFailure } from "../ui/failure";
+import { FailureNotice } from "../ui/FailureNotice";
 import { Preview } from "./Preview";
 import { DiagramDraftBackup } from "./DiagramDraftBackup";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
@@ -85,12 +89,13 @@ function GeneratedDiagramReview({ diagram, evidence }: {
 }
 
 export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onApply, onCancel, blocked = false,
-  flushBeforeCheck, onConflict, onBusyChange }: {
+  flushBeforeCheck, onConflict, onBusyChange, pollIntervalMs = 1000 }: {
   projectName: string; deck: Deck; initialDraft: DiagramDraft;
   onApply: (candidate: Deck, base: Deck, chapterId: string, persisted?: boolean) => void; onCancel: () => void;
   blocked?: boolean;
   flushBeforeCheck?: () => Promise<boolean>; onConflict?: (message: string) => void;
   onBusyChange?: (busy: boolean) => void;
+  pollIntervalMs?: number;
 }) {
   const [base] = useState(deck);
   const [draft, setDraft] = useState(initialDraft);
@@ -110,6 +115,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [lossChecks,setLossChecks] = useState<string[]>([]);
   const [applying,setApplying] = useState(false);
   const generationLease = useRef<symbol | null>(null);
+  const generationJob = useRef<string | null>(null);  // 지금 보이는 후보를 만든 작업 (처분)
+  const [generationFollowError, setGenerationFollowError] = useState("");
+  const [generationFailure, setGenerationFailure] = useState<unknown>(null);
   const live = useRef(true);
   const serial = useRef(0);
   const currentDeck = useRef(deck);
@@ -151,12 +159,18 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     if (storyStale) review.current?.focus();
   }, [storyStale]);
 
+  // 보이던 후보를 쓰지 않고 지우면 버림으로 처분한다. 복구 목록에 사용자가 버린 후보가 쌓이지 않는다 (리뷰 R9)
+  const dropCandidate = () => {
+    if (generationJob.current) void settle(projectName, generationJob.current, "dismissed");
+    generationJob.current = null;
+  };
   const edit = (next: DiagramDraft) => {
     if (applying) return;
+    dropCandidate();
     serial.current++;
     setDraft(next); setChecked(null); setErrors([]); setChecking(false);
     setReplacement(null);setLossChecks([]);
-    setGenerationResult(null); setGenerationError(""); setGenerationNotice("");
+    setGenerationResult(null); setGenerationError(""); setGenerationNotice(""); setGenerationFailure(null);
   };
   const nodeEdit = (index: number, patch: Partial<DiagramNode>) =>
     edit({ ...draft, nodes: draft.nodes.map((n, i) => i === index ? { ...n, ...patch } : n) });
@@ -168,7 +182,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     const missing = [!draft.topic.trim() && "도식 제목을 입력해 주세요.",
       !draft.storyRole && "보고 계획 연결 역할을 선택해 주세요.",
       !draft.claimIds.length && "보고 계획에 연결할 주장을 하나 이상 선택해 주세요."].filter(Boolean);
-    setGenerationError(""); setGenerationNotice(""); setGenerationResult(null);
+    setGenerationError(""); setGenerationNotice(""); setGenerationResult(null); setGenerationFailure(null);
     if (missing.length) { setGenerationError(missing.join("\n")); return; }
     const requestId = ++serial.current;
     const lease = Symbol("diagram-generation");
@@ -187,17 +201,25 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
           return;
         }
       }
-      const result = await api.generateDiagram(projectName, {
+      // 작업 API로 등록하고 끝날 때까지 조회한다 (D2b-5b). 창을 닫아도 작업은 끝까지 돈다
+      const { result, job } = await runJob<DiagramGenerationResult>(projectName, "diagram", {
         chapter_id: draft.id, topic: draft.topic, role: draft.storyRole as StoryRole,
         claim_ids: draft.claimIds, instructions,
         ...(!draft.isNew ? {mode:"replace" as const} : {}),
-      });
-      if (!current()) return;
+      }, { intervalMs: pollIntervalMs, onStarted: () => dropCandidate(),
+        onError: () => setGenerationFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });  // 리뷰 R11
+      setGenerationFollowError("");
+      // 만드는 동안 기준 저장본이나 자료가 바뀌었으면 종전처럼 오류로 알리고 후보는 버린다
+      const stale = staleError(job.stale_reasons);
+      if (stale) { void settle(projectName, job.id, "dismissed"); throw stale; }
+      if (!current()) return;  // 창을 닫은 뒤 도착한 후보는 복구 목록에 남긴다
       setGenerationUsage(result.usage);
       if (requestId !== serial.current) {
+        void settle(projectName, job.id, "dismissed");  // 입력을 바꿔 쓰지 않는 후보 (리뷰 R9)
         setGenerationNotice("입력이 변경되어 도착한 AI 후보를 사용하지 않았습니다. 현재 입력으로 다시 생성할 수 있습니다.");
         return;
       }
+      generationJob.current = job.id;
       setGenerationResult(result);
     } catch (error) {
       if (!current()) return;
@@ -209,7 +231,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       } else if (requestId === serial.current) {
         if (error instanceof AiConsentDeclined) setGenerationNotice("전송을 취소했습니다. 필요하면 다시 시도해 주세요.");
         else if (isStaleStoryPlan(error)) setStoryStale(true);
-        else setGenerationError(messageOf(error));
+        else setGenerationFailure(error);  // 원인별 안내로 보인다 (D3a-4)
       }
     } finally {
       if (generationLease.current === lease) {
@@ -287,7 +309,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       const saved=await api.applyDocumentChange(projectName,{candidate:replacement.preview.candidate,
         expected_source_fingerprint:replacement.basis.sources_fingerprint,
         confirmation_token:replacement.preview.confirmation_token,acknowledged_loss_ids:lossChecks},replacement.basis.base_etag);
-      if(requestId===serial.current && live.current && currentDeck.current===base && !currentBlocked.current)onApply(saved,base,draft.id,true);
+      // 서버에 저장된 결과다. 조건과 관계없이 넘기고 받을지는 편집 화면이 판정한다: 여기서 버리면 응답 ETag만 캐시에 남아
+      // 다음 자동 저장이 이 반영을 덮는다 (D3c-6 리뷰 G11, D3c-5 리뷰 F1과 같은 모양)
+      onApply(saved,base,draft.id,true);
     } catch(error) {
       if(requestId===serial.current && live.current) {
         setErrors([messageOf(error)]);
@@ -378,13 +402,14 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
                 onChange={e => { edit(draft); setInstructions(e.target.value); }} /></label></div>
             <button disabled={generating || checking || applying || stale || unavailable} onClick={() => void generate()}>{draft.isNew ? "AI 도식 초안 생성" : "AI 도식 교체 후보 생성"}</button>
             {generating && <p role="status">AI 후보를 기다리고 있습니다. 입력을 바꾸면 이 후보를 사용하지 않습니다. 창을 닫아도 이미 전송된 요청은 계속될 수 있습니다.</p>}
+            {generationFollowError && generating && <p role="status">{generationFollowError}</p>}
             {generationError && <p role="alert">{generationError}</p>}
+            <FailureNotice failure={generationFailure ? describeFailure(generationFailure) : null} inModal />
             {generationNotice && <p className="notice">{generationNotice}</p>}
-            {generationResult?.status === "format_error" && <div role="alert">
-              <p>AI 응답을 형식에 맞게 읽지 못했습니다. 작성 입력을 유지했습니다. 원문을 확인하고 다시 시도해 주세요.</p>
-              <details><summary>AI 응답 원문</summary><pre>{generationResult.raw_text}</pre></details>
-            </div>}
-            {generationResult && generationResult.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
+            {generationResult?.status === "format_error" && <FailureNotice failure={describeAiOutput()}>
+              <p>AI 응답 원문</p><pre>{generationResult.raw_text}</pre>
+              {generationUsage && <p className="usage">{formatUsage(generationUsage)}</p>}
+            </FailureNotice>}
             {generationResult?.status === "ok" && generationResult.diagram && !stale && !unavailable && <>
               <GeneratedDiagramReview diagram={generationResult.diagram} evidence={evidence} />
               {generationResult.unverified_numbers.length > 0 && <p className="number-warning">
@@ -392,12 +417,19 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               </p>}
               <button disabled={generating} onClick={() => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
+                // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
+                if (generationJob.current) void settle(projectName, generationJob.current, "applied");
+                generationJob.current = null;
                 edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
                 if(!draft.isNew)setAiReplacement(true);
                 setGenerationNotice("AI 후보의 항목과 관계를 작성 폼에 불러왔습니다. 내용과 근거를 확인한 뒤 입력과 배치 확인을 눌러 주세요.");
               }}>작성 폼에 불러오기</button>
             </>}
-            {generationUsage && <p className="usage">{formatUsage(generationUsage)}</p>}
+            {/* 사용량은 접힌 진단 상세에 둔다. 형식 오류면 실패 안내의 진단 상세에 있다 (D3a-4, R12) */}
+            {generationUsage && generationResult?.status !== "format_error" && <Diagnostics>
+              <p className="usage">{formatUsage(generationUsage)}</p>
+              {generationResult?.format_retried && <p>형식 재시도 1회를 거쳤습니다.</p>}
+            </Diagnostics>}
           </section>}
           <h3>항목 {draft.nodes.length}개</h3>
           {draft.nodes.map((node, i) => <fieldset className="diagram-item" key={node.id}>

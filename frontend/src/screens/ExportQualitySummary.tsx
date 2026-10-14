@@ -5,6 +5,8 @@ const checkNames: Record<string, string> = {
   chapter_coverage: "장 구성 반영",
   layout_capacity: "레이아웃 용량",
   numeric_expressions: "계산 문구 대조",
+  hidden_evidence: "숨긴 근거 표시",
+  font_size: "글자 크기 경고",
   narrative: "보고 흐름",
   evidence: "근거 타당성",
   representation: "표현 적절성",
@@ -31,6 +33,8 @@ export function PublishedQualityChecks({ quality }: { quality: QualityReport }) 
   const numeric = quality.numeric_review;
   const check = quality.checks.find(item => item.name === "numeric_expressions");
   const unresolved = numeric?.items.filter(item => item.code !== "matched") ?? [];
+  // 숨긴 근거 표시는 어느 장의 무엇인지 표 밖에 바로 보인다 (D3c-2 리뷰 F6)
+  const hiddenEvidence = quality.checks.find(item => item.name === "hidden_evidence" && item.status === "failed");
   return (
     <>
       <p><strong>내보낸 초안: {quality.status === "needs_revision" ? "확인 필요" : "검수 전 초안"}</strong></p>
@@ -38,6 +42,7 @@ export function PublishedQualityChecks({ quality }: { quality: QualityReport }) 
         <p>수치 포함 칸 {numeric.numeric_fields}개, 검사 {numeric.evaluated}개, 일치 {numeric.matched}개, 확인 필요 {numeric.unresolved}개</p>
         {numeric.reason && check && <p>{check.detail}</p>}
       </> : <p>이 기록에는 계산 문구 대조 결과가 없습니다.</p>}
+      {hiddenEvidence && <p>{hiddenEvidence.detail}</p>}
       <details>
         <summary>점검 항목과 확인할 문구</summary>
         <div className="export-quality-table">

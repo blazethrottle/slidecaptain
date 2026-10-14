@@ -7,6 +7,8 @@ type Props = {
   exportId: string;
   readOnly?: boolean;
   busy?: boolean;
+  // 내보내기 밖의 이유로 잠글 때 보이는 이유 (D3a-5: 장 생성 묶음 중). 내보내기 안내를 대신한다
+  lockedReason?: string;
   onDirtyChange?: (dirty: boolean) => void;
   onLeaveReady?: (guard: ReviewLeaveGuard | null) => void;
 };
@@ -38,7 +40,8 @@ export function ReviewRecordsPanel(props: Props) {
   return <Records key={`${props.projectName}/${props.exportId}`} {...props} />;
 }
 
-function Records({ projectName, exportId, readOnly = false, busy = false, onDirtyChange, onLeaveReady }: Props) {
+function Records({ projectName, exportId, readOnly = false, busy: exporting = false, lockedReason, onDirtyChange, onLeaveReady }: Props) {
+  const busy = exporting || !!lockedReason;
   const [basis, setBasis] = useState<ExportReviews | null>(null);
   const [form, setForm] = useState<Form>(emptyForm);
   const [loading, setLoading] = useState(true);
@@ -138,7 +141,8 @@ function Records({ projectName, exportId, readOnly = false, busy = false, onDirt
     <p>수동 기록은 검수자의 자기 신고입니다. 독립 검수, 실제 PowerPoint 표시의 자동 확인이나 제출본 승인을 뜻하지 않습니다. 산출물은 검수 전 초안으로 유지됩니다.</p>
     {loading && <p role="status">검수 기준과 기록을 확인하는 중...</p>}
     {saving && <p role="status">검수 기록을 저장하는 중입니다. 저장이 끝날 때까지 이동할 수 없습니다.</p>}
-    {busy && <p role="status">초안 내보내기가 끝나면 검수 기록을 입력할 수 있습니다.</p>}
+    {lockedReason ? <p>{lockedReason}</p>
+      : exporting && <p role="status">초안 내보내기가 끝나면 검수 기록을 입력할 수 있습니다.</p>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {mustReload && !loading && <p>입력을 보존했습니다. 검수 기준을 다시 확인한 뒤 저장해 주세요.</p>}

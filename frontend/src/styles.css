@@ -1,137 +1,446 @@
-:root { font-family: "Noto Sans KR", sans-serif; color: #202020; }
-body { margin: 0; }
-main { padding: 16px; }
+/* 디자인 토큰 (개정판 D2a-4, 제품 설계 4절). 화면 색은 이 블록의 변수로만 쓴다.
+   검사: npm run check:tokens (대비율, 토큰 밖 직접 색 금지, 토큰 밖 직접 크기 금지).
+   크기 토큰은 D3a-1(계획 4.6, 제품 설계 4절)에서 정의했다. 제품 설계가 범위로 적은 값은 시안
+   (docs/design/2026-10-02-revision-wireframe.html)의 값을 쓰고 각 줄에 시안 값을 적었다.
+   옛 색 27종과 알파 색 2종의 대응은 계획서 D2a-4 매핑표를 따른다. 슬라이드 미리보기 캔버스는 프리셋 색을 쓴다. */
+:root {
+  --color-bg: #F4F6F8;
+  --color-panel: #FFFFFF;
+  --color-text: #172B4D;
+  --color-text-muted: #526174;
+  --color-border: #D9E0E7;          /* 장식용 구분선과 묶음 테두리 */
+  --color-border-strong: #7B8794;   /* 조작 대상을 알아보게 하는 경계 (배경 대비 3:1 이상) */
+  --color-primary: #244C83;
+  --color-primary-hover: #193D70;   /* 시안 .primary:hover */
+  --color-on-primary: #FFFFFF;
+  --color-success: #176B55;
+  --color-warning: #8A5700;
+  --color-danger: #B42318;
+  --color-accent-bg: #EEF3F9;       /* 옅은 강조 배경 */
+  --color-surface-subtle: #F8FAFC;  /* 아주 옅은 바탕 */
+  --color-success-subtle: #EDF3EF;  /* 녹색 계열 표 머리 */
+  --color-focus: #517DC0;
+  --color-overlay: rgba(32, 32, 32, 0.55);
+  --shadow-color: rgba(0, 0, 0, 0.25);
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --border-width-strong: 2px;      /* 선택 틀, 끌어다 놓기 영역 */
+  --radius-sm: 6px;                /* 상태 표시와 글자 옆 작은 꼬리표. 테두리 있는 묶음 상자는 --radius-md 이상 */
+  --radius-md: 8px;                /* 버튼, 입력, 안내 상자. 시안 button 8px */
+  --radius-lg: 12px;               /* 패널과 대화 상자. 제품 설계 8~12px 중 시안 .card 12px */
+  /* 여백: 제품 설계 8/16/24/32px. 4px와 12px는 같은 체계의 반 단계다(시안도 12px를 쓴다) */
+  --space-half: 2px;               /* 상태 표시의 위아래 안쪽 여백 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  /* 글자: 본문 15~16px 중 시안 :root 15px, 제목 24~28px 중 시안 h1 28px(780px 이하 24px) */
+  --font-size-body: 15px;
+  --font-size-small: 13px;         /* 시안 .small */
+  --font-size-caption: 12px;       /* 시안 .hint 12px. 이 앱의 .hint는 읽기 쉽게 --font-size-small을 쓰고, 이 값은 장 목록의 템플릿 이름에 쓴다 */
+  --font-size-section: 18px;       /* 시안 h2 */
+  --font-size-title: 28px;
+  --font-size-title-narrow: 24px;
+  /* 조작 크기: 입력 40px 이상, 주요 버튼 44px(WCAG 2.5.5의 44x44). 작은 버튼은 시안 .mini 32px */
+  --control-height: 40px;
+  --control-height-primary: 44px;
+  --control-height-compact: 32px;
+  /* 폭 */
+  --width-reading: 640px;          /* 입력 줄과 표의 최대 폭 */
+  --width-reading-wide: 760px;     /* AI 설정 */
+  --width-content: 1152px;         /* 내보내기 기록. 옛 72rem(16px 기준) */
+  --width-dialog: 560px;
+  --width-dialog-wide: 1200px;
+  --width-sidebar: 216px;          /* 단계 목록. 제품 설계 3절 216px */
+  --width-sidebar-narrow: 188px;   /* 1100px 이하의 단계 목록. 시안 값 */
+  --width-stage-strip-item: 110px; /* 780px 이하 가로 띠의 단계 하나. 시안 값 */
+  --size-step-number: 26px;        /* 단계 번호 원. 시안 값 */
+  --stage-bar-width: 3px;          /* 현재 단계의 선택 막대. 시안 값 */
+  --width-editor-left: 220px;
+  --width-editor-right: 280px;
+  --width-number-input: 8em;       /* 숫자 입력은 글자 크기에 맞춘다 */
+  --width-part-label: 12em;        /* 검토 상태의 부분 이름 칸. 가장 긴 이름(자동 검사(내보낸 파일 기준))에 맞춘다 */
+  --indent-checkbox: 22px;         /* 체크 상자 옆 문단을 상자 글자에 맞춘다 */
+  --height-textarea: 110px;
+  --height-textarea-compact: 64px;
+  --height-inline-editor: 60px;
+  --size-hidden: 1px;              /* 화면 낭독기 전용 숨김 기법의 최소 상자 */
+  --size-primary-bar-clearance: 90px; /* 주 행동 막대의 가장 큰 측정 높이: 버튼만 61px, 지울 장 수 주의 한 줄이 붙으면 90px (D3a-7, 512~1440px에서 같음) */
+  /* 보고 유형 예시 그림의 색 (D3b-6, 계획 4.6). 시안의 값을 그대로 옮겼다. 예시는 합성 슬라이드라 화면 주제색과 따로 둔다 */
+  --example-ink: #172b4d;
+  --example-muted: #526174;
+  --example-blue: #244c83;
+  --example-green: #176b55;
+  --example-amber: #8a5700;
+  --example-paper: #ffffff;
+  --example-surface: #f4f7fb;
+  --example-blue-subtle: #eef3fa;
+  --example-amber-subtle: #fff2d9;
+  --example-green-subtle: #e7f3ed;
+  --example-gray-subtle: #f4f6f8;
+  --example-gray-faint: #f8fafc;
+  --example-blue-on-dark: #b9cee9;
+  --example-ir-text-muted: #b9cee0;
+  --example-ir-text-faint: #9ebcc9;
+  --example-ir-accent: #60d5bc;
+  --example-ir-bg: #102337;
+  --example-ir-panel: #173c4d;
+  --example-ir-card: #1d4055;
+  --example-ir-line: #4a6b7d;
+  --example-axis: #8c9db0;
+  --example-line: #d9e0e7;
+  --example-grid: #edf1f6;
+  --example-grid-strong: #e8edf2;
+  --example-track: #e9eef5;
+  --example-blue-muted: #9db7d8;
+  --example-point: #427bb9;
+  --example-point-highlight: #f2ab40;
+  --example-amber-bar: #ba7c16;
+  --example-amber-line: #b57b16;
+  --example-red: #b42318;
+  /* 좁은 폭에서 예시 그림의 높이 상한. 경계(유형 영역 720px)에서 두 열일 때 그림 높이와 같게 둔다: 열 폭 (720 - 16) / 2 = 352px에서
+     예시 영역의 안쪽 여백과 테두리 2 x (12 + 1)를 빼면 그림 폭 326px, 높이 326 x 450 / 800 = 183px. 경계를 넘을 때 그림 크기가
+     튀지 않는다 (D3b-6 측정, 리뷰 R1에서 여백을 빼지 않은 산식을 고침) */
+  --height-example-narrow: 183px;
+  /* 크게 보기 대화 상자의 최대 폭: 그림을 시안 원래 크기(800px)로 보이도록 안쪽 여백 2 x 16px를 더한 값 (D3b-6 리뷰 R10) */
+  --width-example-large: 832px;
+  /* 크게 보기 그림의 최소 폭: 그림의 가장 작은 글자(13)가 앱의 가장 작은 글자 토큰(--font-size-caption 12px) 이상이 되는 폭
+     800 x 12 / 13 = 738.5px를 올린 값. 더 좁은 창에서는 그림 영역이 가로로 스크롤된다 (리뷰 R10) */
+  --width-example-min: 739px;
+  --shadow-dialog: 0 4px 24px var(--shadow-color);
+  --shadow-dialog-wide: 0 8px 32px var(--shadow-color);
+}
+
+:root { font-family: "Noto Sans KR", sans-serif; color: var(--color-text); }
+body { margin: 0; background: var(--color-panel); font-size: var(--font-size-body); }
+h1 { font-size: var(--font-size-title); }
+h2 { font-size: var(--font-size-section); }
+@media (max-width: 780px) { h1 { font-size: var(--font-size-title-narrow); } }
+/* 키보드 초점은 2px 이상 선으로 보인다 (제품 설계 4절). 마우스 클릭에는 나타나지 않는다 */
+:focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
+main { padding: var(--space-4); }
 button { cursor: pointer; }
-[role="alert"] { color: #b00020; }
+/* 버튼 계층 (D3a-1, 계획 4.6): 주 행동, 보조, 텍스트 행동, 위험 행동. 클래스가 없는 버튼은 보조다.
+   주 행동은 단계와 상태마다 정확히 1개다(ui/Button.tsx) */
+button { box-sizing: border-box; font: inherit; min-height: var(--control-height); padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-md);
+  background: var(--color-panel); color: var(--color-text); }
+button:hover:not(:disabled) { background: var(--color-accent-bg); }
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+/* 붙어 있는 버튼끼리 경계선이 겹치지 않게 뒤쪽에 간격을 둔다. 앞쪽 간격은 줄바꿈된 버튼을 들여 쓰므로
+   쓰지 않는다 (D3a-1 리뷰 R15). 묶음(.actions)은 gap으로 간격을 둔다 */
+button { margin-inline-end: var(--space-1); }
+.actions > button { margin-inline-end: 0; }
+.btn-primary { min-height: var(--control-height-primary); font-weight: 600;
+  background: var(--color-primary); border-color: var(--color-primary); color: var(--color-on-primary); }
+.btn-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+.btn-text { border-color: transparent; background: transparent; color: var(--color-primary);
+  padding-inline: var(--space-2); text-decoration: underline; }
+.btn-danger { color: var(--color-danger); border-color: var(--color-danger); }
+/* 파일 선택처럼 라벨이 버튼 역할을 할 때(자료 추가) */
+label.btn-primary { display: inline-flex; align-items: center; box-sizing: border-box; padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--color-primary); border-radius: var(--radius-md); cursor: pointer; }
+/* 키보드 초점만 보인다. 마우스로 눌러 숨긴 입력에 초점이 남아도 선을 그리지 않는다 (D3a-1 리뷰 R10) */
+label.btn-primary:has(input:focus-visible) { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); }
+/* 업로드 중처럼 입력이 잠기면 라벨도 잠긴 모양이고 마우스를 올려도 바뀌지 않는다 (D3a-1 리뷰 R9) */
+label.btn-primary:has(input:disabled), label.btn-primary:has(input:disabled):hover {
+  cursor: not-allowed; opacity: 0.55; background: var(--color-primary); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="color"]), select {
+  min-height: var(--control-height); box-sizing: border-box; }
+[role="alert"] { color: var(--color-danger); }
+/* 원인별 실패 안내 (D3a-4): 위험색은 "무슨 일" 한 줄에만 두고, 보존 사실과 할 일은 본문색으로 읽힌다.
+   진단 상세는 판단에 쓰지 않는 정보라 흐린 작은 글자다 */
+.failure-notice { color: var(--color-text); border-inline-start: var(--border-width-strong) solid var(--color-danger);
+  padding-inline-start: var(--space-3); margin-block: var(--space-3); }
+.failure-notice > p { margin-block: var(--space-1); }
+.failure-notice > .failure-what { color: var(--color-danger); font-weight: 600; }
+.failure-notice.is-waiting { border-inline-start-color: var(--color-warning); }
+.failure-notice.is-waiting > .failure-what { color: var(--color-warning); }
+.diagnostics { color: var(--color-text-muted); font-size: var(--font-size-small); margin-block: var(--space-2); }
+.diagnostics dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0; }
+.diagnostics dl > div { display: contents; }
+.diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+.diagnostics pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .preview-holder { width: 100%; overflow: hidden; }
-.frame.selected { outline: 2px solid #1F4E79; }
-.frame.warned { outline: 2px solid #B00020; }
-.frame.selected.warned { outline: 2px dashed #B00020; }
-.inline-editor { position: absolute; left: 10%; top: 40%; width: 80%; min-height: 60px; font: inherit; }
+/* 직접 수정 모드 (D3c-3): 고를 수 있는 요소를 점선으로 보이고, 고른 글상자의 왼쪽 위에 이동 손잡이를 둔다 */
+.preview-canvas.direct-edit .frame[role="button"]:not(.selected):not(.warned) { outline: 1px dashed var(--color-border-strong); }
+.frame:focus-visible { outline: var(--border-width-strong) solid var(--color-focus); }
+.frame.dragging { opacity: 0.85; }
+.move-handle { position: absolute; top: 0; left: 0; width: var(--size-step-number); height: var(--size-step-number);
+  display: flex; align-items: center; justify-content: center; cursor: move;
+  background: var(--color-primary); color: var(--color-on-primary); border-radius: var(--radius-sm); }
+.direct-edit-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.sr-status:empty { display: none; }
+.hidden-count { position: absolute; right: var(--space-1); bottom: var(--space-1); }
+.direct-edit-panel fieldset { border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.swatch { display: inline-block; width: var(--space-3); height: var(--space-3); vertical-align: middle;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); }
+.field-error { display: block; color: var(--color-danger); }
+.frame.selected { outline: var(--border-width-strong) solid var(--color-primary); }
+.frame.warned { outline: var(--border-width-strong) solid var(--color-danger); }
+.frame.selected.warned { outline: var(--border-width-strong) dashed var(--color-danger); }
+.inline-editor { position: absolute; left: 10%; top: 40%; width: 80%; min-height: var(--height-inline-editor); font: inherit; }
 .preview-canvas.stale { opacity: 0.55; }  /* 낡은 계획: 새 계획이 올 때까지 편집이 열리지 않는다 */
 
 /* 캔버스의 논리 폭이 가운데 열의 최소 폭이 되어 속성 패널을 화면 밖으로 밀지 않게 한다. */
-.editor-screen { display: grid; grid-template-columns: 220px minmax(0, 1fr) 280px; gap: 12px; }
-.editor-center { min-width: 0; }
-/* 좁은 화면에서는 고정 폭 양쪽 패널이 미리보기 폭을 0으로 만들지 않도록 세 영역을 쌓는다. */
-@media (max-width: 1000px) {
-  .editor-screen { grid-template-columns: minmax(0, 1fr); }
-  .editor-left, .editor-right { min-width: 0; overflow-wrap: anywhere; }
-  .editor-left .chapter-list { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0 0 8px; }
-  .editor-left .chapter-list li { flex: 0 1 220px; min-width: 0; max-width: 100%; }
-  .editor-left .chapter-list button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
-  .editor-right { padding-top: 12px; border-top: 1px solid #d5dde5; }
+.editor-screen { display: grid; grid-template-columns: var(--width-editor-left) minmax(0, 1fr) var(--width-editor-right);
+  grid-template-rows: auto 1fr; grid-template-areas: "left bar right" "left center right"; column-gap: var(--space-3); }
+.editor-center { min-width: 0; grid-area: center; }
+/* 직접 수정 막대는 편집 영역의 첫 자식이고 격자 영역으로 놓는다 (α 랩업 배치 A). 넓은 배치에서는 가운데 열 위(창 위쪽 끝에서
+   97px)에 두어 1100×800의 속성 패널 제목이 첫 화면 안에 남고, 쌓인 배치에서는 장 목록 위에 두어 512×360에서도 첫 화면
+   안이다. 막대가 없는 장(도식, 계획 전)에서 빈 행이 캔버스를 내리지 않도록 행 간격은 0이고 간격은 각 영역의 여백으로 준다 */
+.direct-edit-bar { grid-area: bar; }
+.editor-left { grid-area: left; }
+.editor-right { grid-area: right; }
+/* 편집 화면의 쌓임은 뷰포트가 아니라 본문 폭으로 정한다 (D3a-2, 계획 4.1). 단계 목록이 생기면 같은 뷰포트에서
+   본문이 좁아지기 때문이다.
+   - 1080px: 세 열 배치의 캔버스가 1024x720 두 열 배치에서 잰 캔버스 폭(556px)보다 좁아지지 않는 본문 폭이다
+     (장 목록 220 + 속성 패널 280 + 열 간격 12 x 2 + 556). 이하이면 속성 패널을 캔버스 아래로 내린다.
+     뷰포트로는 1360px 이하(1101px 이상은 단계 목록 216px와 본문 여백 32px씩, 1100px 이하는 늘 1080px보다 좁다)에
+     해당한다. 제품 설계의 기본 창 1280px에서는 두 열이다 (D3a-2 리뷰 R8)
+   - 748px: 뷰포트 780px에서 단계 목록이 가로 띠가 되고 본문 좌우 여백 16px씩을 뺀 폭. 이하이면 세 영역을
+     쌓는다. 뷰포트 781~984px(단계 목록 188px, 본문 여백 24px씩)도 본문 폭이 748px 이하라 한 열이다 */
+@container stage (max-width: 1080px) {
+  .editor-screen { grid-template-columns: var(--width-editor-left) minmax(0, 1fr); grid-template-rows: auto 1fr auto;
+    grid-template-areas: "left bar" "left center" "right right"; }
+  .editor-right { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
 }
-.warn-badge { color: #B00020; }
+@container stage (max-width: 748px) {
+  .editor-screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; grid-template-areas: "bar" "left" "center" "right"; }
+  .editor-left, .editor-right { min-width: 0; overflow-wrap: anywhere; }
+  .editor-center { margin-top: var(--space-3); }
+  .editor-left .chapter-list { display: flex; flex-wrap: wrap; gap: var(--space-2); list-style: none; padding: 0; margin: 0 0 var(--space-2); }
+  .editor-left .chapter-list li { flex: 0 1 var(--width-editor-left); min-width: 0; max-width: 100%; }
+  .editor-left .chapter-list button { width: 100%; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+  .editor-right { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+}
+.warn-badge { color: var(--color-danger); }
+
+/* 다섯 단계 셸 (D3a-2, 계획 4.1, 제품 설계 3절). DOM 순서는 상단 머리, 단계 목록, 본문이고 배치는 grid 영역이다.
+   바탕(--color-bg) 위에 머리와 단계 목록을 패널(--color-panel)로 구별한다 */
+main.project-shell { padding: 0; }
+.project-shell { display: grid; min-height: 100vh; background: var(--color-bg);
+  grid-template-columns: var(--width-sidebar) minmax(0, 1fr); grid-template-rows: auto 1fr;
+  grid-template-areas: "side top" "side body"; }
+.project-topbar { grid-area: top; position: relative; display: grid; align-items: center; gap: var(--space-3) var(--space-5); padding: var(--space-4) var(--space-6);
+  background: var(--color-panel); border-bottom: 1px solid var(--color-border); }
+.topbar-title, .topbar-status, .topbar-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
+/* 머리는 모든 폭에서 한 줄이다 (D3a-7 사용자 결정). 저장 상태는 저장한 뒤에 나타나므로(A19) 줄바꿈 배치에서는 폭이
+   모자라면 줄이 바뀌어 본문이 밀렸다(1024×720에서 73px가 125px, D3a-2 리뷰 R9). 칸 배치로 제목 칸이 남는 폭을 받고,
+   제목과 AI 상태 문구는 말줄임으로 줄어든다. 진행 안내와 실패 알림은 그 아래 줄 전체를 쓴다 */
+.project-topbar { grid-template-columns: minmax(0, 1fr) auto minmax(0, auto); }
+.topbar-title { flex-wrap: nowrap; }
+.topbar-title h1 { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-status, .topbar-actions { flex-wrap: nowrap; }
+/* 줄어드는 것은 제목과 AI 상태 문구뿐이다. 버튼과 저장 상태는 한글 글자 사이에서 줄을 바꾸지 않는다 */
+.topbar-title > button, .topbar-status > *, .topbar-actions > * { flex-shrink: 0; white-space: nowrap; }
+.topbar-actions > .topbar-ai { flex-shrink: 1; }
+.topbar-ai { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-notices { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+.topbar-job, .topbar-ai { margin: 0; }
+.topbar-ai { color: var(--color-text-muted); font-size: var(--font-size-small); }
+/* AI 설정은 상단 머리의 드로어다. 내용(계정, 모델, Effort)은 D4가 바꾸고 D3a는 위치만 옮긴다 (계획 4.1) */
+.project-topbar .ai-settings { margin: 0; max-width: none; }
+/* 폭은 안쪽 여백과 경계선을 포함한다. 좁은 창에서는 양쪽 끝을 뷰포트 안에 붙인다 (D3a-2 리뷰 R7) */
+.project-topbar .ai-settings-body { position: absolute; right: var(--space-6); top: 100%; z-index: 100;
+  box-sizing: border-box; width: min(var(--width-reading-wide), calc(100vw - 2 * var(--space-6)));
+  max-height: 80vh; overflow: auto; margin-top: 0; background: var(--color-panel); box-shadow: var(--shadow-dialog); }
+.stage-sidebar { grid-area: side; min-width: 0; padding: var(--space-5) var(--space-3);
+  background: var(--color-panel); border-right: 1px solid var(--color-border); }
+.stage-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.stage-button { display: flex; align-items: center; gap: var(--space-3); width: 100%; margin: 0; text-align: left;
+  min-height: var(--control-height-primary); padding: var(--space-2) var(--space-3); border: 0; background: transparent; }
+/* 현재 단계는 선택 막대와 aria-current로 보인다. 단계 상태(D3a-3)와 다른 요소다 (계획 4.2) */
+.stage-button[aria-current="step"] { background: var(--color-accent-bg); color: var(--color-primary); font-weight: 600;
+  box-shadow: inset var(--stage-bar-width) 0 var(--color-primary); }
+.stage-number { display: inline-grid; place-items: center; flex-shrink: 0; width: var(--size-step-number);
+  height: var(--size-step-number); border: 1px solid var(--color-border-strong); border-radius: 50%;
+  font-size: var(--font-size-caption); }
+.stage-body { grid-area: body; min-width: 0; padding: var(--space-5) var(--space-6); container: stage / inline-size; }
+@media (max-width: 1100px) {
+  .project-shell { grid-template-columns: var(--width-sidebar-narrow) minmax(0, 1fr); }
+  /* 머리 한 줄에서 제목보다 AI 상태 문구가 먼저 자리를 내준다(1024×720에서 제목이 한 글자로 줄었다). 문구는 화면 낭독기에
+     남고, 같은 정보는 AI 연결 및 모델 드로어에 있다. 512px에서는 저장 상태와 버튼 셋이 폭을 다 써 제목이 줄어든다.
+     제목은 보고 목적 단계의 보고서 제목 칸과 title 속성에 있다 (D3a-7) */
+  .topbar-ai { position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  .project-topbar { padding: var(--space-4) var(--space-5); }
+  .stage-body { padding: var(--space-5); }
+}
+/* 780px 이하에서는 단계 목록을 가로 띠로 바꾼다. 접어도 다섯 단계가 한눈에 보이게 한다 */
+@media (max-width: 780px) {
+  .project-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr;
+    grid-template-areas: "top" "side" "body"; }
+  .stage-sidebar { padding: var(--space-2); border-right: 0; border-bottom: 1px solid var(--color-border); }
+  /* 스크롤하지 않고 줄을 바꿔 다섯 단계가 모두 보이게 한다 */
+  .stage-list { display: flex; flex-wrap: wrap; }
+  .stage-list li { flex: 1 1 auto; }
+  .stage-button { min-width: var(--width-stage-strip-item); }
+  .project-topbar { padding: var(--space-3) var(--space-4); }
+  .stage-body { padding: var(--space-4); }
+  .project-topbar .ai-settings-body { left: var(--space-2); right: var(--space-2); width: auto; }
+  /* 좁은 띠에서는 단계 상태의 종류(문구와 아이콘)만 보이고 설명은 화면 낭독기에만 남긴다. 설명은 단계 화면에도 있다 */
+  .stage-status .status-detail { position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+  /* 접기 (D3a-7 사용자 결정): 512×360(1024×720의 200% 확대)에서 머리와 단계 띠가 첫 화면 360px 중 285px를 차지해 본문이
+     보이지 않았다. 머리는 한 줄로, 단계 띠는 번호와 상태 아이콘만으로 접는다. 현재 단계의 이름은 보인다. 숨긴 이름과
+     상태 문구는 화면 낭독기에 남는다(버튼의 접근 이름과 aria-describedby가 그대로다) */
+  .project-topbar { gap: var(--space-2); }
+  .topbar-title h1 { font-size: var(--font-size-section); }
+  .topbar-title, .topbar-status, .topbar-actions { gap: var(--space-2); }
+  .stage-list { flex-wrap: nowrap; justify-content: space-between; gap: var(--space-1); }
+  .stage-button { min-width: 0; padding: var(--space-1) var(--space-2); gap: var(--space-2); }
+  .stage-button:not([aria-current="step"]) .stage-label, .stage-status .status-label, .stage-summary {
+    position: absolute; width: var(--size-hidden); height: var(--size-hidden);
+    margin: calc(-1 * var(--size-hidden)); overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+}
 
 /* 입력 항목은 각각 한 줄: 라벨 위, 입력 아래. 버튼은 .actions 행에 모은다
    (파일럿 관찰 2, 3은 구조안 한정이었고, 관찰 7로 전 화면에 승격. 2026-09-01) */
-.field { max-width: 640px; margin: 8px 0; }
-.field label { display: grid; gap: 4px; }
+.field { max-width: var(--width-reading); margin: var(--space-2) 0; }
+.field label { display: grid; gap: var(--space-1); }
 .field input:not([type="number"]):not([type="color"]), .field select, .field textarea {
   width: 100%; box-sizing: border-box; font: inherit;
 }
-.field textarea { min-height: 110px; }
-.field input[type="number"] { width: 8em; }
-.hint { color: #4A5560; font-size: 0.9em; font-weight: normal; }
-.actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.field textarea { min-height: var(--height-textarea); }
+.field input[type="number"] { width: var(--width-number-input); }
+.hint { color: var(--color-text-muted); font-size: var(--font-size-small); font-weight: normal; }
+.actions { margin-top: var(--space-2); display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center; }
+/* 주 행동 막대 (D3a-7 사용자 결정, 계획 6절 배치). 화면이 길면 창 아래에 붙어 주 행동이 첫 화면 안에 남는다. 내용이 짧으면
+   제자리에 있어 뒤의 내용을 가리지 않는다. 위쪽 끝이 첫 화면 안에 있는 상자의 자식일 때만 올라오므로 각 화면이 막대를
+   그런 상자 바로 안에 둔다. 막대 둘이 함께 붙어 겹치지 않도록 화면마다 주 행동 하나에만 쓴다 */
+.primary-bar { position: sticky; bottom: 0; z-index: 1; margin-bottom: 0; padding-block: var(--space-2);
+  background: var(--color-bg); border-top: 1px solid var(--color-border); }
+.primary-bar p { margin: 0; flex-basis: 100%; }
+/* Tab으로 옮긴 초점이 창 아래에 붙은 막대 뒤에 숨지 않게, 초점을 따라 스크롤할 때 막대 높이만큼 남긴다. 없을 때 512×360의
+   보고 목적과 구성, 1024×720의 장 구성표에서 초점 칸이 막대와 겹쳤다 (D3a-7) */
+html { scroll-padding-bottom: var(--size-primary-bar-clearance); }
+/* 보고 목적 화면 (D3b-5, 계획 4.5). 유형 영역이 넓으면 예시를 오른쪽 열에, 좁으면 추가 입력 아래에 둔다. 경계는 유형 영역
+   폭 720px다(D3b-6 측정). 창 폭으로는 단계 목록이 옆에 있을 때 약 956px 이상, 단계 띠로 바뀌는 780px 이하에서는 약 752px 이상이
+   두 열이다. 두 열의 그림 높이는 이 경계에서 183px(D3b-6 리뷰 R1, `--height-example-narrow`)이고, 측정한 다섯 크기 모두 가로 넘침이 없고 보고서 제목이 첫 화면 안이다 */
+.purpose-type { container-type: inline-size; container-name: purpose-type; }
+.purpose-type-layout { display: grid; gap: var(--space-4); }
+@container purpose-type (min-width: 720px) {
+  .purpose-type-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+}
+.purpose-composition { margin: 0 0 var(--space-2); padding-inline-start: var(--space-6); }
+.purpose-outcomes { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.type-example { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); }
+.example-art { display: block; width: 100%; height: auto; }
+@container purpose-type (max-width: 719px) { .example-art { max-height: var(--height-example-narrow); } }
+.example-overlay { position: fixed; inset: 0; background: var(--color-overlay); display: flex; align-items: center;
+  justify-content: center; z-index: 120; }
+.example-dialog { background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-4); box-sizing: border-box;
+  width: 100%; max-width: var(--width-example-large); max-height: 100dvh; overflow-y: auto; box-shadow: var(--shadow-dialog); }
+.example-dialog-art { overflow-x: auto; }
+.example-art-large { display: block; width: 100%; min-width: var(--width-example-min); height: auto; }
+.example-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.example-dialog-head h2 { margin: 0; }
+.example-close { min-height: var(--control-height-primary); }
 .chapter-list .chapter-topic { display: block; }
-.chapter-list .chapter-template { display: block; font-size: 0.85em; color: #4A5560; }
+.chapter-list .chapter-template { display: block; font-size: var(--font-size-caption); color: var(--color-text-muted); }
 
 /* 자료 화면: 끌어다 놓기 영역과 성공 안내 (파일럿 관찰 1. 2026-09-01) */
-.sources-screen .drop-zone { border: 2px dashed #9AA5B1; border-radius: 6px; padding: 12px; margin: 8px 0; max-width: 640px; }
-.sources-screen .info { color: #1F4E79; }
+.sources-screen .drop-zone { border: var(--border-width-strong) dashed var(--color-border-strong); border-radius: var(--radius-md); padding: var(--space-3); margin: var(--space-2) 0; max-width: var(--width-reading); }
+.sources-screen .info { color: var(--color-primary); }
 /* 잘림 알림은 성공 안내(.info)와 시각적으로 구분한다: 오류는 아니지만 놓치면 안 되는 경고다
    (B4 리뷰 F3, 계획서 B4) */
-.sources-screen .info.truncation { color: #8A5A00; }
+.sources-screen .info.truncation { color: var(--color-warning); }
 
 /* 프로젝트 목록 상단의 AI 연결 상태 한 줄 (파일럿 관찰 5. 2026-09-01) */
-.project-list .ai-status { color: #4A5560; font-size: 0.95em; }
+.project-list .ai-status { color: var(--color-text-muted); font-size: var(--font-size-body); }
 
-.ai-settings { margin: 12px 0 20px; max-width: 760px; }
-.ai-settings-body { margin-top: 10px; padding: 20px; border: 1px solid #CCD6DF; border-radius: 10px; background: #F8FAFC; }
+.ai-settings { margin: var(--space-3) 0 var(--space-5); max-width: var(--width-reading-wide); }
+.ai-settings-body { margin-top: var(--space-3); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface-subtle); }
 .ai-settings-body h2 { margin-top: 0; }
 .ai-settings-body fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .ai-settings-body legend { font-weight: 600; }
-.ai-settings-body select { min-height: 36px; background: white; }
-.ai-settings-body button, .ai-settings > button { min-height: 34px; padding: 6px 12px; }
+.ai-settings-body select { min-height: var(--control-height); background: var(--color-panel); }
+.ai-settings-body button, .ai-settings > button { min-height: var(--control-height); padding: var(--space-1) var(--space-3); }
 .ai-settings-body p { line-height: 1.6; }
-.ai-settings-body a { color: #174B76; overflow-wrap: anywhere; }
-.ai-login-link { display: inline-block; padding: 8px 12px; background: #DFECF7; border-radius: 5px; }
-@media (max-width: 600px) { .ai-settings-body { padding: 14px; } }
+.ai-settings-body a { color: var(--color-primary); overflow-wrap: anywhere; }
+.ai-login-link { display: inline-block; padding: var(--space-2) var(--space-3); background: var(--color-accent-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+@media (max-width: 600px) { .ai-settings-body { padding: var(--space-3); } }
 
 /* AI 전송 고지 대화 상자: 화면 전체를 덮는 오버레이로 뒤 화면의 클릭을 막는다 (계획서 B3, 가정 5) */
 .ai-consent-overlay {
-  position: fixed; inset: 0; background: rgba(32, 32, 32, 0.5);
+  position: fixed; inset: 0; background: var(--color-overlay);
   display: flex; align-items: center; justify-content: center; z-index: 120;
 }
 .ai-consent-dialog {
-  background: #FFFFFF; border-radius: 8px; padding: 20px; max-width: 560px; width: 90%;
-  box-sizing: border-box; max-height: calc(100dvh - 32px); overflow-y: auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-5); max-width: var(--width-dialog); width: 90%;
+  box-sizing: border-box; max-height: calc(100dvh - var(--space-6)); overflow-y: auto;
+  box-shadow: var(--shadow-dialog);
 }
-.numeric-review { margin-block: 1rem; padding-block: .75rem; border-block: 1px solid #d4dbe4; }
-.numeric-review p { font-size: .875rem; line-height: 1.55; }
-.numeric-review details { margin-block: .75rem; }
+.numeric-review { margin-block: var(--space-4); padding-block: var(--space-3); border-block: 1px solid var(--color-border); }
+.numeric-review p { font-size: var(--font-size-small); line-height: 1.55; }
+.numeric-review details { margin-block: var(--space-3); }
 .numeric-review summary { cursor: pointer; }
-.numeric-review ul { padding-left: 1.25rem; }
-.numeric-review li { margin-block: .75rem; }
-.numeric-review-text { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f6fa; padding: .5rem; border-radius: .25rem; }
-.numeric-review-notice { color: #475569; }
-.export-quality { margin-block: 1rem; padding-block: .75rem; border-block: 1px solid #ccd5d0; overflow-wrap: anywhere; }
-.export-quality p { font-size: .875rem; line-height: 1.55; }
+.numeric-review ul { padding-left: var(--space-5); }
+.numeric-review li { margin-block: var(--space-3); }
+.numeric-review-text { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--color-surface-subtle); padding: var(--space-2); border-radius: var(--radius-sm); }
+.numeric-review-notice { color: var(--color-text-muted); }
+.export-quality { margin-block: var(--space-4); padding-block: var(--space-3); border-block: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.export-quality p { font-size: var(--font-size-small); line-height: 1.55; }
 .export-quality summary { cursor: pointer; }
-.export-quality-table { overflow-x: auto; margin-top: .75rem; }
-.export-quality-table table { width: 100%; max-width: 640px; border-collapse: collapse; font-size: .875rem; }
-.export-quality-table th, .export-quality-table td { padding: .5rem; text-align: left; border-bottom: 1px solid #e0e5e2; }
-.export-quality-table thead { background: #edf3ef; }
+.export-quality-table { overflow-x: auto; margin-top: var(--space-3); }
+.export-quality-table table { width: 100%; max-width: var(--width-reading); border-collapse: collapse; font-size: var(--font-size-small); }
+.export-quality-table th, .export-quality-table td { padding: var(--space-2); text-align: left; border-bottom: 1px solid var(--color-border); }
+.export-quality-table thead { background: var(--color-success-subtle); }
 .export-quality-table th { font-weight: 600; }
-.export-quality ul { padding-left: 1.25rem; }
-.export-history { margin: 1.5rem 0; max-width: 72rem; }
-.export-history-heading, .export-history-pagination { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.export-quality ul { padding-left: var(--space-5); }
+.export-history { margin: var(--space-5) 0; max-width: var(--width-content); }
+.export-history-heading, .export-history-pagination { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .export-history-heading h2 { margin: 0; flex: 1; }
 .export-history-list { list-style: none; padding: 0; }
-.export-history-list > li { padding: 1rem 0; border-bottom: 1px solid #d0d7e2; }
+.export-history-list > li { padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border); }
 .export-history-list button, .export-history-detail h3 { overflow-wrap: anywhere; max-width: 100%; text-align: left; }
-.export-history-states { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
-.export-history-states span { background: #eef3f9; color: #202020; border-radius: .25rem; padding: .25rem .5rem; }
-.export-history-meta { color: #526071; font-size: .9rem; }
-.export-history-detail { margin-top: 1.5rem; padding: 1rem; border: 1px solid #d0d7e2; border-radius: .4rem; overflow-wrap: anywhere; }
-.review-records { margin-top: 1.5rem; border-top: 1px solid #d0d7e2; padding-top: 1rem; min-width: 0; }
-.review-records h4, .review-records h5 { margin: .5rem 0; font-size: 1rem; }
+.export-history-states { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.export-history-states span { background: var(--color-accent-bg); color: var(--color-text); border-radius: var(--radius-sm); padding: var(--space-1) var(--space-2); }
+.export-history-meta { color: var(--color-text-muted); font-size: var(--font-size-small); }
+.export-history-detail { margin-top: var(--space-5); padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow-wrap: anywhere; }
+.review-records { margin-top: var(--space-5); border-top: 1px solid var(--color-border); padding-top: var(--space-4); min-width: 0; }
+.review-records h4, .review-records h5 { margin: var(--space-2) 0; font-size: var(--font-size-body); }
 .review-records p { line-height: 1.55; }
-.review-records fieldset { min-width: 0; margin: 1rem 0; border: 1px solid #d0d7e2; border-radius: .3rem; }
+.review-records fieldset { min-width: 0; margin: var(--space-4) 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .review-records legend { font-weight: 600; }
-.review-currentness { padding: .75rem; background: #eef3f9; border-radius: .3rem; }
-.review-category-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
-.review-category-list > li { padding: .75rem; border: 1px solid #d0d7e2; border-radius: .3rem; }
+.review-currentness { padding: var(--space-3); background: var(--color-accent-bg); border-radius: var(--radius-md); }
+.review-category-list { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.review-category-list > li { padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
 .review-record-note { white-space: pre-wrap; overflow-wrap: anywhere; }
-.review-history { margin: 1rem 0; }
+.review-history { margin: var(--space-4) 0; }
 .review-history summary { cursor: pointer; }
-.review-history li { padding: .5rem 0; border-bottom: 1px solid #d0d7e2; }
-.review-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; max-width: 640px; }
-.review-pages > div { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
-.review-pages label { display: inline-flex; align-items: center; gap: .25rem; min-height: 2rem; }
+.review-history li { padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.review-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); max-width: var(--width-reading); }
+.review-pages > div { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); }
+.review-pages label { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--control-height-compact); }
 @media (max-width: 600px) {
-  .review-category-list, .review-form-grid { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
-  .review-records fieldset { margin-inline: 0; padding: .75rem; }
+  .review-category-list, .review-form-grid { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+  .review-records fieldset { margin-inline: 0; padding: var(--space-3); }
 }
 
 .diagram-authoring-overlay {
-  position: fixed; inset: 0; z-index: 110; background: #20202099;
+  position: fixed; inset: 0; z-index: 110; background: var(--color-overlay);
   display: flex; align-items: center; justify-content: center;
 }
 .diagram-authoring-dialog {
-  display: flex; flex-direction: column; width: min(1200px, 96vw); max-height: 94dvh;
-  background: #fff; border-radius: 10px; box-shadow: 0 8px 32px #0004;
+  display: flex; flex-direction: column; width: min(var(--width-dialog-wide), 96vw); max-height: 94dvh;
+  background: var(--color-panel); border-radius: var(--radius-lg); box-shadow: var(--shadow-dialog-wide);
 }
-.diagram-authoring-dialog header { padding: 16px 24px 8px; border-bottom: 1px solid #d5dde5; }
+.diagram-authoring-dialog header { padding: var(--space-4) var(--space-5) var(--space-2); border-bottom: 1px solid var(--color-border); }
 .diagram-authoring-dialog h2 { margin: 0; }
 .diagram-authoring-dialog p { line-height: 1.5; }
 .diagram-authoring-columns {
   display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
-  gap: 24px; padding: 16px 24px; overflow: auto; min-height: 0;
+  gap: var(--space-5); padding: var(--space-4) var(--space-5); overflow: auto; min-height: 0;
 }
 .diagram-authoring-fields, .diagram-authoring-check { min-width: 0; }
 .diagram-authoring-check { position: sticky; top: 0; align-self: start; }
@@ -139,39 +448,107 @@ button { cursor: pointer; }
 .diagram-review-preview { position: relative; }
 .diagram-review-preview .preview-holder { position: absolute; inset: 0; }
 .diagram-authoring-check [role="alert"] { white-space: pre-line; overflow-wrap: anywhere; }
-.diagram-authoring-dialog footer { padding: 12px 24px; margin: 0; border-top: 1px solid #d5dde5; }
-.diagram-authoring-dialog button { padding: 7px 12px; }
-.diagram-item { border: 1px solid #ccd5df; border-radius: 6px; min-width: 0; margin: 12px 0; padding: 12px; }
+.diagram-authoring-dialog footer { padding: var(--space-3) var(--space-5); margin: 0; border-top: 1px solid var(--color-border); }
+.diagram-authoring-dialog button { padding: var(--space-1) var(--space-3); }
+.diagram-item { border: 1px solid var(--color-border); border-radius: var(--radius-md); min-width: 0; margin: var(--space-3) 0; padding: var(--space-3); }
 .diagram-item legend { font-weight: 600; }
-.diagram-item .field textarea { min-height: 64px; }
-.diagram-select-row { display: flex; gap: 12px; }
-.diagram-select-row label { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.diagram-item .field textarea { min-height: var(--height-textarea-compact); }
+.diagram-select-row { display: flex; gap: var(--space-3); }
+.diagram-select-row label { flex: 1; min-width: 0; display: grid; gap: var(--space-1); }
 .diagram-select-row select { width: 100%; min-width: 0; font: inherit; }
-.diagram-story-claim { display: block; margin: 8px 0; overflow-wrap: anywhere; }
-.diagram-story-claim .hint { display: block; margin-left: 22px; }
-.diagram-evidence { margin: 12px 0; font-size: .875rem; }
+.diagram-story-claim { display: block; margin: var(--space-2) 0; overflow-wrap: anywhere; }
+.diagram-story-claim .hint { display: block; margin-left: var(--indent-checkbox); }
+.diagram-evidence { margin: var(--space-3) 0; font-size: var(--font-size-small); }
 .diagram-evidence summary { cursor: pointer; }
-.diagram-evidence label { display: block; padding: 8px; border-bottom: 1px solid #e2e7ee; overflow-wrap: anywhere; }
-.diagram-excerpt { display: block; white-space: pre-wrap; margin: 6px 0 0 22px; color: #435369; }
-.diagram-ai-draft { margin: 20px 0; padding: 16px; border: 1px solid #bbccdf; border-radius: 8px; background: #f4f8fc; overflow-wrap: anywhere; }
+.diagram-evidence label { display: block; padding: var(--space-2); border-bottom: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.diagram-excerpt { display: block; white-space: pre-wrap; margin: var(--space-1) 0 0 var(--indent-checkbox); color: var(--color-text-muted); }
+.diagram-ai-draft { margin: var(--space-5) 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-subtle); overflow-wrap: anywhere; }
 .diagram-ai-draft h3 { margin-top: 0; }
 .diagram-ai-draft [role="alert"] { white-space: pre-line; }
 .diagram-ai-draft pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.diagram-ai-candidate { margin: 16px 0; padding: 12px; background: #fff; border: 1px solid #d5dde5; border-radius: 6px; }
-.diagram-ai-candidate h4, .diagram-ai-candidate h5 { margin: 8px 0; font-size: 1rem; }
-.diagram-ai-candidate ol { padding-left: 20px; }
-.diagram-ai-candidate ol > li { padding-bottom: 12px; border-bottom: 1px solid #e2e7ee; }
-.diagram-candidate-evidence { padding-left: 16px; font-size: .875rem; }
-.diagram-candidate-evidence blockquote { margin: 6px 0; white-space: pre-wrap; color: #435369; }
+.diagram-ai-candidate { margin: var(--space-4) 0; padding: var(--space-3); background: var(--color-panel); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.diagram-ai-candidate h4, .diagram-ai-candidate h5 { margin: var(--space-2) 0; font-size: var(--font-size-body); }
+.diagram-ai-candidate ol { padding-left: var(--space-5); }
+.diagram-ai-candidate ol > li { padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.diagram-candidate-evidence { padding-left: var(--space-4); font-size: var(--font-size-small); }
+.diagram-candidate-evidence blockquote { margin: var(--space-1) 0; white-space: pre-wrap; color: var(--color-text-muted); }
 @media (max-width: 850px) {
-  .diagram-authoring-columns { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .diagram-authoring-columns { grid-template-columns: minmax(0, 1fr); padding: var(--space-3); }
   .diagram-authoring-check { position: static; }
-  .diagram-authoring-dialog header, .diagram-authoring-dialog footer { padding: 12px; }
+  .diagram-authoring-dialog header, .diagram-authoring-dialog footer { padding: var(--space-3); }
 }
 .structure-controls { border: 0; padding: 0; margin: 0; min-width: 0; }
-.structure-table-scroll { max-width: 100%; overflow-x: auto; }
-.story-rewrite { margin-top: 24px; padding: 20px; border: 1px solid #d2dce2; border-radius: 8px; }
+/* 구성 화면의 핵심 내용 요약 줄과 실행 단계 (D3b-7, 계획 4.7). 요약은 세 줄 뒤 접는다 */
+.key-message-summary { margin-bottom: var(--space-3); }
+.key-message-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.key-message-head h2 { margin: 0; margin-inline-end: auto; }
+.key-message-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--space-1) 0 0; }
+.key-message-text.clamped { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* 낮은 창(512x360 등)에서는 한 줄 뒤 접어 주 행동 막대가 첫 화면 안에 남게 한다 (D3b-7 리뷰 R3) */
+@media (max-height: 480px) { .key-message-text.clamped { -webkit-line-clamp: 1; } }
+.generation-step-list { margin: var(--space-2) 0; padding-inline-start: var(--space-6); }
+.generation-step-list li[aria-current="step"] { font-weight: 600; }
+/* 장 카드 목록 (D3b-7, 계획 4.7). 카드는 가로로 넘치지 않는다. 작은 버튼은 좁은 창에서 한 글자씩 끊기지 않게 한다 (D3a-1 리뷰 R16) */
+.chapter-cards { list-style: none; padding: 0; margin: 0 0 var(--space-3); display: grid; gap: var(--space-3); }
+.chapter-card { border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-3); min-width: 0; }
+.chapter-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.chapter-card-title { margin: 0; font-size: var(--font-size-body); }
+.chapter-card-moves { margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.chapter-card button { white-space: nowrap; word-break: keep-all; min-height: var(--control-height-compact);
+  padding-inline: var(--space-2); }
+.chapter-evidence ul { margin: var(--space-1) 0 0; overflow-wrap: anywhere; }
+.story-rewrite { margin-top: var(--space-5); padding: var(--space-5); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
 .story-rewrite h2 { word-break: keep-all; }
-.story-rewrite > label { display: block; margin: 12px 0; }
+.story-rewrite > label { display: block; margin: var(--space-3) 0; }
 .story-rewrite > label input, .story-rewrite > label textarea { display: block; width: 100%; box-sizing: border-box; }
-.story-rewrite section[aria-label="재작성 후보"] > label { display: block; margin: 16px 0; }
+.story-rewrite section[aria-label="재작성 후보"] > label { display: block; margin: var(--space-4) 0; }
+
+/* 상태 표시 (D2a-5). 색은 보조 수단이고 문구와 아이콘이 상태를 구별한다 */
+.status-indicator { display: inline-flex; align-items: center; gap: var(--space-1); padding: var(--space-half) var(--space-2);
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-panel); }
+.status-icon { font-weight: 700; }
+.status-detail { color: var(--color-text-muted); }
+.status-neutral .status-icon, .status-neutral .status-label { color: var(--color-text-muted); }
+.status-warning .status-icon, .status-warning .status-label { color: var(--color-warning); }
+.status-success .status-icon, .status-success .status-label { color: var(--color-success); }
+.status-danger .status-icon, .status-danger .status-label { color: var(--color-danger); }
+.status-primary .status-icon, .status-primary .status-label { color: var(--color-primary); }
+.status-kind-saving .status-icon { display: inline-block; animation: status-spin 1.2s linear infinite; }
+@keyframes status-spin { to { transform: rotate(360deg); } }
+.visually-hidden { position: absolute; width: var(--size-hidden); height: var(--size-hidden); padding: 0;
+  margin: calc(-1 * var(--size-hidden)); overflow: hidden;
+  clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* 오류가 아닌 주의 안내 (D3a-1, D2a 이월 6). [role="alert"]의 위험색과 구별한다 */
+.notice-warning { color: var(--color-warning); }
+/* 단계 상태 (D3a-3, 계획 4.2). 단계 버튼 밖의 다른 요소로, 버튼 아래에 붙는다 */
+.stage-list li { display: grid; gap: var(--space-1); }
+.stage-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1);
+  padding-inline-start: var(--space-3); font-size: var(--font-size-caption); }
+.stage-status .status-indicator { flex-wrap: wrap; }
+/* 좁은 띠에서는 단계 상태를 번호 옆에 둬 띠가 한 줄이다 (D3a-7 사용자 결정). 위 기본 규칙보다 뒤에 둔다 */
+@media (max-width: 780px) {
+  .stage-list li { display: flex; align-items: center; gap: var(--space-1); flex: 0 1 auto; min-width: 0; }
+  .stage-status { padding-inline-start: 0; flex-wrap: nowrap; }
+}
+.stage-summary { color: var(--color-text-muted); }
+.review-parts { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+.review-part-name { display: inline-block; min-width: var(--width-part-label); }
+.swatch-legend ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+/* 장 후보 비교 화면 (D3c-6, 계획 4.8). 넓은 창에서는 지금과 반영 뒤의 미리보기를 나란히, 좁은 창에서는 위아래로 둔다. 반영 버튼은
+   대화 상자 아래에 붙여 내용이 길어도 첫 화면 안에 남는다 */
+.compare-overlay { position: fixed; inset: 0; background: var(--color-overlay); display: flex; align-items: center;
+  justify-content: center; z-index: 120; }
+.compare-dialog { background: var(--color-panel); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-4) 0;
+  box-sizing: border-box; width: 100%; max-width: var(--width-dialog-wide); max-height: 100dvh; overflow-y: auto;
+  box-shadow: var(--shadow-dialog); overflow-wrap: anywhere; }
+.compare-dialog h2 { margin-top: 0; }
+.compare-previews { display: grid; gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--width-editor-right)), 1fr)); }
+.compare-previews figure { margin: 0; min-width: 0; }
+.compare-unit, .compare-edit { border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-bottom: var(--space-2); min-width: 0; }
+.compare-texts { display: grid; gap: var(--space-2); grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--width-editor-right)), 1fr)); }
+.compare-texts pre { white-space: pre-wrap; margin: var(--space-1) 0; font: inherit; }
+.compare-badge { color: var(--color-warning); font-weight: normal; }
+.compare-actions { position: sticky; bottom: 0; background: var(--color-panel); border-top: 1px solid var(--color-border);
+  padding-block: var(--space-2); display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.compare-actions p { margin: 0; flex-basis: 100%; }

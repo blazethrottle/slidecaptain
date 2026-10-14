@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from slidecaptain.pipeline.auth_status import LoginStatus
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderResponse
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 # store 픽스처는 backend/tests/conftest.py 참조
 
@@ -71,7 +72,7 @@ def test_status_reports_login_provider_and_no_generation_yet(store):
     assert body["provider"] == "subscription"
     assert body["login"] == {
         "logged_in": True, "auth_method": "claude.ai", "account": "co***@example.com",
-        "cli_version": None, "error": None,
+        "cli_version": None, "error": None, "error_code": None,  # 다시 씀(D3a-4 리뷰 R2): 원인 코드 칸
     }
     assert body["model"] is None  # StubProvider에는 model 속성이 없다
     assert body["last_generation_at"] is None
@@ -108,7 +109,7 @@ def test_status_records_last_success_after_structure_generation(store):
     ), headers=_APP_HEADERS)
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    assert client.post("/api/projects/p1/generate/structure", json={"target_chapters": 2}).json()["status"] == "ok"
+    assert post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 2}).json()["status"] == "ok"
     at = client.get("/api/status").json()["last_generation_at"]
     assert at is not None
     datetime.fromisoformat(at)
@@ -123,7 +124,7 @@ def test_status_records_last_success_after_condense(store):
     body = {"slots": {"template": "bullet_box",
                       "bullets": [{"text": "현재 내용이 다소 길다", "level": 0}],
                       "conclusion": "성장 지속", "footnote": ""}}
-    assert client.post("/api/projects/p1/generate/chapter/c1/condense", json=body).status_code == 200
+    assert post_generation(client, "/api/projects/p1/generate/chapter/c1/condense", json=body).status_code == 200
     assert client.get("/api/status").json()["last_generation_at"] is not None
 
 
@@ -133,7 +134,7 @@ def test_status_records_last_success_after_chapter_generation(store):
         login_checker=_checker(LOGGED_IN),
     ), headers=_APP_HEADERS)
     _project_with_structure(client)
-    r = client.post("/api/projects/p1/generate/chapter/c1", json={"instructions": ""})
+    r = post_generation(client, "/api/projects/p1/generate/chapter/c1", json={"instructions": ""})
     assert r.status_code == 200 and r.json()["status"] == "ok"
     assert client.get("/api/status").json()["last_generation_at"] is not None
 
@@ -154,6 +155,6 @@ def test_status_not_updated_when_generation_fails(store):
     ), headers=_APP_HEADERS)
     client.post("/api/projects", json={"name": "p1", "title": "검토"})
     client.put("/api/projects/p1/sources/리서치.md", json={"text": "시장 규모는 500억 원이다"})
-    r = client.post("/api/projects/p1/generate/structure", json={"target_chapters": 2})
+    r = post_generation(client, "/api/projects/p1/generate/structure", json={"target_chapters": 2})
     assert r.status_code == 503
     assert client.get("/api/status").json()["last_generation_at"] is None

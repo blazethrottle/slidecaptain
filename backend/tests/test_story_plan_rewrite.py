@@ -11,6 +11,7 @@ from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.pipeline.story import require_current_story, story_fingerprint
 from slidecaptain.server.app import create_app
+from tests.job_runs import format_error_result, post_generation, stale_result
 
 
 class StubProvider:
@@ -56,8 +57,8 @@ def app_client(store, provider):
     })
 
 
-def preview(client, brief):
-    return client.post("/api/projects/rewrite/story-plan/rewrite", json={"brief": brief.model_dump(), "instructions": "내용 보존"})
+def preview(client, brief, expect=None):
+    return post_generation(client, "/api/projects/rewrite/story-plan/rewrite", json={"brief": brief.model_dump(mode="json"), "instructions": "내용 보존"}, expect=expect)
 
 
 def apply(client, result):
@@ -132,9 +133,13 @@ def test_changed_base_cannot_apply(rewrite_input, store, when, change):
             (store.root / "rewrite" / "sources" / "unrelated.md").unlink()
     provider = StubProvider(payload, effect=mutate if when == "during" else None)
     client = app_client(store, provider)
-    response = preview(client, brief)
+    response = preview(client, brief, expect="stale" if when == "during" else None)
     if when == "during":
-        assert response.status_code == (412 if change == "deck" else 409), response.text
+        # 래퍼의 412와 409는 작업 API에서 낡은 후보다(대응표 ③). 그 결과는 반영도 같은 이유로 거절된다
+        result = stale_result(response, ["deck_changed"] if change == "deck" else ["sources_changed"])
+        changed_etag = store.deck_etag("rewrite")
+        assert apply(client, result).status_code == (412 if change == "deck" else 409)
+        assert store.deck_etag("rewrite") == changed_etag
     else:
         assert response.status_code == 200, response.text
         result = response.json()
@@ -156,13 +161,13 @@ def test_bad_ai_output_is_retried_once_without_saving(rewrite_input, store, defe
     if defect == "evidence": payload["evidence"].append({**deck.structure.story_plan.evidence[0].model_dump(exclude={"source_revision", "excerpt"}), "locator": {"line_start": 2, "line_end": 2}})
     if defect == "role": payload["chapters"][0]["role"] = "divider"
     provider = StubProvider(payload)
-    response = preview(app_client(store, provider), brief)
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "format_error"
-    assert response.json()["deck"] is None
+    client = app_client(store, provider)
+    result = format_error_result(preview(client, brief))
+    assert result["deck"] is None
     assert len(provider.calls) == 2
     assert store.load_deck("rewrite") == deck
     assert store.list_snapshots("rewrite") == []
+    assert client.get("/api/status").json()["last_generation_at"] is None  # 형식 오류는 성공이 아니다 (D3c-7 리뷰 H3)
 
 
 @pytest.mark.parametrize("header,status", [("X-AI-Consent", 428), ("If-Match", 428), ("X-Requested-With", 403)])
@@ -281,7 +286,7 @@ def test_usage_records_rewrite_and_format_retry_without_source_text(rewrite_inpu
     _, _, payload, brief = rewrite_input
     payload["chapters"].pop()
     provider = StubProvider(payload)
-    result = preview(app_client(store, provider), brief).json()
+    result = format_error_result(preview(app_client(store, provider), brief))
     assert result["usage"]["calls"] == 2
     assert [r["purpose"] for r in result["usage"]["records"]] == ["generate", "format_retry"]
     usage_path = store.root / "rewrite" / "ai-usage.jsonl"

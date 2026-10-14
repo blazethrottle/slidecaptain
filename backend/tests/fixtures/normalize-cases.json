@@ -1,0 +1,277 @@
+{
+ "_comment": "D3c-1 리뷰 F12: 정규화 다섯 규칙의 입력과 결과. 화면의 normalizeEdits(D3c-3)와 서버 normalize_edits가 같은 결과를 내는지 지킨다",
+ "cases": [
+  {
+   "name": "모르는 요소",
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "nope": {
+     "hidden": true
+    },
+    "title": {
+     "dx_pt": 1,
+     "dy_pt": 1
+    }
+   },
+   "expected": {
+    "title": {
+     "dx_pt": 1,
+     "dy_pt": 1
+    }
+   }
+  },
+  {
+   "name": "받지 않는 채움",
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "card1": {
+     "fill": "ink",
+     "text_color": "accent1"
+    }
+   },
+   "expected": {
+    "card1": {
+     "text_color": "accent1"
+    }
+   }
+  },
+  {
+   "name": "강조 카드 채움",
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "card0": {
+     "fill": "accent2"
+    }
+   },
+   "expected": {
+    "card0": {
+     "fill": "accent2"
+    }
+   }
+  },
+  {
+   "name": "효과 없는 값",
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "card0": {
+     "hidden": false,
+     "dx_pt": 0,
+     "dy_pt": 0,
+     "font_scale": 1
+    }
+   },
+   "expected": {}
+  },
+  {
+   "name": "빈 객체",
+   "template": "bullet_box",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "title": {}
+   },
+   "expected": {}
+  },
+  {
+   "name": "세로만",
+   "template": "bullet_box",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "conclusion": {
+     "dx_pt": 0,
+     "dy_pt": 5
+    }
+   },
+   "expected": {
+    "conclusion": {
+     "dx_pt": 0,
+     "dy_pt": 5
+    }
+   }
+  },
+  {
+   "name": "가로만",
+   "template": "bullet_box",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "conclusion": {
+     "dx_pt": 5,
+     "dy_pt": 0
+    }
+   },
+   "expected": {
+    "conclusion": {
+     "dx_pt": 5,
+     "dy_pt": 0
+    }
+   }
+  },
+  {
+   "name": "정렬",
+   "template": "matrix",
+   "variant": "full",
+   "common": true,
+   "input": {
+    "title": {
+     "hidden": true
+    },
+    "row0_items": {
+     "text_color": "ink"
+    },
+    "eyebrow": {
+     "dx_pt": 2,
+     "dy_pt": 3
+    }
+   },
+   "expected": {
+    "eyebrow": {
+     "dx_pt": 2,
+     "dy_pt": 3
+    },
+    "row0_items": {
+     "text_color": "ink"
+    },
+    "title": {
+     "hidden": true
+    }
+   }
+  },
+  {
+   "name": "표 글자 크기 버림",
+   "template": "table",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "table": {
+     "font_scale": 2,
+     "text_color": "accent",
+     "hidden": true
+    }
+   },
+   "expected": {
+    "table": {
+     "hidden": true
+    }
+   }
+  },
+  {
+   "name": "단계 번호",
+   "template": "process",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "step0_badge": {
+     "font_scale": 2,
+     "fill": "accent1"
+    }
+   },
+   "expected": {
+    "step0_badge": {
+     "fill": "accent1"
+    }
+   }
+  },
+  {
+   "name": "강조 밴드 채움 버림",
+   "template": "callout",
+   "variant": "full",
+   "common": false,
+   "input": {
+    "text": {
+     "fill": "accent1",
+     "font_scale": 1.2
+    }
+   },
+   "expected": {
+    "text": {
+     "font_scale": 1.2
+    }
+   }
+  },
+  {
+   "name": "빈 불릿 글자 크기",
+   "template": "bullet_box",
+   "variant": "bare",
+   "common": false,
+   "input": {
+    "bullets": {
+     "font_scale": 1.5
+    }
+   },
+   "expected": {}
+  },
+  {
+   "name": "공백 부제",
+   "template": "bullet_box",
+   "variant": "blank",
+   "common": true,
+   "input": {
+    "subtitle": {
+     "hidden": true
+    },
+    "eyebrow": {
+     "dx_pt": 1,
+     "dy_pt": 0
+    }
+   },
+   "expected": {
+    "eyebrow": {
+     "dx_pt": 1,
+     "dy_pt": 0
+    },
+    "subtitle": {
+     "hidden": true
+    }
+   }
+  },
+  {
+   "name": "공백 각주",
+   "template": "bullet_box",
+   "variant": "blank",
+   "common": false,
+   "input": {
+    "footnote": {
+     "hidden": true
+    }
+   },
+   "expected": {
+    "footnote": {
+     "hidden": true
+    }
+   }
+  },
+  {
+   "name": "글이 없는 요소(공백만 있는 표지 부제)의 글자 크기는 버린다 (α 리뷰 A2)",
+   "template": "cover",
+   "variant": "blank",
+   "common": false,
+   "input": {
+    "subtitle": {
+     "font_scale": 1.5,
+     "hidden": true
+    },
+    "cover_title": {
+     "font_scale": 1.2
+    }
+   },
+   "expected": {
+    "cover_title": {
+     "font_scale": 1.2
+    },
+    "subtitle": {
+     "hidden": true
+    }
+   }
+  }
+ ]
+}

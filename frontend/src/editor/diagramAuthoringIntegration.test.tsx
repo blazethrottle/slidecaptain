@@ -6,7 +6,7 @@ import { EditorScreen } from "../screens/EditorScreen";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn(), reconcileDiagramStory: vi.fn(), getPreset: vi.fn(), reviewNumbers: vi.fn() } };
+  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn(), reconcileDiagramStory: vi.fn(), getPreset: vi.fn(), reviewNumbers: vi.fn(), saveDraft: vi.fn() } };
 });
 const project = { name: "authoring", title: "합성 작성", updated_at: "", status: "ok" as const };
 const fresh = () => structuredClone(fixture.deck) as Deck;
@@ -26,7 +26,7 @@ beforeEach(() => {
 function setup(deck = fresh()) {
   const onDeckChange = vi.fn();
   const onDirtyChange = vi.fn();
-  let flush: (() => Promise<boolean>) | null = null;
+  let flush: (() => Promise<boolean | "declined">) | null = null;
   render(<EditorScreen project={project} deck={deck} onDeckChange={onDeckChange}
     onDirtyChange={onDirtyChange} onEditorReady={fn => { flush = fn; }} timings={{ measureMs: 1, saveMs: 1 }} />);
   return { onDeckChange, onDirtyChange, flush: () => flush!() };
@@ -37,7 +37,7 @@ it("작성 중에는 이탈 플러시를 막고 취소하면 덱을 그대로 �
   await userEvent.click(screen.getByRole("button", { name: "도식 추가" }));
   fireEvent.change(screen.getByLabelText("도식 제목"), { target: { value: "미완성" } });
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
-  let ready = true;
+  let ready: boolean | "declined" = true;
   await act(async () => { ready = await flush(); });
   expect(ready).toBe(false);
   expect(api.putDeck).not.toHaveBeenCalled();
@@ -137,4 +137,6 @@ it("연결 확인의 412도 작성 입력을 보존하고 닫은 뒤 서버본 �
   await waitFor(() => expect(onDeckChange).toHaveBeenLastCalledWith(serverDeck));
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeEnabled();
   expect(api.putDeck).not.toHaveBeenCalled();
+  // 덱에 미저장 변경이 없는 충돌이라 보존 요청을 보내지 않는다 (D2a-2 리뷰 R17)
+  expect(api.saveDraft).not.toHaveBeenCalled();
 });

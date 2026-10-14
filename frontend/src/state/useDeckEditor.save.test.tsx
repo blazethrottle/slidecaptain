@@ -9,7 +9,7 @@ import { useDeckEditor } from "./useDeckEditor";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn() } };
+  return { ...mod, api: { ...mod.api, measure: vi.fn(), putDeck: vi.fn(), getDeck: vi.fn(), saveDraft: vi.fn() } };
 });
 
 const S = deckWith(["하나"]);
@@ -170,6 +170,9 @@ it("다른 확인 요청의 충돌을 늦은 저장 성공이 해소하지 않�
 
 it("reloadFromServer는 서버 덱을 읽어 되돌리고 저장됨으로 만들며 부모에도 알린다 (A5)", async () => {
   const serverDeck = deckWith(["서버본"]);
+  // D2a-2: 미저장 편집은 교체 직전에 보존된다. 보존이 성공해야 교체한다
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "draft-20261008-100000-000001",
+    saved_at: "2026-10-08T10:00:00+09:00", reason: "conflict", source: "editor", base_etag: null });
   vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
   vi.mocked(api.putDeck).mockRejectedValue(new ApiError(412, "다른 창에서 먼저 저장되었습니다."));
   vi.mocked(api.getDeck).mockResolvedValue(serverDeck);

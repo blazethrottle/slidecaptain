@@ -395,6 +395,56 @@
         }
       }
     },
+    "/api/projects/{name}/direct-edits/font-limit": {
+      "post": {
+        "summary": "Direct Edit Font Limit",
+        "description": "고른 요소가 넘치지 않는 최대 글자 크기 (D3c-2, 재리뷰 RR2). 렌더 계획 직렬화를 바꾸지 않도록 따로 묻는다.",
+        "operationId": "direct_edit_font_limit_api_projects__name__direct_edits_font_limit_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FontLimitRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FontLimit"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/render-plan": {
       "post": {
         "summary": "Measure Deck",
@@ -815,103 +865,6 @@
         }
       }
     },
-    "/api/projects/{name}/story-plan/rewrite": {
-      "post": {
-        "summary": "Preview Story Rewrite",
-        "operationId": "preview_story_rewrite_api_projects__name__story_plan_rewrite_post",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          },
-          {
-            "name": "x-ai-consent",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Consent"
-            }
-          },
-          {
-            "name": "x-ai-selection",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Selection"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RewriteStoryRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StoryRewriteResult"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/projects/{name}/story-plan/rewrite/apply": {
       "post": {
         "summary": "Apply Story Rewrite",
@@ -960,103 +913,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Deck"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects/{name}/story-plan/repair": {
-      "post": {
-        "summary": "Preview Story Repair",
-        "operationId": "preview_story_repair_api_projects__name__story_plan_repair_post",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          },
-          {
-            "name": "if-match",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          },
-          {
-            "name": "x-ai-consent",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Consent"
-            }
-          },
-          {
-            "name": "x-ai-selection",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Selection"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StoryRepairRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/StoryRepairResult"
                 }
               }
             }
@@ -1336,6 +1192,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ExportReviews"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/progress": {
+      "get": {
+        "summary": "Get Progress",
+        "description": "단계 준비 상태 (D2a-6). 복구 필요와 더 새 형식도 200으로 상태를 돌려준다. 화면 연결은 D3다.\n\n한 번의 프로젝트 잠금 안에서 덱과 자료를 한 번 읽고, 현재 입력 fingerprint는 내보내기 기록이\n있을 때만 한 번 계산한다. 단계 계산, 파일 현재성, 검수 기준이 같은 저장본을 근거로 한다 (최종 리뷰 F4)",
+        "operationId": "get_progress_api_projects__name__progress_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectProgress"
                 }
               }
             }
@@ -1670,6 +1566,257 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts": {
+      "post": {
+        "summary": "Save Draft",
+        "operationId": "save_draft_api_projects__name__drafts_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveDraftRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftInfo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Drafts",
+        "operationId": "list_drafts_api_projects__name__drafts_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DraftInfo"
+                  },
+                  "title": "Response List Drafts Api Projects  Name  Drafts Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts/{draft_id}/restore": {
+      "post": {
+        "summary": "Restore Draft",
+        "operationId": "restore_draft_api_projects__name__drafts__draft_id__restore_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts/{draft_id}/summary": {
+      "get": {
+        "summary": "Draft Summary",
+        "description": "보존본을 복원하기 전에 서버 저장본과의 차이를 요약한다 (D3c-6, E7). 저장본을 읽지 못하면 모든 장이 더해진다.",
+        "operationId": "draft_summary_api_projects__name__drafts__draft_id__summary_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/drafts/{draft_id}": {
+      "delete": {
+        "summary": "Delete Draft",
+        "operationId": "delete_draft_api_projects__name__drafts__draft_id__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "draft_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Draft Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
                 }
               }
             }
@@ -2206,10 +2353,10 @@
         }
       }
     },
-    "/api/projects/{name}/generate/diagram": {
+    "/api/projects/{name}/jobs": {
       "post": {
-        "summary": "Generate Diagram",
-        "operationId": "generate_diagram_api_projects__name__generate_diagram_post",
+        "summary": "Create Job",
+        "operationId": "create_job_api_projects__name__jobs_post",
         "parameters": [
           {
             "name": "name",
@@ -2274,18 +2421,104 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/GenerateDiagramRequest"
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/StructureJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChapterJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CondenseJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DiagramJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RewriteJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RepairJobRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChaptersJobRequest"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "structure": "#/components/schemas/StructureJobRequest",
+                    "chapter": "#/components/schemas/ChapterJobRequest",
+                    "condense": "#/components/schemas/CondenseJobRequest",
+                    "diagram": "#/components/schemas/DiagramJobRequest",
+                    "rewrite": "#/components/schemas/RewriteJobRequest",
+                    "repair": "#/components/schemas/RepairJobRequest",
+                    "chapters": "#/components/schemas/ChaptersJobRequest"
+                  }
+                },
+                "title": "Req"
               }
             }
           }
         },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationActiveBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List Jobs",
+        "operationId": "list_jobs_api_projects__name__jobs_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DiagramGenerationResult"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobView"
+                  },
+                  "title": "Response List Jobs Api Projects  Name  Jobs Get"
                 }
               }
             }
@@ -2303,10 +2536,10 @@
         }
       }
     },
-    "/api/projects/{name}/generate/structure": {
-      "post": {
-        "summary": "Generate Structure",
-        "operationId": "generate_structure_api_projects__name__generate_structure_post",
+    "/api/projects/{name}/jobs/{job_id}": {
+      "get": {
+        "summary": "Get Job",
+        "operationId": "get_job_api_projects__name__jobs__job_id__get",
         "parameters": [
           {
             "name": "name",
@@ -2318,55 +2551,22 @@
             }
           },
           {
-            "name": "x-ai-consent",
-            "in": "header",
-            "required": false,
+            "name": "job_id",
+            "in": "path",
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Consent"
-            }
-          },
-          {
-            "name": "x-ai-selection",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Selection"
+              "type": "string",
+              "title": "Job Id"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GenerateStructureRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/StructureResult"
+                  "$ref": "#/components/schemas/JobView"
                 }
               }
             }
@@ -2384,10 +2584,10 @@
         }
       }
     },
-    "/api/projects/{name}/generate/chapter/{chapter_id}": {
+    "/api/projects/{name}/jobs/{job_id}/cancel": {
       "post": {
-        "summary": "Generate Chapter",
-        "operationId": "generate_chapter_api_projects__name__generate_chapter__chapter_id__post",
+        "summary": "Cancel Job",
+        "operationId": "cancel_job_api_projects__name__jobs__job_id__cancel_post",
         "parameters": [
           {
             "name": "name",
@@ -2399,64 +2599,22 @@
             }
           },
           {
-            "name": "chapter_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Chapter Id"
-            }
-          },
-          {
-            "name": "x-ai-consent",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Consent"
-            }
-          },
-          {
-            "name": "x-ai-selection",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Selection"
+              "title": "Job Id"
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GenerateChapterRequest"
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChapterResult"
+                  "$ref": "#/components/schemas/JobView"
                 }
               }
             }
@@ -2474,10 +2632,10 @@
         }
       }
     },
-    "/api/projects/{name}/generate/chapter/{chapter_id}/condense": {
+    "/api/projects/{name}/jobs/{job_id}/candidate": {
       "post": {
-        "summary": "Condense Chapter",
-        "operationId": "condense_chapter_api_projects__name__generate_chapter__chapter_id__condense_post",
+        "summary": "Settle Candidate",
+        "operationId": "settle_candidate_api_projects__name__jobs__job_id__candidate_post",
         "parameters": [
           {
             "name": "name",
@@ -2489,44 +2647,12 @@
             }
           },
           {
-            "name": "chapter_id",
+            "name": "job_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Chapter Id"
-            }
-          },
-          {
-            "name": "x-ai-consent",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Consent"
-            }
-          },
-          {
-            "name": "x-ai-selection",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "X-Ai-Selection"
+              "title": "Job Id"
             }
           }
         ],
@@ -2535,7 +2661,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CondenseChapterRequest"
+                "$ref": "#/components/schemas/CandidateAction"
               }
             }
           }
@@ -2546,7 +2672,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChapterResult"
+                  "$ref": "#/components/schemas/JobView"
                 }
               }
             }
@@ -2557,6 +2683,158 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/jobs/{job_id}/apply/preview": {
+      "post": {
+        "summary": "Preview Candidate",
+        "description": "저장하지 않는 적용 미리 보기. 판정이 막아도 비교는 보이도록 200이다 (계획 4.8, 제품 설계 7절).",
+        "operationId": "preview_candidate_api_projects__name__jobs__job_id__apply_preview_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateApplyPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{name}/jobs/{job_id}/apply": {
+      "post": {
+        "summary": "Apply Candidate",
+        "description": "장 후보를 지금 덱에 합쳐 스냅샷과 함께 저장하고 처분을 applied로 바꾼다 (계획 4.8의 순서와 원자성).",
+        "operationId": "apply_candidate_api_projects__name__jobs__job_id__apply_post",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateApplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Deck"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/active": {
+      "get": {
+        "summary": "Get Active Job",
+        "operationId": "get_active_job_api_jobs_active_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveJobStatus"
                 }
               }
             }
@@ -2621,6 +2899,124 @@
         ],
         "title": "AISettings"
       },
+      "ActiveJob": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "cancel_requested"
+            ],
+            "title": "Stage"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "connecting",
+                  "generating",
+                  "retrying_format"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "step_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Started At"
+          },
+          "elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project",
+          "kind",
+          "target",
+          "stage",
+          "created_at",
+          "cancel_requested"
+        ],
+        "title": "ActiveJob",
+        "description": "서비스 전체에서 실행 중인 작업 하나의 요약. 409 generation_active 응답에도 같은 모양이 실린다."
+      },
+      "ActiveJobStatus": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveJob"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ledger_available": {
+            "type": "boolean",
+            "title": "Ledger Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active",
+          "ledger_available"
+        ],
+        "title": "ActiveJobStatus"
+      },
       "AppStatus": {
         "properties": {
           "provider": {
@@ -2673,6 +3069,16 @@
             "type": "string",
             "title": "Checked At",
             "description": "로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)"
+          },
+          "data_dir": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataDirStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3008,6 +3414,315 @@
         "title": "CalloutSlots",
         "description": "강조 밴드: 전폭 둥근 사각형에 문장 1~3줄 (2026-09-07 DB-1, 벤치마크 원형 2, 슬라이드 절반에서 관측).\n\ntone은 프리셋 색을 직접 받지 않고 채움 가능한 역할 이름만 받는다: 프리셋이 바뀌면 색이\n따라 바뀌게 하기 위해서다. rule은 테두리 전용 역할이라(DA-3: 벤치마크 테두리 42건 최다,\n채움 0건) 여기서 뺐다."
       },
+      "CandidateAction": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "dismissed"
+            ],
+            "title": "Action"
+          },
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "CandidateAction"
+      },
+      "CandidateApplyPreview": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "condense"
+            ],
+            "title": "Kind"
+          },
+          "base_etag": {
+            "type": "string",
+            "title": "Base Etag"
+          },
+          "blocked_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blocked Reasons"
+          },
+          "notices": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Notices"
+          },
+          "units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Units"
+          },
+          "edited_units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited Units"
+          },
+          "keep_current": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keep Current"
+          },
+          "drop_edits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Drop Edits"
+          },
+          "unhide": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unhide"
+          },
+          "length_changed_units": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Length Changed Units"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Slide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merged": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Slide"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityWarning"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "removed_edits": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Removed Edits"
+          },
+          "unhidden": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unhidden"
+          },
+          "removed_spans": {
+            "type": "integer",
+            "title": "Removed Spans"
+          },
+          "removed_chart": {
+            "type": "boolean",
+            "title": "Removed Chart"
+          },
+          "already_applied": {
+            "type": "boolean",
+            "title": "Already Applied"
+          },
+          "page_width_pt": {
+            "type": "number",
+            "title": "Page Width Pt"
+          },
+          "page_height_pt": {
+            "type": "number",
+            "title": "Page Height Pt"
+          },
+          "style": {
+            "$ref": "#/components/schemas/RenderStyle"
+          },
+          "current_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlidePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "merged_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlidePlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "chapter_id",
+          "kind",
+          "base_etag",
+          "blocked_reasons",
+          "notices",
+          "units",
+          "edited_units",
+          "keep_current",
+          "drop_edits",
+          "unhide",
+          "length_changed_units",
+          "current",
+          "merged",
+          "warnings",
+          "removed_edits",
+          "unhidden",
+          "removed_spans",
+          "removed_chart",
+          "already_applied",
+          "page_width_pt",
+          "page_height_pt",
+          "style",
+          "current_plan",
+          "merged_plan"
+        ],
+        "title": "CandidateApplyPreview",
+        "description": "적용 미리 보기. 저장하지 않는다. 판정이 막아도 비교는 보이도록 200으로 돌려주고 blocked_reasons에 이유를 담는다."
+      },
+      "CandidateApplyRequest": {
+        "properties": {
+          "chapter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chapter Id"
+          },
+          "keep_current": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keep Current"
+          },
+          "drop_edits": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Edits"
+          },
+          "unhide": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unhide"
+          },
+          "edit_choices": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "keep",
+                    "drop",
+                    "unhide"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edit Choices"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "CandidateApplyRequest",
+        "description": "장 후보 적용과 미리 보기의 본문 (D3c-5, 계획 4.8). 칸을 비우면(null) 서버가 기본 선택을 쓴다: 다시 생성은 \"직접 고친\n문구\" 단위만 지금 문구, 장 축약은 모두 새 문구, 요소 수정은 길이가 바뀐 목록의 순번 요소만 지운다. 응답은 실제로 쓴 선택을\n돌려준다(계획 4.8에 없던 확장, D3c-5 기록)."
+      },
       "CapacityWarning": {
         "properties": {
           "chapter_id": {
@@ -3029,6 +3744,14 @@
           "available_pt": {
             "type": "number",
             "title": "Available Pt"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "capacity",
+              "font_size"
+            ],
+            "title": "Kind"
           }
         },
         "type": "object",
@@ -3039,7 +3762,8 @@
           "needed_pt",
           "available_pt"
         ],
-        "title": "CapacityWarning"
+        "title": "CapacityWarning",
+        "description": "레이아웃 경고. 분량 경고(capacity)의 needed_pt와 available_pt는 필요한 높이와 가용 높이다.\n\n글자 크기 경고(font_size, 직접 수정의 배율, D3c-2)는 같은 두 칸에 기준 크기와 실제 크기를 담는다: 읽기 하한 경고는\n하한과 줄인 크기, PowerPoint 범위로 자른 경고는 요청한 크기와 자른 크기다. 품질 보고는 두 종류를 다른 항목으로 센다\n(D3c-2 리뷰 F3). kind는 기본값이면 직렬화에서 빼므로 수정값이 없는 덱의 렌더 계획은 그대로다."
       },
       "Card": {
         "properties": {
@@ -3173,6 +3897,66 @@
         ],
         "title": "Chapter"
       },
+      "ChapterJobParams": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id"
+        ],
+        "title": "ChapterJobParams"
+      },
+      "ChapterJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "chapter",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ChapterJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "ChapterJobRequest"
+      },
+      "ChapterLabel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "ChapterLabel"
+      },
       "ChapterResult": {
         "properties": {
           "status": {
@@ -3281,6 +4065,144 @@
           "usage"
         ],
         "title": "ChapterResult"
+      },
+      "ChapterView": {
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "validating",
+              "succeeded",
+              "failed",
+              "cancel_requested",
+              "cancelled",
+              "interrupted",
+              "remote_completion_unknown"
+            ],
+            "title": "State"
+          },
+          "candidate_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "held",
+              "delivered",
+              "applied",
+              "stale",
+              "dismissed"
+            ],
+            "title": "Candidate Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_id",
+          "position",
+          "state",
+          "candidate_status",
+          "error",
+          "result",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "ChapterView",
+        "description": "장 생성 묶음의 장 하나 (D2b-4, α 묶음 리뷰 A8)."
+      },
+      "ChaptersJobParams": {
+        "properties": {
+          "chapter_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Chapter Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chapter_ids"
+        ],
+        "title": "ChaptersJobParams",
+        "description": "장 생성 묶음 (D2b-4). 화면이 승인 반영 PUT 뒤의 ETag를 If-Match로 주어 등록한다."
+      },
+      "ChaptersJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "chapters",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/ChaptersJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "ChaptersJobRequest"
       },
       "ChartPlan": {
         "properties": {
@@ -3751,8 +4673,12 @@
         ],
         "title": "ComparisonReason"
       },
-      "CondenseChapterRequest": {
+      "CondenseJobParams": {
         "properties": {
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
           "slots": {
             "oneOf": [
               {
@@ -3815,9 +4741,34 @@
         },
         "type": "object",
         "required": [
+          "chapter_id",
           "slots"
         ],
-        "title": "CondenseChapterRequest"
+        "title": "CondenseJobParams"
+      },
+      "CondenseJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "condense",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/CondenseJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "CondenseJobRequest"
       },
       "CoverSlots": {
         "properties": {
@@ -3866,6 +4817,35 @@
           "name"
         ],
         "title": "CreateProjectRequest"
+      },
+      "DataDirStatus": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "project_count": {
+            "type": "integer",
+            "title": "Project Count"
+          },
+          "lock": {
+            "type": "string",
+            "enum": [
+              "held",
+              "unsupported",
+              "none"
+            ],
+            "title": "Lock"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "project_count",
+          "lock"
+        ],
+        "title": "DataDirStatus",
+        "description": "자료 폴더 표시 (D2a-3, 기술 설계 3절의 \"발견한 경로 제시\"). 폴더를 바꾸는 화면은 D6이다."
       },
       "Deck": {
         "properties": {
@@ -3919,7 +4899,14 @@
             "enum": [
               "research",
               "approval",
-              "strategy"
+              "strategy",
+              "weekly",
+              "business",
+              "monthly",
+              "data",
+              "project",
+              "results",
+              "ir"
             ],
             "title": "Report Type",
             "default": "research"
@@ -3939,6 +4926,42 @@
             "type": "object",
             "title": "Preset Overrides",
             "default": {}
+          },
+          "report_type_confirmed": {
+            "type": "boolean",
+            "title": "Report Type Confirmed"
+          },
+          "key_message": {
+            "type": "string",
+            "title": "Key Message"
+          },
+          "desired_outcome": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "facts",
+                  "business_plan",
+                  "persuasion",
+                  "other"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Desired Outcome"
+          },
+          "desired_outcome_other": {
+            "type": "string",
+            "title": "Desired Outcome Other"
+          },
+          "report_details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Report Details"
           }
         },
         "type": "object",
@@ -4417,6 +5440,30 @@
         ],
         "title": "DiagramInput",
         "description": "저장할 의미 입력. 근거 ID의 존재 검사는 Deck 전체 또는 공개 파서가 수행한다."
+      },
+      "DiagramJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "diagram",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/GenerateDiagramRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "DiagramJobRequest"
       },
       "DiagramNode": {
         "properties": {
@@ -4993,6 +6040,238 @@
           "changed_paths"
         ],
         "title": "DocumentChangeReview"
+      },
+      "DraftInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "saved_at": {
+            "type": "string",
+            "title": "Saved At"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "saved_at",
+          "reason",
+          "source"
+        ],
+        "title": "DraftInfo",
+        "description": "충돌이나 저장 실패로 저장본에 반영하지 못한 덱의 보존본 (D2a-2)."
+      },
+      "DraftSummary": {
+        "properties": {
+          "readable": {
+            "type": "boolean",
+            "title": "Readable"
+          },
+          "purpose_only": {
+            "type": "boolean",
+            "title": "Purpose Only"
+          },
+          "changed_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Changed Chapters"
+          },
+          "added_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Added Chapters"
+          },
+          "removed_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Removed Chapters"
+          },
+          "direct_edit_chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterLabel"
+            },
+            "type": "array",
+            "title": "Direct Edit Chapters"
+          },
+          "report_info_changed": {
+            "type": "boolean",
+            "title": "Report Info Changed"
+          },
+          "order_changed": {
+            "type": "boolean",
+            "title": "Order Changed"
+          },
+          "story_plan_changed": {
+            "type": "boolean",
+            "title": "Story Plan Changed"
+          },
+          "design_changed": {
+            "type": "boolean",
+            "title": "Design Changed",
+            "default": false
+          },
+          "review_changed": {
+            "type": "boolean",
+            "title": "Review Changed",
+            "default": false
+          },
+          "current_readable": {
+            "type": "boolean",
+            "title": "Current Readable",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "readable",
+          "purpose_only",
+          "changed_chapters",
+          "added_chapters",
+          "removed_chapters",
+          "direct_edit_chapters",
+          "report_info_changed",
+          "order_changed",
+          "story_plan_changed"
+        ],
+        "title": "DraftSummary"
+      },
+      "ElementEdit": {
+        "properties": {
+          "dx_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dx Pt"
+          },
+          "dy_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dy Pt"
+          },
+          "font_scale": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ],
+                "gt": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Scale"
+          },
+          "text_color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "text",
+                  "accent",
+                  "accent1",
+                  "accent2",
+                  "danger",
+                  "ok",
+                  "ink",
+                  "ink_soft",
+                  "background"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text Color"
+          },
+          "fill": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "box_fill",
+                  "ink",
+                  "ink_soft",
+                  "accent1",
+                  "accent2",
+                  "danger",
+                  "ok",
+                  "surface1",
+                  "surface2",
+                  "surface3",
+                  "surface_danger"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill"
+          },
+          "hidden": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ElementEdit",
+        "description": "요소 하나의 수정. 칸은 모두 선택이다. 효과가 없는 값은 슬라이드 검증이 버린다(normalize_edits)."
       },
       "Evidence": {
         "properties": {
@@ -6214,6 +7493,70 @@
         ],
         "title": "FinalPublication"
       },
+      "FontLimit": {
+        "properties": {
+          "base_pt": {
+            "type": "number",
+            "title": "Base Pt"
+          },
+          "current_pt": {
+            "type": "number",
+            "title": "Current Pt"
+          },
+          "fits_up_to_pt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fits Up To Pt"
+          },
+          "min_pt": {
+            "type": "number",
+            "title": "Min Pt"
+          },
+          "max_pt": {
+            "type": "number",
+            "title": "Max Pt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_pt",
+          "current_pt",
+          "fits_up_to_pt",
+          "min_pt",
+          "max_pt"
+        ],
+        "title": "FontLimit",
+        "description": "요소의 글자 크기 범위(pt, 가장 큰 문단 기준). fits_up_to_pt는 그 상자에서 분량 경고 없이 받는 최대 크기이고,\n가장 작은 크기에서도 넘치면 None이다. min_pt와 max_pt는 PowerPoint가 받는 범위다(1pt, 행간 1,584pt)."
+      },
+      "FontLimitRequest": {
+        "properties": {
+          "deck": {
+            "$ref": "#/components/schemas/Deck"
+          },
+          "chapter_id": {
+            "type": "string",
+            "title": "Chapter Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deck",
+          "chapter_id",
+          "key"
+        ],
+        "title": "FontLimitRequest",
+        "description": "직접 수정의 글자 크기 칸이 묻는 요소 (D3c-2, 계획 4.5). 덱은 편집 화면이 지금 보는 덱이다(저장 전 포함)."
+      },
       "FontRoles": {
         "properties": {
           "cover_title_pt": {
@@ -6404,6 +7747,32 @@
               }
             ],
             "title": "Border Width Pt"
+          },
+          "base_x": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base X"
+          },
+          "base_y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Y"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden"
           }
         },
         "type": "object",
@@ -6415,17 +7784,6 @@
           "h"
         ],
         "title": "Frame"
-      },
-      "GenerateChapterRequest": {
-        "properties": {
-          "instructions": {
-            "type": "string",
-            "title": "Instructions",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "GenerateChapterRequest"
       },
       "GenerateDiagramRequest": {
         "properties": {
@@ -6488,38 +7846,28 @@
         ],
         "title": "GenerateDiagramRequest"
       },
-      "GenerateStructureRequest": {
+      "GenerationActiveBody": {
         "properties": {
-          "target_chapters": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Chapters"
-          },
-          "instructions": {
+          "detail": {
             "type": "string",
-            "title": "Instructions",
-            "default": ""
+            "title": "Detail"
           },
-          "brief": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ReportBrief"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "code": {
+            "type": "string",
+            "const": "generation_active",
+            "title": "Code"
+          },
+          "active": {
+            "$ref": "#/components/schemas/ActiveJob"
           }
         },
         "type": "object",
-        "title": "GenerateStructureRequest"
+        "required": [
+          "detail",
+          "code",
+          "active"
+        ],
+        "title": "GenerationActiveBody"
       },
       "GenerationUsage": {
         "properties": {
@@ -6841,6 +8189,359 @@
         ],
         "title": "IndependentReviewRequest"
       },
+      "JobError": {
+        "properties": {
+          "error_class": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "input",
+                  "ai_output",
+                  "connection",
+                  "base_changed",
+                  "cancelled",
+                  "ledger",
+                  "storage",
+                  "internal"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Class"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "raw_error_class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Error Class"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error_class",
+          "status",
+          "detail",
+          "code"
+        ],
+        "title": "JobError"
+      },
+      "JobView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "validating",
+              "succeeded",
+              "failed",
+              "cancel_requested",
+              "cancelled",
+              "interrupted",
+              "remote_completion_unknown"
+            ],
+            "title": "State"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "candidate_status": {
+            "type": "string",
+            "enum": [
+              "none",
+              "held",
+              "delivered",
+              "applied",
+              "stale",
+              "dismissed"
+            ],
+            "title": "Candidate Status"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "this_instance",
+              "other_instance"
+            ],
+            "title": "Owner"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          },
+          "current_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Etag"
+          },
+          "relevance_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance Hash"
+          },
+          "stale_reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "unknown_deck",
+                "deck_changed",
+                "unknown_sources",
+                "sources_changed",
+                "chapter_missing",
+                "template_changed",
+                "chapter_changed",
+                "story_plan_changed",
+                "structure_input_changed",
+                "structure_applied_basis_changed",
+                "deck_changed_elsewhere"
+              ]
+            },
+            "type": "array",
+            "title": "Stale Reasons"
+          },
+          "cancel_requested": {
+            "type": "boolean",
+            "title": "Cancel Requested"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterView"
+            },
+            "type": "array",
+            "title": "Chapters"
+          },
+          "step": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "connecting",
+                  "generating",
+                  "retrying_format"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step"
+          },
+          "step_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Step Started At"
+          },
+          "elapsed_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project",
+          "kind",
+          "state",
+          "target",
+          "params",
+          "candidate_status",
+          "outcome",
+          "owner",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "provider",
+          "model",
+          "base_etag",
+          "current_etag",
+          "relevance_hash",
+          "stale_reasons",
+          "cancel_requested",
+          "error",
+          "result",
+          "chapters"
+        ],
+        "title": "JobView"
+      },
       "LoginAttempt": {
         "properties": {
           "state": {
@@ -6933,6 +8634,17 @@
               }
             ],
             "title": "Error"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
           }
         },
         "type": "object",
@@ -7793,10 +9505,16 @@
             "type": "string",
             "enum": [
               "ok",
-              "needs_recovery"
+              "needs_recovery",
+              "newer_format",
+              "unreadable_manifest"
             ],
             "title": "Status",
             "default": "ok"
+          },
+          "reverted_by_other_app": {
+            "type": "boolean",
+            "title": "Reverted By Other App"
           }
         },
         "type": "object",
@@ -7806,6 +9524,53 @@
           "updated_at"
         ],
         "title": "ProjectInfo"
+      },
+      "ProjectProgress": {
+        "properties": {
+          "project_status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "needs_recovery",
+              "newer_format",
+              "unreadable_manifest"
+            ],
+            "title": "Project Status"
+          },
+          "stages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StageProgress"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stages"
+          },
+          "jobs": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/JobView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jobs"
+          }
+        },
+        "type": "object",
+        "required": [
+          "project_status"
+        ],
+        "title": "ProjectProgress"
       },
       "ProviderSettings": {
         "properties": {
@@ -8219,6 +9984,30 @@
         ],
         "title": "RepairFinding"
       },
+      "RepairJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "repair",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/StoryRepairRequest"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "RepairJobRequest"
+      },
       "ReportBrief": {
         "properties": {
           "decision_question": {
@@ -8236,7 +10025,14 @@
             "enum": [
               "research",
               "approval",
-              "strategy"
+              "strategy",
+              "weekly",
+              "business",
+              "monthly",
+              "data",
+              "project",
+              "results",
+              "ir"
             ],
             "title": "Report Type",
             "default": "research"
@@ -8314,6 +10110,75 @@
         ],
         "title": "ReviewFinding"
       },
+      "ReviewPart": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "auto_checks",
+              "human_review",
+              "file"
+            ],
+            "title": "Name"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "ready",
+              "needs_review"
+            ],
+            "title": "State"
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "title_missing",
+                "report_type_unconfirmed",
+                "key_message_missing",
+                "sources_unreadable",
+                "sources_missing",
+                "sources_over_limit",
+                "extraction_review_unavailable",
+                "chapters_missing",
+                "plan_missing",
+                "stale_story_plan",
+                "chapters_unwritten",
+                "no_export",
+                "artifact_mismatch",
+                "artifact_missing",
+                "artifact_unreadable",
+                "artifact_unverified",
+                "input_stale",
+                "input_legacy",
+                "input_unavailable",
+                "quality_needs_revision",
+                "draft_checks_only",
+                "review_records_unreadable",
+                "manual_pass_not_final",
+                "review_not_run",
+                "review_needs_revision",
+                "review_stale",
+                "review_unavailable",
+                "export_history_unreadable",
+                "auto_checks_pending",
+                "human_review_pending",
+                "file_pending"
+              ]
+            },
+            "type": "array",
+            "title": "Reasons",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "state"
+        ],
+        "title": "ReviewPart"
+      },
       "ReviewVerdict": {
         "properties": {
           "category": {
@@ -8351,6 +10216,48 @@
         ],
         "title": "ReviewVerdict"
       },
+      "RewriteJobParams": {
+        "properties": {
+          "brief": {
+            "$ref": "#/components/schemas/ReportBrief"
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 8000,
+            "title": "Instructions",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "brief"
+        ],
+        "title": "RewriteJobParams"
+      },
+      "RewriteJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "rewrite",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/RewriteJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "RewriteJobRequest"
+      },
       "RewriteReview": {
         "properties": {
           "source_plan_fingerprint": {
@@ -8375,23 +10282,50 @@
         "title": "RewriteReview",
         "description": "재작성 당시 보존한 본문 기록. 후속 편집의 검수 승인 원장이 아니다."
       },
-      "RewriteStoryRequest": {
+      "SaveDraftRequest": {
         "properties": {
-          "brief": {
-            "$ref": "#/components/schemas/ReportBrief"
-          },
-          "instructions": {
+          "reason": {
             "type": "string",
-            "maxLength": 8000,
-            "title": "Instructions",
-            "default": ""
+            "enum": [
+              "conflict",
+              "generation_unsaved"
+            ],
+            "title": "Reason"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "editor",
+              "structure_approval",
+              "purpose"
+            ],
+            "title": "Source"
+          },
+          "base_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Etag"
+          },
+          "deck": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Deck"
           }
         },
         "type": "object",
         "required": [
-          "brief"
+          "reason",
+          "source",
+          "deck"
         ],
-        "title": "RewriteStoryRequest"
+        "title": "SaveDraftRequest",
+        "description": "충돌이나 저장 실패로 반영하지 못한 덱의 보존 요청 (D2a-2). 덱은 원문 그대로 보존하고\n복원할 때 검증한다."
       },
       "SemanticRelatedText": {
         "properties": {
@@ -8650,6 +10584,13 @@
             "type": "array",
             "maxItems": 100,
             "title": "Text Spans"
+          },
+          "direct_edits": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ElementEdit"
+            },
+            "type": "object",
+            "title": "Direct Edits"
           }
         },
         "type": "object",
@@ -8712,6 +10653,16 @@
           "saved_at": {
             "type": "string",
             "title": "Saved At"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "snapshot",
+              "pre_migration",
+              "before_revert"
+            ],
+            "title": "Kind",
+            "default": "snapshot"
           }
         },
         "type": "object",
@@ -9051,6 +11002,113 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Spacing"
+      },
+      "StageProgress": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "enum": [
+              "purpose",
+              "sources",
+              "structure",
+              "editing",
+              "review"
+            ],
+            "title": "Stage"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "ready",
+              "needs_review"
+            ],
+            "title": "State"
+          },
+          "reasons": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "title_missing",
+                "report_type_unconfirmed",
+                "key_message_missing",
+                "sources_unreadable",
+                "sources_missing",
+                "sources_over_limit",
+                "extraction_review_unavailable",
+                "chapters_missing",
+                "plan_missing",
+                "stale_story_plan",
+                "chapters_unwritten",
+                "no_export",
+                "artifact_mismatch",
+                "artifact_missing",
+                "artifact_unreadable",
+                "artifact_unverified",
+                "input_stale",
+                "input_legacy",
+                "input_unavailable",
+                "quality_needs_revision",
+                "draft_checks_only",
+                "review_records_unreadable",
+                "manual_pass_not_final",
+                "review_not_run",
+                "review_needs_revision",
+                "review_stale",
+                "review_unavailable",
+                "export_history_unreadable",
+                "auto_checks_pending",
+                "human_review_pending",
+                "file_pending"
+              ]
+            },
+            "type": "array",
+            "title": "Reasons",
+            "default": []
+          },
+          "written_chapters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Written Chapters"
+          },
+          "total_chapters": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Chapters"
+          },
+          "parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ReviewPart"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parts"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "state"
+        ],
+        "title": "StageProgress"
       },
       "StoryChapter": {
         "properties": {
@@ -9470,6 +11528,63 @@
         "type": "object",
         "title": "Structure"
       },
+      "StructureJobParams": {
+        "properties": {
+          "target_chapters": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Chapters"
+          },
+          "instructions": {
+            "type": "string",
+            "title": "Instructions",
+            "default": ""
+          },
+          "brief": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "StructureJobParams"
+      },
+      "StructureJobRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{8,64}$",
+            "title": "Request Id"
+          },
+          "kind": {
+            "type": "string",
+            "const": "structure",
+            "title": "Kind"
+          },
+          "params": {
+            "$ref": "#/components/schemas/StructureJobParams"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id",
+          "kind",
+          "params"
+        ],
+        "title": "StructureJobRequest"
+      },
       "StructureResult": {
         "properties": {
           "status": {
@@ -9507,6 +11622,21 @@
             "type": "boolean",
             "title": "Format Retried",
             "default": false
+          },
+          "format_issue": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "answer_not_in_summary",
+                  "invalid_response"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Format Issue"
           },
           "usage": {
             "$ref": "#/components/schemas/GenerationUsage"

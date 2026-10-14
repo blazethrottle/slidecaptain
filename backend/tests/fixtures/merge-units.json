@@ -1,0 +1,88 @@
+{
+ "indexed": {
+  "cards:cards": "card\\d+",
+  "matrix:rows": "row\\d+_(?:category|primary|items)",
+  "process:steps": "step\\d+(?:_badge|_labels)?"
+ },
+ "units": {
+  "bullet_box": {
+   "bullets": [
+    "bullets"
+   ],
+   "conclusion": [
+    "conclusion"
+   ],
+   "footnote": [
+    "footnote"
+   ]
+  },
+  "callout": {
+   "text": [
+    "text",
+    "tone"
+   ]
+  },
+  "cards": {
+   "cards": [
+    "cards"
+   ]
+  },
+  "compare2": {
+   "conclusion": [
+    "conclusion"
+   ],
+   "left": [
+    "left"
+   ],
+   "right": [
+    "right"
+   ]
+  },
+  "cover": {
+   "date": [
+    "date"
+   ],
+   "subtitle": [
+    "subtitle"
+   ],
+   "title": [
+    "title"
+   ]
+  },
+  "divider": {
+   "section_no": [
+    "section_no"
+   ],
+   "section_title": [
+    "section_title"
+   ]
+  },
+  "matrix": {
+   "rows": [
+    "rows"
+   ]
+  },
+  "process": {
+   "steps": [
+    "steps"
+   ]
+  },
+  "summary": {
+   "conclusion": [
+    "conclusion"
+   ],
+   "points": [
+    "points"
+   ]
+  },
+  "table": {
+   "footnote": [
+    "footnote"
+   ],
+   "table": [
+    "columns",
+    "rows"
+   ]
+  }
+ }
+}

@@ -1,11 +1,12 @@
 // 화면 이탈 경로의 플러시 검사 (2026-09-03 저장 안전성 묶음 태스크 C)
-// 배경: 내보내기만 플러시 결과를 검사했고, 목록 복귀(FC-08), 탭 전환(FC-14), 스냅샷 복구(FC-11)는 실패를 무시했다.
+// 배경: 내보내기만 플러시 결과를 검사했고, 목록 복귀(FC-08), 단계 이동(FC-14), 스냅샷 복구(FC-11)는 실패를 무시했다.
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { api, ApiError } from "../api/client";
 import { deckWith, deferred, planWith, preset, project } from "../test/fixtures";
 import { ProjectView } from "./ProjectView";
+import { defaultProgress } from "../test/fixtures";
 
 function dispatchBeforeUnload(): boolean {
   const ev = new Event("beforeunload", { cancelable: true });
@@ -15,10 +16,19 @@ function dispatchBeforeUnload(): boolean {
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api,
+  return { ...mod, api: { ...mod.api, getProgress: vi.fn(),
     getDeck: vi.fn(), listSources: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), getPreset: vi.fn(),
-    listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn() } };
+    listSnapshots: vi.fn(), listExports: vi.fn(), readSource: vi.fn(), writeSource: vi.fn(),
+    saveDraft: vi.fn(), listDrafts: vi.fn() } };
 });
+
+// 진행 API는 기본으로 정상 응답이다 (D3a-3 리뷰 R6)
+beforeEach(() => {
+  vi.mocked(api.getProgress).mockResolvedValue(defaultProgress());
+  vi.mocked(api.listDrafts).mockResolvedValue([]);
+});
+const SLOW = 60_000;  // 보고 목적 자동 저장이 끼어들지 않게 한다 (D3b-5)
+const FAST = 10;
 
 // App.tsx 와 같은 구조: 목록으로 돌아가면 ProjectView 가 언마운트된다
 function Shell() {
@@ -55,6 +65,29 @@ it("목록으로: 플러시가 실패하면 나가지 않고 배너를 띄운다
   expect(document.querySelector(".editor-screen")).not.toBeNull();  // 편집기는 내려가지 않았다
 });
 
+it("되돌림 안내의 복구 화면 열기: 플러시가 실패해 이동이 취소되면 안내를 남긴다 (D3c-1 리뷰 F9)", async () => {
+  vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.getPreset).mockResolvedValue(preset);
+  vi.mocked(api.listSnapshots).mockResolvedValue([]);
+  render(<ProjectView project={{ ...project, reverted_by_other_app: true }} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+  const preview = () => within(document.querySelector(".editor-center") as HTMLElement);
+  await userEvent.click(await preview().findByText("하나"));
+  await userEvent.click(preview().getByText("하나"));
+  const box = await screen.findByLabelText("내용 수정");
+  await userEvent.clear(box);
+  await userEvent.type(box, "둘{Enter}");
+  const notice = screen.getByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/);
+  await userEvent.click(within(notice).getByRole("button", { name: "복구 화면 열기" }));
+  await waitFor(() => expect(screen.getAllByRole("alert").map((a) => a.textContent).join("\n"))
+    .toContain("저장하지 못해 이동을 중단"));
+  expect(screen.queryByRole("heading", { name: /스냅샷 복구/ })).toBeNull();
+  expect(screen.getByText(/다른 앱이 이 프로젝트를 이전 내용으로 되돌렸습니다/)).toBeInTheDocument();
+});
+
 it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 뜬다", async () => {
   const d = deferred<{ ok: boolean }>();
   vi.mocked(api.putDeck).mockImplementation(() => d.promise);
@@ -64,22 +97,23 @@ it("목록으로: 플러시가 성공하면 PUT 착지 뒤에 목록 화면이 �
   expect(screen.queryByText("목록 화면")).toBeNull();  // 착지 전에는 나가지 않는다
   // 이탈 처리 중에는 다른 이탈 경로도 잠근다: 두 leaveEditor 가 겹치면 먼저 끝난 쪽이 화면을 내린 뒤
   // 나중 쪽의 setTab 이 사라진 컴포넌트에 떨어진다 (브랜치 리뷰 발견 7, 2026-09-03)
-  for (const name of ["자료", "구조안", "편집", "초안 PPTX 내보내기", "스냅샷 복구", "목록으로"]) {
+  // 다시 씀(D3a-2): 탭 대신 다섯 단계 버튼. 내보내기는 검토 단계 화면 안에 있어 그 단계로 가는 버튼으로 본다
+  for (const name of ["보고 목적", "자료", "구성", "편집", "검토와 내보내기", "스냅샷 복구", "목록으로"]) {
     expect(screen.getByRole("button", { name })).toBeDisabled();
   }
   d.resolve({ ok: true });
   expect(await screen.findByText("목록 화면")).toBeInTheDocument();
 });
 
-it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄운다 (FC-14)", async () => {
+it("단계 이동: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄운다 (FC-14)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
   // 편집기 자체의 저장 오류 문구도 alert 이므로 둘 중 하나가 이탈 중단 배너다
   await waitFor(() => expect(screen.getAllByRole("alert").map((a) => a.textContent).join("\n"))
     .toContain("저장하지 못해 이동을 중단"));
-  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(document.querySelector(".structure-screen")).toBeNull();
   expect(document.querySelector(".editor-screen")).not.toBeNull();  // 편집기가 남아 있으므로 언마운트 플러시도 없다
 });
@@ -87,9 +121,9 @@ it("탭 전환: 플러시가 실패하면 탭이 바뀌지 않고 배너를 띄�
 it("검수 이력: 저장 실패 시 이동과 이력 요청을 중단한다", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(new Error("서버 중단"));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(api.listExports).not.toHaveBeenCalled();
 });
 
@@ -101,40 +135,42 @@ it("검수 이력: 저장하지 않은 자료 본문을 보존하고 저장 후 
   vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
     checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
   render(<ProjectView project={project} onBack={() => {}} />);
+  await userEvent.click(await screen.findByRole("button", { name: "자료" }));  // 다시 씀(D3a-2): 처음 단계는 보고 목적이다
   await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
   const box = await screen.findByLabelText("자료 내용");
   await userEvent.type(box, " 수정 중");
   expect(dispatchBeforeUnload()).toBe(true);
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   expect(screen.getByLabelText("자료 내용")).toHaveValue("원문 수정 중");
   expect(api.listExports).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "자료 저장" }));
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
   expect(api.writeSource).toHaveBeenCalledWith(project.name, "source.md", "원문 수정 중");
   expect(dispatchBeforeUnload()).toBe(false);
   expect(screen.queryByText(/마지막 편집을 저장하지 못해/)).toBeNull();
 });
 
-it("보고 정보 저장 중 본문이 바뀌어도 이동 직전에 다시 확인해 보존한다", async () => {
+it("보고 정보 저장이 착지하기 전에는 다음 단계로 옮기지 않는다", async () => {
+  // 다시 씀(D3a-2): 옛 시험은 보고 정보 저장 중 같은 화면의 자료 본문이 바뀌는 경합을 지켰다. 보고 정보와
+  // 자료가 다른 단계로 나뉘어 그 경합은 생기지 않으므로, 남는 계약(저장 착지 전 이동 금지)을 지킨다.
+  // 다시 씀(D3b-5): 저장 중에도 입력을 잠그지 않는다(리뷰 U1)
   const pending = deferred<{ ok: boolean }>();
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
-  vi.mocked(api.listSources).mockResolvedValue(["source.md"]);
-  vi.mocked(api.readSource).mockResolvedValue({ text: "원문" });
+  vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockReturnValue(pending.promise);
-  render(<ProjectView project={project} onBack={() => {}} />);
-  await userEvent.click(await screen.findByRole("button", { name: "source.md" }));
-  const box = await screen.findByLabelText("자료 내용");
-  await userEvent.type(screen.getByLabelText("보고서 제목"), " 수정");
-  await userEvent.click(screen.getByRole("button", { name: "검수 이력" }));
+  vi.mocked(api.listExports).mockResolvedValue({ items: [], total: 0, offset: 0, limit: 20,
+    checked_at: "2026-09-13T12:00:00Z", current_input_fingerprint: null, current_input_error: null });
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={SLOW} />);
+  await userEvent.type(await screen.findByLabelText("보고서 제목"), " 수정");
+  await userEvent.click(screen.getByRole("button", { name: "검토와 내보내기" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  expect(box).toBeDisabled();
-  // A programmatic update must also be caught by the post-save guard.
-  fireEvent.change(box, { target: { value: "저장 중 수정" } });
-  await act(async () => pending.resolve({ ok: true }));
-  expect(screen.getByLabelText("자료 내용")).toHaveValue("저장 중 수정");
+  expect(screen.getByLabelText("보고서 제목")).not.toBeDisabled();
   expect(api.listExports).not.toHaveBeenCalled();
+  await act(async () => pending.resolve({ ok: true }));
+  expect(await screen.findByText("내보내기 이력이 없습니다.")).toBeInTheDocument();
 });
+
 
 it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (FC-11)", async () => {
   const d = deferred<{ ok: boolean }>();
@@ -147,12 +183,12 @@ it("스냅샷 복구: 플러시가 착지한 뒤에 복구 화면이 열린다 (
   await waitFor(() => expect(api.listSnapshots).toHaveBeenCalled());
 });
 
-// 창 닫기 경고 (FC-15): 편집 탭과 자료 탭 양쪽의 미저장 상태에 beforeunload를 건다 (2026-09-03 A5)
-it("편집 탭에서 미저장 상태면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+// 창 닫기 경고 (FC-15): 편집 단계와 자료 단계 양쪽의 미저장 상태에 beforeunload를 건다 (2026-09-03 A5)
+it("편집 단계에서 미저장 상태면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   await openEditorAndEdit("셋");
   expect(dispatchBeforeUnload()).toBe(true);  // 아직 저장 대기
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(document.querySelector(".structure-screen")).not.toBeNull());
   expect(dispatchBeforeUnload()).toBe(false);
 });
@@ -174,7 +210,7 @@ it("beforeunload 핸들러는 dirty일 때 returnValue를 빈 문자열로 설�
   addSpy.mockRestore();
 });
 
-it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
+it("보고 목적 단계에서 보고 정보를 고치고 저장하지 않으면 beforeunload를 막고, 플러시가 착지하면 막지 않는다 (A5)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
@@ -184,32 +220,42 @@ it("자료 탭에서 보고 정보를 고치고 저장하지 않으면 beforeunl
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
   expect(dispatchBeforeUnload()).toBe(true);
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
   await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
   expect(dispatchBeforeUnload()).toBe(false);
 });
 
 // 충돌 배너 (2026-09-03 A5): 구조안, 자료, 복구 화면의 412는 ProjectView 배너의
-// "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 탭 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
-it("자료 탭 저장이 412면 배너가 뜨고, 다시 읽기를 누르면 최신 덱으로 다시 마운트한다 (A5)", async () => {
+// "서버 내용 다시 읽기"로 회복한다. 여기서는 자료 단계 경로를 확인한다(구조안과 복구는 ProjectView.test.tsx)
+it("보고 목적 단계 자동 저장이 412면 배너가 뜨고, 다시 읽기는 미저장 입력을 보존한 뒤 최신 덱으로 다시 마운트한다 (A5, B9)", async () => {
+  // 다시 씀(D3b-5): 저장 버튼 대신 자동 저장의 412. 다시 읽기는 버리기 확인 대신 보존본을 남긴다
   vi.mocked(api.getDeck).mockResolvedValueOnce(deckWith(["하나"])).mockResolvedValue(deckWith(["서버본"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict",
+    source: "purpose", base_etag: null });
+  vi.mocked(api.listDrafts).mockResolvedValueOnce([]).mockResolvedValue([{ id: "d1", saved_at: "2026-10-12T10:00:00+09:00",
+    reason: "conflict", source: "purpose", base_etag: null }]);
+  const confirm = vi.spyOn(window, "confirm");
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
   await waitFor(() => expect(api.getDeck).toHaveBeenCalledTimes(2));
+  expect(confirm).not.toHaveBeenCalled();  // 보존했으므로 버리기 확인이 없다
+  expect(vi.mocked(api.saveDraft).mock.calls[0][1]).toEqual(expect.objectContaining({ source: "purpose",
+    deck: expect.objectContaining({ meta: expect.objectContaining({ title: "새 제목" }) }) }));
+  expect(screen.getByText(/저장하지 못한 보고 정보를 보존했습니다/)).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "보존한 변경 1건" })).toBeInTheDocument();  // 보존 뒤 다시 센다 (변형 P25)
   // 서버본으로 다시 마운트되어 방금 고친 "새 제목"이 아니라 원래 제목("제목")이 보인다
   await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toHaveValue("제목"));
 });
 
-it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이동 중단 배너는 중복으로 뜨지 않는다 (A5b 리뷰)", async () => {
+it("보고 목적 단계에서 저장 버튼 없이 단계를 옮겨 412를 받아도 이동 중단 배너는 중복으로 뜨지 않는다 (A5b 리뷰)", async () => {
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck).mockRejectedValue(
@@ -218,27 +264,29 @@ it("자료 탭에서 저장 버튼 없이 탭을 전환해 412를 받아도 이�
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
   await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 저장 버튼 없이 탭 전환(leaveScreen 경유)
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 저장 버튼 없이 단계 이동(leaveScreen 경유)
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
   // leaveScreen의 일반 이동 중단 문구는 onConflict가 이미 배너를 띄운 경우 생략한다(중복 안내 방지)
   expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
   expect(screen.getAllByRole("alert")).toHaveLength(1);
-  expect(document.querySelector(".sources-screen")).not.toBeNull();  // 탭은 바뀌지 않았다
+  expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 단계는 바뀌지 않았다 (다시 씀(D3a-2): 보고 정보는 보고 목적 단계)
 });
 
-it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
-  // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다
+it("보고 목적 단계 자동 저장의 412 뒤에 무관한 저장 실패로 이동이 막히면 일반 배너가 뜬다 (묶음 최종 리뷰 1)", async () => {
+  // 종전에는 leaveScreen 밖(저장 버튼)에서 켜진 억제 플래그가 재설정되지 않아 이후 무관한 실패의 배너까지 삼켰다.
+  // 다시 씀(D3b-5): leaveScreen 밖의 저장은 이제 자동 저장이다
   vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
   vi.mocked(api.listSources).mockResolvedValue([]);
   vi.mocked(api.putDeck)
     .mockRejectedValueOnce(new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."))
     .mockRejectedValue(new Error("서버 중단"));
-  render(<ProjectView project={project} onBack={() => {}} />);
+  vi.mocked(api.saveDraft).mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict",
+    source: "purpose", base_etag: null });
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
   const title = await screen.findByLabelText("보고서 제목");
   await userEvent.clear(title);
-  await userEvent.type(title, "새 제목");
-  await userEvent.click(screen.getByText("보고 정보 저장"));  // 412: leaveScreen 을 거치지 않는 경로
+  await userEvent.type(title, "새 제목");  // 자동 저장의 412: leaveScreen 을 거치지 않는 경로
   expect(await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false }))
     .toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
@@ -247,18 +295,72 @@ it("자료 탭 저장 버튼의 412 뒤에 무관한 저장 실패로 이동이 
   await waitFor(() => expect(title2).toHaveValue("제목"));
   await userEvent.clear(title2);
   await userEvent.type(title2, "다시 고침");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 이번 실패는 412 가 아니다
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 이번 실패는 412 가 아니다
   expect(await screen.findByText("이동을 중단했습니다", { exact: false })).toBeInTheDocument();
-  expect(document.querySelector(".sources-screen")).not.toBeNull();
+  expect(document.querySelector(".purpose-screen")).not.toBeNull();  // 다시 씀(D3a-2): 보고 정보는 보고 목적 단계
 });
 
-it("편집 탭이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
+it("편집 단계이 충돌 상태면 이탈 시 편집기 자체 안내만 남고 일반 이동 중단 배너는 뜨지 않는다 (묶음 최종 리뷰 2)", async () => {
   vi.mocked(api.putDeck).mockRejectedValue(
     new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
   await openEditorAndEdit("둘");
-  await userEvent.click(screen.getByRole("button", { name: "구조안" }));  // 플러시 → 412 → 편집기 충돌
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));  // 플러시 → 412 → 편집기 충돌
   expect(await screen.findByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
   // 편집기의 정답은 재시도가 아니라 되돌리기이므로 "다시 시도" 를 권하는 일반 배너는 생략한다
   expect(screen.queryByText("이동을 중단했습니다", { exact: false })).toBeNull();
   expect(document.querySelector(".editor-screen")).not.toBeNull();
+});
+
+
+it("보존에 실패하면 복사 상자를 먼저 보이고, 다시 누르면 확인을 받으며, 취소하면 입력을 유지한다 (D2a-2, B9)", async () => {
+  // 다시 씀(D3b-5): 보존이 먼저다. 보존에 실패했을 때만 옛 버리기 확인으로 넘어간다
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.saveDraft).mockRejectedValue(new Error("디스크 오류"));
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false);
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(await screen.findByText(/보고 정보를 보존하지 못했습니다/)).toBeInTheDocument();
+  expect(confirm).not.toHaveBeenCalled();  // 복사 상자를 볼 기회를 먼저 준다
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(confirm.mock.calls[0][0]).toContain("저장하지 않은 입력이 사라집니다");
+  expect(api.getDeck).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText("보고서 제목")).toHaveValue("새 제목");
+});
+
+it("충돌 안내가 남은 채 다시 연 보고 목적은 저장하지 않고, 단계를 옮기면 보존 실패 기록을 지운다 (D3b-5 R3, 변형 P4, P22)", async () => {
+  vi.mocked(api.getDeck).mockResolvedValue(deckWith(["하나"]));
+  vi.mocked(api.listSources).mockResolvedValue([]);
+  vi.mocked(api.putDeck).mockRejectedValue(
+    new ApiError(412, "다른 창이나 프로그램에서 이 프로젝트가 먼저 저장되었습니다."));
+  vi.mocked(api.saveDraft).mockRejectedValueOnce(new Error("디스크 오류"))
+    .mockResolvedValue({ id: "d1", saved_at: "2026-10-12T10:00:00+09:00", reason: "conflict", source: "purpose", base_etag: null });
+  render(<ProjectView project={project} onBack={() => {}} purposeSaveMs={FAST} />);
+  const title = await screen.findByLabelText("보고서 제목");
+  await userEvent.clear(title);
+  await userEvent.type(title, "새 제목");
+  await screen.findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.", { exact: false });
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  expect(await screen.findByText(/보고 정보를 보존하지 못했습니다/)).toBeInTheDocument();
+  // 입력을 저장본으로 되돌리면 떠날 수 있다. 충돌 안내는 남는다
+  await userEvent.clear(screen.getByLabelText("보고서 제목"));
+  await userEvent.type(screen.getByLabelText("보고서 제목"), "제목");
+  await userEvent.click(screen.getByRole("button", { name: "자료" }));
+  await screen.findByLabelText("자료 파일 선택");
+  await userEvent.click(screen.getByRole("button", { name: "보고 목적" }));
+  const puts = vi.mocked(api.putDeck).mock.calls.length;
+  await userEvent.type(await screen.findByLabelText("보고서 제목"), " 다시");
+  await act(async () => { await new Promise((r) => setTimeout(r, FAST * 5)); });
+  expect(vi.mocked(api.putDeck).mock.calls.length).toBe(puts);  // 충돌 상태로 시작했다
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(api.saveDraft).toHaveBeenCalledTimes(2));  // 지난 단계의 보존 실패 기록을 쓰지 않는다
+  expect(confirm).not.toHaveBeenCalled();
+  confirm.mockRestore();
 });

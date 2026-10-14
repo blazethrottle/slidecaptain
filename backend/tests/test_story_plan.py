@@ -12,6 +12,7 @@ from slidecaptain.models.deck import Deck, DeckMeta
 from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.pipeline.service import GenerationService
 from slidecaptain.server.app import create_app
+from tests.job_runs import post_generation
 
 
 SOURCE = "합성 자료.md"
@@ -70,6 +71,29 @@ def generate(payloads):
         DeckMeta(title="합성 보고"), SOURCES, brief=ReportBrief(**BRIEF),
     ))
     return result, service, stub
+
+
+@pytest.mark.parametrize("first,last,expected", [
+    ("answer", "answer", "answer_not_in_summary"),
+    ("answer", "invalid", "invalid_response"),
+    ("invalid", "answer", "answer_not_in_summary"),
+    ("answer", "ok", None),
+])
+def test_final_structure_failure_explains_answer_connection(first, last, expected):
+    def response(kind):
+        payload = deepcopy(PAYLOAD)
+        if kind == "answer":
+            # 모든 주장은 배치했으나 핵심 답변만 action 역할에 연결한 완전 합성 사례.
+            payload["chapters"][0]["role"] = "action"
+        elif kind == "invalid":
+            payload["claims"][0]["id"] = "private input cannot become a public error code"
+        return payload
+
+    result, _, stub = generate([response(first), response(last)])
+    assert result.status == ("ok" if last == "ok" else "format_error")
+    assert result.format_issue == expected
+    assert result.format_retried and len(stub.calls) == 2
+    assert "answer_claim_ids의 모든 ID" in stub.calls[0][0]
 
 
 def test_question_to_bound_plan_and_chapter_context():
@@ -164,11 +188,16 @@ def prepare_api(store, payloads):
     client = TestClient(create_app(store, provider=provider), headers=HEADERS)
     assert client.post("/api/projects", json={"name": "synthetic", "title": "합성 보고"}).status_code == 201
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": TEXT}).status_code == 200
+    # 다시 씀 (D3b-2, 리뷰 V20): 구조안 등록은 요청 brief의 유형과 피보고자가 보고 정보와 같아야 한다. 화면은 늘
+    # 보고 정보를 brief에 복사해 보낸다. 시험도 보고 정보를 BRIEF에 맞춘 뒤 생성한다
+    deck = client.get("/api/projects/synthetic/deck").json()
+    deck["meta"].update(audience=BRIEF["audience"], report_type=BRIEF["report_type"])
+    assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     return client, provider
 
 
 def save_plan(client):
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     structure = response.json()["structure"]
@@ -183,13 +212,13 @@ def test_api_save_reload_edit_and_condense_preserve_plan(store):
     client, provider = prepare_api(store, [PAYLOAD, SLOTS, SLOTS])
     deck = save_plan(client)
     assert client.get("/api/projects/synthetic/deck").json() == deck
-    generated = client.post("/api/projects/synthetic/generate/chapter/c2", json={})
+    generated = post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={})
     assert generated.status_code == 200
     deck["slides"] = [{"chapter_id": "c2", "eyebrow": "수동 분류", "subtitle": "", "slots": generated.json()["slots"]}]
     assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     restored = store.load_deck("synthetic")
     assert restored.structure.story_plan.model_dump(mode="json") == deck["structure"]["story_plan"]
-    condensed = client.post("/api/projects/synthetic/generate/chapter/c2/condense", json={"slots": SLOTS})
+    condensed = post_generation(client, "/api/projects/synthetic/generate/chapter/c2/condense", json={"slots": SLOTS})
     assert condensed.status_code == 200
     assert BRIEF["decision_question"] in provider.calls[-1][0]
 
@@ -210,7 +239,7 @@ def test_stale_plan_is_preserved_but_blocks_generation_before_provider(store, ch
         deck["structure"]["story_plan"]["claims"][0]["statement"] = "수정한 주장"
     assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     suffix, body = ("", {}) if operation == "generate" else ("/condense", {"slots": SLOTS})
-    response = client.post(f"/api/projects/synthetic/generate/chapter/c2{suffix}", json=body)
+    response = post_generation(client, f"/api/projects/synthetic/generate/chapter/c2{suffix}", json=body)
     assert response.status_code == 409
     assert response.json().get("code") == "stale_story_plan"
     assert "다시 생성" in response.json()["detail"]
@@ -222,14 +251,14 @@ def test_stale_plan_is_preserved_but_blocks_generation_before_provider(store, ch
 def test_planned_request_still_requires_ai_consent(store):
     client, provider = prepare_api(store, [])
     client.headers.pop("X-AI-Consent")
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF})
     assert response.status_code == 428
     assert provider.calls == []
 
 
 def test_blank_question_is_rejected_before_provider(store):
     client, provider = prepare_api(store, [])
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": {**BRIEF, "decision_question": "  "}})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": {**BRIEF, "decision_question": "  "}})
     assert response.status_code == 422
     assert provider.calls == []
 
@@ -263,7 +292,23 @@ def test_snapshot_restore_preserves_binding_and_detects_later_source_changes(sto
     response = client.post(f"/api/projects/synthetic/snapshots/{snapshots[-1]['id']}/restore")
     assert response.status_code == 200
     assert response.json() == deck
-    assert client.post("/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 200
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 200
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": TEXT + "\n조건 변경"}).status_code == 200
-    assert client.post("/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 409
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c2", json={}).status_code == 409
     assert len(provider.calls) == 2
+
+
+
+def test_stale_plan_message_names_purpose_values_and_the_rewrite_route():
+    """낡은 계획 안내는 보고 목적 값도 원인일 수 있음과 장 내용을 지키는 재작성 경로를 함께 알린다 (α 묶음 리뷰 A6, D3b-7 리뷰 R15)."""
+    import json
+    from pathlib import Path
+
+    from slidecaptain.pipeline.story import StaleStoryPlan, require_current_story
+    deck = Deck.model_validate(json.loads((Path(__file__).parent / "fixtures/q3b-project.json").read_text("utf-8"))["deck"])
+    deck.structure.story_plan.input_fingerprint = "0" * 64
+    with pytest.raises(StaleStoryPlan) as caught:
+        require_current_story(deck, {})
+    message = str(caught.value)
+    assert "보고 목적 포함" in message and "기존 편집을 보존하며 계획 재작성" in message
+    assert "보고 질문으로 구조안을 다시 생성" in message

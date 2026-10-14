@@ -45,6 +45,12 @@ while [ "$tries" -lt 30 ]; do
     echo "서버가 종료되었습니다."
     exit 0
   fi
+  # 서버가 시작 중에 끝났으면 30초를 다 기다리지 않는다. 원인 문구는 서버가 위에 이미 출력했다
+  # (종료 코드 75는 자료 폴더 잠금, D2a-3. uvicorn의 시작 실패 3과 다르다)
+  if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+    echo "서버가 시작 중에 종료되었습니다. 위에 표시된 안내를 확인해 주세요."
+    exit 1
+  fi
   tries=$((tries + 1))
   echo "서버 시작 대기 중... ($tries/30)"
   sleep 1

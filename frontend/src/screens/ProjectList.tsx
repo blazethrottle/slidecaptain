@@ -1,23 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, messageOf, type AppStatus, type ProjectInfo } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
-
-/** 상태 응답을 한 줄 문구로 바꾼다 (계획서 2026-09-01 태스크 4, 파일럿 관찰 5). */
-function describeStatus(status: AppStatus): string {
-  const { login } = status;
-  if (login.logged_in === true) {
-    const last = status.last_generation_at
-      ? status.last_generation_at.slice(0, 16).replace("T", " ")
-      : "아직 없음";
-    return `AI 연결: 로그인됨 (${login.auth_method ?? "방식 미상"}, ${login.account ?? "계정 미상"}). `
-      + `마지막 생성 성공: ${last}`;
-  }
-  if (login.logged_in === false) {
-    return "AI 연결: 로그인되지 않았습니다. AI 연결 및 모델 화면에서 로그인해 주세요.";
-  }
-  const version = login.cli_version ? `, CLI ${login.cli_version}` : "";
-  return `AI 연결: 확인하지 못했습니다 (${login.error ?? "원인 미상"}${version}).`;
-}
+import { describeStatus } from "../ui/AiStatusLine";
 
 export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   const [projects, setProjects] = useState<ProjectInfo[] | null>(null);
@@ -25,18 +9,34 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
   const [statusLine, setStatusLine] = useState("AI 연결 상태를 확인하는 중...");
+  const [dataDir, setDataDir] = useState<AppStatus["data_dir"]>(null);
 
   useEffect(() => {
     api.listProjects().then(setProjects).catch((e) => setError(messageOf(e)));
     // 상태 조회 실패는 목록 표시를 막지 않는다 (오류 영역이 아니라 상태 줄에만 남긴다)
     const refresh = () => api.getStatus()
-      .then((s) => setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
-        ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s)))
+      .then((s) => {
+        setDataDir(s.data_dir ?? null);
+        setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
+          ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s));
+      })
       .catch(() => setStatusLine("AI 연결 상태를 불러오지 못했습니다."));
     void refresh();
     window.addEventListener("slidecaptain:ai-selection", refresh);
     return () => window.removeEventListener("slidecaptain:ai-selection", refresh);
   }, []);
+
+  // 여는 때의 정보로 연다. 목록을 처음 읽은 뒤 다른 앱(0.2.0)이 되돌렸으면 그 사실(되돌림 안내)이 목록에 없다
+  // (D3c-1 리뷰 F8). 다시 읽지 못하면 지금 목록의 정보로 연다
+  const openFresh = async (p: ProjectInfo) => {
+    try {
+      const list = await api.listProjects();
+      setProjects(list);
+      onOpen(list.find((x) => x.name === p.name) ?? p);
+    } catch {
+      onOpen(p);
+    }
+  };
 
   const create = async () => {
     setError("");
@@ -81,13 +81,23 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
           <ul>
             {projects.map((p) => (
               <li key={p.name}>
-                <button onClick={() => onOpen(p)}>
+                <button onClick={() => void openFresh(p)}>
                   {p.title} <small>({p.name}, {p.updated_at})</small>
                   {p.status === "needs_recovery" && <em> 복구 필요</em>}
+                  {p.status === "newer_format" && <em> 새 버전 필요</em>}
+                  {p.status === "unreadable_manifest" && <em> 기록 확인 필요</em>}
                 </button>
               </li>
             ))}
           </ul>
+        )}
+        {/* 이 앱이 쓰는 자료 폴더를 보인다 (D2a-3, 기술 설계 3절). 폴더를 바꾸는 화면은 D6이다 */}
+        {dataDir && <p className="data-dir">자료 폴더: {dataDir.path} (프로젝트 {dataDir.project_count}개)</p>}
+        {dataDir?.lock === "unsupported" && (
+          <p role="alert">
+            이 자료 폴더는 파일 잠금을 지원하지 않아 잠금 없이 실행 중입니다. 같은 폴더로 SlideCaptain을 두 개
+            실행하면 변경이 섞일 수 있습니다.
+          </p>
         )}
       </section>
     </main>

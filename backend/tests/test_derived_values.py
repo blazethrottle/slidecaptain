@@ -16,6 +16,7 @@ from slidecaptain.pipeline.story import parse_story_structure, require_current_s
 from slidecaptain.server.app import create_app
 from test_metric_comparison import META, SOURCE, payload as comparison_payload
 from test_story_plan import HEADERS, SLOTS, StubProvider
+from tests.job_runs import post_generation
 
 BRIEF = ReportBrief(decision_question="같은 기간에 두 팀의 순매출은 얼마나 차이 나는가?")
 
@@ -202,7 +203,7 @@ def test_changed_formula_blocks_external_calls_but_preserves_edit(store, operati
     deck["structure"]["story_plan"]["derivations"][0]["operation"] = "percent_change"
     assert client.put("/api/projects/synthetic/deck", json=deck).status_code == 200
     suffix, body = ("", {}) if operation == "generate" else ("/condense", {"slots": SLOTS})
-    assert client.post(f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body).status_code == 409
+    assert post_generation(client, f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body).status_code == 409
     assert len(provider.calls) == 1
     assert client.get("/api/projects/synthetic/deck").json()["structure"]["story_plan"]["derived_values"][0]["value"] == "20"
 
@@ -213,7 +214,7 @@ def saved_api(store, *, blocked=False, chapter_calls=False):
     client = TestClient(create_app(store, provider=provider), headers=HEADERS)
     assert client.post("/api/projects", json={"name": "synthetic", "title": META.title}).status_code == 201
     assert client.put(f"/api/projects/synthetic/sources/{SOURCE}", json={"text": sources[SOURCE]}).status_code == 200
-    response = client.post("/api/projects/synthetic/generate/structure", json={"brief": BRIEF.model_dump(mode="json")})
+    response = post_generation(client, "/api/projects/synthetic/generate/structure", json={"brief": BRIEF.model_dump(mode="json")})
     assert response.status_code == 200 and response.json()["status"] == "ok"
     deck = client.get("/api/projects/synthetic/deck").json()
     deck["structure"] = response.json()["structure"]
@@ -230,8 +231,8 @@ def test_api_save_restore_generate_and_condense_carry_calculation(store, blocked
     assert client.put("/api/projects/synthetic/deck", json=changed).status_code == 200
     snapshots = client.get("/api/projects/synthetic/snapshots").json()
     assert client.post(f"/api/projects/synthetic/snapshots/{snapshots[-1]['id']}/restore").json() == deck
-    assert client.post("/api/projects/synthetic/generate/chapter/c1", json={}).json()["status"] == "ok"
-    assert client.post("/api/projects/synthetic/generate/chapter/c1/condense", json={"slots": SLOTS}).json()["status"] == "ok"
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c1", json={}).json()["status"] == "ok"
+    assert post_generation(client, "/api/projects/synthetic/generate/chapter/c1/condense", json={"slots": SLOTS}).json()["status"] == "ok"
     expected = deck["structure"]["story_plan"]["derived_values"][0]
     assert expected["status"] == ("blocked" if blocked else "computed")
     for prompt, _ in provider.calls[1:]:
@@ -253,7 +254,7 @@ def test_number_warning_uses_only_computed_values_in_generation_and_condense(sto
     slots = {**SLOTS, "bullets": [{"text": "차이 200원, 미등록 7777원", "level": 0}], "conclusion": "계산 조건 확인"}
     provider.payloads.extend([slots, slots])
     for suffix, body in [("", {}), ("/condense", {"slots": slots})]:
-        response = client.post(f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
+        response = post_generation(client, f"/api/projects/synthetic/generate/chapter/c1{suffix}", json=body)
         assert response.status_code == 200
         warnings = response.json()["unverified_numbers"]
         assert "7777" in warnings

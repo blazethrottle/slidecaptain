@@ -3,6 +3,8 @@ import type { Deck } from "../api/client";
 export type EditorState = { past: Deck[]; present: Deck; future: Deck[] };
 export type EditorAction =
   | { type: "edit"; deck: Deck }
+  // 직전 항목을 바꿔 쓴다: 방향키를 누르고 있는 동안의 이동을 되돌리기 하나로 합친다 (D3c-3, 계획 4.5)
+  | { type: "amend"; deck: Deck }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "reset"; deck: Deck };  // 충돌(412) 복구: 되돌리기 이력을 비우고 서버 덱으로 교체한다
@@ -18,6 +20,10 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         present: action.deck,
         future: [],
       };
+    }
+    case "amend": {
+      if (action.deck === state.present) return state;
+      return { past: state.past, present: action.deck, future: [] };
     }
     case "undo": {
       if (state.past.length === 0) return state;

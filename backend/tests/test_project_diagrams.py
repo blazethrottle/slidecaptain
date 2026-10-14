@@ -15,6 +15,7 @@ from slidecaptain.models.deck import Deck
 from slidecaptain.models.preset import Preset
 from slidecaptain.pipeline.quality import assess_quality, QualityExportBlocked
 from slidecaptain.pipeline.story import story_fingerprint
+from tests.job_runs import post_generation
 
 
 @pytest.fixture
@@ -184,7 +185,7 @@ def test_mixed_deck_exports_editable_diagram_but_not_final(project_input, tmp_pa
 def test_diagram_generation_rejected_before_provider_setup(project_input, client, store, route):
     store.create_project('diagram')
     store.save_deck('diagram', validated(project_input))
-    response = client.post(f'/api/projects/diagram/{route}',
+    response = post_generation(client, f'/api/projects/diagram/{route}',
                            json={'slots': project_input['deck']['slides'][0]['slots']},
                            headers={'X-AI-Consent': 'SlideCaptain'})
     assert response.status_code == 422
@@ -203,7 +204,7 @@ def test_diagram_chapter_cannot_be_silently_skipped(project_input, client, store
 def test_whole_structure_generation_cannot_replace_diagram_ledger(project_input, client, store):
     store.create_project('diagram')
     store.save_deck('diagram', validated(project_input))
-    response = client.post('/api/projects/diagram/generate/structure', json={},
+    response = post_generation(client, '/api/projects/diagram/generate/structure', json={},
                            headers={'X-AI-Consent': 'SlideCaptain'})
     assert response.status_code == 422
     assert '도식' in response.json()['detail']

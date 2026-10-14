@@ -7,6 +7,7 @@ import {
 } from "./slotOps";
 import { applyTemplateSwitch } from "./templateSwitch";
 import { ExpressionPanel } from "./ExpressionPanel";
+import { FILL_NAMES } from "./directEdit";
 
 export function PropertyPanel({ deck, chapterId, onApply, onEditDiagram, diagramDisabled, onSwitchTemplate }: {
   deck: Deck;
@@ -109,10 +110,11 @@ export function PropertyPanel({ deck, chapterId, onApply, onEditDiagram, diagram
       {slide && <ExpressionPanel deck={deck} chapterId={chapterId} onApply={onApply} />}
       {slots?.template === "callout" && <section>
         {textField("강조 문장", slots.text, text => editSlots(s => s.template === 'callout' ? {...s, text} : s))}
-        <label>강조 색 역할<select aria-label="강조 색 역할" value={slots.tone} onChange={e => {
+        {/* 색 이름은 직접 수정의 채움 색과 같은 우리말 이름이다. 강조 밴드의 채움은 이 값 하나가 정한다 (D3c-3, 재리뷰 RR25) */}
+        <label>강조 색<select aria-label="강조 색" value={slots.tone} onChange={e => {
           const tone = e.target.value as typeof slots.tone;
           editSlots(s => s.template === 'callout' ? {...s, tone} : s);
-        }}>{['ink','ink_soft','accent1','accent2','danger','ok','surface1','surface2','surface3','surface_danger'].map(t => <option key={t} value={t}>{t}</option>)}</select></label>
+        }}>{['ink','ink_soft','accent1','accent2','danger','ok','surface1','surface2','surface3','surface_danger'].map(t => <option key={t} value={t}>{FILL_NAMES[t as keyof typeof FILL_NAMES]}</option>)}</select></label>
       </section>}
       {slots?.template === "cards" && <section><h4>카드</h4>
         {slots.cards.map((card, i) => {

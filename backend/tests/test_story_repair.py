@@ -10,6 +10,7 @@ from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.pipeline.story_repair import StoryRepairRequest, repair_story
 from slidecaptain.server.app import create_app
 from fastapi.testclient import TestClient
+from tests.job_runs import post_generation
 
 
 class Provider:
@@ -95,10 +96,10 @@ def test_api_requires_consent_etag_and_never_saves_candidate(rewrite_input, stor
     client = TestClient(create_app(store, provider=provider), headers={"X-Requested-With": "SlideCaptain"})
     body = request(rewrite_input[3]).model_dump(mode="json")
     path = "/api/projects/rewrite/story-plan/repair"
-    assert client.post(path, json=body).status_code == 428
-    assert client.post(path, json=body, headers={"X-AI-Consent": "SlideCaptain"}).status_code == 428
+    assert post_generation(client, path, json=body).status_code == 428
+    assert post_generation(client, path, json=body, headers={"X-AI-Consent": "SlideCaptain"}).status_code == 428
     etag = store.deck_etag("rewrite")
-    response = client.post(path, json=body, headers={"X-AI-Consent": "SlideCaptain", "If-Match": f'"{etag}"'})
+    response = post_generation(client, path, json=body, headers={"X-AI-Consent": "SlideCaptain", "If-Match": f'"{etag}"'})
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "reviewed_candidate"
     assert store.deck_etag("rewrite") == etag and not store.list_snapshots("rewrite")

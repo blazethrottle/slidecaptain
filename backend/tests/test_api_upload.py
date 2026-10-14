@@ -13,6 +13,7 @@ from slidecaptain.pipeline.provider import ProviderResponse
 from slidecaptain.server.app import create_app
 from slidecaptain.sources.xlsx import extract_xlsx
 from slidecaptain.storage.file_store import FileProjectStore
+from tests.job_runs import post_generation
 
 # store 픽스처는 backend/tests/conftest.py 참조. client는 프로젝트 p1을 미리 만드는 이 파일만의
 # 확장이라 conftest의 것을 그대로 쓰지 않는다 (A2에서 기본 헤더 X-Requested-With만 conftest와 통일).
@@ -202,6 +203,13 @@ def test_concurrent_upload_same_new_name_only_one_succeeds(client):
 # -- XLSX 업로드 (계획서 2026-09-04 태스크 B2) -------------------------------------------------
 
 
+def _without_extract_time(text: str) -> str:
+    lines = text.splitlines(keepends=True)
+    times = [i for i, line in enumerate(lines) if "추출 시각: " in line]
+    assert len(times) == 1, "추출본 머리에 추출 시각이 한 줄 있어야 한다"
+    return "".join(line for i, line in enumerate(lines) if i != times[0])
+
+
 def test_upload_xlsx_saves_original_and_extract_separately(client, tmp_path):
     data = _make_xlsx("매출", {"A1": "제품", "B1": "노트북"})
     expected = extract_xlsx(data, "매출.xlsx")
@@ -218,7 +226,9 @@ def test_upload_xlsx_saves_original_and_extract_separately(client, tmp_path):
     raw = (tmp_path / "projects" / "p1" / "uploads" / "매출.xlsx").read_bytes()
     assert raw == data
     extract_text = (tmp_path / "projects" / "p1" / "sources" / "매출.xlsx.md").read_text(encoding="utf-8")
-    assert extract_text == expected.text
+    # 추출본 머리의 "추출 시각"은 초 단위라, 기대값을 만든 추출과 업로드의 추출 사이에 초가 바뀌면
+    # 두 줄이 다르다(D2a 이월 16의 간헐 실패). 그 한 줄만 빼고 비교한다
+    assert _without_extract_time(extract_text) == _without_extract_time(expected.text)
     # AI 입력(list_sources)에는 추출본만 보이고 원본은 나타나지 않는다
     assert client.get("/api/projects/p1/sources").json() == ["매출.xlsx.md"]
 
@@ -375,7 +385,7 @@ def test_generated_route_reads_xlsx_extract_as_source(client, store):
         create_app(store, provider=provider),
         headers={"X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain"},
     )
-    gr = gen_client.post("/api/projects/p1/generate/structure", json={})
+    gr = post_generation(gen_client, "/api/projects/p1/generate/structure", json={})
     assert gr.status_code == 200
     assert provider.prompts
     assert "매출현황" in provider.prompts[0]

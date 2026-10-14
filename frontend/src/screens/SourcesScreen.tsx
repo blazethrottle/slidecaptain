@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, messageOf, type Deck, type ProjectInfo, type UploadResult } from "../api/client";
+import { useEffect, useRef, useState } from "react";
+import { api, ApiError, messageOf, type ProjectInfo, type UploadResult } from "../api/client";
+import type { SaveStatus } from "../ui/StatusIndicator";
+import { Button } from "../ui/Button";
 
-const REPORT_TYPES = [
-  ["research", "연구분석"],
-  ["approval", "승인요청"],
-  ["strategy", "전략기획"],
-] as const;
+const KEPT_SOURCE_NOTICE = "수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.";
+// 장 생성 묶음 중 자료를 바꾸는 비용 (D3a-5, 계획 4.4, 사실 16). 묶음의 사슬은 자료를 보지 않으므로, 자료를 바꾼 뒤
+// 처음 끝나는 장(이미 AI 호출을 마친 장)은 이전 입력 기준 후보로 남고 남은 장은 중단된다
+const BATCH_SOURCES_NOTICE = "내용 생성 중에 자료를 고치면, 생성 중인 장 하나가 문서에 반영되지 않고 남은 장 생성이 멈춥니다. 저장하기 전에 한 번 더 묻습니다.";
+const BATCH_SOURCES_CONFIRM = "내용 생성이 진행 중입니다. 지금 자료를 바꾸면 AI 호출 하나의 결과가 반영되지 않고, 남은 장 생성이 멈춥니다. 남은 장은 끝난 뒤 다시 생성해야 합니다. 계속할까요?";
 
 // 로드 후 상한을 넘어 잘린 자리를 설명하는 note는 이 접두사로 시작한다(backend/slidecaptain/sources/xlsx.py
 // _build_extraction). 이 note만 잘림 알림으로 따로 빼고, 나머지(계산값 없음 건수 등)는 결과 안내
@@ -20,24 +22,20 @@ function otherNotes(notes: string[]): string[] {
   return notes.filter((n) => !n.startsWith(LIMIT_NOTE_PREFIX));
 }
 
-// 보고 정보 4필드만 비교한다: preset_overrides는 이 화면이 건드리지 않는 필드라 비교에 넣으면
-// 다른 탭이 남긴 변경과 무관하게 흔들릴 수 있다
-function metaEqual(a: Deck["meta"], b: Deck["meta"]): boolean {
-  return a.title === b.title && a.report_type === b.report_type
-    && a.presenter === b.presenter && a.audience === b.audience;
-}
-
+// 자료 단계 (개정판 D3a-2). 보고 정보는 보고 목적 단계(ReportPurposeScreen)로 옮겼다. 이 화면은 덱을 쓰지 않는다
 export function SourcesScreen({
-  project, deck, onDeckChange, onDirtyChange, onScreenReady, onConflict, onBusyChange,
+  project, onDirtyChange, onScreenReady, onBusyChange, onSaveStatusChange, limitations = [], batchRunning = false,
+  jobChecking = false,
 }: {
   project: ProjectInfo;
-  deck: Deck;
-  onDeckChange: (d: Deck) => void;
-  // 보고 정보/자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
+  batchRunning?: boolean;  // 이 프로젝트의 장 생성 묶음이 진행 중이다. 편집은 허용하되 바꾸기 전에 묻는다 (D3a-5)
+  jobChecking?: boolean;  // 진행 작업을 아직 확인하지 못했다. 묶음일 수 있어 확인이 끝날 때까지 바꾸지 않는다 (D3a-5 리뷰 R11)
+  limitations?: string[];  // 준비됨에 붙은 사유의 문구. 단계 목록 대신 이 화면의 한계 안내로 보인다 (계획 4.2)
+  // 자료 본문이 저장본과 다르거나 업로드가 진행 중이면 참 (beforeunload 경고용)
   onDirtyChange?: (dirty: boolean) => void;
-  onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 탭 전환 전에 플러시하도록
-  onConflict?: () => void;  // 저장이 412를 받으면 부모가 배너를 띄운다
-  onBusyChange?: (busy: boolean) => void;  // 업로드 진행 중이면 부모가 탭 전환 등 이동 경로를 잠근다(계획서 B4)
+  onScreenReady?: (flush: (() => Promise<boolean>) | null) => void;  // 부모(ProjectView)가 단계를 옮기기 전에 확인하도록
+  onBusyChange?: (busy: boolean) => void;  // 업로드 진행 중이면 부모가 단계 이동 등 이동 경로를 잠근다(계획서 B4)
+  onSaveStatusChange?: (status: SaveStatus) => void;  // 상단 머리의 저장 상태 (계획 4.1 저장 상태 출처 표)
 }) {
   const [files, setFiles] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -50,84 +48,63 @@ export function SourcesScreen({
   const [sourceSaving, setSourceSaving] = useState(false);
   const sourceSavePending = useRef(false);
   const [newName, setNewName] = useState("");
-  const [meta, setMeta] = useState(deck.meta);
-  const metaRef = useRef(meta);
-  metaRef.current = meta;
-  const savedMeta = useRef(deck.meta);       // 마지막으로 서버에 실제 반영된 보고 정보
-  const [saving, setSaving] = useState(false);
-  const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));  // 버튼 저장과 플러시를 한 줄로 직렬화
-  const [notice, setNotice] = useState("");
+  // 안내의 성격(주의, 오류)은 문구로 가르지 않고 안내를 내는 자리에서 정한다 (D3a-4, R14).
+  // 주의는 놓치면 안 되지만 실패가 아닌 것(저장 먼저, 편집 보존)이고, 오류는 요청이 실패한 것이다
+  const [notice, setNotice] = useState<{ text: string; tone: "warning" | "error" } | null>(null);
+  const warn = (text: string) => setNotice({ text, tone: "warning" });
+  const fail = (text: string) => setNotice({ text, tone: "error" });
+  // 저장 성공 안내는 오류 알림(role=alert)과 나눈다: 성공이 빨간 경고로 보이지 않게 (D2a-4)
+  const [success, setSuccess] = useState("");
+  useEffect(() => { if (notice) setSuccess(""); }, [notice]);
   const [info, setInfo] = useState("");  // 성공 안내 (오류 영역과 분리, 파일럿 관찰 1)
   const [truncationNotice, setTruncationNotice] = useState("");  // 잘린 파일 알림 (오류 아님, 결과 안내와 별도)
   const [uploading, setUploading] = useState(false);  // 업로드 진행 중 (계획서 B4 가정 7)
   const mountedRef = useRef(true);
+  const batchRef = useRef(batchRunning);
+  batchRef.current = batchRunning;
+  const checkingRef = useRef(jobChecking);
+  checkingRef.current = jobChecking;
+  const confirmDuringBatch = () => {
+    if (checkingRef.current) { warn("작업 상태를 확인하는 중입니다. 잠시 뒤 다시 시도해 주세요."); return false; }
+    return !batchRef.current || window.confirm(BATCH_SOURCES_CONFIRM);
+  };
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; ++sourceRequest.current; };
   }, []);
 
-  // 두 신호가 서로 덮지 않도록 한 효과에서 계산해 올린다: 보고 정보 미저장 또는 업로드 진행 중이면 참
+  // 두 신호가 서로 덮지 않도록 한 효과에서 계산해 올린다: 자료 본문 미저장 또는 업로드 진행 중이면 참
   // (계획서 B4 가정 7)
   useEffect(() => {
-    onDirtyChange?.(!metaEqual(meta, savedMeta.current) || uploading || sourceDirty);
-  }, [meta, uploading, sourceDirty, onDirtyChange]);
+    onDirtyChange?.(uploading || sourceDirty);
+  }, [uploading, sourceDirty, onDirtyChange]);
+  const [lastSaveFailed, setLastSaveFailed] = useState(false);
+  useEffect(() => {
+    onSaveStatusChange?.({ kind: sourceSaving ? "saving" : lastSaveFailed ? "save_failed" : sourceDirty ? "unsaved" : "saved" });
+  }, [sourceSaving, lastSaveFailed, sourceDirty, onSaveStatusChange]);
 
-  const doSaveMeta = useCallback(async (target: Deck["meta"]): Promise<boolean> => {
-    setSaving(true);
-    try {
-      const updated = { ...deck, meta: target };
-      await api.putDeck(project.name, updated, false);
-      savedMeta.current = target;
-      onDeckChange(updated);
-      setNotice("보고 정보를 저장했습니다.");
-      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== savedText.current);
-      return true;
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 412) {
-        onConflict?.();
-      } else {
-        setNotice(messageOf(e));
-      }
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [project.name, deck, onDeckChange, onDirtyChange, onConflict]);
-
-  // 진행 중 저장 뒤에 이어 붙는다: 버튼 클릭 직후 탭을 바꿔도 같은 내용을 낡은 ETag로 다시 보내지 않는다
-  const flushMeta = useCallback((): Promise<boolean> => {
-    const next = saveChain.current.then(() => {
-      if (metaEqual(metaRef.current, savedMeta.current)) return true;  // 저장할 것이 없다
-      return doSaveMeta(metaRef.current);
-    });
-    saveChain.current = next.catch(() => false);
-    return next;
-  }, [doSaveMeta]);
+  // 저장한 뒤 내용을 다시 고치거나 다른 자료를 열면 지난 성공 안내를 지운다 (D2a-4 리뷰 R1)
+  useEffect(() => { setSuccess(""); }, [text, selected]);
 
   useEffect(() => {
     onScreenReady?.(async () => {
       if (textRef.current !== savedText.current) {
-        setNotice("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+        warn("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
         return false;
       }
-      const saved = await flushMeta();
-      if (textRef.current !== savedText.current) {
-        setNotice("이동하기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
-        return false;
-      }
-      return saved;
+      return true;
     });
     return () => onScreenReady?.(null);  // 다음 화면이 이 화면의 낡은 플러시를 들고 있지 않게 한다
-  }, [onScreenReady, flushMeta]);
+  }, [onScreenReady]);
 
   const reload = () => {
-    api.listSources(project.name).then(setFiles).catch((e) => setNotice(messageOf(e)));
+    api.listSources(project.name).then(setFiles).catch((e) => fail(messageOf(e)));
   };
   useEffect(reload, [project.name]);
 
   const open = async (f: string) => {
     if (textRef.current !== savedText.current) {
-      setNotice("다른 자료를 열기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
+      warn("다른 자료를 열기 전에 자료 저장 버튼으로 수정한 내용을 저장해 주세요.");
       return;
     }
     const request = ++sourceRequest.current;
@@ -135,20 +112,21 @@ export function SourcesScreen({
       const s = await api.readSource(project.name, f);
       if (request !== sourceRequest.current || !mountedRef.current) return;
       if (textRef.current !== savedText.current) {
-        setNotice("수정 중인 자료 내용을 보존했습니다. 저장한 뒤 다른 자료를 다시 열어 주세요.");
+        warn(KEPT_SOURCE_NOTICE);
         return;
       }
       setSelected(f);
       setText(s.text);
       savedText.current = s.text;
-      setNotice("");
+      setNotice(null);
     } catch (e) {
-      if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
+      if (request === sourceRequest.current && mountedRef.current) fail(messageOf(e));
     }
   };
 
   const saveText = async () => {
     if (selected === null || sourceSavePending.current) return;
+    if (!confirmDuringBatch()) return;
     const request = sourceRequest.current;
     sourceSavePending.current = true;
     setSourceSaving(true);
@@ -156,10 +134,12 @@ export function SourcesScreen({
       await api.writeSource(project.name, selected, text);
       if (request !== sourceRequest.current || !mountedRef.current) return;
       savedText.current = text;
-      onDirtyChange?.(!metaEqual(metaRef.current, savedMeta.current) || textRef.current !== text);
-      setNotice("자료를 저장했습니다.");
+      setLastSaveFailed(false);
+      onDirtyChange?.(textRef.current !== text);
+      setNotice(null);
+      setSuccess("자료를 저장했습니다.");
     } catch (e) {
-      if (request === sourceRequest.current && mountedRef.current) setNotice(messageOf(e));
+      if (request === sourceRequest.current && mountedRef.current) { fail(messageOf(e)); setLastSaveFailed(true); }
     } finally {
       sourceSavePending.current = false;
       if (mountedRef.current) setSourceSaving(false);
@@ -168,9 +148,10 @@ export function SourcesScreen({
 
   const addFile = async () => {
     if (textRef.current !== savedText.current) {
-      setNotice("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
+      warn("자료를 추가하기 전에 수정한 자료 내용을 저장해 주세요.");
       return;
     }
+    if (!confirmDuringBatch()) return;
     const base = newName.trim();
     const f = base.includes(".") ? base : `${base}.md`;
     try {
@@ -179,25 +160,27 @@ export function SourcesScreen({
       reload();
       await open(f);
     } catch (e) {
-      setNotice(messageOf(e));
+      fail(messageOf(e));
     }
   };
 
   const importFiles = async (list: FileList | File[]) => {
     if (textRef.current !== savedText.current) {
-      setNotice("파일을 가져오기 전에 수정한 자료 내용을 저장해 주세요.");
+      warn("파일을 가져오기 전에 수정한 자료 내용을 저장해 주세요.");
       return;
     }
     const items = Array.from(list);
     if (items.length === 0) return;
+    if (!confirmDuringBatch()) return;
     // 업로드가 이미 진행 중이면 겹쳐 시작하지 않는다: 먼저 응답한 쪽의 finally가 onBusyChange(false)를
-    // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 탭 전환 방지)을 풀어 버리는 경합을 막는다
+    // 불러, 아직 진행 중인 첫 업로드의 잠금(FC-17 업로드 중 단계 이동 방지)을 풀어 버리는 경합을 막는다
     // (B4 리뷰 F1). 파일 입력은 uploading 동안 disabled로도 막지만, 이 확인이 실제 방지선이다
     if (uploading) return;
     setInfo("");  // 지난 안내가 남아 있지 않게 한다
+    setSuccess("");
     setTruncationNotice("");
     setUploading(true);
-    onBusyChange?.(true);  // 부모(ProjectView)가 탭 전환 등 이동 경로를 잠근다(계획서 B4)
+    onBusyChange?.(true);  // 부모(ProjectView)가 단계 이동 등 이동 경로를 잠근다(계획서 B4)
     try {
       let added = 0;
       let skipped = 0;
@@ -256,54 +239,28 @@ export function SourcesScreen({
         setTruncationNotice(`일부가 잘렸습니다: ${truncatedResults
           .map((r) => `${r.filename} (${limitReasons(r.notes).join("; ")})`).join(" / ")}`);
       }
-      if (failures.length > 0) setNotice(`올리지 못한 파일: ${failures.join(" / ")}`);
+      if (failures.length > 0) fail(`올리지 못한 파일: ${failures.join(" / ")}`);
     } finally {
       if (mountedRef.current) setUploading(false);
       onBusyChange?.(false);  // 잠금은 언마운트 여부와 무관하게 반드시 풀어야 부모가 영구히 잠기지 않는다
     }
   };
 
-  const saveMeta = () => { void flushMeta(); };
 
   return (
     <div className="sources-screen">
-      {notice && <p role="alert">{notice}</p>}
+      {/* 편집 중 보존은 오류가 아니라 놓치면 안 되는 주의 안내다 (D2a 이월 6, D3a-1) */}
+      {notice && (notice.tone === "warning"
+        ? <p role="status" className="notice-warning">{notice.text}</p>
+        : <p role="alert">{notice.text}</p>)}
+      {/* 저장 알림은 상단 머리의 저장 상태 하나로 모은다. 이 글은 보이기만 한다 (D3a 묶음 리뷰 A2) */}
+      {success && !notice && <p className="notice">{success}</p>}
       {info && <p className="info">{info}</p>}
       {truncationNotice && <p className="info truncation">{truncationNotice}</p>}
       <section>
-        <h2>보고 정보</h2>
-        <div className="field">
-          <label>보고서 제목
-            <input aria-label="보고서 제목" value={meta.title} disabled={saving}
-              onChange={(e) => setMeta({ ...meta, title: e.target.value })} />
-          </label>
-        </div>
-        <div className="field">
-          <label>보고 유형
-            <select aria-label="보고 유형" value={meta.report_type} disabled={saving}
-              onChange={(e) => setMeta({ ...meta, report_type: e.target.value as Deck["meta"]["report_type"] })}>
-              {REPORT_TYPES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
-          </label>
-        </div>
-        <div className="field">
-          <label>보고자 <span className="hint">(이름 또는 부서. 표지에 표기됩니다)</span>
-            <input aria-label="보고자" value={meta.presenter ?? ""} disabled={saving}
-              onChange={(e) => setMeta({ ...meta, presenter: e.target.value })} />
-          </label>
-        </div>
-        <div className="field">
-          <label>피보고자 <span className="hint">(문서에 적히지 않고, 문체와 상세 수준을 맞추는 데만 씁니다)</span>
-            <input aria-label="피보고자" value={meta.audience ?? ""} disabled={saving}
-              onChange={(e) => setMeta({ ...meta, audience: e.target.value })} />
-          </label>
-        </div>
-        <div className="actions">
-          <button onClick={saveMeta} disabled={saving}>보고 정보 저장</button>
-        </div>
-      </section>
-      <section>
         <h2>입력 자료</h2>
+        {batchRunning && <p role="status" className="notice-warning">{BATCH_SOURCES_NOTICE}</p>}
+        {limitations.map((text) => <p key={text} className="hint">{text}</p>)}
         <p>완성된 리서치 자료(마크다운, 텍스트, CSV, 엑셀)를 넣어 주세요. 탐색기로 프로젝트 폴더의 sources에 파일을 넣어도 됩니다.</p>
         <ul>
           {files.map((f) => (
@@ -318,13 +275,20 @@ export function SourcesScreen({
             생성 시 자료 합계 10만 자 한도가 적용됩니다. 원본 엑셀은 프로젝트 폴더의 uploads 에 보관되고 AI
             에는 추출본만 갑니다. 같은 이름의 기존 자료가 있으면 엑셀 추출본으로 교체됩니다.
           </p>
-          <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
-            disabled={uploading}
-            onChange={(e) => {
-              const picked = e.target.files;
-              if (picked) void importFiles(picked);
-              e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
-            }} />
+        </div>
+        {/* 파일 올리기가 자료 단계의 주 행동이다 (D3a-1, 계획 4.6). 라벨이 버튼 모양을 맡는다. 끌어다 놓는 영역 밖의
+            주 행동 막대에 두어 화면이 길면 창 아래에 붙는다. 막대는 위쪽 끝이 첫 화면 안에 있는 상자의 자식이어야 올라온다
+            (D3a-7 사용자 결정) */}
+        <div className="actions primary-bar">
+          <label className="btn-primary"><span aria-hidden="true">파일 선택</span>
+            <input aria-label="자료 파일 선택" type="file" multiple accept=".md,.txt,.csv,.xlsx"
+              className="visually-hidden" disabled={uploading}
+              onChange={(e) => {
+                const picked = e.target.files;
+                if (picked) void importFiles(picked);
+                e.target.value = "";  // 같은 파일을 다시 골라도 change가 나게 한다
+              }} />
+          </label>
         </div>
         <div className="field">
           <label>새 자료 이름 <span className="hint">(붙여넣기용 빈 자료를 만듭니다)</span>
@@ -339,7 +303,7 @@ export function SourcesScreen({
           <div>
             <h3>{selected}</h3>
             <div className="field">
-              <textarea aria-label="자료 내용" rows={16} value={text} disabled={saving || uploading || sourceSaving}
+              <textarea aria-label="자료 내용" rows={16} value={text} disabled={uploading || sourceSaving}
                 onChange={(e) => setText(e.target.value)} />
             </div>
             <div className="actions">

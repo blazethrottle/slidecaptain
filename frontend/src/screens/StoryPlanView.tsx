@@ -99,7 +99,7 @@ export function StoryPlanView({ plan }: { plan: StoryPlan }) {
         <h3>확인할 질문</h3>
         <ul>{plan.unanswered_questions.map((question, i) => <li key={i}>{question}</li>)}</ul>
       </>}
-      <p className="notice">보고 정보, 자료 또는 구조안을 바꾸면 장 내용을 생성하기 전에 보고 계획을 다시 확인해야 합니다. 구조안 탭에서 기존 편집을 보존하는 계획 재작성을 사용할 수 있습니다.</p>
+      <p className="notice">보고 정보, 자료 또는 구조안을 바꾸면 장 내용을 생성하기 전에 보고 계획을 다시 확인해야 합니다. 구성 단계에서 기존 편집을 보존하는 계획 재작성을 사용할 수 있습니다.</p>
     </section>
   );
 }

@@ -57,7 +57,10 @@ def _emu(pt: float) -> Emu:
 
 
 def _style_run(run, para: Para, style: RenderStyle) -> None:
-    run.font.size = Pt(para.font_pt)
+    # 1/100pt로 반올림해 쓴다(도식 경로와 같다). Pt는 버림이라 직접 수정의 소수 크기가 0.01pt 작게 기록됐다.
+    # 지금 프리셋의 정수와 0.5 단위 크기는 두 계산이 같다. 행간은 바꾸지 않는다: 행간까지 반올림하면 수정값이
+    # 없는 덱의 PPTX 바이트가 바뀐다 (D3c-2, 재리뷰 RR1)
+    run.font.size = Emu(round(para.font_pt * 100) * 127)
     run.font.bold = para.bold
     run.font.color.rgb = RGBColor.from_string(para.color)
     run.font.name = style.latin_font  # a:latin만 기록된다 (실측 검증 2026-08-27)
@@ -375,6 +378,8 @@ def write_pptx(plan: RenderPlan, out_path: str | Path | BinaryIO) -> None:
             _add_diagram(slide, slide_plan.diagram, style)
             continue
         for frame in slide_plan.frames:
+            if frame.hidden:  # 직접 수정으로 숨긴 요소는 쓰지 않는다 (D3c-2)
+                continue
             if frame.chart is not None:
                 _add_chart_shape(slide,frame,style)
             elif frame.table is not None:

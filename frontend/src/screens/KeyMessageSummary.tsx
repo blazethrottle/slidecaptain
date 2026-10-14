@@ -1,0 +1,41 @@
+import { useLayoutEffect, useRef, useState } from "react";
+import { isBlank } from "./reportPurpose";
+
+// 구성 화면 맨 위의 핵심 내용 요약 줄 (개정판 D3b-7, 계획 4.7, 리뷰 U17). 보고 목적에서 입력한 핵심 내용을 읽기 전용으로
+// 보이고 같은 내용을 다시 입력하게 하지 않는다. 세 줄 뒤 접고 "더 보기"로 펼친다(낮은 창에서는 한 줄 뒤 접는다).
+// 요약 줄이 높으면 그 아래 입력 묶음이 밀려 창 아래에 붙는 주 행동 막대가 첫 화면 밖으로 나가므로, 이름과 버튼을 한 줄에
+// 둔다 (D3b-7 리뷰 R3)
+export function KeyMessageSummary({ text, onEdit, editDisabled = false }: {
+  text: string; onEdit?: () => void; editDisabled?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [long, setLong] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  const blank = isBlank(text);  // 서버와 같은 빈 값 판정 (β 묶음 리뷰 B8)
+  // 접은 상태에서 넘치는지 잰다. 창이나 본문 폭이 바뀌면 다시 잰다(리뷰 R6). 재지 못하는 환경(시험)은 줄 수로 판단한다
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (expanded) return;
+    const measure = () => setLong(text.split("\n").length > 3 || (!!el && el.scrollHeight > el.clientHeight + 1));
+    measure();
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+  return (
+    <section className="key-message-summary" aria-labelledby="key-message-summary-title">
+      <div className="key-message-head">
+        <h2 id="key-message-summary-title">전달할 핵심 내용</h2>
+        {!blank && (long || expanded) && (
+          <button type="button" aria-expanded={expanded} aria-controls="key-message-summary-text"
+            onClick={() => setExpanded((v) => !v)}>{expanded ? "접기" : "더 보기"}</button>
+        )}
+        {onEdit && <button type="button" onClick={onEdit} disabled={editDisabled}>보고 목적에서 고치기</button>}
+      </div>
+      {blank ? <p className="hint">보고 목적에 핵심 내용이 없습니다.</p> : (
+        <p ref={ref} id="key-message-summary-text" className={expanded ? "key-message-text" : "key-message-text clamped"}>{text}</p>
+      )}
+    </section>
+  );
+}

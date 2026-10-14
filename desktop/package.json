@@ -1,0 +1,58 @@
+{
+  "name": "slidecaptain-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "SlideCaptain independent app technical foundation",
+  "author": "SlideCaptain contributors",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder --config builder.cjs"
+  },
+  "engines": {
+    "node": ">=22.17.1"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.slidecaptain.desktop",
+    "productName": "SlideCaptain",
+    "directories": {
+      "output": "${env.SLIDECAPTAIN_DESKTOP_OUTPUT}"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "runtime.cjs",
+      "api-routes.json",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "${env.SLIDECAPTAIN_BACKEND_RESOURCE}",
+        "to": "service",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "linux": {
+      "target": "dir"
+    }
+  }
+}

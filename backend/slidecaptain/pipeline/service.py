@@ -19,6 +19,7 @@ from slidecaptain.models.deck import Chapter, Deck, DeckMeta, GeneratedChapter, 
 from slidecaptain.models.diagram import DiagramInput
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import CapacityWarning
+from slidecaptain.models.report_purpose import purpose_texts
 from slidecaptain.models.story import ReportBrief
 from slidecaptain.pipeline.normalize import collect_strings, normalize_payload
 from slidecaptain.pipeline.diagram_generation import DiagramDraft, GenerateDiagramRequest, diagram_prompt, parse_diagram_draft
@@ -157,12 +158,16 @@ class _UsageCollector:
         )
 
 
+FormatIssue = Literal["answer_not_in_summary", "invalid_response"]
+
+
 class StructureResult(BaseModel):
     status: Literal["ok", "format_error"]
     structure: Structure | None = None
     raw_text: str = ""
     unverified_numbers: list[str] = []
     format_retried: bool = False
+    format_issue: FormatIssue | None = None
     usage: GenerationUsage
 
 
@@ -216,14 +221,20 @@ def _validation_reason(exc: Exception) -> str:
 
 def _try_parse(
     parse: Callable[[Any], Any], response: ProviderResponse, *, normalize: bool = True,
-) -> tuple[Any | None, str]:
-    """(parsed, reason)을 돌려준다. reason은 실패 사유 한 줄이며 성공하면 빈 문자열이다."""
+) -> tuple[Any | None, str, FormatIssue | None]:
+    """(parsed, retry_reason, public_code). 예외 원문은 공개 오류 안내에 사용하지 않는다."""
     if response.structured is None:
-        return None, "구조화된 응답이 없습니다"
+        return None, "구조화된 응답이 없습니다", "invalid_response"
     try:
-        return parse(normalize_payload(response.structured) if normalize else response.structured), ""
+        return parse(normalize_payload(response.structured) if normalize else response.structured), "", None
     except (ValidationError, KeyError, TypeError, ValueError) as e:
-        return None, _validation_reason(e)
+        code: FormatIssue = "invalid_response"
+        if isinstance(e, ValidationError) and any(
+            error["type"] == "answer_not_in_summary"
+            for error in e.errors(include_input=False, include_context=False)
+        ):
+            code = "answer_not_in_summary"
+        return None, _validation_reason(e), code
 
 
 class GenerationService:
@@ -260,18 +271,18 @@ class GenerationService:
         purpose: _CallPurpose,
         collector: _UsageCollector,
         *, normalize: bool = True,
-    ) -> tuple[Any | None, str, bool]:
-        """게이트 1 (형식): 실패 시 1회 재시도. (parsed, raw_text, retried)를 돌려준다."""
+    ) -> tuple[Any | None, str, bool, FormatIssue | None]:
+        """1회 재시도 뒤 최종 시도의 결과와 공개 오류 코드만 반환한다."""
         response = await self._complete(prompt, schema, purpose, collector)
-        parsed, reason = _try_parse(parse, response, normalize=normalize)
+        parsed, reason, _ = _try_parse(parse, response, normalize=normalize)
         if parsed is not None:
-            return parsed, response.raw_text, False
+            return parsed, response.raw_text, False, None
         retry = await self._complete(
             build_format_retry_prompt(prompt, response.raw_text, reason),
             schema, "format_retry", collector,
         )
-        retried_parsed, _ = _try_parse(parse, retry, normalize=normalize)
-        return retried_parsed, retry.raw_text, True
+        retried_parsed, _, issue = _try_parse(parse, retry, normalize=normalize)
+        return retried_parsed, retry.raw_text, True, issue
 
     def _emit_usage(
         self,
@@ -306,7 +317,7 @@ class GenerationService:
         outcome: Literal["ok", "format_error", "failed"] = "failed"
         summary: GenerationUsage | None = None
         try:
-            diagram, raw, retried = await self._call_with_format_gate(
+            diagram, raw, retried, _ = await self._call_with_format_gate(
                 prompt, DiagramDraft.model_json_schema(),
                 lambda payload: parse_diagram_draft(payload, request.chapter_id, evidence),
                 "generate", collector, normalize=False,
@@ -318,7 +329,8 @@ class GenerationService:
             ] + [edge.label for edge in diagram.edges]
             return DiagramGenerationResult(
                 status=outcome, diagram=diagram, raw_text=raw,
-                unverified_numbers=find_unverified_numbers(texts, [item.excerpt for item in evidence]),
+                unverified_numbers=find_unverified_numbers(  # 보고 목적 값은 사용자가 적은 값이다 (D3b-3 리뷰 R2)
+                    texts, [item.excerpt for item in evidence] + purpose_texts(deck.meta)),
                 format_retried=retried, usage=summary,
             )
         finally:
@@ -334,7 +346,7 @@ class GenerationService:
         outcome: Literal["ok", "format_error", "failed"] = "failed"
         summary = None
         try:
-            candidate, raw, retried = await self._call_with_format_gate(
+            candidate, raw, retried, _ = await self._call_with_format_gate(
                 prompt, RewriteDraft.model_json_schema(),
                 lambda payload: parse_story_rewrite(payload, deck, brief, sources),
                 "generate", collector, normalize=False,
@@ -346,7 +358,8 @@ class GenerationService:
                 texts += candidate.structure.story_plan.unanswered_questions
             return StoryRewriteResult(
                 status=outcome, deck=candidate, raw_text=raw, format_retried=retried, usage=summary,
-                unverified_numbers=find_unverified_numbers(texts, list(sources.values()) + [deck.meta.title]),
+                unverified_numbers=find_unverified_numbers(
+                    texts, list(sources.values()) + [deck.meta.title] + purpose_texts(deck.meta)),
             )
         finally:
             self._emit_usage(on_usage, "rewrite", None, outcome, summary or collector.summary())
@@ -381,7 +394,7 @@ class GenerationService:
         outcome: Literal["ok", "format_error", "failed"] = "failed"
         summary: GenerationUsage | None = None
         try:
-            structure, raw, retried = await self._call_with_format_gate(
+            structure, raw, retried, issue = await self._call_with_format_gate(
                 prompt, structure_response_schema(planned=brief is not None), parse, "generate", collector,
                 normalize=brief is None,
             )
@@ -390,7 +403,7 @@ class GenerationService:
                 outcome = "format_error"
                 return StructureResult(
                     status="format_error", raw_text=raw, format_retried=retried,
-                    usage=summary,
+                    usage=summary, format_issue=issue,
                 )
             texts = [t for ch in structure.chapters for t in (ch.topic, ch.conclusion)]
             if structure.story_plan is not None:
@@ -402,7 +415,7 @@ class GenerationService:
                 structure=structure,
                 raw_text=raw,
                 unverified_numbers=find_unverified_numbers(
-                    texts, list(sources.values()) + [meta.title]
+                    texts, list(sources.values()) + [meta.title] + purpose_texts(meta)
                 ),
                 format_retried=retried,
                 usage=summary,
@@ -430,7 +443,7 @@ class GenerationService:
         outcome: Literal["ok", "format_error", "failed"] = "failed"
         summary: GenerationUsage | None = None
         try:
-            slots, raw, retried = await self._call_with_format_gate(
+            slots, raw, retried, _ = await self._call_with_format_gate(
                 prompt, schema, parse, "generate", collector
             )
             if slots is None:
@@ -453,7 +466,7 @@ class GenerationService:
                 except ProviderError:
                     condense_response = None  # 축약 호출 실패로 유효한 초안을 잃지 않는다
                 if condense_response is not None:
-                    condensed_slots, _ = _try_parse(parse, condense_response)
+                    condensed_slots, _, _ = _try_parse(parse, condense_response)
                     if condensed_slots is not None:
                         slots = condensed_slots
                         raw = condense_response.raw_text
@@ -498,7 +511,7 @@ class GenerationService:
         outcome: Literal["ok", "format_error", "failed"] = "failed"
         summary: GenerationUsage | None = None
         try:
-            slots, raw, retried = await self._call_with_format_gate(
+            slots, raw, retried, _ = await self._call_with_format_gate(
                 prompt, chapter_response_schema(chapter.template), self._slots_parser(chapter),
                 "condense", collector,
             )
@@ -580,7 +593,7 @@ class GenerationService:
             raw_text=raw,
             warnings=warnings,
             unverified_numbers=find_unverified_numbers(
-                texts, list(sources.values()) + [deck.meta.title]
+                texts, list(sources.values()) + [deck.meta.title] + purpose_texts(deck.meta)
                 + chapter_derived_numbers(deck.structure.story_plan, chapter)
             ),
             format_retried=retried,

@@ -1,0 +1,4129 @@
+{
+ "_comment": "D3c-1: frame_keys의 결과. 화면의 열쇠 함수(D3c-3)가 같은 결과를 내는지 이 파일로 지킨다. 바꾸려면 test_direct_edits.py로 다시 만든다",
+ "samples": {
+  "cover": {
+   "full": {
+    "title": "제목",
+    "subtitle": "부제",
+    "date": "2026-10-13"
+   },
+   "bare": {
+    "title": "제목"
+   },
+   "blank": {
+    "title": "제목",
+    "subtitle": " ",
+    "date": "　"
+   }
+  },
+  "divider": {
+   "full": {
+    "section_no": "1",
+    "section_title": "구분"
+   },
+   "bare": {
+    "section_title": "구분"
+   },
+   "blank": {
+    "section_no": " ",
+    "section_title": "구분"
+   }
+  },
+  "summary": {
+   "full": {
+    "conclusion": "결론",
+    "points": [
+     {
+      "text": "요점"
+     }
+    ]
+   },
+   "bare": {
+    "conclusion": "결론"
+   },
+   "blank": {
+    "conclusion": "결론",
+    "points": [
+     {
+      "text": " "
+     }
+    ]
+   }
+  },
+  "bullet_box": {
+   "full": {
+    "bullets": [
+     {
+      "text": "항목"
+     }
+    ],
+    "conclusion": "결론",
+    "footnote": "출처"
+   },
+   "bare": {
+    "conclusion": "결론"
+   },
+   "blank": {
+    "conclusion": "결론",
+    "footnote": " "
+   }
+  },
+  "table": {
+   "full": {
+    "columns": [
+     "구분",
+     "값"
+    ],
+    "rows": [
+     [
+      "A",
+      "1"
+     ]
+    ],
+    "footnote": "출처"
+   },
+   "bare": {
+    "columns": [
+     "구분"
+    ],
+    "rows": []
+   },
+   "blank": {
+    "columns": [
+     "구분"
+    ],
+    "rows": [],
+    "footnote": "\t"
+   }
+  },
+  "compare2": {
+   "full": {
+    "conclusion": "결론",
+    "left": {
+     "heading": "A",
+     "bullets": [
+      {
+       "text": "왼쪽"
+      }
+     ]
+    },
+    "right": {
+     "heading": "B",
+     "bullets": [
+      {
+       "text": "오른쪽"
+      }
+     ]
+    }
+   },
+   "bare": {
+    "conclusion": "결론",
+    "left": {
+     "heading": "A"
+    },
+    "right": {
+     "heading": "B"
+    }
+   },
+   "blank": {
+    "conclusion": "결론",
+    "left": {
+     "heading": " "
+    },
+    "right": {
+     "heading": "B"
+    }
+   }
+  },
+  "callout": {
+   "full": {
+    "text": "핵심",
+    "tone": "accent1"
+   },
+   "bare": {
+    "text": "핵심"
+   },
+   "blank": {
+    "text": " "
+   }
+  },
+  "cards": {
+   "full": {
+    "cards": [
+     {
+      "heading": "A",
+      "badge": "1",
+      "tail": "끝",
+      "emphasis": true
+     },
+     {
+      "heading": "B",
+      "bullets": [
+       {
+        "text": "항목"
+       }
+      ]
+     },
+     {
+      "heading": "C"
+     },
+     {
+      "heading": "D"
+     }
+    ]
+   },
+   "bare": {
+    "cards": [
+     {
+      "heading": "A"
+     },
+     {
+      "heading": "B"
+     }
+    ]
+   },
+   "blank": {
+    "cards": [
+     {
+      "heading": "A",
+      "badge": " ",
+      "tail": "\n"
+     },
+     {
+      "heading": "B"
+     }
+    ]
+   }
+  },
+  "process": {
+   "full": {
+    "steps": [
+     {
+      "heading": "단계0",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계1",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계2",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계3",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계4",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     },
+     {
+      "heading": "단계5",
+      "subtitle": "부",
+      "notes": [
+       "라벨"
+      ]
+     }
+    ]
+   },
+   "bare": {
+    "steps": [
+     {
+      "heading": "단계0"
+     },
+     {
+      "heading": "단계1"
+     },
+     {
+      "heading": "단계2"
+     }
+    ]
+   },
+   "blank": {
+    "steps": [
+     {
+      "heading": "단계0",
+      "subtitle": " ",
+      "notes": [
+       " "
+      ]
+     },
+     {
+      "heading": "단계1",
+      "subtitle": " ",
+      "notes": [
+       " "
+      ]
+     },
+     {
+      "heading": "단계2",
+      "subtitle": " ",
+      "notes": [
+       " "
+      ]
+     }
+    ]
+   }
+  },
+  "matrix": {
+   "full": {
+    "rows": [
+     {
+      "category": "분류0",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류1",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류2",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류3",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류4",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     },
+     {
+      "category": "분류5",
+      "primary": "대표",
+      "items": [
+       "가",
+       "나"
+      ]
+     }
+    ]
+   },
+   "bare": {
+    "rows": [
+     {
+      "category": "분류0"
+     },
+     {
+      "category": "분류1"
+     },
+     {
+      "category": "분류2"
+     }
+    ]
+   },
+   "blank": {
+    "rows": [
+     {
+      "category": "분류0",
+      "primary": " ",
+      "items": [
+       " "
+      ]
+     },
+     {
+      "category": "분류1",
+      "primary": " ",
+      "items": [
+       " "
+      ]
+     },
+     {
+      "category": "분류2",
+      "primary": " ",
+      "items": [
+       " "
+      ]
+     }
+    ]
+   }
+  }
+ },
+ "cases": [
+  {
+   "template": "cover",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "cover",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "cover_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 제목"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "표지 부제"
+    },
+    "date": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "날짜"
+    },
+    "presenter": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "보고자"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "divider",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "section_no": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 번호"
+    },
+    "section_title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "구분 제목"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "summary",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "points": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "요점 목록"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "bullets": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "bullets": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "footnote": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "bullet_box",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "bullets": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "본문 불릿"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    },
+    "footnote": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    },
+    "footnote": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    },
+    "footnote": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "table",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "table": {
+     "kinds": [
+      "hide",
+      "move"
+     ],
+     "drag": "body",
+     "name": "표"
+    },
+    "footnote": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "각주"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "left_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "left_card": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "compare2",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "left_card": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "왼쪽 카드"
+    },
+    "right_card": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "오른쪽 카드"
+    },
+    "conclusion": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "결론 상자"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "text": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "text": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "callout",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "text": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "강조 밴드 문구"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "card0": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    },
+    "card2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 카드"
+    },
+    "card3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 카드"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "card0": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    },
+    "card2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 카드"
+    },
+    "card3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 카드"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    }
+   }
+  },
+  {
+   "template": "cards",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "card0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 카드"
+    },
+    "card1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 카드"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step0_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 라벨"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step1_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 라벨"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    },
+    "step2_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 라벨"
+    },
+    "step3_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "4단계 번호"
+    },
+    "step3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4단계 본문"
+    },
+    "step3_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4단계 라벨"
+    },
+    "step4_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "5단계 번호"
+    },
+    "step4": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5단계 본문"
+    },
+    "step4_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5단계 라벨"
+    },
+    "step5_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "6단계 번호"
+    },
+    "step5": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6단계 본문"
+    },
+    "step5_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6단계 라벨"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step0_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 라벨"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step1_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 라벨"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    },
+    "step2_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 라벨"
+    },
+    "step3_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "4단계 번호"
+    },
+    "step3": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4단계 본문"
+    },
+    "step3_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4단계 라벨"
+    },
+    "step4_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "5단계 번호"
+    },
+    "step4": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5단계 본문"
+    },
+    "step4_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5단계 라벨"
+    },
+    "step5_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "6단계 번호"
+    },
+    "step5": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6단계 본문"
+    },
+    "step5_labels": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6단계 라벨"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step0_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 라벨"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step1_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 라벨"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    },
+    "step2_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 라벨"
+    }
+   }
+  },
+  {
+   "template": "process",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "step0_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "1단계 번호"
+    },
+    "step0": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 본문"
+    },
+    "step0_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1단계 라벨"
+    },
+    "step1_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "2단계 번호"
+    },
+    "step1": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 본문"
+    },
+    "step1_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2단계 라벨"
+    },
+    "step2_badge": {
+     "kinds": [
+      "fill",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "body",
+     "name": "3단계 번호"
+    },
+    "step2": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 본문"
+    },
+    "step2_labels": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3단계 라벨"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "full",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row0_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 대표 항목"
+    },
+    "row0_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 나열"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row1_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 대표 항목"
+    },
+    "row1_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 나열"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    },
+    "row2_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 대표 항목"
+    },
+    "row2_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 나열"
+    },
+    "row3_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 분류"
+    },
+    "row3_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 대표 항목"
+    },
+    "row3_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 나열"
+    },
+    "row4_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 분류"
+    },
+    "row4_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 대표 항목"
+    },
+    "row4_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 나열"
+    },
+    "row5_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 분류"
+    },
+    "row5_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 대표 항목"
+    },
+    "row5_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 나열"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "full",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row0_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 대표 항목"
+    },
+    "row0_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 나열"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row1_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 대표 항목"
+    },
+    "row1_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 나열"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    },
+    "row2_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 대표 항목"
+    },
+    "row2_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 나열"
+    },
+    "row3_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 분류"
+    },
+    "row3_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 대표 항목"
+    },
+    "row3_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "4번 행 나열"
+    },
+    "row4_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 분류"
+    },
+    "row4_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 대표 항목"
+    },
+    "row4_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "5번 행 나열"
+    },
+    "row5_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 분류"
+    },
+    "row5_primary": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 대표 항목"
+    },
+    "row5_items": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "6번 행 나열"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "bare",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "bare",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "blank",
+   "common": false,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row0_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 대표 항목"
+    },
+    "row0_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 나열"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row1_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 대표 항목"
+    },
+    "row1_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 나열"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    },
+    "row2_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 대표 항목"
+    },
+    "row2_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 나열"
+    }
+   }
+  },
+  {
+   "template": "matrix",
+   "variant": "blank",
+   "common": true,
+   "keys": {
+    "title": {
+     "kinds": [
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "장 제목"
+    },
+    "eyebrow": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 위 분류"
+    },
+    "subtitle": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "제목 아래 한 문장"
+    },
+    "row0_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 분류"
+    },
+    "row0_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 대표 항목"
+    },
+    "row0_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "1번 행 나열"
+    },
+    "row1_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 분류"
+    },
+    "row1_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 대표 항목"
+    },
+    "row1_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "2번 행 나열"
+    },
+    "row2_category": {
+     "kinds": [
+      "fill",
+      "font",
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 분류"
+    },
+    "row2_primary": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 대표 항목"
+    },
+    "row2_items": {
+     "kinds": [
+      "hide",
+      "move",
+      "text_color"
+     ],
+     "drag": "handle",
+     "name": "3번 행 나열"
+    }
+   }
+  }
+ ]
+}

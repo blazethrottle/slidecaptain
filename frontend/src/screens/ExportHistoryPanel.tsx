@@ -30,6 +30,8 @@ type Props = {
   projectName: string;
   readOnly?: boolean;
   busy?: boolean;
+  // 검수 기록과 제출본 영역만 잠그는 이유 (D3a-5, 계획 4.4: 장 생성 묶음 중). 이력 목록은 볼 수 있다
+  recordsLockedReason?: string;
   onScreenReady?: (guard: ReviewLeaveGuard | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
 };
@@ -39,7 +41,7 @@ export function ExportHistoryPanel(props: Props) {
   return <History key={props.projectName} {...props} />;
 }
 
-function History({ projectName, readOnly = false, busy = false, onScreenReady, onDirtyChange }: Props) {
+function History({ projectName, readOnly = false, busy = false, recordsLockedReason, onScreenReady, onDirtyChange }: Props) {
   const [page, setPage] = useState<ExportHistoryPage | null>(null);
   const [detail, setDetail] = useState<ExportHistoryDetail | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -122,7 +124,7 @@ function History({ projectName, readOnly = false, busy = false, onScreenReady, o
       <h2>내보내기 검수 이력</h2>
       <button onClick={() => void load(0)} disabled={busy || loading}>이력 새로고침</button>
     </div>
-    <p>저장 당시 점검 기록과 조회 시점의 파일을 확인합니다. 현재 저장본 기준이며, 다른 창이나 앱에서 수정했다면 새로고침해 주세요.</p>
+    <p>저장 당시 점검 기록과 조회 시점의 파일을 확인합니다. 현재 저장본 기준이며, 다른 창이나 앱에서 수정했다면 위의 '이력 새로고침'을 눌러 주세요.</p>
     <p>사전 점검과 수동 기록은 제출 승인을 뜻하지 않습니다. 각 파일의 제출 조건과 독립 검수 결과를 상세에서 확인하세요.</p>
     {loading && <p role="status">이력을 확인하는 중...</p>}
     {error && <p role="alert">{error}</p>}
@@ -130,7 +132,7 @@ function History({ projectName, readOnly = false, busy = false, onScreenReady, o
       <p className="export-history-meta">조회 시각: {formatTime(page.checked_at)}. 전체 {page.total}개. 파일 수정 시각이 최신인 순서입니다.</p>
       {page.current_input_error && <p role="status">{page.current_input_error}</p>}
       {page.total === 0 ? <p>내보내기 이력이 없습니다.</p> : <>
-        {page.items.length === 0 && <p>이 페이지에 남아 있는 이력이 없습니다. 새로고침해 주세요.</p>}
+        {page.items.length === 0 && <p>이 페이지에 남아 있는 이력이 없습니다. 위의 '이력 새로고침'을 눌러 주세요.</p>}
         <ul className="export-history-list">{page.items.map(item => <li key={item.id}>
           <button disabled={busy} aria-label={`${item.id} 상세`} aria-pressed={selected === item.id} onClick={() => void open(item.id)}>{item.id}</button>
           <Observation item={item} />
@@ -157,8 +159,10 @@ function History({ projectName, readOnly = false, busy = false, onScreenReady, o
           <PublishedQualityChecks quality={detail.quality} />
         </section> : <p>저장 당시 점검 결과를 표시할 수 없습니다. 기존 파일은 그대로 보존됩니다.</p>}
         <ReviewRecordsPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy || qualificationBusy}
+          lockedReason={recordsLockedReason}
           onLeaveReady={registerReviewLeave} onDirtyChange={reportDirty} />
         <ExportQualificationPanel projectName={projectName} exportId={selected} readOnly={readOnly} busy={busy}
+          lockedReason={recordsLockedReason}
           onLeaveReady={registerQualificationLeave} onBusyChange={trackQualificationBusy} onDirtyChange={reportQualificationDirty} />
       </>}
     </section>}

@@ -1,0 +1,149 @@
+// 디자인 토큰 검사 (개정판 D2a-4).
+// 화면 시험(vitest, jsdom)은 styles.css를 읽거나 var()를 풀지 못하므로 Node 스크립트로 검사한다.
+// 검사: (1) 대비 계산 자기 검사 (2) 글자 색 대비 4.5:1 (3) 초점선과 컴포넌트 경계 3:1
+// (4) :root 토큰 블록 밖의 hex, rgb(), rgba(), 이름 색 금지 (5) 토큰 블록 밖의 직접 크기 값 금지(D3a-1).
+// 의존성은 쓰지 않는다.
+import { readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+// 검사 대상은 기본으로 src/styles.css다. 첫 인자로 다른 파일을 줄 수 있다(검사 스크립트 자체의 시험용)
+const cssArg = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const cssPath = cssArg ?? fileURLToPath(new URL("../src/styles.css", import.meta.url));
+// 주석을 먼저 지운다: 주석 처리한 토큰을 정의로 읽거나 주석 속 색을 직접 색으로 세지 않게 (D2a-4 리뷰 R4)
+// 줄바꿈은 남겨 오류의 행 번호가 원래 파일과 맞게 한다
+const css = readFileSync(cssPath, "utf8").replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ""));
+const failures = [];
+
+function luminance(hex) {
+  const value = hex.replace("#", "");
+  const full = value.length === 3 ? [...value].map((c) => c + c).join("") : value.slice(0, 6);
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255)
+    // WCAG 2 정의의 경계값 0.03928. sRGB 표준은 0.04045지만 8비트 색에서는 두 경계 사이의 값이 없다
+    .map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+export function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+// (1) 계산 함수 자기 검사: 흑백 21:1, 같은 색 1:1 (WCAG 2 정의)
+if (Math.abs(contrast("#000000", "#FFFFFF") - 21) > 0.01) failures.push("대비 계산이 흑백 21:1을 내지 않습니다");
+if (Math.abs(contrast("#526174", "#526174") - 1) > 0.001) failures.push("대비 계산이 같은 색 1:1을 내지 않습니다");
+
+const rootMatch = css.match(/:root\s*\{([^}]*)\}/);
+const tokens = {};
+if (!rootMatch) {
+  failures.push(":root 토큰 블록이 없습니다");
+} else {
+  for (const m of rootMatch[1].matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) tokens[m[1]] = m[2].trim();
+}
+const color = (name) => {
+  const value = tokens[name];
+  if (!value || !/^#[0-9a-fA-F]{6}$/.test(value)) {
+    failures.push(`색 토큰 --${name}이 없거나 6자리 hex가 아닙니다 (${value ?? "없음"})`);
+    return null;
+  }
+  return value;
+};
+
+// (2) 글자 색: 배경과 패널, 옅은 강조 배경 위에서 4.5:1 이상
+const surfaces = ["color-bg", "color-panel", "color-accent-bg", "color-surface-subtle", "color-success-subtle"];
+const textColors = ["color-text", "color-text-muted", "color-primary", "color-success", "color-warning", "color-danger"];
+for (const fg of textColors) {
+  for (const bg of surfaces) {
+    const [a, b] = [color(fg), color(bg)];
+    if (a && b && contrast(a, b) < 4.5) failures.push(`--${fg} / --${bg} 대비 ${contrast(a, b).toFixed(2)} < 4.5`);
+  }
+}
+const onPrimary = [color("color-on-primary"), color("color-primary")];
+if (onPrimary.every(Boolean) && contrast(...onPrimary) < 4.5) failures.push("주 행동 버튼 글자 대비 < 4.5");
+// 주 행동 버튼에 마우스를 올렸을 때의 바탕 (D3a-1)
+const onPrimaryHover = [color("color-on-primary"), color("color-primary-hover")];
+if (onPrimaryHover.every(Boolean) && contrast(...onPrimaryHover) < 4.5) failures.push("주 행동 버튼(마우스 올림) 글자 대비 < 4.5");
+
+// (3) 비텍스트: 초점선과 컴포넌트 경계는 배경과 패널 위에서 3:1 이상 (WCAG 1.4.11)
+for (const fg of ["color-focus", "color-border-strong"]) {
+  for (const bg of surfaces) {
+    const [a, b] = [color(fg), color(bg)];
+    if (a && b && contrast(a, b) < 3) failures.push(`--${fg} / --${bg} 대비 ${contrast(a, b).toFixed(2)} < 3`);
+  }
+}
+
+// (4) 토큰 블록 밖의 직접 색 금지
+const outside = rootMatch ? css.replace(rootMatch[0], rootMatch[0].replace(/[^\n]/g, "")) : css;
+// 이름 색은 선언 값에서만 찾는다(white-space 같은 속성 이름을 색으로 오인하지 않게). CSS 이름 색 전체 목록이다
+const NAMED = "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen".split(" ");
+const named = new RegExp("(?<![-\\w])(" + NAMED.join("|") + ")(?![-\\w])", "i");
+const colorFunction = /\b(rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\(/i;  // 리뷰 R3
+outside.split("\n").forEach((line, i) => {
+  const code = line.replace(/\/\*.*?\*\//g, "");
+  const values = [...code.matchAll(/[a-z-]+\s*:\s*([^;{}]+)/g)].map((m) => m[1]);
+  if (/#[0-9a-fA-F]{3,8}\b/.test(code) || colorFunction.test(code) || values.some((v) => named.test(v))) {
+    failures.push(`styles.css ${i + 1}행: 토큰 밖의 직접 색 ${code.trim()}`);
+  }
+});
+
+// (5) 토큰 블록 밖의 직접 크기 값 금지 (D3a-1, 계획 4.6). 길이 값은 :root의 크기 토큰으로만 쓴다.
+// 대상 단위: 절대 길이(px, pt, pc, cm, mm, in, q)와 글자 기준 길이(rem, em, ch, ex, lh, rlh, cap, ic).
+// 대소문자를 가리지 않고 지수 표기(1e1px)도 잡는다. 뷰포트 단위(vw, vh, dvh)와 %는 화면 비율이라 허용한다.
+// 허용 목록과 사유:
+// - 1px: 경계선(border*, outline* 선언)의 굵기에만 허용한다. 다른 선언의 1px(calc 안 포함)는 위반이다
+// - 매체 조건(@media)과 컨테이너 조건(@container)의 괄호 안 폭: 배치 전환 경계이고 요소의 크기가 아니다.
+//   여러 줄에 걸친 조건도 지운다
+// 읽기 폭(입력 줄의 최대 폭 등)은 허용 목록에 두지 않고 --width-* 토큰으로 만든다
+// 한계: 문자열 안의 주석 기호("/*")는 주석으로 읽는다. 지금 styles.css에는 그런 문자열이 없다 (D3a-1 리뷰 R3)
+const LENGTH = /(?<![-\w.#])(-?\d*\.?\d+(?:e[+-]?\d+)?)(px|rem|em|pt|pc|cm|mm|in|q|ch|ex|lh|rlh|cap|ic)\b/gi;
+const sizeScope = outside.replace(/@(media|container)[^{]*/gi, (prelude) => prelude.replace(/[^\n]/g, ""));
+let sizeViolations = 0;
+sizeScope.split("\n").forEach((line, i) => {
+  const found = [];
+  for (const m of line.matchAll(/([a-z-]+)\s*:\s*([^;{}]+)/gi)) {
+    const borderLike = /^(border|outline)/i.test(m[1]);
+    for (const v of m[2].matchAll(LENGTH)) {
+      if (borderLike && /^-?1px$/i.test(v[0])) continue;
+      found.push(v[0]);
+    }
+  }
+  if (found.length) {
+    sizeViolations += found.length;
+    failures.push(`styles.css ${i + 1}행: 토큰 밖의 직접 크기 ${found.join(", ")}`);
+  }
+});
+if (sizeViolations) failures.push(`직접 크기 값 합계 ${sizeViolations}개`);
+
+// (6) 보고 유형 예시 그림 파일의 색 (D3b-6, 계획 4.6, 리뷰 U7, D3b-6 리뷰 R6). 그림은 :root에 정의한 예시 토큰
+// (var(--example-*))으로만 칠한다. 직접 색(hex, 색 함수, 이름 색), 앱 주제 토큰, 정의되지 않은 토큰(브라우저가 검정으로 칠한다)을
+// 막는다. 대상은 src/screens의 Example*.tsx와 ReportTypeExample.tsx다. "--examples 파일,파일"로 대상을 바꿀 수 있다(계약 시험용).
+// CSS 파일을 인자로 주고 --examples를 주지 않으면 이 검사를 건너뛴다(그 CSS의 계약 시험)
+const examplesArg = process.argv.find((a) => a.startsWith("--examples="));
+const exampleFiles = examplesArg
+  ? examplesArg.slice("--examples=".length).split(",").filter(Boolean)
+  : cssArg ? [] : (() => {
+    const dir = fileURLToPath(new URL("../src/screens/", import.meta.url));
+    return readdirSync(dir).filter((f) => /^Example.*\.tsx$|^ReportTypeExample\.tsx$/.test(f)).map((f) => dir + f);
+  })();
+const PAINT_ALLOWED = new Set(["none", "inherit"]);
+for (const path of exampleFiles) {
+  const file = path.split("/").at(-1);
+  readFileSync(path, "utf8").split("\n").forEach((line, i) => {
+    const where = `${file} ${i + 1}행`;
+    if (/#[0-9a-fA-F]{3,8}\b/.test(line) || colorFunction.test(line)) failures.push(`${where}: 직접 색 ${line.trim()}`);
+    for (const m of line.matchAll(/\b(fill|stroke|color|stopColor|floodColor|background)\s*[=:]\s*\{?\s*["']([^"']+)["']/g)) {
+      const value = m[2].trim();
+      if (value.startsWith("var(") || PAINT_ALLOWED.has(value)) continue;
+      failures.push(`${where}: 토큰이 아닌 색 ${m[1]}=${value}`);
+    }
+    for (const m of line.matchAll(/var\(\s*--([a-z0-9-]+)/g)) {
+      if (!m[1].startsWith("example-")) failures.push(`${where}: 예시 토큰이 아닌 --${m[1]}`);
+      else if (!(m[1] in tokens)) failures.push(`${where}: 정의되지 않은 토큰 --${m[1]}`);
+    }
+  });
+}
+
+if (failures.length) {
+  console.error(`디자인 토큰 검사 실패 ${failures.length}건`);
+  for (const f of failures) console.error(" - " + f);
+  process.exit(1);
+}
+console.log(`디자인 토큰 검사 통과: 토큰 ${Object.keys(tokens).length}개`);

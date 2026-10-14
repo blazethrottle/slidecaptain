@@ -1,4 +1,5 @@
 import { api, AiConsentDeclined, resetEtags } from "./client";
+import { startJob } from "./jobs";
 import * as aiGate from "./aiGate";
 import { deferred } from "../test/fixtures";
 
@@ -15,7 +16,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 it("도식 생성은 알려진 저장본이 없으면 동의나 전송을 시작하지 않는다", async () => {
   const consent = vi.spyOn(aiGate, "ensureConsent").mockResolvedValue(true);
   const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
-  await expect(api.generateDiagram("p1", input)).rejects.toMatchObject({ status: 428 });
+  await expect(startJob("p1", "diagram", input)).rejects.toMatchObject({ status: 428 });
   expect(consent).not.toHaveBeenCalled();
   expect(api.getStatus).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
@@ -26,7 +27,7 @@ it("도식 생성 동의를 취소하면 생성 요청을 보내지 않는다", 
   const fetch = vi.fn().mockResolvedValueOnce(new Response("{}", { headers: { ETag: '"base"' } }));
   vi.stubGlobal("fetch", fetch);
   await api.getDeck("p1");
-  await expect(api.generateDiagram("p1", input)).rejects.toBeInstanceOf(AiConsentDeclined);
+  await expect(startJob("p1", "diagram", input)).rejects.toBeInstanceOf(AiConsentDeclined);
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
@@ -40,14 +41,15 @@ it("도식 생성의 기준 ETag는 동의 전에 고정하고 늦은 응답으�
     .mockResolvedValueOnce(new Response('{"ok":true}'));
   vi.stubGlobal("fetch", fetch);
   await api.getDeck("합성 보고");
-  const generation = api.generateDiagram("합성 보고", input);
+  const generation = startJob("합성 보고", "diagram", input, "req1");
   await api.getDeck("합성 보고");
   consent.resolve(true);
   await generation;
   const [url, init] = fetch.mock.calls[2] as [string, RequestInit];
-  expect(url).toBe(`/api/projects/${encodeURIComponent("합성 보고")}/generate/diagram`);
+  // D2b-5b: 도식 생성은 작업 API로 등록한다
+  expect(url).toBe(`/api/projects/${encodeURIComponent("합성 보고")}/jobs`);
   expect(init.method).toBe("POST");
-  expect(JSON.parse(init.body as string)).toEqual(input);
+  expect(JSON.parse(init.body as string)).toEqual({ request_id: "req1", kind: "diagram", params: input });
   expect(Object.fromEntries(new Headers(init.headers))).toMatchObject({
     "x-requested-with": "SlideCaptain", "x-ai-consent": "SlideCaptain", "x-ai-selection": "chosen", "if-match": '"base"',
   });

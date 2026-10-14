@@ -1,7 +1,9 @@
+import { appFetch } from './transport';
 import { ensureConsent } from "./aiGate";
 import type { components } from "./types";
 
 export type Deck = components["schemas"]["Deck"];
+export type FontLimit = components["schemas"]["FontLimit"];
 export type DeckMeta = components["schemas"]["DeckMeta"];
 export type Chapter = components["schemas"]["Chapter"];
 export type Structure = components["schemas"]["Structure"];
@@ -13,6 +15,11 @@ export type Bullet = components["schemas"]["Bullet"];  // level이 필수 필드
 export type Preset = components["schemas"]["Preset"];
 export type ProjectInfo = components["schemas"]["ProjectInfo"];
 export type SnapshotInfo = components["schemas"]["SnapshotInfo"];
+export type DraftInfo = components["schemas"]["DraftInfo"];
+export type DraftSummary = components["schemas"]["DraftSummary"];
+export type ProjectProgress = components["schemas"]["ProjectProgress"];
+export type DraftReason = DraftInfo["reason"];
+export type DraftSource = DraftInfo["source"];
 export type RenderPlan = components["schemas"]["RenderPlan"];
 export type SlidePlan = components["schemas"]["SlidePlan"];
 export type Frame = components["schemas"]["Frame"];
@@ -31,6 +38,12 @@ export type EvidenceSelection = components["schemas"]["EvidenceSelection"];
 export type EvidenceMigrationRequest = components["schemas"]["EvidenceMigrationRequest"];
 export type EvidenceMigrationApplyRequest = components["schemas"]["EvidenceMigrationApplyRequest"];
 export type ChapterResult = components["schemas"]["ChapterResult"];
+export type JobView = components["schemas"]["JobView"];
+export type ChapterView = components["schemas"]["ChapterView"];
+export type CandidateApplyRequest = components["schemas"]["CandidateApplyRequest"];
+export type CandidateApplyPreview = components["schemas"]["CandidateApplyPreview"];
+export type ActiveJob = components["schemas"]["ActiveJob"];
+export type ActiveJobStatus = components["schemas"]["ActiveJobStatus"];
 export type NumericReviewReport = components["schemas"]["NumericReviewReport"];
 export type SemanticSuspectReport = components["schemas"]["SemanticSuspectReport"];
 export type QualityReport = components["schemas"]["QualityReport"];
@@ -60,7 +73,9 @@ export type ProviderId = AISelection["provider"];
 export type LoginAttempt = components["schemas"]["LoginAttempt"];
 
 export class ApiError extends Error {
-  constructor(public status: number, detail: string, public code?: string) {
+  // active: 409 generation_active 응답이 담은 진행 중 작업 (D2b-5b). 화면이 그 작업의 취소 버튼을 보인다.
+  // job: 작업이 실패로 끝나 던진 오류의 작업 (D3a-4). 실패 안내가 원인 분류와 작업 ID, 시각을 읽는다
+  constructor(public status: number, detail: string, public code?: string, public active?: ActiveJob, public job?: JobView | null) {
     super(detail);
   }
 }
@@ -85,9 +100,11 @@ async function throwIfFailed(r: Response): Promise<void> {
   if (r.ok) return;
   let detail = "요청이 실패했습니다. 잠시 후 다시 시도해 주세요.";
   let code: string | undefined;
+  let active: ActiveJob | undefined;
   try {
     const body = await r.json();
     if (typeof body.code === "string") code = body.code;
+    if (body.active && typeof body.active === "object" && typeof body.active.id === "string") active = body.active;
     if (typeof body.detail === "string") detail = body.detail;
     else if (Array.isArray(body.detail)) {
       // FastAPI 입력 오류에는 원래 입력도 담긴다. 메시지만 취하고 입력/ctx를 출력하지 않는다.
@@ -102,7 +119,7 @@ async function throwIfFailed(r: Response): Promise<void> {
   } catch {
     // JSON 본문이 아니면 기본 문구 유지
   }
-  throw new ApiError(r.status, detail, code);
+  throw new ApiError(r.status, detail, code, active);
 }
 
 // 저장본 식별값(ETag): 프로젝트 이름을 키로 마지막으로 본 값을 기억해, 다음 PUT/POST에 If-Match로 실어 보낸다
@@ -113,9 +130,76 @@ export function resetEtags(): void {
   etags.clear();
 }
 
+// 공통 알림 지점 (개정판 D3a-3, 계획 4.5). 저장 성공, 작업 등록 응답, 작업 종결을 화면 안 이벤트로 내고 다른 탭에도 알린다.
+// 진행 API 다시 조회(D3a-3)와 진행 작업 갱신(D3a-5), 다른 탭 알림(D3a-6)이 이것을 듣는다. 저장하지 않는 POST
+// (실측, 미리 보기, 대조, 수치 검토)는 알리지 않도록 경로를 추측하지 않고 저장 경로마다 notify로 명시한다
+// job_ended는 종결 상태를 싣는다: 작업 종결 알림이 성공, 실패, 취소, 중단을 다르게 알린다 (D3a-4, C23)
+export type ProjectEvent = { kind: "saved" | "job_started" | "job_ended"; project: string; jobId?: string;
+  state?: JobView["state"]; jobKind?: string; target?: string | null };
+const projectListeners = new Set<(event: ProjectEvent) => void>();
+
+export function onProjectEvent(listener: (event: ProjectEvent) => void): () => void {
+  projectListeners.add(listener);
+  return () => { projectListeners.delete(listener); };
+}
+
+// broadcast: 거짓이면 같은 탭에만 낸다. 진행 작업에서 사라진 작업에 대해 프로젝트 화면이 내는 종결 알림이 쓴다:
+// 그 작업을 아는 탭은 모두 스스로 진행 작업을 조회하므로 다시 퍼뜨리면 탭 수만큼 되울린다 (D3a-6 리뷰 S2)
+export function notifyProject(event: ProjectEvent, opts: { broadcast?: boolean } = {}): void {
+  for (const listener of [...projectListeners]) {
+    try { listener(event); } catch { /* 듣는 쪽의 오류가 요청을 실패로 만들지 않게 한다 */ }
+  }
+  if (opts.broadcast === false) return;
+  // 받는 쪽은 내용을 믿지 않으므로 종류와 프로젝트만 보낸다 (D3a-6 리뷰 S11)
+  try { projectChannel()?.postMessage({ kind: event.kind, project: event.project }); } catch { /* 다른 탭 알림이 실패해도 이 탭의 일은 계속한다 */ }
+}
+
+// 다른 탭 알림 (개정판 D3a-6, 계획 4.5, β R15). 같은 출처의 탭 사이에 위 이벤트를 BroadcastChannel로 알린다. 채널
+// 객체는 탭마다 하나만 만든다. 표준상 보낸 객체는 자기 메시지를 받지 않으므로 같은 탭의 반영은 위에서 직접 한다.
+// 받는 쪽은 메시지 내용을 믿지 않고 서버를 다시 조회하는 데만 쓴다(진행 작업, 진행 API). 덱을 읽지 않고 저장 ETag를
+// 바꾸지 않는다. 채널이 없는 환경에서는 지금처럼 창 초점 조회로 돌아간다
+const CHANNEL_NAME = "slidecaptain-project-events";
+const EVENT_KINDS = new Set(["saved", "job_started", "job_ended"]);
+let channel: BroadcastChannel | null | undefined;
+const remoteListeners = new Set<(event: ProjectEvent) => void>();
+
+function projectChannel(): BroadcastChannel | null {
+  if (channel !== undefined) return channel;
+  try {
+    channel = typeof BroadcastChannel === "function" ? new BroadcastChannel(CHANNEL_NAME) : null;
+  } catch {
+    channel = null;
+  }
+  if (channel) {
+    channel.onmessage = (message: MessageEvent) => {
+      const data = message.data as Partial<ProjectEvent> | null;
+      if (!data || typeof data.project !== "string" || !EVENT_KINDS.has(data.kind as string)) return;
+      const event: ProjectEvent = { kind: data.kind as ProjectEvent["kind"], project: data.project };
+      for (const listener of [...remoteListeners]) {
+        try { listener(event); } catch { /* 듣는 쪽의 오류가 다른 듣는 쪽을 막지 않게 한다 */ }
+      }
+    };
+  }
+  return channel;
+}
+
+// 시험용: 채널을 닫고 다음 사용 때 새로 만든다. 시험이 남긴 채널이 다른 시험의 메시지를 받지 않게 한다 (D3a-6 리뷰 S5)
+export function closeProjectChannel(): void {
+  channel?.close();
+  channel = undefined;
+}
+
+// 다른 탭이 낸 알림을 듣는다. 받은 메시지에서 종류와 프로젝트 이름만 꺼낸다
+export function onRemoteProjectEvent(listener: (event: ProjectEvent) => void): () => void {
+  projectChannel();
+  remoteListeners.add(listener);
+  return () => { remoteListeners.delete(listener); };
+}
+
 async function request<T>(
   path: string, init?: RequestInit,
-  opts?: { etagKey?: string; updateEtag?: boolean; expectedEtag?: string; headers?: Record<string, string> },
+  opts?: { etagKey?: string; updateEtag?: boolean; expectedEtag?: string; headers?: Record<string, string>;
+    notify?: { kind: "saved" | "job_started"; project: string } },
 ): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -124,27 +208,103 @@ async function request<T>(
   };
   const known = opts?.expectedEtag ?? (opts?.etagKey ? etags.get(opts.etagKey) : undefined);
   if (known) headers["If-Match"] = known;
-  const r = await fetch(path, { ...init, headers });
+  const r = await appFetch(path, { ...init, headers });
   await throwIfFailed(r);
   if (opts?.etagKey && opts.updateEtag !== false) {
     const etag = r.headers.get("ETag");
     if (etag) etags.set(opts.etagKey, etag);
   }
-  return r.json() as Promise<T>;
+  const body = await r.json() as T;
+  // 등록 응답을 받은 뒤에만 알린다. 그 전에 알리면 듣는 쪽의 조회가 빈 결과를 받는다 (계획 4.5)
+  if (opts?.notify) {
+    const id = (body as { id?: unknown } | null)?.id;
+    notifyProject({ ...opts.notify, jobId: opts.notify.kind === "job_started" && typeof id === "string" ? id : undefined });
+  }
+  return body;
 }
 
 const enc = encodeURIComponent;
 
+// 마지막으로 본 저장 ETag. 기준 저장본을 받는 작업(도식, 재작성, 수리)의 등록이 동의 전에 고정한다
+export function savedEtag(name: string): string | undefined {
+  return etags.get(name);
+}
+
 async function aiHeaders(): Promise<Record<string, string>> {
   const status = await api.getStatus();
-  if (status.provider === "none" || status.login.logged_in !== true) {
-    throw new ApiError(503, "AI 연결 화면에서 로그인 상태를 확인해 주세요.");
+  // 화면이 만드는 오류에도 원인 코드를 붙여 실패 안내가 원인별로 판정한다 (D3a-4 리뷰 R1). 확인하지 못함은
+  // 서버의 상태 확인이 가른 코드(CLI 없음, 시간 초과, 구독 로그인 아님)를 따른다
+  if (status.provider === "none") {
+    throw new ApiError(503, "AI 연결이 설정되어 있지 않습니다.", "provider_missing");
+  }
+  if (status.login.logged_in === false) {
+    throw new ApiError(503, "AI 연결에 로그인되어 있지 않습니다.", "login_required");
+  }
+  if (status.login.logged_in !== true) {
+    throw new ApiError(503, status.login.error ?? "AI 연결 상태를 확인하지 못했습니다.",
+      status.login.error_code ?? "provider_call_failed");
   }
   if ((status.provider === "claude" || status.provider === "chatgpt") && !status.selection_id) {
-    throw new ApiError(503, "AI 설정을 확인하지 못했습니다. 앱을 다시 실행해 주세요.");
+    throw new ApiError(503, "AI 설정을 확인하지 못했습니다. 앱을 다시 실행해 주세요.", "settings_unreadable");
   }
   if (!(await ensureConsent(status.selection_id ?? "legacy", status))) throw new AiConsentDeclined();
   return { "X-AI-Consent": "SlideCaptain", ...(status.selection_id ? { "X-AI-Selection": status.selection_id } : {}) };
+}
+
+// 작업 원장 (개정판 D2b-5a, 계획서 5.9). 종결 상태가 되면 조회를 멈춘다
+export const TERMINAL_JOB_STATES = new Set(["succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown"]);
+
+// 요청 ID는 사용자가 버튼을 누를 때 한 번 만든다. 응답을 받지 못한 재시도에만 같은 ID를 쓴다 (계획서 5.9)
+export function newRequestId(): string {
+  return crypto.randomUUID().replace(/-/g, "");
+}
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(signal.reason); return; }
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", stop); resolve(); }, ms);
+    const stop = () => { clearTimeout(timer); reject(signal?.reason); };
+    signal?.addEventListener("abort", stop, { once: true });
+  });
+}
+
+export const JOB_RECORD_LOST = "작업 기록을 읽지 못해 결과를 확인하지 못했습니다. 앱을 다시 시작해 주세요.";
+
+// 앞 응답을 받은 뒤 다음 조회를 예약한다. 조회가 실패하면 onError로 알리고 계속 조회한다 (계획서 5.9).
+// 간격은 인자로 받아 시험에서 바꿀 수 있게 한다
+// 조회 함수는 호출하는 쪽이 넘긴다: 화면이 쓰는 api 객체(시험에서는 모의)로 조회하게 하려는 것이다
+// stillActive: 조회가 실패할 때 그 작업이 아직 진행 중인지 진행 작업 확인(실행기 메모리)으로 묻는다. 진행 중이
+// 아니면 한 조회 간격 뒤 한 번 더 조회해 보고, 그래도 실패하면 작업 기록을 읽지 못한다고 멈춘다. 원장을 읽지 못하는 동안 끝없이
+// 조회하며 화면을 잠그지 않게 한다. 조회 실패 횟수의 임계값은 근거가 되는 측정값이 없어 두지 않는다
+// (D3a-5, 계획 4.4 β R8, 사실 18). 확인 자체가 실패하면 진행 중으로 보고 계속 조회한다
+export async function followJob(
+  fetchJob: () => Promise<JobView>, onUpdate: (view: JobView) => void | Promise<void>,
+  opts: { intervalMs?: number; signal?: AbortSignal; onError?: (error: unknown) => void;
+    stillActive?: () => Promise<boolean> } = {},
+): Promise<JobView> {
+  const intervalMs = opts.intervalMs ?? 1000;
+  let lastTry = false;
+  for (;;) {
+    opts.signal?.throwIfAborted();
+    try {
+      const view = await fetchJob();
+      await onUpdate(view);
+      if (TERMINAL_JOB_STATES.has(view.state)) {
+        notifyProject({ kind: "job_ended", project: view.project, jobId: view.id, state: view.state, jobKind: view.kind,
+          target: view.target });
+        return view;
+      }
+      lastTry = false;
+    } catch (error) {
+      if (opts.signal?.aborted) throw error;
+      if (lastTry) throw new ApiError(503, JOB_RECORD_LOST, "job_ledger_unavailable");
+      opts.onError?.(error);
+      // 한 조회 간격을 기다린 뒤 마지막으로 조회한다. 정상 종결 직후의 짧은 실패를 기록 손실로 보지 않는다 (D3a-5 리뷰 R3)
+      const active = opts.stillActive;
+      if (active && !(await Promise.resolve().then(active).catch(() => true))) lastTry = true;
+    }
+    await pause(intervalMs, opts.signal);
+  }
 }
 
 export const api = {
@@ -155,7 +315,11 @@ export const api = {
   putDeck: (name: string, deck: Deck, snapshot: boolean) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/deck?snapshot=${snapshot}`, {
       method: "PUT", body: JSON.stringify(deck),
-    }, { etagKey: name }),
+    }, { etagKey: name, notify: { kind: "saved", project: name } }),
+  // 직접 수정의 글자 크기 칸: 고른 요소가 넘치지 않는 최대 크기 (D3c-2, 계획 4.5)
+  fontLimit: (name: string, deck: Deck, chapterId: string, key: string) =>
+    request<FontLimit>(`/api/projects/${enc(name)}/direct-edits/font-limit`, {
+      method: "POST", body: JSON.stringify({ deck, chapter_id: chapterId, key }) }),
   measure: (deck: Deck, projectName?: string) =>
     request<RenderPlan>(projectName ? `/api/projects/${enc(projectName)}/render-plan` : "/api/render-plan", { method: "POST", body: JSON.stringify(deck) }),
   // 확인은 저장본을 바꾸지 않는다. 취소한 요청의 늦은 응답이 이후 저장의 ETag를 되돌리면 안 된다.
@@ -163,47 +327,28 @@ export const api = {
     request<Deck>(`/api/projects/${enc(name)}/story-plan/diagram`, {
       method: "POST", body: JSON.stringify(req),
     }, { etagKey: name, updateEtag: false }),
-  generateDiagram: async (name: string, req: GenerateDiagramRequest) => {
-    // 동의 중 저장본이 바뀌어도 요청의 기준본은 그대로 유지한다. 후보 응답은 저장 ETag를 바꾸지 않는다.
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    return request<DiagramGenerationResult>(`/api/projects/${enc(name)}/generate/diagram`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
-  },
-  rewriteStory: async (name: string, req: { brief: ReportBrief; instructions: string }) => {
-    // 동의를 기다리기 전의 기준본을 고정한다. 미리보기 응답은 저장 ETag를 진전시키지 않는다.
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    return request<StoryRewriteResult>(`/api/projects/${enc(name)}/story-plan/rewrite`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
-  },
-  repairStory: async (name: string, req: StoryRepairRequest, signal: AbortSignal) => {
-    const expectedEtag = etags.get(name);
-    if (!expectedEtag) throw new ApiError(428, "프로젝트를 다시 열어 저장본을 확인해 주세요.");
-    const headers = await aiHeaders();
-    signal.throwIfAborted();
-    return request<StoryRepairResult>(`/api/projects/${enc(name)}/story-plan/repair`, {
-      method: "POST", body: JSON.stringify(req), signal,
-    }, { etagKey: name, expectedEtag, updateEtag: false, headers });
+  // 서버 저장본의 ETag만 확인한다. 이 탭의 저장 ETag는 바꾸지 않는다. 묶음 종결 뒤 이 탭이 저장본을 따라갔는지
+  // 볼 때 쓴다(계획 4.1 β R1 분기). 종전에는 기준 조회의 If-Match 412로 판정해 브라우저 콘솔에 오류가 찍혔다 (D3a-7)
+  peekDeckEtag: async (name: string): Promise<string | null> => {
+    const r = await appFetch(`/api/projects/${enc(name)}/deck`, { cache: "no-store",
+      headers: { "X-Requested-With": "SlideCaptain" } });
+    await throwIfFailed(r);
+    return r.headers.get("ETag");
   },
   getDocumentChangeBasis: (name: string) =>
     request<DocumentChangeBasis>(`/api/projects/${enc(name)}/document-changes/basis`, {cache:"no-store"}, {etagKey:name,updateEtag:false}),
   previewDocumentChange: (name: string, req: DocumentChangeRequest, etag: string) =>
     request<DocumentChangePreview>(`/api/projects/${enc(name)}/document-changes/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
   applyDocumentChange: (name: string, req: DocumentChangeApplyRequest, etag: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/document-changes/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+    request<Deck>(`/api/projects/${enc(name)}/document-changes/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag,notify:{kind:"saved",project:name}}),
   previewEvidenceMigration: (name: string, req: EvidenceMigrationRequest, etag: string) =>
     request<DocumentChangePreview>(`/api/projects/${enc(name)}/evidence-migrations/preview`, {method:"POST",body:JSON.stringify(req)}, {expectedEtag:etag}),
   applyEvidenceMigration: (name: string, req: EvidenceMigrationApplyRequest, etag: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/evidence-migrations/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag}),
+    request<Deck>(`/api/projects/${enc(name)}/evidence-migrations/apply`, {method:"POST",body:JSON.stringify(req)}, {etagKey:name,expectedEtag:etag,notify:{kind:"saved",project:name}}),
   applyStoryRewrite: (name: string, result: Pick<StoryRewriteResult, "deck" | "sources_fingerprint" | "base_etag">) =>
     request<Deck>(`/api/projects/${enc(name)}/story-plan/rewrite/apply`, {
       method: "POST", body: JSON.stringify({ deck: result.deck, sources_fingerprint: result.sources_fingerprint }),
-    }, { etagKey: name, expectedEtag: result.base_etag }),
+    }, { etagKey: name, expectedEtag: result.base_etag, notify: { kind: "saved", project: name } }),
   reviewNumbers: (name: string, deck: Deck) =>
     request<NumericReviewReport>(`/api/projects/${enc(name)}/review/numbers`, {
       method: "POST", body: JSON.stringify(deck),
@@ -221,18 +366,59 @@ export const api = {
   writeSource: (name: string, file: string, text: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/sources/${enc(file)}`, {
       method: "PUT", body: JSON.stringify({ text }),
-    }),
+    }, { notify: { kind: "saved", project: name } }),
   uploadSource: async (name: string, file: File, overwrite: boolean) => {
     // 파일 본문을 원시 바이트로 보낸다. request()의 JSON 헤더를 붙이지 않는다 (서버는 Content-Type을 보지 않는다)
     // X-Requested-With: 서버가 이 헤더를 요구해 다른 사이트에서 보내는 단순 요청을 막는다 (JSON 헤더는 붙이지 않는다)
-    const r = await fetch(
+    const r = await appFetch(
       `/api/projects/${enc(name)}/sources/${enc(file.name)}/upload?overwrite=${overwrite}`,
       { method: "POST", body: file, headers: { "X-Requested-With": "SlideCaptain" } },
     );
     await throwIfFailed(r);
-    return r.json() as Promise<UploadResult>;
+    const result = await r.json() as UploadResult;
+    notifyProject({ kind: "saved", project: name });  // 업로드는 request()를 거치지 않으므로 여기서 알린다
+    return result;
   },
   getStatus: () => request<AppStatus>("/api/status"),
+  // AI 전송 준비(로그인과 동의 확인). 승인 반영보다 먼저 불러, 동의를 거절하면 덱을 바꾸지 않는다 (D2b-5a)
+  prepareAi: () => aiHeaders(),
+  // 장 생성 묶음 등록. If-Match는 승인 반영 PUT이 갱신한 ETag다. 응답은 저장 ETag를 바꾸지 않는다
+  startChapters: (name: string, chapterIds: string[], headers: Record<string, string>, requestId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs`, {
+      method: "POST", body: JSON.stringify({ request_id: requestId, kind: "chapters", params: { chapter_ids: chapterIds } }),
+    }, { etagKey: name, updateEtag: false, headers, notify: { kind: "job_started", project: name } }),
+  getJob: (name: string, jobId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}`, { cache: "no-store" }),
+  listJobs: (name: string) => request<JobView[]>(`/api/projects/${enc(name)}/jobs`, { cache: "no-store" }),
+  cancelJob: (name: string, jobId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/cancel`, { method: "POST" }),
+  // 작업 등록 (D2b-5b). 기준 저장본을 받는 종류만 expectedEtag를 If-Match로 보낸다. 등록은 저장 ETag를 바꾸지 않는다
+  startJob: (name: string, body: { request_id: string; kind: string; params: unknown }, headers: Record<string, string>,
+    expectedEtag?: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs`, { method: "POST", body: JSON.stringify(body) },
+      { expectedEtag, headers, notify: { kind: "job_started", project: name } }),
+  settleCandidate: (name: string, jobId: string, action: "applied" | "dismissed") =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
+      method: "POST", body: JSON.stringify({ action }),
+    }, { notify: { kind: "saved", project: name } }),
+  // 장 후보의 서버 적용 (D3c-5, 계획 4.7, 4.8). 미리 보기는 저장하지 않는다. 적용은 이 탭의 마지막 저장 ETag를
+  // If-Match로 보내고 응답의 ETag로 갱신한다(문서 변경 적용과 같은 모양). 칸을 비우면 서버가 기본 선택을 쓴다
+  previewCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}) =>
+    request<CandidateApplyPreview>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply/preview`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  // baseEtag는 비교 화면이 본 미리 보기의 기준 저장본이다. 주면 마지막 저장 ETag 대신 If-Match로 보낸다: 미리 보기 뒤에 저장본이
+  // 바뀌었으면 412로 충돌 경로에 들어가 사용자가 본 것과 다른 결과가 저장되지 않는다 (D3c-6 리뷰 G1)
+  applyCandidate: (name: string, jobId: string, body: CandidateApplyRequest = {}, baseEtag?: string) =>
+    request<Deck>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/apply`, {
+      method: "POST", body: JSON.stringify(body),
+    }, { etagKey: name, expectedEtag: baseEtag, notify: { kind: "saved", project: name } }),
+  // 묶음의 장 후보를 버린다 (D2b-4 리뷰 R5). 장 후보는 반영하지 않고 새 묶음으로 다시 생성한다
+  dismissChapterCandidate: (name: string, jobId: string, chapterId: string) =>
+    request<JobView>(`/api/projects/${enc(name)}/jobs/${enc(jobId)}/candidate`, {
+      method: "POST", body: JSON.stringify({ action: "dismissed", chapter_id: chapterId }),
+    }, { notify: { kind: "saved", project: name } }),
+  getActiveJob: () => request<ActiveJobStatus>("/api/jobs/active", { cache: "no-store" }),
   getAISettings: () => request<AISettings>("/api/ai/settings"),
   selectAI: (selection: AISelection) => request<AISelection>("/api/ai/selection", {
     method: "PUT", body: JSON.stringify(selection),
@@ -241,12 +427,31 @@ export const api = {
   getAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`),
   cancelAILogin: (provider: ProviderId) => request<LoginAttempt>(`/api/ai/providers/${provider}/login`, { method: "DELETE" }),
   listSnapshots: (name: string) => request<SnapshotInfo[]>(`/api/projects/${enc(name)}/snapshots`),
+  // 충돌이나 저장 실패로 반영하지 못한 덱의 보존 (D2a-2). 기준 저장본은 마지막으로 본 ETag다.
+  // 보존은 저장본을 바꾸지 않으므로 ETag를 진전시키지 않는다
+  saveDraft: (name: string, req: { reason: DraftReason; source: DraftSource; deck: Deck }) =>
+    request<DraftInfo>(`/api/projects/${enc(name)}/drafts`, {
+      method: "POST", body: JSON.stringify({ ...req, base_etag: etags.get(name) ?? null }),
+    }),
+  listDrafts: (name: string) => request<DraftInfo[]>(`/api/projects/${enc(name)}/drafts`),
+  // 단계 준비 상태 (D2a-6). 화면 연결은 D3에서 한다
+  getProgress: (name: string) =>
+    request<ProjectProgress>(`/api/projects/${enc(name)}/progress`, { cache: "no-store" }),
+  // 보존본 복원 전 차이 요약 (D3c-6, E7). 저장하지 않는다
+  getDraftSummary: (name: string, id: string) =>
+    request<DraftSummary>(`/api/projects/${enc(name)}/drafts/${enc(id)}/summary`, { cache: "no-store" }),
+  restoreDraft: (name: string, id: string) =>
+    request<Deck>(`/api/projects/${enc(name)}/drafts/${enc(id)}/restore`, { method: "POST" },
+      { etagKey: name, notify: { kind: "saved", project: name } }),
+  deleteDraft: (name: string, id: string) =>
+    request<{ ok: boolean }>(`/api/projects/${enc(name)}/drafts/${enc(id)}`, { method: "DELETE" }),
   createSnapshot: (name: string) =>
     request<{ ok: boolean }>(`/api/projects/${enc(name)}/snapshots`, { method: "POST" }),
   restoreSnapshot: (name: string, id: string) =>
-    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" }, { etagKey: name }),
+    request<Deck>(`/api/projects/${enc(name)}/snapshots/${enc(id)}/restore`, { method: "POST" },
+      { etagKey: name, notify: { kind: "saved", project: name } }),
   exportDeck: (name: string) =>
-    request<ExportResult>(`/api/projects/${enc(name)}/export`, { method: "POST" }),
+    request<ExportResult>(`/api/projects/${enc(name)}/export`, { method: "POST" }, { notify: { kind: "saved", project: name } }),
   listExports: (name: string, offset = 0, limit = 20) =>
     request<ExportHistoryPage>(`/api/projects/${enc(name)}/exports?offset=${offset}&limit=${limit}`, { cache: "no-store" }),
   getExport: (name: string, id: string) =>
@@ -272,26 +477,6 @@ export const api = {
     if (!baseEtag.trim()) throw new ApiError(428, "검수 기준을 다시 확인해 주세요.");
     return request<ExportReviews>(`/api/projects/${enc(name)}/exports/${enc(id)}/reviews`, {
       method: "POST", body: JSON.stringify(input),
-    }, { expectedEtag: baseEtag });
-  },
-  // AI 전송은 관문(aiGate)을 거친다: 동의가 없으면 요청을 내보내지 않고 AiConsentDeclined를
-  // 던지고, 있으면 X-AI-Consent 헤더를 붙여 서버의 428 검사를 통과한다 (계획서 B3, 가정 5)
-  generateStructure: async (name: string, req: { target_chapters?: number | null; instructions?: string; brief?: ReportBrief | null }) => {
-    const headers = await aiHeaders();
-    return request<StructureResult>(`/api/projects/${enc(name)}/generate/structure`, {
-      method: "POST", body: JSON.stringify(req),
-    }, { headers });
-  },
-  generateChapter: async (name: string, chapterId: string, instructions = "") => {
-    const headers = await aiHeaders();
-    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}`, {
-      method: "POST", body: JSON.stringify({ instructions }),
-    }, { headers });
-  },
-  condenseChapter: async (name: string, chapterId: string, slots: Slots, instructions = "") => {
-    const headers = await aiHeaders();
-    return request<ChapterResult>(`/api/projects/${enc(name)}/generate/chapter/${enc(chapterId)}/condense`, {
-      method: "POST", body: JSON.stringify({ slots, instructions }),
-    }, { headers });
+    }, { expectedEtag: baseEtag, notify: { kind: "saved", project: name } });
   },
 };

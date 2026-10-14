@@ -58,9 +58,31 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _unsupported_project_format(deck_path) -> bool:
+    """덱 파일이 프로젝트 폴더 안에 있고 그 형식 기록을 이 앱이 다룰 수 없으면 안내하고 True.
+
+    CLI는 저장소를 거치지 않고 deck.json을 직접 읽으므로 같은 차단을 여기서 한다(D2a-1 리뷰 R3).
+    프로젝트 폴더 밖의 덱 파일은 형식 기록이 없어 판정하지 않는다.
+    """
+    from slidecaptain.storage import project_format
+
+    state = project_format.manifest_state(deck_path.resolve().parent)
+    if state == "newer":
+        print("이 프로젝트는 더 새 버전의 SlideCaptain이 만들었습니다. 이 버전에서는 열 수 없습니다. "
+              "파일은 바꾸지 않았습니다.", file=sys.stderr)
+        return True
+    if state == "unreadable":
+        print("이 프로젝트의 형식 기록 파일(manifest.json)을 읽지 못했습니다. 파일은 바꾸지 않았습니다.",
+              file=sys.stderr)
+        return True
+    return False
+
+
 def _run_export(args) -> int:
     if not args.deck.exists():
         print(f"덱 파일을 찾을 수 없습니다: {args.deck}", file=sys.stderr)
+        return 1
+    if _unsupported_project_format(args.deck):
         return 1
     out_dir = args.out if args.out is not None else args.deck.parent / "exports"
     if out_dir.exists() and not out_dir.is_dir():
@@ -90,6 +112,8 @@ def _run_quality(args) -> int:
     from slidecaptain.models.preset import Preset, apply_overrides
     from slidecaptain.pipeline.quality import assess_quality
 
+    if _unsupported_project_format(args.deck):
+        return 1
     try:
         deck = Deck.model_validate_json(args.deck.read_text(encoding="utf-8"))
         preset = apply_overrides(Preset(), deck.meta.preset_overrides)
@@ -113,7 +137,7 @@ def _find_ui_dir() -> Path | None:
     return None
 
 
-def _build_serve_app(data_dir: Path, model: str | None, provider: str | None = None):
+def _build_serve_app(data_dir: Path, model: str | None, provider: str | None = None, data_dir_lock: str = "none"):
     from slidecaptain.pipeline.connections import AIConnections, AISelection
     from slidecaptain.server.app import create_app
     from slidecaptain.storage.file_store import FileProjectStore
@@ -125,13 +149,30 @@ def _build_serve_app(data_dir: Path, model: str | None, provider: str | None = N
         if model is None and chosen != manager.selection.provider:
             raise ValueError("서비스를 변경할 때 --model도 지정하거나 화면에서 서비스와 모델을 선택해 주세요.")
         manager.selection = AISelection(provider=chosen, model=model or manager.selection.model)
-    return create_app(FileProjectStore(data_dir), ai_connections=manager, static_dir=ui_dir)
+    return create_app(FileProjectStore(data_dir), ai_connections=manager, static_dir=ui_dir,
+                      data_dir_lock=data_dir_lock)
 
 
 def _run_serve(args) -> int:
     import uvicorn
 
     from slidecaptain.fonts.installer import _bundled_font_paths, ensure_fonts
+    from slidecaptain.storage.service_lock import EXIT_DATA_DIR_IN_USE, DataDirInUse, acquire_service_lock
+
+    # D2a-3: 폰트 설치나 설정 파일 같은 어떤 준비와 쓰기보다 먼저 자료 폴더 잠금을 얻는다.
+    # lock은 서버가 끝날 때까지 이 함수가 쥐고 있다(프로세스가 끝나면 OS가 푼다)
+    try:
+        lock = acquire_service_lock(args.data_dir)
+    except DataDirInUse as e:
+        since = e.holder.get("started_at")
+        print(str(e) + (f" (사용 중인 실행의 시작 시각: {since})" if since else ""), file=sys.stderr)
+        return EXIT_DATA_DIR_IN_USE
+    except OSError as e:  # 폴더를 만들 수 없거나 잠금 파일이 링크인 경우: 원시 오류 대신 안내한다 (리뷰 R2)
+        print(f"자료 폴더를 준비하지 못했습니다: {args.data_dir} ({e.strerror or e})", file=sys.stderr)
+        return 1
+    if lock.unsupported:
+        print("이 자료 폴더에서는 파일 잠금을 쓸 수 없어 잠금 없이 실행합니다. 같은 폴더로 SlideCaptain을 "
+              "두 개 실행하지 마세요.", file=sys.stderr)
 
     # 태스크 D2-5: uvicorn은 루트 로거에 핸들러를 추가하지 않아, 이 호출이 없으면
     # subscription.py의 SDK 사용량 원시 로그(INFO)가 레코드조차 생성되지 않는다(실측).
@@ -147,7 +188,7 @@ def _run_serve(args) -> int:
         print(f"폰트 자동 설치에 실패했습니다: {e}\n화면 표시가 다른 폰트로 대체될 수 있습니다. 수동 설치 파일: {assets_dir}", file=sys.stderr)
 
     try:
-        app = _build_serve_app(args.data_dir, args.model, args.provider)
+        app = _build_serve_app(args.data_dir, args.model, args.provider, data_dir_lock=lock.state)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
@@ -210,6 +251,8 @@ def _run_qualification(args):
         store = FileProjectStore(args.deck.resolve().parent.parent)
         project = args.deck.resolve().parent.name
         with store.locked(project):
+            # 형식 확인을 내보내기 폴더 쓰기보다 먼저 한다: 더 새 형식이면 여기서 거절된다 (D2a-1)
+            store.deck_etag(project)
             def get_inputs():
                 deck, etag = store.load_deck_with_etag(project)
                 sources = load_source_directory(args.deck.resolve().parent / "sources")

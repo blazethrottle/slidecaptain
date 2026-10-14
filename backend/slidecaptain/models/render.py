@@ -18,6 +18,9 @@ from slidecaptain.models.expression import ChartPlan, TextRun
 HexColor = Annotated[str, Field(pattern=r"^[0-9A-Fa-f]{6}$")]
 
 
+from slidecaptain.models.direct_edit import omittable as _omittable  # noqa: E402  같은 규칙 하나 (D3c-1 리뷰 F13)
+
+
 class Para(BaseModel):
     text: str
     level: int = 0
@@ -98,12 +101,23 @@ class Frame(BaseModel):
     # 폴백 판단은 레이아웃 엔진이 하고 소비자는 값을 그대로 쓴다: 같은 기본값 규칙을 라이터와
     # 미리보기 두 곳에 따로 두면 세로 정렬 사고와 같은 계열의 어긋남이 생긴다
     border_width_pt: float | None = Field(default=None, ge=0)
+    # 직접 수정 (D3c-2, 계획 4.4). 수정값이 있는 프레임에만 싣고 없으면 직렬화에서 빼므로 수정값이 없는 덱의 렌더
+    # 계획 바이트와 내보내기 지문은 그대로다. base_x, base_y는 엔진이 정한 자리(화면이 거리를 계산하는 기준, 재리뷰 RR3),
+    # hidden은 숨긴 요소다. 숨긴 프레임도 계획에 남겨 다시 보이기를 바로 그리게 하고, 미리보기와 라이터는 그리지 않는다
+    base_x: float | None = Field(default=None, json_schema_extra=_omittable)
+    base_y: float | None = Field(default=None, json_schema_extra=_omittable)
+    hidden: bool = Field(default=False, json_schema_extra=_omittable)
 
     @model_serializer(mode='wrap')
     def legacy_serialization(self,handler):
         result=handler(self)
         if self.chart is None:
             result.pop('chart',None)
+        for name in ('base_x', 'base_y'):
+            if getattr(self, name) is None:
+                result.pop(name, None)
+        if not self.hidden:
+            result.pop('hidden', None)
         return result
 
     @model_validator(mode='after')
@@ -114,11 +128,25 @@ class Frame(BaseModel):
 
 
 class CapacityWarning(BaseModel):
+    """레이아웃 경고. 분량 경고(capacity)의 needed_pt와 available_pt는 필요한 높이와 가용 높이다.
+
+    글자 크기 경고(font_size, 직접 수정의 배율, D3c-2)는 같은 두 칸에 기준 크기와 실제 크기를 담는다: 읽기 하한 경고는
+    하한과 줄인 크기, PowerPoint 범위로 자른 경고는 요청한 크기와 자른 크기다. 품질 보고는 두 종류를 다른 항목으로 센다
+    (D3c-2 리뷰 F3). kind는 기본값이면 직렬화에서 빼므로 수정값이 없는 덱의 렌더 계획은 그대로다."""
+
     chapter_id: str
     slot: str
     message: str
     needed_pt: float
     available_pt: float
+    kind: Literal["capacity", "font_size"] = Field(default="capacity", json_schema_extra=_omittable)
+
+    @model_serializer(mode='wrap')
+    def omit_default_kind(self, handler):
+        result = handler(self)
+        if self.kind == "capacity":
+            result.pop('kind', None)
+        return result
 
 
 class DiagramPagePlan(BaseModel):

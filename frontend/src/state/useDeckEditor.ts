@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { api, ApiError, messageOf, type Deck, type RenderPlan } from "../api/client";
+import { api, ApiError, messageOf, type Deck, type DraftInfo, type RenderPlan } from "../api/client";
 import { editorReducer } from "./deckStore";
 import { pruneChangedSpans } from "../editor/expressionEditing";
+import { normalizeDeckEdits } from "../editor/directEdit";
 
 export type SaveState = "저장됨" | "저장 대기" | "저장 중" | "저장 실패";
 export type Timings = { measureMs: number; saveMs: number };
 
 const DEFAULT_TIMINGS: Timings = { measureMs: 300, saveMs: 1200 };  // 결정 1, 2
+
+export type Coalesce = "start" | "continue";
 
 export function useDeckEditor(
   projectName: string,
@@ -14,7 +17,12 @@ export function useDeckEditor(
   onDeckChange: (d: Deck) => void,
   timings: Timings = DEFAULT_TIMINGS,
   onConflict?: () => void,  // 412 를 만난 그 자리에서 동기로 알린다 (부모가 일반 실패 배너를 생략하는 힌트. 묶음 최종 리뷰 2)
+  // 저장을 멈춘다(자동 저장, 플러시, 언마운트 플러시). 장 생성 묶음 중 읽기 전용이 된 편집 화면이 쓴다: 묶음 중
+  // 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7). 풀리면 남은 편집을 지금처럼 자동 저장한다
+  paused = false,
 ) {
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const [state, dispatch] = useReducer(editorReducer, {
     past: [], present: initialDeck, future: [],
   });
@@ -32,6 +40,15 @@ export function useDeckEditor(
   conflictRef.current = conflict;
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
+  // 충돌 해소의 미저장본 보존 (D2a-2): 진행 중 표시, 보존 결과, 보존 실패 시 복사할 내용
+  const [reloading, setReloading] = useState(false);
+  const [preservedDraft, setPreservedDraft] = useState<DraftInfo | null>(null);
+  const lastPreserved = useRef<{ deck: Deck; info: DraftInfo } | null>(null);  // 마지막으로 보존에 성공한 덱
+  // 보존 실패의 원인 문구. 복사할 내용은 화면이 현재 덱에서 만든다: 실패 뒤의 편집도 담기 위해서다 (리뷰 R2)
+  const [preserveFailure, setPreserveFailure] = useState<{ message: string } | null>(null);
+  const reloadInFlight = useRef<Promise<void> | null>(null);
+  // 보존은 했지만 서버 내용을 읽지 못해 아직 되돌리지 못한 상태 (D2a 최종 리뷰 F2)
+  const [reloadIncomplete, setReloadIncomplete] = useState(false);
   // 실측 오류는 저장 오류와 분리한다: 한 상태를 공유하면 뒤이은 저장 성공이 실측 실패 문구를 지웠다 (FC-02)
   const [measureError, setMeasureError] = useState("");
   const firstSave = useRef(true);      // 편집 세션 첫 저장은 스냅샷 (결정 1)
@@ -79,7 +96,12 @@ export function useDeckEditor(
         return true;
       }
       // 저장이 진행되는 동안 편집이나 되돌리기가 있었다: 그 결과를 이어서 저장한다. 종전에는 이 경로가 없어
-      // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01)
+      // 되돌린 상태가 서버에 오르지 않고 표시가 '저장 중' 에 멈췄다 (FC-01). 그사이 저장이 멈췄으면(묶음 중 읽기
+      // 전용) 이어 저장하지 않고 대기로 둔다. 멈춤이 풀리면 자동 저장이 이어 간다 (D3a-β 리뷰 B4)
+      if (pausedRef.current) {
+        setSaveState("저장 대기");
+        return false;
+      }
       return doPut(residual);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) {
@@ -130,9 +152,10 @@ export function useDeckEditor(
     }
     // 충돌 상태에서는 자동 저장을 멈춘다: 사용자가 서버 내용으로 되돌리기 전까지는 다시 시도하지 않는다
     setSaveState("저장 대기");
+    if (paused) return;
     const t = setTimeout(() => { void saveNow(deck); }, timings.saveMs);
     return () => clearTimeout(t);
-  }, [deck, saveNow, timings.saveMs, conflict]);
+  }, [deck, saveNow, timings.saveMs, conflict, paused]);
 
   // 플러시: 진행 중 저장이 끝난 뒤 잔여 편집까지 즉시 저장한다 (결정 1. 내보내기와 화면 이탈 전에 부모가 부른다)
   // 성공 여부를 반환해, 저장 실패 시 내보내기나 이탈을 중단할 수 있게 한다 (2026-08-29 태스크 16 리뷰 반영)
@@ -143,19 +166,32 @@ export function useDeckEditor(
     }
     await saveChain.current;
     if (conflictRef.current) return false;
-    if (deckRef.current !== savedDeck.current) return saveNow(deckRef.current);
+    if (deckRef.current !== savedDeck.current) return pausedRef.current ? false : saveNow(deckRef.current);
     return true;
   }, [saveNow]);
 
-  // 언마운트 플러시: 탭 전환이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
+  // 언마운트 플러시: 단계 이동이나 목록 복귀로 화면이 내려가도 마지막 편집을 잃지 않는다 (결정 1)
   useEffect(() => () => {
-    if (!conflictRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
+    if (!conflictRef.current && !pausedRef.current && deckRef.current !== savedDeck.current) void saveNowRef.current(deckRef.current);
   }, []);
 
-  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean }) => {
-    const next = pruneChangedSpans(deckRef.current, edit(deckRef.current));
-    if (next !== deckRef.current && options?.snapshot) snapshotNext.current += 1;
-    dispatch({ type: "edit", deck: next });
+  // 직전 병합 편집이 만든 덱. 지금 덱이 이것과 같을 때만 다음 병합 편집이 그 항목을 바꿔 쓴다. 그사이 자동 저장
+  // 응답이나 서버 적용, 되돌리기가 끼어들면 덱이 달라 새 항목이 된다 (D3c 계획 재리뷰 RR16)
+  const coalesceBase = useRef<Deck | null>(null);
+  // coalesce: "start"는 새 항목을 만들고 병합 기준을 세운다(방향키를 새로 누름). "continue"는 지금 덱이 그 기준일 때
+  // 직전 항목을 바꿔 쓴다(키 자동 반복). 첫 누름이 기준을 세우지 않으면 길게 누른 이동이 두 항목이 된다 (D3c-3 리뷰 F1)
+  const apply = useCallback((edit: (d: Deck) => Deck, options?: { snapshot?: boolean; coalesce?: Coalesce }) => {
+    // 직접 수정은 화면에서도 정규화한다. PUT 응답이 정규화한 덱을 돌려주지 않아 화면 덱이 서버와 어긋나기 때문이다
+    // (D3c-3, 계획 재리뷰 RR5)
+    const next = normalizeDeckEdits(pruneChangedSpans(deckRef.current, edit(deckRef.current)));
+    // 바뀐 것이 없으면(페이지 끝에서 누른 방향키 등) 병합 기준도 건드리지 않는다. 건드리면 다음 이동이 관계없는
+    // 직전 편집의 항목을 바꿔 쓴다
+    if (next === deckRef.current) return;
+    if (options?.snapshot) snapshotNext.current += 1;
+    const amend = options?.coalesce === "continue" && coalesceBase.current !== null && coalesceBase.current === deckRef.current;
+    dispatch({ type: amend ? "amend" : "edit", deck: next });
+    coalesceBase.current = options?.coalesce ? next : null;
+    deckRef.current = next;  // 같은 키 반복이 렌더 전에 와도 병합 판정이 새 덱을 보게 한다
   }, []);
 
   const replace = useCallback((next: Deck) => {
@@ -177,33 +213,82 @@ export function useDeckEditor(
   const redo = useCallback(() => dispatch({ type: "redo" }), []);
 
   // 충돌 복구: 서버 덱을 다시 읽어 되돌리기 이력을 비우고, 다음 저장은 스냅샷을 남기며(새 편집 세션),
-  // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다)
-  const reloadFromServer = useCallback(async (): Promise<void> => {
-    try {
-      await saveChain.current;
-      const serverDeck = await api.getDeck(projectName);
-      dispatch({ type: "reset", deck: serverDeck });
-      savedDeck.current = serverDeck;
-      firstSave.current = true;
-      snapshotNext.current = 0;
-      snapshotSaved.current = 0;
-      setSaveError("");
-      conflictRef.current = false;
-      setConflict(false);
-      setSaveState("저장됨");
-      onDeckChangeRef.current(serverDeck);
-    } catch (e) {
-      setSaveError(messageOf(e));
-    }
+  // 부모(ProjectView) 의 덱도 함께 갱신한다 (빠지면 다른 탭이 낡은 덱으로 최신본을 덮는다).
+  // D2a-2: 교체 직전 화면의 미저장 덱(충돌 뒤 편집 포함)을 서버 drafts/에 보존한다. 보존이 실패하면
+  // 교체하지 않는다. discardUnsaved는 사용자가 "보존하지 못해도 되돌린다"를 확인한 경우에만 쓴다
+  const reloadFromServer = useCallback((options?: { discardUnsaved?: boolean }): Promise<void> => {
+    if (reloadInFlight.current) return reloadInFlight.current;  // 연속 클릭은 한 번의 보존으로 병합한다
+    const run = (async () => {
+      setReloading(true);
+      try {
+        await saveChain.current;
+        const unsaved = deckRef.current !== savedDeck.current ? deckRef.current : null;
+        let preserved: DraftInfo | null = null;
+        if (unsaved && !options?.discardUnsaved && unsaved === lastPreserved.current?.deck) {
+          // 이미 보존한 같은 덱이다(보존 뒤 서버 읽기만 실패해 다시 누른 경우). 다시 보존하지 않는다.
+          // 다시 보존이 실패하면 이미 보존한 사실을 지우고 "변경이 사라진다"고 잘못 안내했다 (D3a-1 리뷰 R22)
+          preserved = lastPreserved.current.info;
+          setPreserveFailure(null);
+          setPreservedDraft(preserved);
+        } else if (unsaved && !options?.discardUnsaved) {
+          try {
+            preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
+            lastPreserved.current = { deck: unsaved, info: preserved };
+          } catch (e) {
+            // 지난 충돌의 보존 성공 안내를 지운다. 남기면 두 결과 안내가 함께 그려지고 초점이 지난 안내로 간다 (D2a 이월 13)
+            setPreservedDraft(null);
+            setPreserveFailure({ message: messageOf(e) });
+            return;
+          }
+          setPreserveFailure(null);
+          setPreservedDraft(preserved);  // 다음 읽기가 실패해도 보존 사실은 알린다 (리뷰 R3)
+        }
+        let serverDeck: Deck;
+        try {
+          serverDeck = await api.getDeck(projectName);
+        } catch (e) {
+          setSaveError(preserved
+            ? `변경은 보존했지만 서버 내용을 읽지 못했습니다. 다시 시도해 주세요. (${messageOf(e)})`
+            : messageOf(e));
+          setReloadIncomplete(preserved !== null);
+          return;
+        }
+        setReloadIncomplete(false);
+        dispatch({ type: "reset", deck: serverDeck });
+        savedDeck.current = serverDeck;
+        deckRef.current = serverDeck;
+        firstSave.current = true;
+        snapshotNext.current = 0;
+        snapshotSaved.current = 0;
+        setSaveError("");
+        setPreserveFailure(null);
+        if (!preserved) setPreservedDraft(null);  // 이번 되돌리기에서 보존한 것이 없으면 지난 안내를 지운다
+        conflictRef.current = false;
+        setConflict(false);
+        setSaveState("저장됨");
+        onDeckChangeRef.current(serverDeck);
+      } catch (e) {
+        setSaveError(messageOf(e));
+      } finally {
+        setReloading(false);
+        reloadInFlight.current = null;
+      }
+    })();
+    reloadInFlight.current = run;
+    return run;
   }, [projectName]);
+
+  const dismissPreservedDraft = useCallback(() => setPreservedDraft(null), []);
 
   const retrySave = flushSave;  // 저장 실패 뒤 재시도 버튼의 별칭
 
   return {
-    deck, plan, saveState, saveError, measureError, conflict,
+    deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure, reloadIncomplete,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
+    planDeck,  // 계획을 만든 덱. 낡은 계획에서 끌기를 허용할지 정한다 (D3c-3, 재리뷰 RR15)
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
     apply, replace, acceptSaved, undo, redo, flushSave, remeasure, reloadFromServer, retrySave, reportConflict,
+    dismissPreservedDraft,
   };
 }

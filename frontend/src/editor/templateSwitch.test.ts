@@ -69,7 +69,7 @@ it("callout에서 summary로: 밴드 문장이 결론으로 이사하고 요점�
   const r = switchTemplate(callout, "summary");
   expect(r.slots.template === "summary" && r.slots.conclusion).toBe("핵심 메시지");
   expect(r.slots.template === "summary" && r.slots.points).toEqual([]);
-  expect(r.dropped).toEqual(['강조 색 역할 "accent1"']);
+  expect(r.dropped).toEqual(['강조 색 "강조색 1"']);  // 다시 씀 (D3c-3): 역할 식별자 대신 우리말 이름
 });
 
 it("callout에서 table로: 밴드 문장이 결론 취급으로 소실 목록에 오른다", () => {

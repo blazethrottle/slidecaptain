@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from slidecaptain.models.deck import Deck
+from slidecaptain.models.report_purpose import output_dump
 from slidecaptain.models.semantic_review import SemanticSuspect, SemanticSuspectReport, SemanticRelatedText
 from slidecaptain.pipeline.story import StaleStoryPlan, require_current_story, _require_current_evidence
 
@@ -69,7 +70,7 @@ def _direction(text):
 
 def assess_semantic_suspects(deck: Deck, sources: dict[str,str]) -> SemanticSuspectReport:
     raw=deck.model_dump(mode='json')
-    fingerprint=hashlib.sha256(json.dumps({'rule':'semantic-suspect-v1','deck':raw,
+    fingerprint=hashlib.sha256(json.dumps({'rule':'semantic-suspect-v1','deck':output_dump(deck),  # D3b-2: 보고 목적 칸을 뺀다
       'sources':{name:hashlib.sha256(text.encode()).hexdigest() for name,text in sources.items()}},
       ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest()
     def not_run(reason):return SemanticSuspectReport(input_fingerprint=fingerprint,status='not_run',reason=reason,evaluated_fields=0,findings=[])

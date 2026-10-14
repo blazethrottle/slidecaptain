@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import fixture from "../../../backend/tests/fixtures/q3b-project.json";
-import { api, ApiError, type Deck, type Preset, type RenderPlan } from "../api/client";
+import { api, ApiError, type Deck, type Preset, type RenderPlan, type StructureResult } from "../api/client";
 import { PropertyPanel } from "./PropertyPanel";
 import { GeneratePanel } from "./GeneratePanel";
 import { applyTemplateSwitch, switchTemplate } from "./templateSwitch";
@@ -9,17 +9,35 @@ import { applyTextEdit, reorderChapters } from "./slotOps";
 import { editorReducer } from "../state/deckStore";
 import { StructureScreen } from "../screens/StructureScreen";
 import { EditorScreen } from "../screens/EditorScreen";
+import { batchView, chapterView, jobView } from "../test/jobs";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateStructure: vi.fn(), generateChapter: vi.fn(),
-    condenseChapter: vi.fn(), putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn() } };
+  return { ...mod, api: { ...mod.api, startJob: vi.fn(), settleCandidate: vi.fn(),
+    putDeck: vi.fn(), measure: vi.fn(), reviewNumbers: vi.fn(), getPreset: vi.fn(),
+    prepareAi: vi.fn(), startChapters: vi.fn(), getJob: vi.fn(), getDeck: vi.fn(), listJobs: vi.fn() } };
+});
+
+// D2b-5b: 구조안 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateStructure = vi.fn<(name: string, params: Record<string, unknown>) => Promise<StructureResult>>();
+beforeEach(() => {
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("structure"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateStructure(name, body.params as Record<string, unknown>);
+    const failed = result.status !== "ok";
+    return jobView("structure", { project: name, result: result as unknown as Record<string, unknown>,
+      state: failed ? "failed" : "succeeded", candidate_status: failed ? "none" : "held" });
+  });
 });
 
 const project = { name: "diagram", title: "합성 도식 보고", updated_at: "", status: "ok" as const };
 const chapterId = "synthetic-flow";
 const freshDeck = () => structuredClone(fixture.deck) as Deck;
-beforeEach(() => { vi.mocked(api.getPreset).mockResolvedValue(fixture.preset as Preset); });
+beforeEach(() => {
+  vi.mocked(api.getPreset).mockResolvedValue(fixture.preset as Preset);
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.listJobs).mockResolvedValue([]);
+});
 
 it("저장된 도식의 주제와 템플릿을 읽기 전용으로 보여 준다", () => {
   render(<PropertyPanel deck={freshDeck()} chapterId={chapterId} onApply={vi.fn()} />);
@@ -29,11 +47,11 @@ it("저장된 도식의 주제와 템플릿을 읽기 전용으로 보여 준다
 });
 
 it("도식에 AI 재생성이나 축약을 제공하지 않는다", () => {
-  render(<GeneratePanel project={project} deck={freshDeck()} chapterId={chapterId} onReplace={vi.fn()} />);
+  render(<GeneratePanel project={project} deck={freshDeck()} chapterId={chapterId} onFlush={async () => true}
+    onApplied={vi.fn()} onConflict={vi.fn()} />);
   expect(screen.queryByRole("button", { name: "이 장 다시 생성" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "이 장 축약" })).not.toBeInTheDocument();
-  expect(api.generateChapter).not.toHaveBeenCalled();
-  expect(api.condenseChapter).not.toHaveBeenCalled();
+  expect(api.startJob).not.toHaveBeenCalled();
 });
 
 it("일반 슬롯 편집이나 템플릿 전환으로 도식의 의미 입력을 버리지 않는다", () => {
@@ -67,39 +85,41 @@ it("구조안 재생성과 도식 수정은 막고 기존 도식을 유지해 �
   expect(screen.getByLabelText("2번 장 템플릿")).toBeDisabled();
   expect(screen.getByLabelText("2번 장 템플릿")).toHaveValue("diagram");
   expect(screen.getByLabelText("2번 장 주제")).toHaveAttribute("readonly");
-  expect(screen.getByRole("button", { name: "요청 처리 흐름 삭제" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "2번 장 삭제" })).toBeDisabled();  // 다시 씀(D3b-7): 접근 이름 통일
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   await waitFor(() => expect(onDone).toHaveBeenCalled());
   expect(api.putDeck).toHaveBeenCalledWith(project.name, deck, true);
-  expect(api.generateStructure).not.toHaveBeenCalled();
-  expect(api.generateChapter).not.toHaveBeenCalled();
+  expect(generateStructure).not.toHaveBeenCalled();
+  expect(api.startChapters).not.toHaveBeenCalled();
 });
 
 it("구조안 화면은 도식 편집의 진입점과 재계획 제한의 복구 방법을 안내한다", async () => {
   render(<StructureScreen project={project} deck={freshDeck()} onDeckChange={vi.fn()} onDone={vi.fn()} />);
-  expect(screen.getByText(/편집 탭에서.*도식 수정/)).toBeInTheDocument();
+  expect(screen.getByText(/편집 단계에서.*도식 수정/)).toBeInTheDocument();
   expect(screen.queryByText(/도식은 읽기 전용이며/)).not.toBeInTheDocument();
   await userEvent.click(screen.getByText("자료나 보고 계획이 달라졌다면"));
   expect(screen.getByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
   expect(screen.getByRole("region", { name: "보고 계획 복구 안내" })).not.toHaveTextContent("현재 계획으로 작업을 계속할 수 없습니다");
   expect(screen.getByRole("button", { name: "다시 생성" })).toBeDisabled();
-  expect(api.generateStructure).not.toHaveBeenCalled();
+  expect(generateStructure).not.toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();
 });
 
 it.each(["generate", "condense"])("일반 장의 %s도 낡은 계획을 도식 재계획으로 잘못 안내하지 않는다", async (operation) => {
-  const stale = Object.assign(new ApiError(409, "구조안을 다시 생성해 주세요."), { code: "stale_story_plan" });
-  vi.mocked(api.generateChapter).mockRejectedValue(stale);
-  vi.mocked(api.condenseChapter).mockRejectedValue(stale);
+  // 작업이 구성 계획 낡음으로 실패했다 (D2b-5b: 재생성과 축약은 작업 API를 쓴다)
+  vi.mocked(api.startJob).mockResolvedValue(jobView(operation === "generate" ? "chapter" : "condense", {
+    state: "failed", candidate_status: "none",
+    error: { error_class: "input", status: 409, detail: "구조안을 다시 생성해 주세요.", code: "stale_story_plan" } }));
   const deck = freshDeck();
-  const onReplace = vi.fn();
-  render(<GeneratePanel project={project} deck={deck} chapterId="cover" onReplace={onReplace} />);
+  const onApplied = vi.fn();
+  render(<GeneratePanel project={project} deck={deck} chapterId="cover" onFlush={async () => true} onApplied={onApplied}
+    onConflict={vi.fn()} />);
   await userEvent.type(screen.getByLabelText("재생성 지시사항"), "유지할 지시");
   await userEvent.click(screen.getByRole("button", { name: operation === "generate" ? "이 장 다시 생성" : "이 장 축약" }));
   expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
   expect(screen.queryByText("구조안을 다시 생성해 주세요.")).not.toBeInTheDocument();
   expect(screen.getByLabelText("재생성 지시사항")).toHaveValue("유지할 지시");
-  expect(onReplace).not.toHaveBeenCalled();
+  expect(onApplied).not.toHaveBeenCalled();
   expect(api.putDeck).not.toHaveBeenCalled();
   expect(deck).toEqual(fixture.deck);
 });
@@ -109,13 +129,21 @@ it("구조안 승인 후 낡은 계획을 알게 되면 복구 안내를 하고 
   deck.slides = deck.slides.filter(s => s.chapter_id !== "cover");
   deck.structure.chapters.push({ ...deck.structure.chapters[0], id: "another", topic: "다음 장" });
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
-  vi.mocked(api.generateChapter).mockRejectedValue(Object.assign(new ApiError(409, "구조안을 다시 생성해 주세요."),
-    { code: "stale_story_plan" }));
+  // 서버 묶음은 첫 장에서 낡은 계획을 알게 되면 남은 장을 보내지 않고 멈춘다 (D2b-4 held_stale_plan)
+  const held = batchView([
+    chapterView("cover", "failed", { error: { error_class: null, status: 409, detail: "구조안을 다시 생성해 주세요.",
+      code: "stale_story_plan" } }),
+    chapterView("another", "interrupted", { error: { error_class: null, status: null, detail: null,
+      code: "held_stale_plan" } }),
+  ], { project: project.name, state: "failed", outcome: "held_stale_plan" });
+  vi.mocked(api.startChapters).mockResolvedValueOnce({ ...held, state: "running", outcome: null });
+  vi.mocked(api.getJob).mockResolvedValueOnce(held);
+  vi.mocked(api.getDeck).mockResolvedValue(deck);
   const onDone = vi.fn();
-  render(<StructureScreen project={project} deck={deck} onDeckChange={vi.fn()} onDone={onDone} />);
+  render(<StructureScreen project={project} deck={deck} onDeckChange={vi.fn()} onDone={onDone} pollIntervalMs={0} />);
   await userEvent.click(screen.getByRole("button", { name: "승인하고 내용 생성" }));
   expect(await screen.findByRole("region", { name: "보고 계획 복구 안내" })).toHaveTextContent(/별도 프로젝트/);
-  expect(api.generateChapter).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(api.startChapters).mock.calls[0][1]).toEqual(["cover", "another"]);
   expect(onDone).not.toHaveBeenCalled();
 });
 
@@ -123,9 +151,11 @@ it("프로젝트에서 도식 미리보기를 열고 다른 장을 저장해도 
   vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
   vi.mocked(api.measure).mockResolvedValue(fixture.render_plan as RenderPlan);
   const onDeckChange = vi.fn();
+  const kinds: string[] = [];
   render(<EditorScreen project={project} deck={freshDeck()} onDeckChange={onDeckChange}
-    timings={{ measureMs: 1, saveMs: 1 }} />);
-  await screen.findByText("저장 상태: 저장됨");
+    timings={{ measureMs: 1, saveMs: 1 }} onSaveStatusChange={(st) => { if (st) kinds.push(st.kind); }} />);
+  // D2a-5: 저장 상태는 상태 표시 컴포넌트로 보인다. 다시 씀(D3a-2): 상단 머리로 옮겨 상태 종류로 판정한다
+  await waitFor(() => expect(kinds.at(-1)).toBe("saved"));
   await waitFor(() => expect(api.measure).toHaveBeenCalled());
   // 장 목록은 주제 이름으로 접근할 수 있다.
   await userEvent.click(screen.getByRole("button", { name: /요청 처리 흐름/ }));

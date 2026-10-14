@@ -5,15 +5,28 @@ import fixture from "../../../backend/tests/fixtures/q3b-project.json";
 import { api, ApiError, type Deck, type DiagramGenerationResult, type DocumentChangeBasis,
   type DocumentChangePreview, type RenderPlan } from "../api/client";
 import { deferred } from "../test/fixtures";
+import { jobView } from "../test/jobs";
 import { emptyUsage } from "../test/usage";
 import { DiagramAuthoringDialog } from "./DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
 vi.mock("../api/client", async original => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, api: { ...mod.api, generateDiagram: vi.fn(), measure: vi.fn(), putDeck: vi.fn(),
+  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(),
     reconcileDiagramStory: vi.fn(), getDocumentChangeBasis: vi.fn(), previewDocumentChange: vi.fn(), applyDocumentChange: vi.fn() } };
 });
+
+// D2b-5b: 도식 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
+const generateDiagram = vi.fn<(name: string, params: GenerateDiagramParams) => Promise<DiagramGenerationResult>>();
+type GenerateDiagramParams = Record<string, unknown>;
+function bridgeJobs() {
+  vi.mocked(api.prepareAi).mockResolvedValue({ "X-AI-Consent": "SlideCaptain" });
+  vi.mocked(api.settleCandidate).mockResolvedValue(jobView("diagram"));
+  vi.mocked(api.startJob).mockImplementation(async (name, body) => {
+    const result = await generateDiagram(name, body.params as GenerateDiagramParams);
+    return jobView("diagram", { result: result as unknown as Record<string, unknown> });
+  });
+}
 const fresh = () => structuredClone(fixture.deck) as Deck;
 const basis: DocumentChangeBasis = { base_etag: '"old"', sources_fingerprint: "b".repeat(64), evidence_fingerprints: {} };
 function generation(): DiagramGenerationResult {
@@ -38,7 +51,8 @@ function open(props: Partial<React.ComponentProps<typeof DiagramAuthoringDialog>
   return { ...render(<DiagramAuthoringDialog {...all} />), props: all, ...defaults };
 }
 beforeEach(() => {
-  vi.mocked(api.generateDiagram).mockResolvedValue(generation());
+  bridgeJobs();
+  generateDiagram.mockResolvedValue(generation());
   vi.mocked(api.reconcileDiagramStory).mockImplementation(async (_name, request) => request.deck);
   vi.mocked(api.measure).mockResolvedValue(structuredClone(fixture.render_plan) as RenderPlan);
   vi.mocked(api.getDocumentChangeBasis).mockResolvedValue(basis);
@@ -61,7 +75,7 @@ async function confirmAll() {
 
 it("기존 도식 mode replace·프로젝트 실측·전후 모든 변경 확인 후 저장된 후보만 인계한다", async () => {
   const ui = open(); await checkCandidate();
-  expect(api.generateDiagram).toHaveBeenCalledWith("synthetic", expect.objectContaining({ mode: "replace", chapter_id: "synthetic-flow",
+  expect(generateDiagram).toHaveBeenCalledWith("synthetic", expect.objectContaining({ mode: "replace", chapter_id: "synthetic-flow",
     role: "answer", claim_ids: ["claim"] }));
   expect(api.measure).toHaveBeenCalledWith(expect.any(Object), "synthetic");
   expect(screen.getByRole("region", { name: "도식 교체 전후 확인" })).toHaveTextContent("원래 도식");
@@ -104,13 +118,14 @@ it.each(["basis", "preview"])("%s 늦은 응답은 새 폼 입력의 검사 결�
   expect(ui.onApply).not.toHaveBeenCalled();
 });
 
-it("적용 응답이 새 저장본 뒤에 도착하면 이전 후보를 인계하지 않는다", async () => {
+it("적용 응답이 새 저장본 뒤에 도착해도 저장된 결과는 처음 기준과 함께 넘겨 편집 화면이 판정한다 (D3c-6 리뷰 G11)", async () => {
   const pending = deferred<Deck>(); vi.mocked(api.applyDocumentChange).mockReturnValue(pending.promise);
   const ui = open(); await checkCandidate(); await confirmAll();
   await userEvent.click(screen.getByRole("button", { name: "도식 적용" }));
   ui.rerender(<DiagramAuthoringDialog {...ui.props} deck={fresh()} />);
   await act(async () => pending.resolve(confirmation().candidate));
-  expect(ui.onApply).not.toHaveBeenCalled();
+  // 서버에 저장된 결과다. 여기서 버리면 다음 자동 저장이 덮는다. 기준(ui.deck)이 지금 덱과 다르므로 편집 화면이 충돌로 보낸다
+  expect(ui.onApply).toHaveBeenCalledWith(confirmation().candidate, ui.deck, "synthetic-flow", true);
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("AI 교체 후보");
 });
 
@@ -157,7 +172,7 @@ it("적용 중 unmount되어도 실제 요청이 끝날 때까지 소유한 busy
   expect(ui.onBusyChange).toHaveBeenLastCalledWith(true);
   await act(async () => pending.resolve(confirmation().candidate));
   expect(ui.onBusyChange).toHaveBeenLastCalledWith(false);
-  expect(ui.onApply).not.toHaveBeenCalled();
+  expect(ui.onApply).toHaveBeenCalledWith(confirmation().candidate, ui.deck, "synthetic-flow", true);  // 저장된 결과는 넘긴다(리뷰 G11)
 });
 
 it("적용 중 폼 편집·닫기·Escape를 차단하고 확정된 후보의 저장 응답을 인계한다", async () => {

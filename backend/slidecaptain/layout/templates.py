@@ -4,6 +4,8 @@
 (내용은 프레임 안에 담길 뿐, 프레임을 움직이지 못한다).
 """
 
+from collections.abc import Callable
+
 from slidecaptain.metrics.capacity import (
     _content_geometry,
     content_geometry,
@@ -38,6 +40,22 @@ from slidecaptain.models.deck import (
 )
 from slidecaptain.models.preset import Preset
 from slidecaptain.models.render import CapacityWarning, Frame, Para, SlidePlan, TablePlan
+
+FontPresets = Callable[[str], Preset]  # 요소 열쇠 -> 그 요소의 글자 배율을 곱한 프리셋 (D3c-2)
+
+
+def _font_preset(preset: Preset, scale: float) -> Preset:
+    """글자 역할 크기에만 배율을 곱한 프리셋 사본 (D3c-2, 계획 4.4).
+
+    요소 하나의 문단과 용량 경고에만 쓴다. 위치와 높이(slide_geometry, 템플릿별 기하)는 원래 프리셋으로 계산하므로
+    바뀌지 않는다(재리뷰 RR2). 문단 크기는 OOXML의 저장 단위인 1/100pt로 반올림한다. 검증을 거치지 않는
+    사본이라 프리셋의 글자 하한 규칙에 걸리지 않는다(하한 아래는 엔진이 경고로 알린다)."""
+    if scale == 1:
+        return preset
+    roles = preset.font_roles
+    scaled = {name: round(value * scale, 2) for name, value in roles.model_dump().items()
+              if isinstance(value, (int, float)) and not isinstance(value, bool) and name.endswith("_pt")}
+    return preset.model_copy(update={"font_roles": roles.model_copy(update=scaled)})
 
 
 def _para_lines(
@@ -88,19 +106,19 @@ def slide_geometry(preset: Preset, eyebrow: str = "", subtitle: str = "") -> dic
 
 
 def common_slot_warnings(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
-                         preset: Preset, metrics) -> list[CapacityWarning]:
+                         preset: Preset, metrics, fp: FontPresets | None = None) -> list[CapacityWarning]:
     """제목과 각주에는 있던 넘침 경고를 이 두 슬롯에도 건다 (2026-09-07 최종 리뷰 major).
 
     프레임 높이는 한 줄로 고정인데 텍스트는 폭에 따라 여러 줄로 꺾이므로, 경고가 없으면
     긴 문구가 아래 요소를 소리 없이 침범한다.
     """
 
-    r = preset.font_roles
     warnings: list[CapacityWarning] = []
-    for slot, text, font_pt, bold, height in (
-        ("eyebrow", eyebrow, r.eyebrow_pt, True, g["eyebrow_h"]),
-        ("subtitle", subtitle, r.subtitle_pt, False, g["subtitle_h"]),
+    for slot, text, role, bold, height in (
+        ("eyebrow", eyebrow, "eyebrow_pt", True, g["eyebrow_h"]),
+        ("subtitle", subtitle, "subtitle_pt", False, g["subtitle_h"]),
     ):
+        font_pt = getattr((fp(slot) if fp else preset).font_roles, role)
         warning = _fixed_height_warning(
             chapter, slot, text, g["content_width"], height, font_pt, bold, preset, metrics
         )
@@ -110,12 +128,14 @@ def common_slot_warnings(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
 
 
 def _common_slot_frames(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
-                        preset: Preset, metrics) -> list[Frame]:
+                        preset: Preset, metrics, fp: FontPresets | None = None) -> list[Frame]:
     """값이 있을 때만 프레임을 만든다. 비어 있으면 편집 진입은 속성 패널이 맡는다 (DA-4 결정)."""
 
-    r, c = preset.font_roles, preset.colors
+    c = preset.colors
+    fp = fp or (lambda _key: preset)
     frames: list[Frame] = []
     if eyebrow:
+        r = fp("eyebrow").font_roles
         frames.append(Frame(
             name=f"{chapter.id}:eyebrow",
             x=preset.spacing.margin_left, y=g["eyebrow_y"], w=g["content_width"], h=g["eyebrow_h"],
@@ -125,6 +145,7 @@ def _common_slot_frames(chapter: Chapter, g: dict, eyebrow: str, subtitle: str,
             )],
         ))
     if subtitle:
+        r = fp("subtitle").font_roles
         frames.append(Frame(
             name=f"{chapter.id}:subtitle",
             x=preset.spacing.margin_left, y=g["subtitle_y"], w=g["content_width"], h=g["subtitle_h"],
@@ -263,22 +284,25 @@ def _footnote_warning(chapter: Chapter, text: str, preset: Preset, metrics) -> C
     )
 
 
-def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics, presenter: str) -> SlidePlan:
-    r, c = preset.font_roles, preset.colors
+def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics, presenter: str,
+                 fp: FontPresets | None = None) -> SlidePlan:
+    c = preset.colors
+    fp = fp or (lambda _key: preset)
     geo = cover_geometry(preset)
     x, w, f = geo["x"], geo["w"], geo["fields"]
     # 칸별 (텍스트, 폭, 글꼴 크기, 굵기). 높이가 고정된 한 줄성 영역이라 넘침을 실측으로 잡는다
     # (2026-09-02 Critical 묶음 태스크 C: 종전에는 표지에 경고 함수가 없어 4줄 제목도 경고 0건이었다)
     specs = {
-        "cover_title": (slots.title, w, r.cover_title_pt, True, c.text),
-        "subtitle": (slots.subtitle, w, r.subtitle_pt, False, c.accent),
-        "date": (slots.date, w / 2, r.body_pt, False, c.text),
+        "cover_title": (slots.title, w, "cover_title_pt", True, c.text),
+        "subtitle": (slots.subtitle, w, "subtitle_pt", False, c.accent),
+        "date": (slots.date, w / 2, "body_pt", False, c.text),
         # 보고자는 메타에서 온다 (장 제목을 chapter.topic에서 그리는 것과 같은 방식). 피보고자는 그리지 않는다
-        "presenter": (presenter, w / 2, r.body_pt, False, c.text),
+        "presenter": (presenter, w / 2, "body_pt", False, c.text),
     }
     frames = []
     warnings = []
-    for slot, (text, width, font_pt, bold, color) in specs.items():
+    for slot, (text, width, role, bold, color) in specs.items():
+        font_pt = getattr(fp(slot).font_roles, role)
         y, h = f[slot]
         frames.append(Frame(
             name=f"{chapter.id}:{slot}", x=x, y=y, w=width, h=h,
@@ -293,18 +317,20 @@ def _build_cover(chapter: Chapter, slots: CoverSlots, preset: Preset, metrics, p
 
 
 def _build_divider(
-    chapter: Chapter, slots: DividerSlots, page_no: int, preset: Preset, metrics
+    chapter: Chapter, slots: DividerSlots, page_no: int, preset: Preset, metrics, fp: FontPresets | None = None,
 ) -> SlidePlan:
-    r, c = preset.font_roles, preset.colors
+    c = preset.colors
+    fp = fp or (lambda _key: preset)
     geo = divider_geometry(preset)
     x, w, f = geo["x"], geo["w"], geo["fields"]
     specs = {
-        "section_no": (slots.section_no, r.subtitle_pt, False, c.accent),
-        "section_title": (slots.section_title, r.section_title_pt, True, c.text),
+        "section_no": (slots.section_no, "subtitle_pt", False, c.accent),
+        "section_title": (slots.section_title, "section_title_pt", True, c.text),
     }
     frames = []
     warnings = []
-    for slot, (text, font_pt, bold, color) in specs.items():
+    for slot, (text, role, bold, color) in specs.items():
+        font_pt = getattr(fp(slot).font_roles, role)
         y, h = f[slot]
         frames.append(Frame(
             name=f"{chapter.id}:{slot}", x=x, y=y, w=w, h=h,
@@ -320,63 +346,65 @@ def _build_divider(
 
 def _build_bullet_box(
     chapter: Chapter, slots: BulletBoxSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s = preset.spacing
     g = slide_geometry(preset, eyebrow, subtitle)
     bullets_h = g["content_bottom"] - g["content_top"] - s.box_height - s.box_gap
     warnings = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
     measure = measure_bullets(
-        slots.bullets, g["content_width"], preset.font_roles.body_pt, metrics.face(False), s
+        slots.bullets, g["content_width"], fp("bullets").font_roles.body_pt, metrics.face(False), s
     )
     if measure.total_height_pt > bullets_h:
         warnings.append(_measure_warning(chapter, "bullets", measure.total_height_pt, bullets_h))
-    if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
+    if (cw := _conclusion_warning(chapter, slots.conclusion, fp("conclusion"), metrics)) is not None:
         warnings.append(cw)
-    if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
+    if (fw := _footnote_warning(chapter, slots.footnote, fp("footnote"), metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset, metrics, g),
+        _title_frame(chapter, fp("title"), metrics, g),
         Frame(
             name=f"{chapter.id}:bullets",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=bullets_h,
-            paras=_bullet_paras(slots.bullets, g["content_width"], preset, metrics),
+            paras=_bullet_paras(slots.bullets, g["content_width"], fp("bullets"), metrics),
         ),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset, metrics),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, fp("conclusion"), metrics),
         _page_number_frame(chapter, page_no, preset),
     ]
     if slots.footnote:
-        frames.insert(3, _footnote_frame(chapter, slots.footnote, preset, metrics))
+        frames.insert(3, _footnote_frame(chapter, slots.footnote, fp("footnote"), metrics))
     return SlidePlan(chapter_id=chapter.id, template="bullet_box", frames=frames, warnings=warnings)
 
 
 def _build_summary(
     chapter: Chapter, slots: SummarySlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s = preset.spacing
     g = slide_geometry(preset, eyebrow, subtitle)
     points_top = g["content_top"] + s.box_height + s.summary_box_gap
     points_h = g["content_bottom"] - points_top
     warnings = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
     measure = measure_bullets(
-        slots.points, g["content_width"], preset.font_roles.body_pt, metrics.face(False), s
+        slots.points, g["content_width"], fp("points").font_roles.body_pt, metrics.face(False), s
     )
     if measure.total_height_pt > points_h:
         warnings.append(_measure_warning(chapter, "points", measure.total_height_pt, points_h))
-    if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
+    if (cw := _conclusion_warning(chapter, slots.conclusion, fp("conclusion"), metrics)) is not None:
         warnings.append(cw)
     frames = [
-        _title_frame(chapter, preset, metrics, g),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_top"], preset, metrics),
+        _title_frame(chapter, fp("title"), metrics, g),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_top"], fp("conclusion"), metrics),
         Frame(
             name=f"{chapter.id}:points",
             x=s.margin_left, y=points_top, w=g["content_width"], h=points_h,
-            paras=_bullet_paras(slots.points, g["content_width"], preset, metrics),
+            paras=_bullet_paras(slots.points, g["content_width"], fp("points"), metrics),
         ),
         _page_number_frame(chapter, page_no, preset),
     ]
@@ -415,8 +443,9 @@ def _table_col_widths(slots: TableSlots, frame_w: float, preset: Preset, metrics
 
 def _build_table(
     chapter: Chapter, slots: TableSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     table_h = g["content_bottom"] - g["content_top"]
@@ -438,15 +467,15 @@ def _build_table(
 
     row_heights = [row_height(header_lines)] + [row_height(c) for c in cell_lines]
     warnings = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
     total_h = sum(row_heights)
     if total_h > table_h:
         warnings.append(_measure_warning(chapter, "table", total_h, table_h))
-    if (fw := _footnote_warning(chapter, slots.footnote, preset, metrics)) is not None:
+    if (fw := _footnote_warning(chapter, slots.footnote, fp("footnote"), metrics)) is not None:
         warnings.append(fw)
     frames = [
-        _title_frame(chapter, preset, metrics, g),
+        _title_frame(chapter, fp("title"), metrics, g),
         Frame(
             name=f"{chapter.id}:table",
             x=s.margin_left, y=g["content_top"], w=g["content_width"], h=table_h,
@@ -464,38 +493,41 @@ def _build_table(
         _page_number_frame(chapter, page_no, preset),
     ]
     if slots.footnote:
-        frames.insert(2, _footnote_frame(chapter, slots.footnote, preset, metrics))
+        frames.insert(2, _footnote_frame(chapter, slots.footnote, fp("footnote"), metrics))
     return SlidePlan(chapter_id=chapter.id, template="table", frames=frames, warnings=warnings)
 
 
 def _build_compare2(
     chapter: Chapter, slots: CompareSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     card = card_geometry(preset, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다 (2026-09-02 태스크 A)
     card_h, card_w, inner_w = card["card_h"], card["card_w"], card["inner_w"]
     warnings = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
-    if (cw := _conclusion_warning(chapter, slots.conclusion, preset, metrics)) is not None:
+    if (cw := _conclusion_warning(chapter, slots.conclusion, fp("conclusion"), metrics)) is not None:
         warnings.append(cw)
 
     def card_frame(name: str, card_slots, x: float) -> Frame:
+        pk = fp(name)
+        rk = pk.font_roles
         paras = [Para(
-            text=card_slots.heading, font_pt=r.body_pt, bold=True, color=c.accent,
-            lines=_para_lines(card_slots.heading, inner_w, r.body_pt, True, preset, metrics),
+            text=card_slots.heading, font_pt=rk.body_pt, bold=True, color=c.accent,
+            lines=_para_lines(card_slots.heading, inner_w, rk.body_pt, True, preset, metrics),
         )]
-        paras += _bullet_paras(card_slots.bullets, inner_w, preset, metrics)
+        paras += _bullet_paras(card_slots.bullets, inner_w, pk, metrics)
         if (hw := _fixed_height_warning(
             chapter, f"{name}_heading", card_slots.heading,
-            inner_w, s.card_heading_height, r.body_pt, True,
+            inner_w, s.card_heading_height, rk.body_pt, True,
             preset, metrics,
         )) is not None:
             warnings.append(hw)
         bullets_h_available = card["bullets_h"]
-        measure = measure_bullets(card_slots.bullets, inner_w, r.body_pt, metrics.face(False), s)
+        measure = measure_bullets(card_slots.bullets, inner_w, rk.body_pt, metrics.face(False), s)
         if measure.total_height_pt > bullets_h_available:
             warnings.append(_measure_warning(chapter, name, measure.total_height_pt, bullets_h_available))
         return Frame(
@@ -506,10 +538,10 @@ def _build_compare2(
         )
 
     frames = [
-        _title_frame(chapter, preset, metrics, g),
+        _title_frame(chapter, fp("title"), metrics, g),
         card_frame("left_card", slots.left, s.margin_left),
         card_frame("right_card", slots.right, s.margin_left + card_w + s.card_gap),
-        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, preset, metrics),
+        _conclusion_box_frame(chapter, slots.conclusion, g["content_bottom"] - s.box_height, fp("conclusion"), metrics),
         _page_number_frame(chapter, page_no, preset),
     ]
     return SlidePlan(chapter_id=chapter.id, template="compare2", frames=frames, warnings=warnings)
@@ -517,7 +549,7 @@ def _build_compare2(
 
 def _build_callout(
     chapter: Chapter, slots: CalloutSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
     """전폭 강조 밴드 하나가 본문의 전부다 (2026-09-07 DB-1, 벤치마크 원형 2: 슬라이드 절반에서 관측).
 
@@ -526,20 +558,22 @@ def _build_callout(
     가운데 정렬(align, valign)은 작은 결론 상자와 달리 밴드가 슬라이드에서 가장 큰 시각 요소라
     내용 길이와 무관하게 균형 잡힌 배너로 보이게 하는 판단이다.
     """
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     band = callout_geometry(preset, eyebrow, subtitle)
     warnings = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
-    lines = measure_lines(slots.text, band["inner_w"], r.box_pt, metrics.face(True), s)
-    if lines > max_lines(band["inner_h"], r.box_pt, s.line_spacing):
-        lh = line_height_pt(r.box_pt, s.line_spacing)
+    box_pt = fp("text").font_roles.box_pt
+    lines = measure_lines(slots.text, band["inner_w"], box_pt, metrics.face(True), s)
+    if lines > max_lines(band["inner_h"], box_pt, s.line_spacing):
+        lh = line_height_pt(box_pt, s.line_spacing)
         warnings.append(_measure_warning(chapter, "text", lines * lh, band["inner_h"]))
     fill = getattr(c, slots.tone)
     text_color = readable_text_color(fill, light=c.background, dark=c.text)
     frames = [
-        _title_frame(chapter, preset, metrics, g),
+        _title_frame(chapter, fp("title"), metrics, g),
         Frame(
             name=f"{chapter.id}:text",
             x=s.margin_left, y=band["band_y"], w=g["content_width"], h=band["band_h"],
@@ -547,8 +581,8 @@ def _build_callout(
             radius_pt=s.callout_radius_pt,
             valign="middle",
             paras=[Para(
-                text=slots.text, font_pt=r.box_pt, bold=True, color=text_color, align="center",
-                lines=_para_lines(slots.text, band["inner_w"], r.box_pt, True, preset, metrics),
+                text=slots.text, font_pt=box_pt, bold=True, color=text_color, align="center",
+                lines=_para_lines(slots.text, band["inner_w"], box_pt, True, preset, metrics),
             )],
         ),
         _page_number_frame(chapter, page_no, preset),
@@ -558,7 +592,7 @@ def _build_callout(
 
 def _build_cards(
     chapter: Chapter, slots: CardsSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
     """카드 2~4개를 가로로 나눈 프레임 (2026-09-07 DB-2). compare2와 달리 결론 상자가
     없어 카드 높이는 본문 영역 전체다. 배지와 꼬리 라벨은 선택이라, 카드마다 실제로 있는
@@ -570,16 +604,19 @@ def _build_cards(
     강조를 굵기가 아니라 색으로 하라고 명시했다). 글자색은 DB-1이 만든 휘도 판단 함수로
     카드 배경에 맞게 다시 고른다.
     """
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     n = len(slots.cards)
     cg = cards_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
     card_w, card_h, inner_w = cg["card_w"], cg["card_h"], cg["inner_w"]
     warnings: list[CapacityWarning] = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
 
     def card_frame(card: CardItem, name: str, x: float) -> Frame:
+        pk = fp(name)
+        r = pk.font_roles  # 이 카드의 글자 배율 (D3c-2)
         fill = c.ink if card.emphasis else None
         border = c.accent1 if card.emphasis else c.rule
         text_color = readable_text_color(fill, light=c.background, dark=c.text) if fill else c.text
@@ -608,7 +645,7 @@ def _build_cards(
         if card.tail:
             reserved += s.card_tail_height + s.card_tail_gap
         bullets_h = card_h - 2 * s.box_padding - reserved
-        paras.extend(_bullet_paras(card.bullets, inner_w, preset, metrics, color=text_color))
+        paras.extend(_bullet_paras(card.bullets, inner_w, pk, metrics, color=text_color))
         measure = measure_bullets(card.bullets, inner_w, r.body_pt, metrics.face(False), s)
         if measure.total_height_pt > bullets_h:
             warnings.append(_measure_warning(chapter, name, measure.total_height_pt, bullets_h))
@@ -627,7 +664,7 @@ def _build_cards(
             fill=fill, border=border, paras=paras,
         )
 
-    frames = [_title_frame(chapter, preset, metrics, g)]
+    frames = [_title_frame(chapter, fp("title"), metrics, g)]
     for i, card in enumerate(slots.cards):
         frames.append(card_frame(card, f"card{i}", s.margin_left + i * (card_w + s.card_gap)))
     frames.append(_page_number_frame(chapter, page_no, preset))
@@ -636,7 +673,7 @@ def _build_cards(
 
 def _build_process(
     chapter: Chapter, slots: ProcessSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
     """번호 단계 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-3). 사용자가 요구한 "플로우차트"의
     실제 형태다. 번호는 데이터가 아니라 렌더 순서(i+1)에서 나온다: 장 제목이 슬롯이 아니라
@@ -647,19 +684,20 @@ def _build_process(
     표현할 수 없다(cards가 배지/제목/불릿/꼬리를 세로로 쌓아 한 프레임에 담는 것과 다른 점: cards는
     전부 같은 칸에서 위아래로 쌓이지만 process는 칸 자체가 가로로 나뉜다).
     """
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     n = len(slots.steps)
     pg = process_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
     row_h, row_gap = pg["row_h"], pg["row_gap"]
     warnings: list[CapacityWarning] = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
 
     badge_fill = c.accent1
     badge_text_color = readable_text_color(badge_fill, light=c.background, dark=c.text)
 
-    frames = [_title_frame(chapter, preset, metrics, g)]
+    frames = [_title_frame(chapter, fp("title"), metrics, g)]
     for i, step in enumerate(slots.steps):
         name = f"step{i}"
         row_y = pg["content_top"] + i * (row_h + row_gap)
@@ -668,10 +706,11 @@ def _build_process(
             x=pg["badge_x"], y=row_y, w=s.process_badge_size, h=s.process_badge_size,
             fill=badge_fill, radius_pt=s.process_badge_size / 2, valign="middle",
             paras=[Para(
-                text=str(i + 1), font_pt=r.footnote_pt, bold=True, color=badge_text_color, align="center",
+                text=str(i + 1), font_pt=preset.font_roles.footnote_pt, bold=True, color=badge_text_color, align="center",
                 lines=[str(i + 1)],
             )],
         ))
+        r = fp(name).font_roles  # 단계 본문의 글자 배율 (D3c-2). 번호는 글자 배율을 받지 않는다
         text_paras = [Para(
             text=step.heading, font_pt=r.body_pt, bold=True, color=c.text,
             lines=_para_lines(step.heading, pg["text_w"], r.body_pt, True, preset, metrics),
@@ -696,6 +735,7 @@ def _build_process(
             paras=text_paras,
         ))
         if step.notes:
+            r = fp(f"{name}_labels").font_roles
             label_paras = []
             for j, note in enumerate(step.notes):
                 label_paras.append(Para(
@@ -719,7 +759,7 @@ def _build_process(
 
 def _build_matrix(
     chapter: Chapter, slots: MatrixSlots, page_no: int, preset: Preset, metrics,
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", fp: FontPresets | None = None,
 ) -> SlidePlan:
     """분류 행 3~6개를 전폭 행으로 쌓는다 (2026-09-07 DB-4). 왼쪽 분류 셀(채움 블록)/가운데
     대표 항목/오른쪽 나열이 서로 다른 가로 칸에 있어 프레임 셋으로 나뉜다: process가 배지/
@@ -731,13 +771,14 @@ def _build_matrix(
     하는 라벨이라 더 크게 강조한다). 대표 항목과 나열은 선택이라, 실제로 값이 있는 행만
     그 칸의 프레임을 만든다(cards의 배지/꼬리 라벨과 같은 규칙).
     """
+    fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
     g = slide_geometry(preset, eyebrow, subtitle)
     n = len(slots.rows)
     mg = matrix_geometry(preset, n, eyebrow, subtitle)  # 계약(capacity_contract)과 같은 기하 함수를 쓴다
     row_h, row_gap = mg["row_h"], mg["row_gap"]
     warnings: list[CapacityWarning] = []
-    if (tw := _title_warning(chapter, preset, metrics)) is not None:
+    if (tw := _title_warning(chapter, fp("title"), metrics)) is not None:
         warnings.append(tw)
 
     category_fill = c.accent1
@@ -745,10 +786,11 @@ def _build_matrix(
     category_inner_w = s.matrix_category_width - 2 * s.box_padding
     category_inner_h = row_h - 2 * s.box_padding
 
-    frames = [_title_frame(chapter, preset, metrics, g)]
+    frames = [_title_frame(chapter, fp("title"), metrics, g)]
     for i, row in enumerate(slots.rows):
         name = f"row{i}"
         row_y = mg["content_top"] + i * (row_h + row_gap)
+        r = fp(f"{name}_category").font_roles  # 칸마다 글자 배율 (D3c-2)
         frames.append(Frame(
             name=f"{chapter.id}:{name}_category",
             x=mg["category_x"], y=row_y, w=s.matrix_category_width, h=row_h,
@@ -764,6 +806,7 @@ def _build_matrix(
         )) is not None:
             warnings.append(cwarn)
         if row.primary:
+            r = fp(f"{name}_primary").font_roles
             frames.append(Frame(
                 name=f"{chapter.id}:{name}_primary",
                 x=mg["primary_x"], y=row_y, w=mg["primary_w"], h=row_h,
@@ -779,11 +822,12 @@ def _build_matrix(
             )) is not None:
                 warnings.append(pwarn)
         if row.items:
+            r = fp(f"{name}_items").font_roles
             item_bullets = [Bullet(text=item, level=0) for item in row.items]
             frames.append(Frame(
                 name=f"{chapter.id}:{name}_items",
                 x=mg["items_x"], y=row_y, w=mg["items_w"], h=row_h,
-                paras=_bullet_paras(item_bullets, mg["items_w"], preset, metrics),
+                paras=_bullet_paras(item_bullets, mg["items_w"], fp(f"{name}_items"), metrics),
             ))
             measure = measure_bullets(item_bullets, mg["items_w"], r.body_pt, metrics.face(False), s)
             if measure.total_height_pt > row_h:
@@ -794,41 +838,51 @@ def _build_matrix(
 
 def build_slide(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str = "",
-    eyebrow: str = "", subtitle: str = "",
+    eyebrow: str = "", subtitle: str = "", font_scales: dict[str, float] | None = None,
 ) -> SlidePlan:
-    plan = _dispatch(chapter, slots, page_no, preset, metrics, presenter, eyebrow, subtitle)
+    """font_scales: 요소 열쇠마다 글자 배율 (D3c-2). 그 요소의 문단과 용량 경고가 같은 배율을 쓴다(재리뷰 RR26)."""
+    scales = font_scales or {}
+    presets: dict[float, Preset] = {}
+
+    def fp(key: str) -> Preset:
+        scale = scales.get(key, 1.0)
+        if scale not in presets:
+            presets[scale] = _font_preset(preset, scale)
+        return presets[scale]
+
+    plan = _dispatch(chapter, slots, page_no, preset, metrics, presenter, eyebrow, subtitle, fp)
     # 표지와 간지는 그 자체가 제목 슬라이드라 공통 슬롯을 그리지 않는다
     if (eyebrow or subtitle) and not isinstance(slots, (CoverSlots, DividerSlots)):
         g = slide_geometry(preset, eyebrow, subtitle)
-        plan.frames = _common_slot_frames(chapter, g, eyebrow, subtitle, preset, metrics) + plan.frames
+        plan.frames = _common_slot_frames(chapter, g, eyebrow, subtitle, preset, metrics, fp) + plan.frames
         plan.warnings = plan.warnings + common_slot_warnings(
-            chapter, g, eyebrow, subtitle, preset, metrics
+            chapter, g, eyebrow, subtitle, preset, metrics, fp
         )
     return plan
 
 
 def _dispatch(
     chapter: Chapter, slots, page_no: int, preset: Preset, metrics, presenter: str,
-    eyebrow: str, subtitle: str,
+    eyebrow: str, subtitle: str, fp: FontPresets,
 ) -> SlidePlan:
     if isinstance(slots, CoverSlots):
-        return _build_cover(chapter, slots, preset, metrics, presenter)
+        return _build_cover(chapter, slots, preset, metrics, presenter, fp=fp)
     if isinstance(slots, DividerSlots):
-        return _build_divider(chapter, slots, page_no, preset, metrics)
+        return _build_divider(chapter, slots, page_no, preset, metrics, fp=fp)
     if isinstance(slots, SummarySlots):
-        return _build_summary(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_summary(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, BulletBoxSlots):
-        return _build_bullet_box(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_bullet_box(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, TableSlots):
-        return _build_table(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_table(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, CompareSlots):
-        return _build_compare2(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_compare2(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, CalloutSlots):
-        return _build_callout(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_callout(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, CardsSlots):
-        return _build_cards(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_cards(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, ProcessSlots):
-        return _build_process(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_process(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     if isinstance(slots, MatrixSlots):
-        return _build_matrix(chapter, slots, page_no, preset, metrics, eyebrow, subtitle)
+        return _build_matrix(chapter, slots, page_no, preset, metrics, eyebrow, subtitle, fp=fp)
     raise ValueError(f"알 수 없는 슬롯 유형: {type(slots).__name__}")

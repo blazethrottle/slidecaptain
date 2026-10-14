@@ -19,3 +19,16 @@ export function emptyUsage(): GenerationUsage {
     records: [],
   };
 }
+
+// 사용량 표시는 모두 접힌 진단 상세 안에 있다 (개정판 D3a-4, 계획 4.3, R12). 기본 상태에서 보이지 않고,
+// 진단 상세를 펼치면 보인다. 화면 시험과 헤드리스 확인이 같은 판정(보이는지)을 쓴다
+export function expectUsageCollapsed(root: ParentNode = document.body): void {
+  const usages = [...root.querySelectorAll<HTMLElement>(".usage")];
+  expect(usages.length).toBeGreaterThan(0);
+  for (const usage of usages) {
+    const details = usage.closest<HTMLDetailsElement>("details.diagnostics");
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+    expect(usage).not.toBeVisible();
+  }
+}
