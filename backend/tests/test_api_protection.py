@@ -39,6 +39,22 @@ def test_get_passes_without_app_header(bare_client):
     assert bare_client.get("/api/projects").status_code == 200
 
 
+@pytest.mark.parametrize("host", ["testserver", "testserver:8765", "evil.example"])
+def test_unlisted_host_is_rejected_even_for_get(store, host):
+    # 2026-10-14 최종 리뷰 SV-11: 운영 허용 목록은 127.0.0.1 과 localhost 뿐이다. 시험 클라이언트의
+    # 기본 이름 testserver 도 실제 서버에서는 거절해야 한다 (점 없는 이름은 브라우저가 보낼 수 있다).
+    # conftest 가 TestClient 기본 base_url 을 127.0.0.1 로 돌리므로 여기서는 Host 를 명시해 보낸다.
+    raw = TestClient(create_app(store), base_url="http://127.0.0.1")
+    r = raw.get("/api/projects", headers={"Host": host})
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("base_url", ["http://127.0.0.1", "http://localhost"])
+def test_listed_hosts_pass(store, base_url):
+    raw = TestClient(create_app(store), base_url=base_url)
+    assert raw.get("/api/projects").status_code == 200
+
+
 @pytest.mark.parametrize("origin", ["https://evil.example", "http://127.0.0.1.evil.example"])
 def test_disallowed_origin_rejected_even_with_app_header(client, origin):
     # 127.0.0.1.evil.example은 접두사 비교였다면 뚫렸을 값이다 (계획서 가정 3)

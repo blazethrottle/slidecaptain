@@ -16,6 +16,29 @@ from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
 
 
+def _patch_testclient_base_url() -> None:
+    """TestClient의 기본 Host를 운영 허용 목록 안의 127.0.0.1로 돌린다 (2026-10-14 최종 리뷰 SV-11).
+
+    starlette TestClient의 기본 base_url은 `http://testserver`다. 종전에는 이 이름을 운영
+    TrustedHost 허용 목록에 넣어 시험을 통과시켰는데, 그러면 실제 서버도 `Host: testserver`를
+    받아들인다. 시험 파일 42곳이 TestClient를 직접 만들므로 파일마다 base_url을 적는 대신 여기
+    한 곳에서 기본값을 바꾼다. base_url을 명시한 호출(`test_api_protection.py`의 Host 검사)은
+    그대로 그 값을 쓴다.
+    """
+    original_init = TestClient.__init__
+    if getattr(original_init, "_slidecaptain_base_url_patch", False):
+        return
+
+    def patched_init(self, app, base_url="http://127.0.0.1", *args, **kwargs):
+        original_init(self, app, base_url, *args, **kwargs)
+
+    patched_init._slidecaptain_base_url_patch = True  # type: ignore[attr-defined]
+    TestClient.__init__ = patched_init  # type: ignore[method-assign]
+
+
+_patch_testclient_base_url()
+
+
 @pytest.fixture
 def symlink_or_skip():
     """Skip only Windows accounts without symbolic-link creation permission."""

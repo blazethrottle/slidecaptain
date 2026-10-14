@@ -82,7 +82,8 @@ def _export_worker(root, out_dir, cli_path, kind, result, *, chosen=None, releas
     os.link = link
     try:
         if kind == "web":
-            with TestClient(create_app(FileProjectStore(root)),
+            # spawn 자식에는 conftest 의 기본 base_url 변경이 적용되지 않으므로 허용 Host 를 명시한다 (SV-11)
+            with TestClient(create_app(FileProjectStore(root)), base_url="http://127.0.0.1",
                             headers={"X-Requested-With": "SlideCaptain"}) as client:
                 response = client.post("/api/projects/web/export")
                 result.put({"kind": kind, "status": response.status_code, "body": response.json()})

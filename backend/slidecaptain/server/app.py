@@ -766,8 +766,10 @@ def create_app(
         chapters: dict[str, list] = {}
         return _job_views(_project_jobs(name, chapters), chapters)
 
-    # DNS 리바인딩 방지. testserver는 TestClient의 기본 Host라 허용한다 (브라우저가 보낼 수 없는 값)
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+    # DNS 리바인딩 방지. 운영 허용 목록에 시험용 이름을 두지 않는다 (2026-10-14 최종 리뷰 SV-11:
+    # 종전의 testserver는 점 없는 이름이라 브라우저가 보낼 수 있고 같은 망의 이름 해석이 답할 수 있었다.
+    # 시험은 tests/conftest.py가 TestClient의 기본 base_url을 127.0.0.1로 돌린다)
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
     @app.middleware("http")
     async def require_app_header(request: Request, call_next):
