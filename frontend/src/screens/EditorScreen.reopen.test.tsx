@@ -60,3 +60,18 @@ it("넘겨받은 작업이 없으면 행을 읽지 않는다", async () => {
   expect(api.getJob).not.toHaveBeenCalled();
   expect(screen.queryByText(FAILED)).not.toBeInTheDocument();
 });
+
+// C1 묶음 리뷰 BR-07 ①: 행을 읽는 동안 다른 탭의 묶음이 시작되어 읽기 전용이 되면 작성 창을 열지 않는다
+it("행 읽기 응답 전에 읽기 전용이 되면 작성 창을 열지 않는다", async () => {
+  let resolve!: (job: ReturnType<typeof jobView>) => void;
+  vi.mocked(api.getJob).mockReturnValue(new Promise((r) => { resolve = r; }));
+  const props = { project, deck, onDeckChange: () => {}, timings: { measureMs: 0, saveMs: 0 }, reopenDiagramJob: "job-d1",
+    onReopenConsumed: () => {} };
+  const { rerender } = render(<EditorScreen {...props} />);
+  await waitFor(() => expect(api.getJob).toHaveBeenCalledOnce());
+  rerender(<EditorScreen {...props} readOnly />);
+  resolve(jobView("diagram", { id: "job-d1", relevance_hash: "d1:a|", params: { mode: "create", chapter_id: "new-diagram",
+    topic: "t", role: "evidence", claim_ids: [] }, result: { status: "ok", diagram: { nodes: [], edges: [] } } }));
+  expect(await screen.findByText(FAILED)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});

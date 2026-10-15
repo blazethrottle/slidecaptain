@@ -221,13 +221,17 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         onError: () => setGenerationFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });  // 리뷰 R11
       setGenerationFollowError("");
       // 만드는 동안 기준 저장본이나 자료가 바뀌었으면 종전처럼 오류로 알리고 후보는 버린다
-      // 생성이 끝난 뒤 다른 곳이 덱을 바꾸면 조회 사유가 도식 관련 입력 해시의 사유일 수 있다(W2-a). 작성 창은 W2 이전처럼
-      // 덱 변경으로 보고 412로 멈춘다. 그러지 않으면 막아야 할 후보를 보인다(C1 W2 리뷰 W2R-01)
-      const deckReasons = ["story_plan_changed", "chapter_changed", "chapter_missing", "deck_changed_elsewhere"];
-      const stale = staleError(job.stale_reasons)
-        ?? (job.stale_reasons.some((r) => deckReasons.includes(r)) ? staleError(["deck_changed"]) : null);
+      const stale = staleError(job.stale_reasons);
       if (stale) { void settle(projectName, job.id, "dismissed"); throw stale; }
       if (!current()) return;  // 창을 닫은 뒤 도착한 후보는 복구 목록에 남긴다
+      // 생성이 끝난 뒤 다른 곳이 덱을 바꾸면 조회 사유가 도식 관련 입력 해시의 사유일 수 있다(W2-a). 열린 작성 창은 W2 이전처럼
+      // 덱 변경으로 보고 412로 멈춘다. 그러지 않으면 막아야 할 후보를 보인다(C1 W2 리뷰 W2R-01). 창이 닫혔으면 이 매핑을 하지
+      // 않는다: 복구 화면에서 다시 열 수 있는 후보를 다른 탭의 무관한 저장만으로 버리게 된다(C1 묶음 리뷰 BR-03)
+      const deckReasons = ["story_plan_changed", "chapter_changed", "chapter_missing", "deck_changed_elsewhere"];
+      if (job.stale_reasons.some((r) => deckReasons.includes(r))) {
+        void settle(projectName, job.id, "dismissed");
+        throw staleError(["deck_changed"])!;
+      }
       setGenerationUsage(result.usage);
       if (requestId !== serial.current) {
         void settle(projectName, job.id, "dismissed");  // 입력을 바꿔 쓰지 않는 후보 (리뷰 R9)

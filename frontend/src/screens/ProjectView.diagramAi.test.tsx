@@ -123,3 +123,27 @@ it.each(["story_plan_changed", "chapter_changed", "deck_changed_elsewhere"])(
     && JSON.parse(String(init?.body)).action === "dismissed")).toBe(true));
   expect(screen.queryByRole("region", { name: "AI 도식 후보 검토" })).not.toBeInTheDocument();
 });
+
+// C1 묶음 리뷰 BR-03: 작성 창을 닫은 뒤 생성이 끝나면 해시 사유의 412 매핑을 하지 않는다. 다른 곳만 바뀐 후보는 복구 화면에서
+// 다시 열 수 있게 남기고, 생성 도중 기준이 바뀐 후보(deck_changed)는 지금처럼 버린다(계획 사실 7)
+it.each([
+  [["deck_changed_elsewhere"], false],
+  [["story_plan_changed"], false],
+  [["deck_changed"], true],
+])("창을 닫은 뒤 생성이 끝나고 조회 사유가 %j이면 버림 처분은 %s", async (reasons, dismissed) => {
+  jobExtra = { stale_reasons: reasons };
+  const { pending, fetch } = await open();
+  await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
+  await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const deck = fixture.deck as Deck;
+  const slide = deck.slides.find(s => s.slots.template === "diagram")!;
+  await act(async () => pending.resolve(new Response(JSON.stringify({ status: "ok",
+    diagram: slide.slots.template === "diagram" ? slide.slots.diagram : null,
+    raw_text: "", unverified_numbers: [], format_retried: false, usage: emptyUsage(), base_etag: '"base"', sources_fingerprint: "sources" }))));
+  await waitFor(() => expect(screen.getByRole("button", { name: "도식 추가" })).toBeEnabled());  // 따라가기가 끝났다
+  const settled = fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs/job-1/candidate")
+    && JSON.parse(String(init?.body)).action === "dismissed");
+  expect(settled).toBe(dismissed);
+});
