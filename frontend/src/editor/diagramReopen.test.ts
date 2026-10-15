@@ -28,18 +28,18 @@ it("mode 칸이 없는 옛 행도 새 도식으로 본다", () => {
   expect(reopenDiagram(job({ chapter_id: "new-diagram", topic: "t", role: "risk", claim_ids: [] }), deck)?.draft.isNew).toBe(true);
 });
 
-it("교체는 지금 덱의 도식에서 시작하고 요청의 제목과 연결로 덮지 않는다", () => {
+it("교체는 지금 덱의 도식에서 시작하고 연결은 덮지 않되 제목은 요청 값을 쓴다", () => {
   const opened = reopenDiagram(job({ mode: "replace", chapter_id: "synthetic-flow", topic: "요청 때의 제목", role: "risk",
     claim_ids: ["다른 주장"] }), deck)!;
   expect(opened.draft.isNew).toBe(false);
-  expect(opened.draft.topic).toBe("요청 처리 흐름");
+  expect(opened.draft.topic).toBe("요청 때의 제목");  // AI가 이 제목을 기준으로 만들었다(W2 리뷰 W2R-03)
   expect(opened.draft.claimIds).not.toContain("다른 주장");
 });
 
 it("교체 대상이 덱에 없으면 열지 않고, 처분과 사유와 결과가 맞지 않는 행은 이유를 돌려준다", () => {
   expect(reopenDiagram(job({ mode: "replace", chapter_id: "없는-장" }), deck)).toBeNull();
-  expect(reopenRefusal(job({}, { candidate_status: "stale" }))).toMatch(/만든 뒤 입력이 바뀐/);
-  expect(reopenRefusal(job({}, { stale_reasons: ["chapter_changed"] }))).toMatch(/만든 뒤 입력이 바뀐/);
+  expect(reopenRefusal(job({}, { candidate_status: "stale" }))).toBe("");  // 이유는 행의 상태 문장이 말한다
+  expect(reopenRefusal(job({}, { stale_reasons: ["chapter_changed"] }))).toBe("");
   expect(reopenRefusal(job({}, { relevance_hash: "c1:x" }))).toMatch(/이전 버전/);
   expect(reopenRefusal(job({}, { result: { ...result, status: "format_error", diagram: null } }))).toMatch(/불러올 도식이 없는/);
   expect(reopenRefusal(job({}, { stale_reasons: ["deck_changed_elsewhere"] }))).toBeNull();

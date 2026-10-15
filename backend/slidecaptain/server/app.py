@@ -694,6 +694,7 @@ def create_app(
         """작업 행을 응답으로 바꾼다. 프로젝트마다 덱과 자료를 한 번만 읽고(D2b-2 리뷰 R9, D2b-3 리뷰 R12),
         실행 중 판정과 같은 이유 이름을 쓴다(D2b-3 리뷰 R4)."""
         basis: dict[str, tuple] = {}
+        story_current: dict[str, bool | None] = {}  # 프로젝트마다 구성 계획이 지금 입력과 맞는가 (도식 held 후보에만 읽는다)
         views = []
         for row in rows:
             if row.project not in basis:
@@ -716,6 +717,13 @@ def create_app(
                     reasons = diagram_reasons(deck, row.params if isinstance(row.params, dict) else {}, row.relevance_hash)
                     reasons += ["unknown_sources"] if revision is None else (
                         ["sources_changed"] if revision != row.sources_fingerprint else [])
+                    # 다른 장의 제목처럼 해시에 들지 않는 값도 구성 계획 지문을 낡게 한다. 그러면 작성 창의 확인이 409로 막히므로
+                    # 열기 전에 막는다(C1 W2 리뷰 W2R-06). 자료가 바뀐 경우는 sources_changed가 이미 막는다
+                    if not reasons:
+                        if row.project not in story_current:
+                            story_current[row.project] = _story_current(row.project, deck)
+                        if story_current[row.project] is False:
+                            reasons.append("story_plan_changed")
                     if not reasons and current_etag != row.base_etag:
                         reasons.append("deck_changed_elsewhere")
                 else:
@@ -2106,6 +2114,18 @@ def create_app(
             ledger.record_reset(name, changed)
         except LedgerError:
             _LOG.exception("장 후보 기준 무효화를 기록하지 못했습니다: %s", name)
+
+    def _story_current(name: str, deck: Deck) -> bool | None:
+        """구성 계획이 지금 덱과 자료로 계산한 지문과 같은가. 자료를 읽지 못하면 None(판정하지 않는다)."""
+        try:
+            sources = _load_sources(name, allow_empty=True)
+        except (HTTPException, StorageError, OSError, ValueError):
+            return None
+        try:
+            require_current_story(deck, sources)
+        except StaleStoryPlan:
+            return False
+        return True
 
     def _project_job(name: str, job_id: str) -> JobRow:
         row = runner.require_ledger().get_job(job_id)

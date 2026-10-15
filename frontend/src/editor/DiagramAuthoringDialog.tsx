@@ -132,6 +132,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   currentDeck.current = deck;
   const panel = useRef<HTMLDivElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const loadButton = useRef<HTMLButtonElement>(null);
   const review = useRef<HTMLElement>(null);
   const stale = deck !== base;
   const unavailable = blocked || generationConflict;
@@ -146,7 +147,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   useEffect(() => {
     live.current = true;
     const before = document.activeElement as HTMLElement | null;
-    titleInput.current?.focus();
+    // 다시 연 후보는 불러오기 버튼에 초점을 둔다. 제목 칸에 두면 첫 입력이 그 후보를 버린다(C1 W2 리뷰 W2R-02)
+    if (initialCandidate) loadButton.current?.focus();
+    else titleInput.current?.focus();
     return () => { live.current = false; serial.current++; before?.focus(); };
   }, []);
 
@@ -218,7 +221,11 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         onError: () => setGenerationFollowError("작업 상태를 확인하지 못했습니다. 계속 확인합니다.") });  // 리뷰 R11
       setGenerationFollowError("");
       // 만드는 동안 기준 저장본이나 자료가 바뀌었으면 종전처럼 오류로 알리고 후보는 버린다
-      const stale = staleError(job.stale_reasons);
+      // 생성이 끝난 뒤 다른 곳이 덱을 바꾸면 조회 사유가 도식 관련 입력 해시의 사유일 수 있다(W2-a). 작성 창은 W2 이전처럼
+      // 덱 변경으로 보고 412로 멈춘다. 그러지 않으면 막아야 할 후보를 보인다(C1 W2 리뷰 W2R-01)
+      const deckReasons = ["story_plan_changed", "chapter_changed", "chapter_missing", "deck_changed_elsewhere"];
+      const stale = staleError(job.stale_reasons)
+        ?? (job.stale_reasons.some((r) => deckReasons.includes(r)) ? staleError(["deck_changed"]) : null);
       if (stale) { void settle(projectName, job.id, "dismissed"); throw stale; }
       if (!current()) return;  // 창을 닫은 뒤 도착한 후보는 복구 목록에 남긴다
       setGenerationUsage(result.usage);
@@ -424,8 +431,11 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
                 등록 근거에서 찾지 못한 수치: {generationResult.unverified_numbers.join(", ")}. 불러오기 전에 확인해 주세요.
               </p>}
               {reopenedJob.current && generationJob.current === reopenedJob.current && (
-                <p className="notice">입력을 고치면 이 후보를 버립니다. 먼저 작성 폼에 불러온 뒤 고쳐 주세요.</p>)}
-              <button disabled={generating || loadingCandidate} onClick={async () => {
+                <p className="notice" id="reopened-candidate-note">입력을 고치면 이 후보를 버립니다. 먼저 작성 폼에 불러온 뒤 고쳐 주세요.
+                  불러온 후보는 복구 목록에서 빠집니다.</p>)}
+              <button ref={loadButton} disabled={generating || loadingCandidate}
+                aria-describedby={reopenedJob.current && generationJob.current === reopenedJob.current ? "reopened-candidate-note" : undefined}
+                onClick={async () => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
                 const job = generationJob.current;
                 if (job && job === reopenedJob.current) {

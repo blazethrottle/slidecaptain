@@ -63,10 +63,14 @@ def test_claim_statement_change_blocks_a_held_diagram_candidate(diagram_input, s
 
 
 @pytest.mark.parametrize("change, reasons", [
-    # 프롬프트에 들어가지 않는 값만 바뀌면 알림 하나다
-    (lambda d: setattr(_cover(d), "topic", "다른 장의 제목"), ["deck_changed_elsewhere"]),
+    # 프롬프트에 들어가지 않고 구성 계획 지문도 바꾸지 않는 값만 바뀌면 알림 하나다(보고자, 다른 장의 슬롯)
     (lambda d: setattr(d.meta, "presenter", "보고자"), ["deck_changed_elsewhere"]),
-    (lambda d: setattr(_claim(d, "unselected-claim"), "statement", "선택하지 않은 주장"), ["deck_changed_elsewhere"]),
+    (lambda d: setattr(next(s for s in d.slides if s.chapter_id == "cover"), "eyebrow", "다른 장의 분류 라벨"),
+     ["deck_changed_elsewhere"]),
+    # 다른 장의 제목과 선택하지 않은 주장은 해시에 들지 않지만 구성 계획 지문을 낡게 한다. 작성 창의 확인이 409로 막으므로
+    # 조회도 막는다(W2 리뷰 W2R-06)
+    (lambda d: setattr(_cover(d), "topic", "다른 장의 제목"), ["story_plan_changed"]),
+    (lambda d: setattr(_claim(d, "unselected-claim"), "statement", "선택하지 않은 주장"), ["story_plan_changed"]),
     # 선택 주장이 가리키는 근거의 발췌가 바뀌면 막는다
     (lambda d: setattr(_evidence(d, _claim(d).evidence_ids[0]), "excerpt", "바뀐 발췌"), ["story_plan_changed"]),
     (lambda d: setattr(d.meta, "title", "바뀐 보고 제목"), ["story_plan_changed"]),
@@ -161,6 +165,8 @@ def test_diagram_relevance_covers_every_deck_value_the_prompt_reads(diagram_inpu
         "요약": lambda d: setattr(d.structure.story_plan.brief, "decision_question", "바뀜"),
         "선택 주장": lambda d: setattr(_claim(d), "statement", "바뀜"),
         "선택 근거": lambda d: setattr(_evidence(d, _claim(d).evidence_ids[0]), "excerpt", "바뀜"),
+        "선택 주장의 조건": lambda d: setattr(_claim(d), "caveats", ["새 조건"]),
+        "선택 주장의 종류": lambda d: setattr(_claim(d), "kind", "inference" if _claim(d).kind != "inference" else "fact"),
         "교체 대상 도식만 가리키는 근거": lambda d: setattr(_evidence(d, sorted(existing_only)[-1]), "excerpt", "바뀜"),
     }
     for name, change in changes.items():
@@ -180,3 +186,40 @@ def test_new_diagram_has_no_target_and_unknown_markers_are_not_parsed(diagram_in
     assert value.startswith(DIAGRAM_MARKER) and value.endswith("|")
     assert diagram_parts("c1:x|y|z") is None and diagram_parts(None) is None
     assert diagram_reasons(deck, REQUEST, "c1:x|y|z") == []
+
+
+# 교체 대상 조각이 대상 장의 연결(역할), 제목, 도식 슬롯을 덮는다(W2 리뷰 W2R-08의 S1, S2)
+def test_diagram_relevance_target_covers_link_title_and_slot(diagram_input):
+    deck, _, _ = diagram_input
+    base = diagram_parts(diagram_relevance(deck, REPLACE))
+
+    def link(d):
+        return next(c for c in d.structure.story_plan.chapters if c.chapter_id == "synthetic-flow")
+
+    def flow(d):
+        return next(s for s in d.slides if s.chapter_id == "synthetic-flow")
+
+    changes = {
+        "연결 역할": lambda d: setattr(link(d), "role", "context"),
+        "대상 장 제목": lambda d: setattr(next(c for c in d.structure.chapters if c.id == "synthetic-flow"), "topic", "바뀜"),
+        "도식 항목": lambda d: setattr(flow(d).slots.diagram.nodes[0], "content", "바뀜"),
+    }
+    for name, change in changes.items():
+        changed = deck.model_copy(deep=True)
+        change(changed)
+        assert diagram_parts(diagram_relevance(changed, REPLACE))[1] != base[1], name
+
+
+# W2R-06 재현: 다른 장의 제목만 바뀐 뒤 그 후보를 쓰면 도식 연결 확인이 409로 막힌다. 조회가 먼저 막아야 후보를 잃지 않는다
+def test_story_plan_made_stale_elsewhere_blocks_before_the_check_would(diagram_input, store):
+    _, _, payload = diagram_input
+    with TestClient(create_app(store, provider=DiagramProvider(payload)), headers=HEADERS) as client:
+        job = _held(client, store, REQUEST)
+        _edit(store, lambda d: setattr(_cover(d), "topic", "다른 탭이 바꾼 표지 제목"))
+        view = _view(client, job)
+        deck = store.load_deck("diagram")
+        check = client.post("/api/projects/diagram/story-plan/diagram", json={
+            "deck": deck.model_dump(mode="json"), "chapter_id": "synthetic-flow", "role": "answer",
+            "claim_ids": ["claim", "unselected-claim"]}, headers={"If-Match": f'"{store.deck_etag("diagram")}"'})
+    assert check.status_code == 409  # 그대로 열었다면 확인 단계에서 막혔을 후보다
+    assert view["stale_reasons"] == ["story_plan_changed"]

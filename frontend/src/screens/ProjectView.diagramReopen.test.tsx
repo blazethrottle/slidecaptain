@@ -25,7 +25,8 @@ function diagramJob(over: Partial<JobView> = {}): JobView {
       base_etag: '"base"', sources_fingerprint: "sources" }, ...over });
 }
 
-type Server = { job: JobView; settleStatus: number; settles: { action: string }[]; puts: { ifMatch: string | null; deck: Deck }[] };
+type Server = { job: JobView; settleStatus: number; settles: { action: string }[]; puts: { ifMatch: string | null; deck: Deck }[];
+  changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[] };
 
 // 측정은 덱의 도식 장마다 고정 렌더 계획의 도식 슬라이드를 복사해 돌려준다(작성 창의 확인이 새 장의 도식을 찾는다)
 function planFor(body: Deck): RenderPlan {
@@ -43,6 +44,21 @@ function serve(server: Server) {
     if (url.split("?")[0].endsWith("/deck") && init?.method === "PUT") {  // 저장은 스냅샷 질의 문자열을 붙인다
       server.puts.push({ ifMatch: headers.get("If-Match"), deck: JSON.parse(init.body as string) });
       return new Response(JSON.stringify({ ok: true }), { headers: { ETag: `"after-${server.puts.length}"` } });
+    }
+    // 기존 도식 교체는 문서 변경 미리 보기와 손실 확인 뒤 적용으로 반영한다(W2 리뷰 E7을 옮겨 옴)
+    if (url.endsWith("/document-changes/basis")) {
+      return new Response(JSON.stringify({ base_etag: '"base"', sources_fingerprint: "sources" }), { headers: { ETag: '"base"' } });
+    }
+    if (url.endsWith("/document-changes/preview")) {
+      const body = JSON.parse(init!.body as string);
+      return new Response(JSON.stringify({ rule_version: "document-change-v1", reason: "document_replacement", base_fingerprint: "b",
+        sources_fingerprint: "sources", candidate_fingerprint: "c", candidate: body.candidate, notice: "교체 전후를 확인해 주세요.",
+        losses: [{ id: "loss-1", path: "slides.synthetic-flow.diagram", before: {}, after: {} }], confirmation_token: "tok" }));
+    }
+    if (url.endsWith("/document-changes/apply")) {
+      const body = JSON.parse(init!.body as string);
+      server.changes.push({ ifMatch: headers.get("If-Match"), body });
+      return new Response(JSON.stringify(body.candidate), { headers: { ETag: '"after-apply"' } });
     }
     if (url.endsWith("/deck")) return new Response(JSON.stringify(deck), { headers: { ETag: '"base"' } });
     if (url.endsWith("/sources")) return new Response("[]");
@@ -82,7 +98,8 @@ async function reopen(server: Server) {
   return screen.findByRole("dialog");
 }
 
-const newServer = (over: Partial<Server> = {}): Server => ({ job: diagramJob(), settleStatus: 200, settles: [], puts: [], ...over });
+const newServer = (over: Partial<Server> = {}): Server => ({ job: diagramJob(), settleStatus: 200, settles: [], puts: [],
+  changes: [], ...over });
 
 beforeEach(() => { revokeConsent(); resetEtags(); });
 afterEach(() => { vi.unstubAllGlobals(); });
@@ -93,7 +110,12 @@ it("복구 화면에서 도식 후보를 작성 창과 함께 열고, 여는 동
   const dialog = await reopen(server);
   expect(within(dialog).getByRole("region", { name: "AI 도식 후보 검토" })).toBeInTheDocument();
   expect(within(dialog).getByLabelText("도식 제목")).toHaveValue("다시 연 도식");
+  expect(within(dialog).getByLabelText("AI 도식 지시사항")).toHaveValue("원문의 관계 보존");
   expect(within(dialog).getByText(/입력을 고치면 이 후보를 버립니다/)).toBeInTheDocument();
+  // 초점은 불러오기 버튼이다. 제목 칸이면 첫 입력이 후보를 버린다(W2 리뷰 W2R-02). 안내는 버튼의 설명으로 읽힌다
+  const load = within(dialog).getByRole("button", { name: "작성 폼에 불러오기" });
+  await waitFor(() => expect(load).toHaveFocus());
+  expect(load).toHaveAccessibleDescription(/입력을 고치면 이 후보를 버립니다/);
   expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step");
   expect(server.settles).toEqual([]);
 });
@@ -149,9 +171,9 @@ it("옮기는 사이 다른 곳이 처분한 후보는 작성 창을 열지 않�
 });
 
 it.each([
-  ["생성 도중 덱이 바뀐 후보", { candidate_status: "stale" as const, stale_reasons: ["deck_changed" as const] }, /만든 뒤 입력이 바뀐/],
-  ["주장이 바뀐 후보", { stale_reasons: ["story_plan_changed" as const] }, /만든 뒤 입력이 바뀐/],
-  ["자료가 바뀐 후보", { stale_reasons: ["sources_changed" as const] }, /만든 뒤 입력이 바뀐/],
+  ["생성 도중 덱이 바뀐 후보", { candidate_status: "stale" as const, stale_reasons: ["deck_changed" as const] }, /^작성 창에서 열 수 없습니다/],
+  ["주장이 바뀐 후보", { stale_reasons: ["story_plan_changed" as const] }, /^작성 창에서 열 수 없습니다/],
+  ["자료가 바뀐 후보", { stale_reasons: ["sources_changed" as const] }, /^작성 창에서 열 수 없습니다/],
   ["해시가 없는 옛 후보", { relevance_hash: null }, /이전 버전에서 만든 도식 후보/],
 ])("%s는 열 수 없고 이유를 보인다", async (_name, over, reason) => {
   await openRecovery(newServer({ job: diagramJob(over) }));
@@ -162,4 +184,46 @@ it.each([
 it("다른 곳만 바뀐 후보(알림)는 열 수 있다", async () => {
   await openRecovery(newServer({ job: diagramJob({ stale_reasons: ["deck_changed_elsewhere"] }) }));
   expect(await screen.findByRole("button", { name: "도식 작성 창에서 열기" })).toBeInTheDocument();
+});
+
+
+it("새 도식 후보 행은 요청의 제목으로 부른다", async () => {
+  await openRecovery(newServer());
+  expect(await screen.findByText(/도식 \(새 도식: 다시 연 도식\)/)).toBeInTheDocument();
+});
+
+it("다시 연 창에서 입력을 고치면 그 후보를 버리고 복구 목록에서 빠진다", async () => {
+  const server = newServer();
+  const dialog = await reopen(server);
+  await userEvent.type(within(dialog).getByLabelText("도식 제목"), "x");
+  await waitFor(() => expect(server.settles).toEqual([{ action: "dismissed" }]));
+  expect(within(dialog).queryByRole("region", { name: "AI 도식 후보 검토" })).not.toBeInTheDocument();
+});
+
+// 교체 후보: 시작값은 지금 덱의 연결에 요청의 제목이고, 불러온 뒤 손실 확인을 거쳐 문서 변경 적용으로 반영한다(계획 5절 W2-b)
+it("다시 연 교체 후보는 요청 제목으로 시작하고 손실 확인 뒤 문서 변경 적용으로 반영된다", async () => {
+  const changed = structuredClone(diagram!);
+  changed.nodes[0].content = "AI 교체 후보 항목";
+  const job = diagramJob({ target: "synthetic-flow", relevance_hash: "d1:a|b",
+    params: { mode: "replace", chapter_id: "synthetic-flow", topic: "요청 때의 새 제목", role: "answer", claim_ids: ["claim"], instructions: "" },
+    result: { status: "ok", diagram: changed, raw_text: "", unverified_numbers: [], format_retried: false, usage: emptyUsage(),
+      base_etag: '"base"', sources_fingerprint: "sources" } });
+  const server = newServer({ job });
+  const dialog = await reopen(server);
+  expect(within(dialog).getByLabelText("도식 제목")).toHaveValue("요청 때의 새 제목");
+  await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
+  await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/);
+  await userEvent.click(within(dialog).getByRole("button", { name: "입력과 배치 확인" }));
+  const box = await within(dialog).findByRole("checkbox", { name: "이 변경을 확인했습니다" });
+  const apply = within(dialog).getByRole("button", { name: "도식 적용" });
+  expect(apply).toBeDisabled();
+  await userEvent.click(box);
+  await waitFor(() => expect(apply).toBeEnabled());
+  await userEvent.click(apply);
+  await waitFor(() => expect(server.changes).toHaveLength(1));
+  expect(server.settles).toEqual([{ action: "applied" }]);
+  expect(server.changes[0].body.acknowledged_loss_ids).toEqual(["loss-1"]);
+  const slide = server.changes[0].body.candidate.slides.find((s) => s.chapter_id === "synthetic-flow")!;
+  expect(slide.slots.template === "diagram" && slide.slots.diagram.nodes[0].content).toBe("AI 교체 후보 항목");
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 });

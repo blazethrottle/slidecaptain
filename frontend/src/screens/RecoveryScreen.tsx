@@ -104,6 +104,13 @@ function applicable(c: Candidate): boolean {
   if (c.job.kind === "chapters") return TERMINAL_JOB_STATES.has(c.state) && !!c.job.relevance_hash?.startsWith("b1:");
   return c.job.state === "succeeded" && !!c.job.relevance_hash;
 }
+// 새 도식 후보는 요청의 제목으로 부른다. 장 ID는 같은 ID의 후보가 여럿이거나 그 ID를 다른 도식이 쓰게 되면 행을 구별하지
+// 못한다(W2 리뷰 W2R-07)
+const newDiagram = (c: Candidate) => c.job.kind === "diagram" && (c.job.params as { mode?: string }).mode !== "replace";
+function rowTarget(c: Candidate, deck: Deck | undefined): string {
+  if (newDiagram(c)) return ` (새 도식: ${(c.job.params as { topic?: string }).topic ?? "제목 없음"})`;
+  return c.chapterId ? ` (${chapterLabel(deck, c.chapterId)})` : "";
+}
 const hasSlide = (deck: Deck, chapterId: string | null) => !!chapterId && deck.slides.some((s) => s.chapter_id === chapterId);
 // 다시 만들 단계. 장 후보는 그 장에 슬라이드가 있으면 편집 단계, 없으면 구성 단계다(계획 리뷰 PR-11). 그 밖은 단계 상태의 표
 function openStage(c: Candidate, deck: Deck | undefined): OpenStage {
@@ -188,7 +195,7 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
         <ul>
           {items.map((c) => (
             <li key={c.key}>
-              <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{c.chapterId ? ` (${chapterLabel(deck, c.chapterId)})` : ""},{" "}
+              <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{rowTarget(c, deck)},{" "}
                 만든 시각 {formatSavedAt(c.job.created_at)}</p>
               <p>{candidateStatus(c)}</p>
               {maybeApplied.has(c.key) && <p className="notice">{MAYBE_APPLIED}</p>}
@@ -201,14 +208,15 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
               {deck && onOpen && c.job.kind === "diagram" && TERMINAL_JOB_STATES.has(c.state) && (() => {
                 const refusal = reopenRefusal(c.job);
                 return refusal === null
-                  ? <><Button onClick={() => onOpen("editor", c.chapterId ?? undefined, c.job.id)}>도식 작성 창에서 열기</Button>{" "}</>
-                  : <p className="hint">{refusal} 작성 창에서 열 수 없습니다. 현재 입력으로 다시 생성해 주세요.</p>;
+                  ? <><Button onClick={() => onOpen("editor", newDiagram(c) ? undefined : c.chapterId ?? undefined, c.job.id)}>도식 작성 창에서 열기</Button>{" "}</>
+                  : <p className="hint">{refusal ? `${refusal} ` : ""}작성 창에서 열 수 없습니다. 현재 입력으로 다시 생성해 주세요.</p>;
               })()}
               {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
               {!WHOLE_DECK.has(c.job.kind) && onOpen && (() => {
+                const target = newDiagram(c) ? undefined : c.chapterId ?? undefined;  // 새 도식의 장 ID는 다른 도식이 쓸 수 있다
                 // 장 후보는 그 장의 슬라이드 유무로, 그 밖은 단계 상태와 같은 표로 정한다 (D3a-3 리뷰 R4, 계획 리뷰 PR-11)
                 const stage = openStage(c, deck);
-                return <><button onClick={() => onOpen(stage, c.chapterId ?? undefined)}>
+                return <><button onClick={() => onOpen(stage, target)}>
                   {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}
                   {/* 이전 묶음의 빈 장에는 장별 다시 생성 버튼이 없으므로 두 경우를 덮는 버튼을 가리킨다(W1 리뷰 W1R-03, W1R-13) */}
                   {stage === "structure" && CHAPTER_KINDS.has(c.job.kind) && <p className="hint">
