@@ -4,7 +4,8 @@
 
 ## 진본 문서 (작업 시작 전 필독)
 
-- 2026-10-14 최신 인계(Mac): `docs/handoffs/2026-10-14-main-merge.md`. 브랜치 전체 최종 리뷰(blocker 0)를 거쳐 `feat/windows-feedback-revision`을 main에 합쳤다(머지 커밋 `2d80f5e`, 사용자 결정 A). 다음 작업은 C1 방향 ①(복구 화면에 "비교하고 반영") 계획서이며 새 브랜치에서 사용자 승인 뒤 시작한다. 재개 시 이 문서, 로드맵 「진행 상태」의 최종 리뷰 이월표, `docs/qa/2026-10-14-final-branch-review.md` 순서로 읽는다. 앞 인계 `docs/handoffs/2026-10-14-d3c-beta-wrapup.md`는 4절(운용 사실)만, `docs/handoffs/2026-10-13-d3c-beta.md`는 5절(상시 규칙)만 유효하다.
+- 2026-10-15 최신 인계(Mac): `docs/handoffs/2026-10-15-c1-plan.md`. 브랜치 `feat/d3-wrapup-c1`(main `ba5f7ea`에서 분기)에 C1 계획서 초안 1판 `docs/plans/2026-10-15-revision-d3-wrapup-c1.md`를 올렸다(복구 화면에서 장 후보 비교와 반영, 도식 후보 다시 열기). 계획 리뷰와 구현은 계획서 7절의 사용자 결정 뒤에 한다. 재개 시 이 문서, 계획서 7절, 앞 인계 `docs/handoffs/2026-10-14-main-merge.md`(3절 2~5항과 4절만 유효) 순서로 읽는다.
+- 2026-10-14 인계(Mac, main 머지): `docs/handoffs/2026-10-14-main-merge.md`. 브랜치 전체 최종 리뷰(blocker 0)를 거쳐 `feat/windows-feedback-revision`을 main에 합쳤다(머지 커밋 `2d80f5e`, 사용자 결정 A). 다음 작업은 C1 방향 ①(복구 화면에 "비교하고 반영") 계획서이며 새 브랜치에서 사용자 승인 뒤 시작한다. 재개 시 이 문서, 로드맵 「진행 상태」의 최종 리뷰 이월표, `docs/qa/2026-10-14-final-branch-review.md` 순서로 읽는다. 앞 인계 `docs/handoffs/2026-10-14-d3c-beta-wrapup.md`는 4절(운용 사실)만, `docs/handoffs/2026-10-13-d3c-beta.md`는 5절(상시 규칙)만 유효하다.
 - 2026-10-10 개정판 D3: `docs/plans/2026-10-10-revision-d3-report-flow.md`. D3를 D3a 화면 골격, D3b 보고 목적, D3c 직접 수정으로 나눴고 D3a 상세와 이월 24건의 담당을 확정했다. 구현 착수와 구현 리뷰 규모는 사용자와 상의한 뒤다. 재개 시 2절 이월 표, 4.4 생성 중 이동 표, 5절 시험 세 칸 분류를 먼저 읽는다.
 - 2026-10-08 개정판 D2: `docs/plans/2026-10-08-revision-d2-common-foundation.md`. D2a 6태스크와 D2b 작업 원장을 구현했고 2026-10-08 D2 관문을 통과했다. 「결과」 절의 「D2 관문」과 로드맵의 D2a 이월표를 먼저 읽는다.
 - 2026-10-08 D2b 작업 원장: `docs/plans/2026-10-08-revision-d2b-job-ledger.md`. 생성 작업의 원장, 전용 스레드 실행기와 작업 API, 장 생성 묶음, 화면 이전, 재시작 관통을 구현했다(α `cdd32c7`, β `74165ad`). 재개 시 계획서 「결과 (D2b-β)」 절의 RED 분류, 이월(β R8, R15, α A9), 남은 확인을 먼저 읽는다. 다음 단계(D3) 착수는 사용자와 상의한 뒤다(단계 경계).
