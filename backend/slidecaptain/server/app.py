@@ -65,7 +65,8 @@ from slidecaptain.pipeline.connections import AIConnections, AISelection, AISett
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
 from slidecaptain.pipeline.relevance import (
-    batch_parts, batch_relevance, chapter_relevance, structure_parts, structure_relevance,
+    batch_parts, batch_relevance, chapter_relevance, diagram_parts, diagram_reasons, diagram_relevance, structure_parts,
+    structure_relevance,
 )
 from slidecaptain.pipeline.draft_summary import DraftSummary, summarize_draft
 from slidecaptain.pipeline.candidate_apply import (
@@ -707,6 +708,16 @@ def create_app(
                 elif row.kind == "structure":
                     reasons = _structure_reasons(row.relevance_hash, row.base_etag, row.sources_fingerprint,
                                                  basis[row.project])
+                elif (row.kind == "diagram" and row.candidate_status == "held" and deck is not None
+                      and diagram_parts(row.relevance_hash) is not None):
+                    # 도식은 관련 입력 해시로 가른다(C1 계획 W2-a): 프롬프트 입력이나 교체 대상이 바뀌었으면 막고, 다른 곳만
+                    # 바뀌었으면 알림만 한다. 생성 도중 덱이 바뀐 후보(stale)는 덱 전체 비교 그대로다. 작성 창이 생성 직후
+                    # 이 사유로 412를 내기 때문이다(staleError). 해시가 없는 옛 행과 덱을 읽지 못한 경우도 그대로다
+                    reasons = diagram_reasons(deck, row.params if isinstance(row.params, dict) else {}, row.relevance_hash)
+                    reasons += ["unknown_sources"] if revision is None else (
+                        ["sources_changed"] if revision != row.sources_fingerprint else [])
+                    if not reasons and current_etag != row.base_etag:
+                        reasons.append("deck_changed_elsewhere")
                 else:
                     reasons = ["unknown_deck"] if current_etag is None else (
                         ["deck_changed"] if current_etag != row.base_etag else [])
@@ -1692,6 +1703,8 @@ def create_app(
             except ValueError as exc:
                 _rewrite_invalid(exc)
             revision = sources_fingerprint(sources)
+            # 조회 때 낡음을 가를 관련 입력 (C1 계획 W2-a). 생성 종료 판정(_base_judge)은 지금처럼 덱 전체 비교다
+            relevance = diagram_relevance(deck, req.model_dump(mode="json"))
         _require_current_selection(selection_id)
         provider_id, model = _fixed_selection()
 
@@ -1700,7 +1713,7 @@ def create_app(
             return _with_basis(result, etag, revision)
 
         return JobSpec(kind="diagram", project=name, request_id=request_id, params=req.model_dump(mode="json"),
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance),
                        run=run, recheck=_stale_recheck("diagram", name, etag, revision),
                        judge=_base_judge(name, etag, revision), target=req.chapter_id)
 
