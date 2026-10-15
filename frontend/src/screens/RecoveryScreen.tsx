@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type Slots, type SnapshotInfo } from "../api/client";
+import { CandidateCompareDialog, STALE_BASE, type CompareSelection } from "../editor/CandidateCompareDialog";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
@@ -95,15 +96,62 @@ function candidateText(c: Candidate): string {
 
 const shortEtag = (etag: string | null) => (etag ? etag.replace(/"/g, "").slice(0, 8) : "알 수 없음");
 
-function JobCandidates({ project, deck, onOpen }: {
+// 장 후보: 복구 화면에서 비교하고 반영한다 (C1 계획 4.2). 적용 라우트가 받는 행만 버튼을 둔다. 단독 행은 성공으로 끝나고
+// 관련 입력 해시가 있어야 하고, 묶음 하위 장은 종결되고 부모에 장별 해시 표지(b1:)가 있어야 한다(계획 리뷰 PR-06)
+const CHAPTER_KINDS = new Set(["chapter", "condense", "chapters"]);
+function applicable(c: Candidate): boolean {
+  if (c.job.kind === "chapters") return TERMINAL_JOB_STATES.has(c.state) && !!c.job.relevance_hash?.startsWith("b1:");
+  return c.job.state === "succeeded" && !!c.job.relevance_hash;
+}
+const hasSlide = (deck: Deck, chapterId: string | null) => !!chapterId && deck.slides.some((s) => s.chapter_id === chapterId);
+// 다시 만들 단계. 장 후보는 그 장에 슬라이드가 있으면 편집 단계, 없으면 구성 단계다(계획 리뷰 PR-11). 그 밖은 단계 상태의 표
+function openStage(c: Candidate, deck: Deck | undefined): OpenStage {
+  if (CHAPTER_KINDS.has(c.job.kind) && deck) return hasSlide(deck, c.chapterId) ? "editor" : "structure";
+  return JOB_STAGE[c.job.kind] === "structure" ? "structure" : "editor";
+}
+const SETTLED_ELSEWHERE = "다른 곳에서 이미 처리한 후보입니다. 목록을 다시 읽었습니다.";
+const NOT_APPLICABLE = "이전 버전에서 만들었거나 끝까지 만들지 못한 결과라 반영 여부를 판정할 수 없습니다. 보기와 버리기만 할 수 있습니다.";
+const MAYBE_APPLIED = "반영했을 수 있습니다. 다시 반영하면 처리만 정리됩니다.";
+
+function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApplyUnconfirmed }: {
   project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string) => void;
+  onConflict?: () => void; onDeckSaved?: (deck: Deck) => void; onApplyUnconfirmed?: () => void;
 }) {
   const [items, setItems] = useState<Candidate[] | null>(null);
   const [ended, setEnded] = useState<JobView[]>([]);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [comparing, setComparing] = useState<Candidate | null>(null);
+  // 반영 응답이 5xx였던 후보. 저장됐을 수 있어 그 행에 알린다(계획 리뷰 PR-17)
+  const [maybeApplied, setMaybeApplied] = useState<Set<string>>(new Set());
+  const heading = useRef<HTMLHeadingElement>(null);
   const load = () => api.listJobs(project.name)
     .then((jobs) => { setItems(candidatesOf(jobs)); setEnded(endedWithoutResult(jobs)); setError(""); })
     .catch((e) => setError(`AI 결과 후보를 읽지 못했습니다. ${messageOf(e)}`));
+  // 반영 뒤 처리. 목록을 먼저 다시 읽고 비교 화면을 닫는다. 반영으로 행이 사라졌으면 초점이 제목으로 간다(계획 리뷰 PR-16)
+  const finish = async (message: string) => {
+    setNotice(message);
+    await load();
+    setComparing(null);
+  };
+  const applyCompare = async (c: Candidate, selection: CompareSelection, baseEtag: string) => {
+    try {
+      const saved = await api.applyCandidate(project.name, c.job.id,
+        { ...(c.job.kind === "chapters" ? { chapter_id: c.chapterId! } : {}), ...selection }, baseEtag);
+      onDeckSaved?.(saved);
+      setMaybeApplied((keys) => { const next = new Set(keys); next.delete(c.key); return next; });
+      await finish("");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 412) { onConflict?.(); await finish(e.message); }
+      else if (e instanceof ApiError && e.status >= 500) {
+        // 덱 저장 뒤 원장 커밋이 실패했을 수 있다. 같은 후보를 다시 반영하면 서버가 처분만 정리한다(D3c 4.8)
+        onApplyUnconfirmed?.();
+        setMaybeApplied((keys) => new Set(keys).add(c.key));
+        await finish("");
+      } else if (e instanceof ApiError && e.code === "candidate_settled") await finish(SETTLED_ELSEWHERE);
+      else await finish(messageOf(e));
+    }
+  };
   useEffect(() => { void load(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
   const dismiss = async (c: Candidate) => {
     try {
@@ -118,9 +166,11 @@ function JobCandidates({ project, deck, onOpen }: {
   };
   return (
     <section className="job-candidates">
-      <h3>AI 결과 후보</h3>
-      <p>AI가 만들었지만 아직 반영하거나 버리지 않은 결과입니다. 반영은 해당 화면에서 합니다.</p>
+      <h3 ref={heading} tabIndex={-1}>AI 결과 후보</h3>
+      <p>AI가 만들었지만 아직 반영하거나 버리지 않은 결과입니다. 장 후보는 여기서 비교하고 반영할 수 있습니다.
+        그 밖의 후보는 보기와 버리기만 합니다.</p>
       {error && <p role="alert">{error}</p>}
+      {notice && <p role="status">{notice}</p>}
       {items === null ? (error ? null : <p>불러오는 중...</p>) : items.length === 0 ? (
         <p>남아 있는 AI 결과 후보가 없습니다.</p>
       ) : (
@@ -130,13 +180,20 @@ function JobCandidates({ project, deck, onOpen }: {
               <p>{KIND_LABELS[c.job.kind] ?? c.job.kind}{c.chapterId ? ` (${chapterLabel(deck, c.chapterId)})` : ""},{" "}
                 만든 시각 {formatSavedAt(c.job.created_at)}</p>
               <p>{candidateStatus(c)}</p>
+              {maybeApplied.has(c.key) && <p className="notice">{MAYBE_APPLIED}</p>}
               <details><summary>보기</summary><pre>{candidateText(c)}</pre></details>
+              {/* 덱을 읽지 못하는 프로젝트(needs_recovery)에서는 비교할 지금 덱이 없다 (계획 리뷰 PR-07) */}
+              {deck && CHAPTER_KINDS.has(c.job.kind) && TERMINAL_JOB_STATES.has(c.state) && (applicable(c)
+                ? <><Button onClick={() => setComparing(c)}>비교하고 반영</Button>{" "}</>
+                : <p className="hint">{NOT_APPLICABLE}</p>)}
               {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
               {!WHOLE_DECK.has(c.job.kind) && onOpen && (() => {
-                // 작업 종류와 단계의 대응은 단계 상태와 같은 표를 쓴다 (D3a-3 리뷰 R4)
-                const stage: OpenStage = JOB_STAGE[c.job.kind] === "structure" ? "structure" : "editor";
+                // 장 후보는 그 장의 슬라이드 유무로, 그 밖은 단계 상태와 같은 표로 정한다 (D3a-3 리뷰 R4, 계획 리뷰 PR-11)
+                const stage = openStage(c, deck);
                 return <><button onClick={() => onOpen(stage, c.chapterId ?? undefined)}>
-                  {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}</>;
+                  {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}
+                  {stage === "structure" && CHAPTER_KINDS.has(c.job.kind) && <span className="hint">
+                    구성 단계에서 그 장의 &apos;다시 생성&apos;이나 &apos;승인하고 내용 생성&apos;으로 다시 만듭니다.</span>}</>;
               })()}
               {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
               {TERMINAL_JOB_STATES.has(c.state) && <Button variant="danger" onClick={() => void dismiss(c)}>버리기</Button>}
@@ -158,6 +215,16 @@ function JobCandidates({ project, deck, onOpen }: {
           ))}
         </ul>
       </>}
+      {comparing && deck && (
+        <CandidateCompareDialog projectName={project.name} jobId={comparing.job.id}
+          chapterId={comparing.job.kind === "chapters" ? comparing.chapterId! : undefined}
+          title={chapterLabel(deck, comparing.chapterId!)} candidateSlots={(comparing.result as { slots: Slots }).slots}
+          onApply={(selection, baseEtag) => applyCompare(comparing, selection, baseEtag)}
+          onRegenerate={onOpen ? () => onOpen(openStage(comparing, deck), comparing.chapterId ?? undefined) : undefined}
+          onStaleBase={() => { setComparing(null); onConflict?.(); setNotice(STALE_BASE); }}
+          onUnavailable={(e) => void finish(e.code === "candidate_settled" ? SETTLED_ELSEWHERE : e.message)}
+          onClose={() => setComparing(null)} fallbackFocus={heading} />
+      )}
     </section>
   );
 }
@@ -189,7 +256,7 @@ export function draftSummaryText(summary: DraftSummary): string {
   return lines.length > 0 ? `저장본과 다른 점:\n${lines.join("\n")}` : "저장본과 다른 점이 없습니다.";
 }
 
-export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, restoreLockedReason }: {
+export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, onDeckSaved, onApplyUnconfirmed, restoreLockedReason }: {
   project: ProjectInfo;
   // 복원을 잠그는 이유 (D3a-5 리뷰 R1, 계획 4.4: 장 생성 묶음 중). 복구 화면이 열린 채 다른 탭의 묶음이 시작되면
   // 복원이 묶음의 사슬을 끊는다. 보기와 보존본 지우기는 덱을 쓰지 않아 잠그지 않는다
@@ -199,6 +266,9 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
   onConflict?: () => void;  // 복원이 412를 받으면 부모(ProjectView)가 배너를 띄운다
   // 후보를 다시 만들 단계로 옮기고 그 장을 미리 고른다 (D2b-5c, C24)
   onOpen?: (stage: OpenStage, chapterId?: string) => void;
+  // 복구 화면에서 반영한 덱. 부모가 덱 상태에 넣는다(장 이름과 슬라이드 유무 판정에 쓴다, C1 계획 4.2)
+  onDeckSaved?: (deck: Deck) => void;
+  onApplyUnconfirmed?: () => void;  // 반영 응답이 5xx다. 부모가 "반영 결과를 확인하지 못함" 안내를 띄운다
 }) {
   const [snapshots, setSnapshots] = useState<SnapshotInfo[] | null>(null);
   const [error, setError] = useState("");
@@ -317,7 +387,8 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, rest
           </ul>
         )}
       </section>
-      <JobCandidates project={project} deck={deck} onOpen={onOpen} />
+      <JobCandidates project={project} deck={deck} onOpen={onOpen} onConflict={onConflict} onDeckSaved={onDeckSaved}
+        onApplyUnconfirmed={onApplyUnconfirmed} />
       {/* 다섯 단계 안에서는 복구 화면만 닫는다. 덱을 열 수 없는 프로젝트에서는 프로젝트 목록으로 간다 */}
       <button onClick={onBack}>{deck ? "복구 화면 닫기" : "목록으로"}</button>
     </div>

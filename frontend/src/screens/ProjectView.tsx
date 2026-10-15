@@ -796,6 +796,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
           <RecoveryScreen project={project} deck={deck} onConflict={onConflict}
             restoreLockedReason={batchLocked ? (jobChecked ? "내용 생성이 끝나면 복원할 수 있습니다." : batchTitle) : undefined}
             onOpen={(next, chapterId) => closeRecovery(next, chapterId)}
+            onDeckSaved={setDeck}
+            onApplyUnconfirmed={() => { justConflicted.current = true; setConflict("unconfirmed"); }}
             onBack={() => closeRecovery()} />
         )}
         {!showRecovery && stage === "purpose" && (
