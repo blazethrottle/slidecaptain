@@ -28,6 +28,8 @@ function baseDeck(): Deck {
 type Server = {
   deck: Deck; etag: number; jobs: JobView[];
   applyStatus?: number; applyBody?: Record<string, unknown>; previewStatus?: number; previewBody?: Record<string, unknown>;
+  // 미리 보기의 막는 사유와 기준 저장본을 바꾼다. listDelayMs는 반영 뒤 목록 응답을 늦춘다(실제 서버처럼 렌더가 나뉜다)
+  previewBlocked?: string[]; previewEtag?: string; listDelayMs?: number;
   applies: { url: string; ifMatch: string | null; body: Record<string, unknown> }[];
   puts: { ifMatch: string | null }[]; deckReads: number;
 };
@@ -65,7 +67,8 @@ function serve(server: Server) {
       const chapterId = body.chapter_id ?? server.jobs.find((j) => j.id === job)?.target ?? "c1";
       const current = server.deck.slides.find((s) => s.chapter_id === chapterId) ?? null;
       return new Response(JSON.stringify(previewOf(current, bullets(`후보 ${chapterId}`),
-        { job_id: job, chapter_id: chapterId, base_etag: `E${server.etag}` })));
+        { job_id: job, chapter_id: chapterId, base_etag: server.previewEtag ?? `E${server.etag}`,
+          blocked_reasons: server.previewBlocked ?? [] })));
     }
     if (url.includes("/apply")) {
       const body = JSON.parse(init!.body as string);
@@ -87,6 +90,7 @@ function serve(server: Server) {
       return new Response(JSON.stringify(server.deck), { headers: { ETag: tag() } });
     }
     if (url.endsWith("/jobs")) {
+      if (server.listDelayMs && server.applies.length > 0) await new Promise((r) => setTimeout(r, server.listDelayMs));
       const visible = server.jobs.filter((j) => j.candidate_status === "held" || j.candidate_status === "stale"
         || j.chapters.some((c) => c.candidate_status === "held" || c.candidate_status === "stale"));
       return new Response(JSON.stringify(visible));
@@ -126,7 +130,8 @@ afterEach(() => { vi.unstubAllGlobals(); });
 it("새 묶음 뒤에도 이전 묶음의 낡은 장 후보를 복구 화면에서 비교하고 반영한다", async () => {
   const single = jobView("chapter", { id: "job-single", target: "c2", relevance_hash: "c1:x", params: { chapter_id: "c2" },
     result: chapterResult(bullets("단독 c2")) });
-  const server = newServer([newerBatch(), olderBatch(), single]);
+  // 반영 뒤 목록 응답을 늦춰 비교 화면 닫기와 목록 갱신이 다른 렌더가 되게 한다. 닫기를 먼저 하면 초점이 본문으로 빠진다
+  const server = newServer([newerBatch(), olderBatch(), single], { listDelayMs: 150 });
   await openRecovery(server);
   const older = await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/));
   const singleRow = candidateRow(/장 다시 생성 \(2장 원가 구조\)/);
@@ -141,6 +146,7 @@ it("새 묶음 뒤에도 이전 묶음의 낡은 장 후보를 복구 화면에�
     .toBeInTheDocument();
   // 반영으로 연 버튼이 사라지면 초점은 후보 목록 제목으로 간다 (계획 리뷰 PR-16)
   await waitFor(() => expect(screen.getByRole("heading", { name: "AI 결과 후보" })).toHaveFocus());
+  expect(screen.getByText("2장 원가 구조에 반영했습니다.")).toBeInTheDocument();
 });
 
 // 계약(ETag 캐시): 반영 응답의 ETag가 캐시에 들어가야 둘째 비교 화면이 "다른 곳에서 먼저 저장"으로 막히지 않는다
@@ -182,11 +188,15 @@ it("반영이 412이면 충돌 안내, 5xx이면 확인하지 못함 안내와 �
   await openRecovery(server);
   await applyFrom(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)));
   expect(await screen.findByText(/서버 내용 다시 읽기/)).toBeInTheDocument();
+  // 배너와 같은 문장을 복구 화면에 되풀이하지 않고, 비교 화면을 닫고 목록을 다시 읽는다
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: /새 내용과 비교/ })).not.toBeInTheDocument());
+  expect(screen.getAllByText(/먼저 저장되었습니다/)).toHaveLength(1);
 
   server.applyStatus = 503; server.applyBody = { detail: "덱을 저장하지 못했습니다.", code: "deck_write_failed" };
   await applyFrom(candidateRow(/장 내용 생성 \(2장 원가 구조\)/));
   expect(await screen.findByText("반영 결과를 확인하지 못했습니다. 서버 내용을 다시 읽어 주세요.", { exact: false })).toBeInTheDocument();
-  expect(within(candidateRow(/장 내용 생성 \(2장 원가 구조\)/)).getByText(/반영했을 수 있습니다/)).toBeInTheDocument();
+  expect(within(candidateRow(/장 내용 생성 \(2장 원가 구조\)/)).getByText(/반영했는지 확인하지 못했습니다. 다시 반영해/))
+    .toBeInTheDocument();
 
   server.applyStatus = 409; server.applyBody = { detail: "이미 반영했거나 버린 후보입니다. 화면을 새로 고쳐 주세요.", code: "candidate_settled" };
   server.jobs = [];
@@ -225,4 +235,97 @@ it("덱을 열 수 없는 복구 대상 프로젝트에는 비교하고 반영 �
   render(<ProjectView project={{ ...project, status: "needs_recovery" }} onBack={vi.fn()} />);
   await screen.findByText(/장 내용 생성/);
   expect(screen.queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
+});
+
+
+it.each([
+  ["batch_active", "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요."],
+  ["slots_changed", "축약을 요청한 뒤 이 장의 내용이 바뀌어 후보를 반영할 수 없습니다. 현재 내용으로 다시 축약해 주세요."],
+])("반영이 409 %s이면 서버 안내를 보이고 목록을 다시 읽는다", async (code, detail) => {
+  const server = newServer([olderBatch()], { applyStatus: 409, applyBody: { detail, code } });
+  await openRecovery(server);
+  await applyFrom(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)));
+  expect(await screen.findByText(detail)).toBeInTheDocument();
+  expect(screen.queryByText(/다른 곳에서 이미 처리한/)).not.toBeInTheDocument();
+});
+
+it("미리 보기가 409 candidate_settled이면 서버의 새로 고침 문구 대신 자기 안내를 보인다", async () => {
+  const server = newServer([olderBatch()], { previewStatus: 409,
+    previewBody: { detail: "이미 반영했거나 버린 후보입니다. 화면을 새로 고쳐 주세요.", code: "candidate_settled" } });
+  await openRecovery(server);
+  await userEvent.click(within(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)))
+    .getByRole("button", { name: "비교하고 반영" }));
+  expect(await screen.findByText("다른 곳에서 이미 처리한 후보입니다. 목록을 다시 읽었습니다.")).toBeInTheDocument();
+  expect(screen.queryByText(/화면을 새로 고쳐 주세요/)).not.toBeInTheDocument();
+});
+
+it("미리 보기의 기준 저장본이 이 탭과 다르면 비교 화면을 닫고 충돌 배너와 안내를 보인다", async () => {
+  const server = newServer([olderBatch()], { previewEtag: "E9" });
+  await openRecovery(server);
+  await userEvent.click(within(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)))
+    .getByRole("button", { name: "비교하고 반영" }));
+  expect(await screen.findByText(/이 화면이 연 뒤 다른 곳에서 먼저 저장했습니다/)).toBeInTheDocument();
+  expect(screen.getByText(/서버 내용 다시 읽기/)).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: /새 내용과 비교/ })).not.toBeInTheDocument();
+  expect(server.applies).toHaveLength(0);
+});
+
+it("미리 보기의 409가 아닌 오류는 비교 화면 안에 보인다", async () => {
+  const server = newServer([olderBatch()], { previewStatus: 422, previewBody: { detail: "저장된 후보를 지금 형식으로 읽지 못했습니다." } });
+  await openRecovery(server);
+  await userEvent.click(within(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)))
+    .getByRole("button", { name: "비교하고 반영" }));
+  const dialog = await compareDialog();
+  expect(await within(dialog).findByText("저장된 후보를 지금 형식으로 읽지 못했습니다.")).toBeInTheDocument();
+});
+
+// 막힌 후보: 복구 화면은 생성을 시작하지 않으므로 비교 화면은 버튼 대신 갈 길을 안내한다(W1 리뷰 W1R-04)
+it("막힌 장 축약 후보의 비교 화면은 다시 생성 버튼 대신 '이 장 축약'으로 가는 길을 안내한다", async () => {
+  const condense = jobView("condense", { id: "job-condense", target: "c1", relevance_hash: "c1:x", params: { chapter_id: "c1" },
+    result: chapterResult(bullets("축약 c1")) });
+  const server = newServer([condense], { previewBlocked: ["slots_changed"] });
+  await openRecovery(server);
+  await userEvent.click(within(await waitFor(() => candidateRow(/장 축약 \(1장 시장 현황\)/)))
+    .getByRole("button", { name: "비교하고 반영" }));
+  const dialog = await compareDialog();
+  expect(await within(dialog).findByText(/'이 장 축약'으로 현재 입력 기준 후보를 만들어 주세요/)).toBeInTheDocument();
+  expect(within(dialog).queryByRole("button", { name: "현재 입력으로 다시 생성" })).not.toBeInTheDocument();
+});
+
+it("5xx 뒤 같은 후보를 다시 반영해 성공하면 확인하지 못함 안내가 풀린다", async () => {
+  const server = newServer([olderBatch()], { applyStatus: 503, applyBody: { detail: "원장 기록 실패", code: "ledger_write_failed" } });
+  await openRecovery(server);
+  await applyFrom(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)));
+  expect(await screen.findByText(/반영 결과를 확인하지 못했습니다/)).toBeInTheDocument();
+  server.applyStatus = undefined;
+  await applyFrom(candidateRow(/장 내용 생성 \(2장 원가 구조\)/));
+  await waitFor(() => expect(screen.queryByText(/반영 결과를 확인하지 못했습니다/)).not.toBeInTheDocument());
+});
+
+it("행의 '단계로 옮겨 다시 생성'은 그 단계 버튼에 초점을 둔다", async () => {
+  const single = jobView("chapter", { id: "job-single", target: "c1", relevance_hash: "c1:x", params: { chapter_id: "c1" },
+    result: chapterResult(bullets("단독 c1")) });
+  await openRecovery(newServer([single]));
+  await userEvent.click(within(await waitFor(() => candidateRow(/장 다시 생성 \(1장 시장 현황\)/)))
+    .getByRole("button", { name: "편집 단계로 옮겨 다시 생성" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toHaveFocus());
+});
+
+// 고정: 성공했지만 관련 입력 해시가 없는 옛 단독 행에는 버튼이 없고, 끝나지 않은 하위 장에는 버튼도 이유 문장도 없다
+it("해시 없는 옛 단독 행과 끝나지 않은 하위 장에는 반영 버튼이 없고, 장 축약 후보에는 있다", async () => {
+  const old = jobView("chapter", { id: "job-old-single", target: "c1", relevance_hash: null, params: { chapter_id: "c1" },
+    result: chapterResult(bullets("옛 단독")) });
+  const running = batchView([chapterView("c2", "validating", { candidate_status: "held", result: chapterResult(bullets("검증 중")) })],
+    { id: "job-running", state: "running", relevance_hash: "b1:{}" });
+  const condense = jobView("condense", { id: "job-condense", target: "c1", relevance_hash: "c1:x", params: { chapter_id: "c1" },
+    result: chapterResult(bullets("축약 c1")) });
+  await openRecovery(newServer([old, running, condense]));
+  expect(within(await waitFor(() => candidateRow(/장 축약 \(1장 시장 현황\)/))).getByRole("button", { name: "비교하고 반영" }))
+    .toBeInTheDocument();
+  const oldRow = candidateRow(/장 다시 생성 \(1장 시장 현황\)/);
+  expect(within(oldRow).queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
+  expect(within(oldRow).getByText(/반영 여부를 판정할 수 없습니다/)).toBeInTheDocument();
+  const runningRow = candidateRow(/장 내용 생성 \(2장 원가 구조\)/);
+  expect(within(runningRow).queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
+  expect(within(runningRow).queryByText(/반영 여부를 판정할 수 없습니다/)).not.toBeInTheDocument();
 });

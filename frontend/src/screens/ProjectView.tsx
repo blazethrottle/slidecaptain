@@ -798,8 +798,12 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
         {showRecovery && (
           <RecoveryScreen project={project} deck={deck} onConflict={onConflict}
             restoreLockedReason={batchLocked ? (jobChecked ? "내용 생성이 끝나면 복원할 수 있습니다." : batchTitle) : undefined}
-            onOpen={(next, chapterId, diagramJobId) => closeRecovery(next, chapterId, diagramJobId)}
-            onDeckSaved={setDeck}
+            onOpen={(next, chapterId, diagramJobId) => {
+              focusStageAfterMove.current = true;  // 단계 버튼으로 옮길 때와 같이 그 단계 버튼에 초점을 둔다(W1 리뷰 W1R-05)
+              closeRecovery(next, chapterId, diagramJobId);
+            }}
+            // 반영이 저장됐다. 앞선 5xx의 "반영 결과를 확인하지 못함" 안내는 이 저장으로 풀린다(W1 리뷰 W1R-07)
+            onDeckSaved={(saved) => { setDeck(saved); setConflict((c) => (c === "unconfirmed" ? null : c)); }}
             onApplyUnconfirmed={() => { justConflicted.current = true; setConflict("unconfirmed"); }}
             onBack={() => closeRecovery()} />
         )}

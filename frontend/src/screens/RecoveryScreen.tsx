@@ -112,7 +112,15 @@ function openStage(c: Candidate, deck: Deck | undefined): OpenStage {
 }
 const SETTLED_ELSEWHERE = "다른 곳에서 이미 처리한 후보입니다. 목록을 다시 읽었습니다.";
 const NOT_APPLICABLE = "이전 버전에서 만들었거나 끝까지 만들지 못한 결과라 반영 여부를 판정할 수 없습니다. 보기와 버리기만 할 수 있습니다.";
-const MAYBE_APPLIED = "반영했을 수 있습니다. 다시 반영하면 처리만 정리됩니다.";
+// 5xx는 저장 전 실패(덱 쓰기 실패, 읽기 실패)와 저장 뒤 원장 커밋 실패를 모두 덮으므로 어느 쪽인지 단정하지 않는다(W1 리뷰 W1R-12)
+const MAYBE_APPLIED = "반영했는지 확인하지 못했습니다. 다시 반영해 주세요. 이미 반영됐으면 처리만 정리됩니다.";
+// 비교 화면이 막힌 후보에 보일 다시 생성 안내. 복구 화면은 생성을 시작하지 않으므로 "현재 입력으로 다시 생성" 버튼 대신 갈 길을
+// 알린다. 이동은 비교 화면을 닫은 뒤 행의 버튼이 맡는다(W1 리뷰 W1R-04)
+function regenerateHint(c: Candidate, stage: OpenStage): string {
+  if (stage === "structure") return "이 화면을 닫고 '구성 단계로 옮겨 다시 생성'을 누른 뒤 '승인하고 내용 생성'으로 내용이 없는 장을 다시 만들어 주세요.";
+  const action = c.job.kind === "condense" ? "이 장 축약" : "이 장 다시 생성";
+  return `이 화면을 닫고 '편집 단계로 옮겨 다시 생성'을 누른 뒤 '${action}'으로 현재 입력 기준 후보를 만들어 주세요.`;
+}
 
 function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApplyUnconfirmed }: {
   project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string, diagramJobId?: string) => void;
@@ -141,9 +149,11 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
         { ...(c.job.kind === "chapters" ? { chapter_id: c.chapterId! } : {}), ...selection }, baseEtag);
       onDeckSaved?.(saved);
       setMaybeApplied((keys) => { const next = new Set(keys); next.delete(c.key); return next; });
-      await finish("");
+      // 반영 성공을 알린다. 행이 사라지고 초점이 제목으로 가므로 화면 낭독기 사용자에게 결과를 들려준다(W1 리뷰 W1R-14)
+      await finish(`${chapterLabel(saved, c.chapterId ?? "")}에 반영했습니다.`);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 412) { onConflict?.(); await finish(e.message); }
+      // 412는 부모의 충돌 배너가 같은 문장을 보이므로 복구 화면 안내는 비운다(W1 리뷰 W1R-10)
+      if (e instanceof ApiError && e.status === 412) { onConflict?.(); await finish(""); }
       else if (e instanceof ApiError && e.status >= 500) {
         // 덱 저장 뒤 원장 커밋이 실패했을 수 있다. 같은 후보를 다시 반영하면 서버가 처분만 정리한다(D3c 4.8)
         onApplyUnconfirmed?.();
@@ -200,8 +210,9 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
                 const stage = openStage(c, deck);
                 return <><button onClick={() => onOpen(stage, c.chapterId ?? undefined)}>
                   {STAGE_NAMES[stage]} 단계로 옮겨 다시 생성</button>{" "}
-                  {stage === "structure" && CHAPTER_KINDS.has(c.job.kind) && <span className="hint">
-                    구성 단계에서 그 장의 &apos;다시 생성&apos;이나 &apos;승인하고 내용 생성&apos;으로 다시 만듭니다.</span>}</>;
+                  {/* 이전 묶음의 빈 장에는 장별 다시 생성 버튼이 없으므로 두 경우를 덮는 버튼을 가리킨다(W1 리뷰 W1R-03, W1R-13) */}
+                  {stage === "structure" && CHAPTER_KINDS.has(c.job.kind) && <p className="hint">
+                    구성 단계의 &apos;승인하고 내용 생성&apos;으로 내용이 없는 장을 다시 만듭니다.</p>}</>;
               })()}
               {/* 끝나지 않은 장은 다음 시작의 정리가 결과를 덱에 넣을 수 있어 버리지 않는다 (리뷰 R6) */}
               {TERMINAL_JOB_STATES.has(c.state) && <Button variant="danger" onClick={() => void dismiss(c)}>버리기</Button>}
@@ -228,7 +239,7 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
           chapterId={comparing.job.kind === "chapters" ? comparing.chapterId! : undefined}
           title={chapterLabel(deck, comparing.chapterId!)} candidateSlots={(comparing.result as { slots: Slots }).slots}
           onApply={(selection, baseEtag) => applyCompare(comparing, selection, baseEtag)}
-          onRegenerate={onOpen ? () => onOpen(openStage(comparing, deck), comparing.chapterId ?? undefined) : undefined}
+          regenerateHint={regenerateHint(comparing, openStage(comparing, deck))}
           onStaleBase={() => { setComparing(null); onConflict?.(); setNotice(STALE_BASE); }}
           onUnavailable={(e) => void finish(e.code === "candidate_settled" ? SETTLED_ELSEWHERE : e.message)}
           onClose={() => setComparing(null)} fallbackFocus={heading} />
