@@ -48,6 +48,8 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   const [showRecovery, setShowRecovery] = useState(false);
   // 복구 화면에서 "현재 입력으로 다시 생성"으로 옮긴 장. 옮긴 단계에서 그 장을 미리 고른다 (C24)
   const [focusChapter, setFocusChapter] = useState<string | null>(null);
+  // 복구 화면에서 다시 열 도식 후보 작업. 편집 화면이 마운트 때 한 번 읽고 지운다 (C1 계획 W2-b, 계획 리뷰 PR-08)
+  const [reopenDiagram, setReopenDiagram] = useState<string | null>(null);
   // 구성 단계의 주안점과 목표 장수. 저장하지 않는 값이라 이 화면이 들고 있어 단계 이동과 다시 마운트 사이에 남는다
   // (계획 4.4, 사실 13). D3a-5의 항목을 D3a-2 리뷰 R6 반영으로 당겼다
   const [structureBrief, setStructureBrief] = useState<StructureBrief>(EMPTY_BRIEF);
@@ -542,13 +544,14 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
   // 복구 화면을 닫고 단계로 간다. 복구 화면에서 처분했을 수 있으므로 덱을 다시 읽는다 (D2b-5c 리뷰 R16).
   // 복원본을 다시 읽을 때까지 덱을 내린다: 옛 덱으로 편집기가 재마운트되어 다음 자동 저장이 복원 결과를
   // 덮어쓰는 사고를 막는다 (2026-08-29 적대 리뷰 반영). 412로 뜬 안내도 내린다(A5b 리뷰 발견 2)
-  const closeRecovery = (next?: Stage, chapterId?: string) => {
+  const closeRecovery = (next?: Stage, chapterId?: string, diagramJobId?: string) => {
     setShowRecovery(false);
     setConflict(null);
     setError("");
     setDeck(null);
     api.getDeck(project.name).then(setDeck).catch((e) => setError(messageOf(e)));
     setFocusChapter(chapterId ?? null);
+    setReopenDiagram(diagramJobId ?? null);
     if (next) setStage(next);
   };
 
@@ -795,7 +798,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
         {showRecovery && (
           <RecoveryScreen project={project} deck={deck} onConflict={onConflict}
             restoreLockedReason={batchLocked ? (jobChecked ? "내용 생성이 끝나면 복원할 수 있습니다." : batchTitle) : undefined}
-            onOpen={(next, chapterId) => closeRecovery(next, chapterId)}
+            onOpen={(next, chapterId, diagramJobId) => closeRecovery(next, chapterId, diagramJobId)}
             onDeckSaved={setDeck}
             onApplyUnconfirmed={() => { justConflicted.current = true; setConflict("unconfirmed"); }}
             onBack={() => closeRecovery()} />
@@ -838,6 +841,7 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
             onDirtyChange={setDirty} onBusyChange={setDiagramGenerating} onAiBusyChange={setEditorAiBusy}
             onSaveStatusChange={setSaveStatus} onFocusSaveStatus={focusSaveStatus} onDraftsChanged={onDraftsChanged}
             initialChapterId={focusChapter} onChapterChange={onEditorChapterChange}
+            reopenDiagramJob={reopenDiagram} onReopenConsumed={() => setReopenDiagram(null)}
             readOnly={batchLocked} readOnlyNotice={batchHere} conflictSignal={conflictSignal}
             seenJobFailures={seenJobFailures.current} failuresSince={openedAt} />
         )}

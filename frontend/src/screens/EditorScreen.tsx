@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { UnsavedChangeBackup } from "../editor/UnsavedChangeBackup";
 import { formatSavedAt } from "../api/time";
 import { saveStatusKind, type SaveStatus } from "../ui/StatusIndicator";
-import type { Deck, ProjectInfo, TemplateName } from "../api/client";
+import { api, type Deck, type ProjectInfo, type TemplateName } from "../api/client";
 import { ChapterList } from "../editor/ChapterList";
 import { DesignPanel } from "../editor/DesignPanel";
 import { GeneratePanel } from "../editor/GeneratePanel";
@@ -15,6 +15,7 @@ import { NumericReviewPanel } from "./NumericReviewPanel";
 import { SemanticReviewPanel } from "./SemanticReviewPanel";
 import { DiagramAuthoringDialog } from "../editor/DiagramAuthoringDialog";
 import { createDiagramDraft, editDiagramDraft, type DiagramDraft } from "../editor/diagramDraft";
+import { reopenDiagram, type ReopenedDiagram } from "../editor/diagramReopen";
 import { BATCH_DISCARD_CONFIRM, BATCH_READ_ONLY_NOTICE } from "../ui/ActiveJobNotice";
 import { DirectEditPanel } from "../editor/DirectEditPanel";
 import { clampOffset, displayBoxes, editElement, frameKey, frameKeys, roleName, withObject } from "../editor/directEdit";
@@ -30,13 +31,14 @@ const MODE_GUIDE = "요소를 고르세요. 문구는 다시 누르거나 Enter,
 // 서버가 저장한 결과를 화면이 받지 못했다(요청 중 화면 덱이 바뀌었다). 다음 자동 저장이 그 결과를 덮지 않게 충돌로 멈춘다
 // (D3c-5 리뷰 F1). 도식 작성 창의 저장된 반영도 같은 문구를 쓴다
 const SAVED_ELSEWHERE_CONFLICT = "반영한 내용은 서버에 저장됐지만 그사이 이 화면이 바뀌어 받지 않았습니다. '서버 내용으로 되돌리기'를 누르면 이 화면의 내용을 보존한 뒤 새 문서를 읽습니다.";
+const REOPEN_FAILED = "이 도식 후보를 열지 못했습니다. 복구 화면에서 다시 확인해 주세요.";
 const BATCH_END_CONFLICT = "생성한 장이 문서에 반영되어 이 화면의 고친 내용은 저장하지 않았습니다. '서버 내용으로 되돌리기'를 누르면 고친 내용을 보존한 뒤 새 문서를 읽습니다.";
 import { Button } from "../ui/Button";
 
 export function EditorScreen({
   project, deck: initialDeck, onDeckChange, onEditorReady, onDirtyChange, onConflictHint, onBusyChange, onAiBusyChange, timings,
   onSaveStatusChange, onFocusSaveStatus, onDraftsChanged, initialChapterId, onChapterChange, readOnly = false,
-  readOnlyNotice = false, conflictSignal = 0, seenJobFailures, failuresSince = 0,
+  readOnlyNotice = false, conflictSignal = 0, seenJobFailures, failuresSince = 0, reopenDiagramJob = null, onReopenConsumed,
 }: {
   project: ProjectInfo;
   deck: Deck;
@@ -69,6 +71,10 @@ export function EditorScreen({
   // 생성 패널이 다시 열릴 때 그 장의 지난 실패를 한 번 보이는 데 쓴다 (D3a-β 재리뷰 F3)
   seenJobFailures?: Set<string>;
   failuresSince?: number;
+  // 복구 화면이 넘긴 도식 후보 작업 (C1 계획 W2-b). 마운트 때 한 번 읽고 부모에게 지우게 한다. 그래서 덱 다시 읽기나 단계
+  // 다시 열기로 이 화면이 다시 마운트되어도 작성 창이 다시 열리지 않는다(계획 리뷰 PR-08)
+  reopenDiagramJob?: string | null;
+  onReopenConsumed?: () => void;
 }) {
   // 읽기 전용(장 생성 묶음 중)에는 저장을 멈춘다. 묶음 중 저장은 묶음의 사슬을 끊는다 (D3a-5 리뷰 R7)
   const editor = useDeckEditor(project.name, initialDeck, onDeckChange, timings, onConflictHint, readOnly);
@@ -106,6 +112,8 @@ export function EditorScreen({
     if (!document.activeElement || document.activeElement === document.body) focusFrame(null);
   }, [editor.deck]); // eslint-disable-line react-hooks/exhaustive-deps
   const [diagramDraft, setDiagramDraft] = useState<DiagramDraft | null>(null);
+  const [reopened, setReopened] = useState<ReopenedDiagram | null>(null);  // 다시 연 후보. 작성 창을 닫으면 비운다
+  const [reopenNotice, setReopenNotice] = useState("");
   const [diagramBusy, setDiagramBusy] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
   const templateBusyRef = useRef(false);
@@ -115,6 +123,29 @@ export function EditorScreen({
   // 응답이 온 때의 충돌 여부. 패널은 클릭한 때의 콜백을 부르므로 렌더 값(editor.conflict)은 낡을 수 있다
   const conflictNow = useRef(editor.conflict);
   conflictNow.current = editor.conflict;
+
+  // 복구 화면이 넘긴 도식 후보를 작성 창과 함께 연다 (C1 계획 W2-b, 4.3). 넘긴 작업 ID는 한 번 쓰고 부모에게 지우게 한다.
+  // 옮기는 사이 다른 탭이 처분했을 수 있어 행을 다시 읽는다. "도식 추가"가 막히는 조건(읽기 전용, 저장 충돌, 도식 AI 호출
+  // 중)이면 열지 않고 안내한다
+  const reopenAtMount = useRef(reopenDiagramJob);
+  const mountedRef = useRef(true);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
+  useEffect(() => {
+    const jobId = reopenAtMount.current;
+    if (!jobId) return;
+    reopenAtMount.current = null;
+    onReopenConsumed?.();
+    const refuse = () => { if (mountedRef.current) setReopenNotice(REOPEN_FAILED); };
+    if (readOnlyRef.current || conflictNow.current) { refuse(); return; }
+    api.getJob(project.name, jobId).then((job) => {
+      if (!mountedRef.current) return;
+      const opened = reopenDiagram(job, current.current.deck);
+      if (!opened || readOnlyRef.current || conflictNow.current) { refuse(); return; }
+      setReopenNotice("");
+      setReopened(opened.candidate);
+      setDiagramDraft(opened.draft);
+    }, refuse);
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
   const current = useRef({deck: editor.deck, chapterId, mounted: true});
   current.current = {...current.current, deck: editor.deck, chapterId};
   useEffect(() => { current.current.mounted = true; return () => {current.current.mounted = false;}; }, []);
@@ -317,7 +348,8 @@ export function EditorScreen({
         <ChapterList deck={editor.deck} plan={editor.plan} selected={chapterId}
           onSelect={(id) => { setChapterId(id); setSelected(null); }}
           onReorder={readOnly ? undefined : (from, to) => editor.apply((d) => reorderChapters(d, from, to))} />
-        <button disabled={readOnly || editor.conflict || diagramBusy} onClick={() => setDiagramDraft(createDiagramDraft(editor.deck))}>도식 추가</button>
+        <button disabled={readOnly || editor.conflict || diagramBusy} onClick={() => { setReopened(null); setDiagramDraft(createDiagramDraft(editor.deck)); }}>도식 추가</button>
+        {reopenNotice && <p role="status">{reopenNotice}</p>}
       </aside>
       <section className="editor-center">
         {editor.saveError && (
@@ -397,7 +429,7 @@ export function EditorScreen({
         )}
         {chapterId && (
           <PropertyPanel deck={editor.deck} chapterId={chapterId} onApply={editor.apply}
-            onEditDiagram={() => setDiagramDraft(editDiagramDraft(editor.deck, chapterId))}
+            onEditDiagram={() => { setReopened(null); setDiagramDraft(editDiagramDraft(editor.deck, chapterId)); }}
             diagramDisabled={editor.conflict} onSwitchTemplate={(id,to,base) => void switchTemplate(id,to,base)} />
         )}
         <DesignPanel deck={editor.deck} onApply={editor.apply} />
@@ -428,12 +460,13 @@ export function EditorScreen({
     </div>
     {diagramDraft && <DiagramAuthoringDialog projectName={project.name} deck={editor.deck} initialDraft={diagramDraft} blocked={editor.conflict}
       flushBeforeCheck={editor.flushSave} onConflict={editor.reportConflict} onBusyChange={onDiagramBusyChange}
-      onCancel={() => setDiagramDraft(null)} onApply={(candidate, base, id, persisted) => {
+      initialCandidate={reopened ?? undefined}
+      onCancel={() => { setDiagramDraft(null); setReopened(null); }} onApply={(candidate, base, id, persisted) => {
         // 저장된 반영을 받지 못하면 충돌로 멈춘다. 렌더 값 대신 최신 값을 본다 (D3c-5 리뷰 F1)
         if (current.current.deck !== base) { if (persisted) reportConflict(SAVED_ELSEWHERE_CONFLICT); return; }
         if (conflictNow.current) return;
         if(persisted) editor.acceptSaved(candidate); else editor.replace(candidate);
-        setChapterId(id); setSelected(null); setDiagramDraft(null);
+        setChapterId(id); setSelected(null); setDiagramDraft(null); setReopened(null);
       }} />}
     </>
   );

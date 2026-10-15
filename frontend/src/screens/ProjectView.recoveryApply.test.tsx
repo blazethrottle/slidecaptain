@@ -45,7 +45,7 @@ function serve(server: Server) {
     const headers = new Headers(init?.headers);
     const tag = () => `"E${server.etag}"`;
     const ifMatch = () => headers.get("If-Match")?.replace(/"/g, "") ?? null;  // 서버는 따옴표를 떼고 비교한다
-    if (url.endsWith("/deck") && init?.method === "PUT") {
+    if (url.split("?")[0].endsWith("/deck") && init?.method === "PUT") {
       server.puts.push({ ifMatch: ifMatch() });
       server.deck = JSON.parse(init.body as string);
       server.etag += 1;

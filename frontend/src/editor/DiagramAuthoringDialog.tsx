@@ -9,6 +9,7 @@ import { FailureNotice } from "../ui/FailureNotice";
 import { Preview } from "./Preview";
 import { DiagramDraftBackup } from "./DiagramDraftBackup";
 import { StoryPlanRecoveryGuidance } from "../screens/StoryPlanRecoveryGuidance";
+import type { ReopenedDiagram } from "./diagramReopen";
 import { availableId, diagramCandidate, diagramInputErrors, requiredDiagramAnswers,
   type DiagramDraft, type DiagramEdge, type DiagramNode, type StoryRole } from "./diagramDraft";
 
@@ -89,13 +90,16 @@ function GeneratedDiagramReview({ diagram, evidence }: {
 }
 
 export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onApply, onCancel, blocked = false,
-  flushBeforeCheck, onConflict, onBusyChange, pollIntervalMs = 1000 }: {
+  flushBeforeCheck, onConflict, onBusyChange, pollIntervalMs = 1000, initialCandidate }: {
   projectName: string; deck: Deck; initialDraft: DiagramDraft;
   onApply: (candidate: Deck, base: Deck, chapterId: string, persisted?: boolean) => void; onCancel: () => void;
   blocked?: boolean;
   flushBeforeCheck?: () => Promise<boolean>; onConflict?: (message: string) => void;
   onBusyChange?: (busy: boolean) => void;
   pollIntervalMs?: number;
+  // 복구 화면에서 다시 연 AI 후보 (C1 계획 W2-b). 여는 순간 처분을 바꾸지 않는다: 시작값은 edit을 거치지 않는다(edit은
+  // 보이던 후보를 버린다). 불러오기는 처분 응답을 기다리고, 다른 곳이 먼저 처리했으면(409) 불러오지 않는다
+  initialCandidate?: ReopenedDiagram;
 }) {
   const [base] = useState(deck);
   const [draft, setDraft] = useState(initialDraft);
@@ -103,9 +107,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [errors, setErrors] = useState<string[]>([]);
   const [storyStale, setStoryStale] = useState(false);
   const [checking, setChecking] = useState(false);
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(initialCandidate?.instructions ?? "");
   const [generating, setGenerating] = useState(false);
-  const [generationResult, setGenerationResult] = useState<DiagramGenerationResult | null>(null);
+  const [generationResult, setGenerationResult] = useState<DiagramGenerationResult | null>(initialCandidate?.result ?? null);
   const [generationUsage, setGenerationUsage] = useState<GenerationUsage | null>(null);
   const [generationError, setGenerationError] = useState("");
   const [generationNotice, setGenerationNotice] = useState("");
@@ -114,8 +118,12 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [replacement,setReplacement] = useState<{preview:DocumentChangePreview;basis:DocumentChangeBasis}|null>(null);
   const [lossChecks,setLossChecks] = useState<string[]>([]);
   const [applying,setApplying] = useState(false);
+  const [loadingCandidate, setLoadingCandidate] = useState(false);  // 다시 연 후보의 처분 응답을 기다리는 중
   const generationLease = useRef<symbol | null>(null);
-  const generationJob = useRef<string | null>(null);  // 지금 보이는 후보를 만든 작업 (처분)
+  const generationJob = useRef<string | null>(initialCandidate?.jobId ?? null);  // 지금 보이는 후보를 만든 작업 (처분)
+  // 다시 연 후보의 작업. 이 후보의 불러오기만 처분 응답을 기다린다. 창 안에서 새로 만든 후보는 지금처럼 기다리지 않는다
+  // (그 삼킴은 로드맵 이월표 (19))
+  const reopenedJob = useRef<string | null>(initialCandidate?.jobId ?? null);
   const [generationFollowError, setGenerationFollowError] = useState("");
   const [generationFailure, setGenerationFailure] = useState<unknown>(null);
   const live = useRef(true);
@@ -165,7 +173,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
     generationJob.current = null;
   };
   const edit = (next: DiagramDraft) => {
-    if (applying) return;
+    if (applying || loadingCandidate) return;
     dropCandidate();
     serial.current++;
     setDraft(next); setChecked(null); setErrors([]); setChecking(false);
@@ -358,7 +366,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       {stale && <p role="alert">원본 덱이 변경되었습니다. 작성 내용을 확인한 뒤 닫고 다시 열어 주세요. 기존 덱에 덮어쓰지 않습니다.</p>}
       {unavailable && <p role="alert">다른 창의 저장과 충돌했습니다. 작성 내용을 확인한 뒤 닫고 저장 충돌을 먼저 해결해 주세요.</p>}
       <div className="diagram-authoring-columns">
-        <section className="diagram-authoring-fields" aria-label="도식 내용 입력" inert={applying}>
+        <section className="diagram-authoring-fields" aria-label="도식 내용 입력" inert={applying || loadingCandidate}>
           <div className="field"><label>도식 제목<input ref={titleInput} value={draft.topic}
             onChange={e => edit({ ...draft, topic: e.target.value })} /></label></div>
           <details><summary>분류 라벨, 부제와 각주</summary>
@@ -415,11 +423,33 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               {generationResult.unverified_numbers.length > 0 && <p className="number-warning">
                 등록 근거에서 찾지 못한 수치: {generationResult.unverified_numbers.join(", ")}. 불러오기 전에 확인해 주세요.
               </p>}
-              <button disabled={generating} onClick={() => {
+              {reopenedJob.current && generationJob.current === reopenedJob.current && (
+                <p className="notice">입력을 고치면 이 후보를 버립니다. 먼저 작성 폼에 불러온 뒤 고쳐 주세요.</p>)}
+              <button disabled={generating || loadingCandidate} onClick={async () => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
-                // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
-                if (generationJob.current) void settle(projectName, generationJob.current, "applied");
-                generationJob.current = null;
+                const job = generationJob.current;
+                if (job && job === reopenedJob.current) {
+                  // 다시 연 후보는 처분이 성공해야 불러온다. 다른 탭이 먼저 불러왔으면 같은 도식이 두 번 들어간다(계획 리뷰 PR-01)
+                  setLoadingCandidate(true);
+                  try {
+                    await api.settleCandidate(projectName, job, "applied");
+                  } catch (error) {
+                    if (!live.current) return;
+                    generationJob.current = null; reopenedJob.current = null;
+                    setGenerationResult(null);
+                    setGenerationNotice(error instanceof ApiError && error.status === 409
+                      ? "다른 곳에서 이미 처리한 후보입니다. 현재 입력으로 다시 생성할 수 있습니다."
+                      : `후보를 불러오지 못했습니다. ${messageOf(error)}`);
+                    return;
+                  } finally {
+                    if (live.current) setLoadingCandidate(false);
+                  }
+                  if (!live.current) return;
+                } else if (job) {
+                  // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
+                  void settle(projectName, job, "applied");
+                }
+                generationJob.current = null; reopenedJob.current = null;
                 edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
                 if(!draft.isNew)setAiReplacement(true);
                 setGenerationNotice("AI 후보의 항목과 관계를 작성 폼에 불러왔습니다. 내용과 근거를 확인한 뒤 입력과 배치 확인을 눌러 주세요.");

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type Slots, type SnapshotInfo } from "../api/client";
 import { CandidateCompareDialog, STALE_BASE, type CompareSelection } from "../editor/CandidateCompareDialog";
+import { reopenRefusal } from "../editor/diagramReopen";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
 import { StatusIndicator } from "../ui/StatusIndicator";
 
@@ -114,7 +115,7 @@ const NOT_APPLICABLE = "이전 버전에서 만들었거나 끝까지 만들지 
 const MAYBE_APPLIED = "반영했을 수 있습니다. 다시 반영하면 처리만 정리됩니다.";
 
 function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApplyUnconfirmed }: {
-  project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string) => void;
+  project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string, diagramJobId?: string) => void;
   onConflict?: () => void; onDeckSaved?: (deck: Deck) => void; onApplyUnconfirmed?: () => void;
 }) {
   const [items, setItems] = useState<Candidate[] | null>(null);
@@ -168,7 +169,7 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
     <section className="job-candidates">
       <h3 ref={heading} tabIndex={-1}>AI 결과 후보</h3>
       <p>AI가 만들었지만 아직 반영하거나 버리지 않은 결과입니다. 장 후보는 여기서 비교하고 반영할 수 있습니다.
-        그 밖의 후보는 보기와 버리기만 합니다.</p>
+        도식 후보는 도식 작성 창에서 엽니다. 구조안과 덱 전체 후보는 보기와 버리기만 합니다.</p>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {items === null ? (error ? null : <p>불러오는 중...</p>) : items.length === 0 ? (
@@ -186,6 +187,13 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
               {deck && CHAPTER_KINDS.has(c.job.kind) && TERMINAL_JOB_STATES.has(c.state) && (applicable(c)
                 ? <><Button onClick={() => setComparing(c)}>비교하고 반영</Button>{" "}</>
                 : <p className="hint">{NOT_APPLICABLE}</p>)}
+              {/* 도식 후보는 편집 단계의 작성 창에서 다시 연다 (C1 계획 W2-b). 열 수 없으면 이유를 보인다 */}
+              {deck && onOpen && c.job.kind === "diagram" && TERMINAL_JOB_STATES.has(c.state) && (() => {
+                const refusal = reopenRefusal(c.job);
+                return refusal === null
+                  ? <><Button onClick={() => onOpen("editor", c.chapterId ?? undefined, c.job.id)}>도식 작성 창에서 열기</Button>{" "}</>
+                  : <p className="hint">{refusal} 작성 창에서 열 수 없습니다. 현재 입력으로 다시 생성해 주세요.</p>;
+              })()}
               {/* 덱을 읽지 못하는 프로젝트에서는 옮길 화면이 없다 (리뷰 R10) */}
               {!WHOLE_DECK.has(c.job.kind) && onOpen && (() => {
                 // 장 후보는 그 장의 슬라이드 유무로, 그 밖은 단계 상태와 같은 표로 정한다 (D3a-3 리뷰 R4, 계획 리뷰 PR-11)
@@ -265,7 +273,7 @@ export function RecoveryScreen({ project, deck, onBack, onConflict, onOpen, onDe
   onBack: () => void;
   onConflict?: () => void;  // 복원이 412를 받으면 부모(ProjectView)가 배너를 띄운다
   // 후보를 다시 만들 단계로 옮기고 그 장을 미리 고른다 (D2b-5c, C24)
-  onOpen?: (stage: OpenStage, chapterId?: string) => void;
+  onOpen?: (stage: OpenStage, chapterId?: string, diagramJobId?: string) => void;
   // 복구 화면에서 반영한 덱. 부모가 덱 상태에 넣는다(장 이름과 슬라이드 유무 판정에 쓴다, C1 계획 4.2)
   onDeckSaved?: (deck: Deck) => void;
   onApplyUnconfirmed?: () => void;  // 반영 응답이 5xx다. 부모가 "반영 결과를 확인하지 못함" 안내를 띄운다
