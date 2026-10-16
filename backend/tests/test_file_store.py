@@ -64,6 +64,16 @@ def test_project_name_colliding_with_global_preset_rejected(store, bad):
         store.create_project(bad)
 
 
+@pytest.mark.parametrize("bad", ["ai-settings.json", "review-trust.json", "AI-Settings.json", "Review-Trust.JSON",
+                                 "PRESET.json"])
+def test_project_name_colliding_with_any_root_settings_file_rejected(store, bad):
+    # 자료 폴더 루트의 AI 연결 설정과 검수 신뢰 설정 자리를 프로젝트 폴더가 차지하면 다음 기동이 실패하거나 신뢰 설정을
+    # 영구히 읽지 못한다. macOS와 Windows의 기본 파일 시스템은 대소문자를 구별하지 않는다 (최종 리뷰 ST-02, C2 4.4 (9))
+    with pytest.raises(InvalidName, match="앱 설정 파일"):
+        store.create_project(bad)
+    assert not (store.root / bad).exists()
+
+
 def test_load_save_round_trip(store):
     store.create_project("p1", title="원래 제목")
     deck = store.load_deck("p1")

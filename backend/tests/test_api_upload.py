@@ -389,3 +389,38 @@ def test_generated_route_reads_xlsx_extract_as_source(client, store):
     assert gr.status_code == 200
     assert provider.prompts
     assert "매출현황" in provider.prompts[0]
+
+
+def _on_event_loop() -> bool:
+    import asyncio
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def test_upload_extracts_and_waits_for_the_project_lock_off_the_event_loop(store, monkeypatch):
+    """업로드의 엑셀 추출과 프로젝트 잠금 대기는 이벤트 루프 밖(스레드)에서 돈다. 루프 위에서 돌면 그동안 같은 프로세스의
+    다른 요청이 모두 멈춘다(실측: 0.9MB xlsx 업로드 중 상태 조회 최대 1.8초). 최종 리뷰 SV-06, C2 계획 4.4 (7)."""
+    seen = {}
+    real_extract, real_locked = app_module.extract_xlsx, store.locked
+
+    def extract(data, filename):
+        seen["extract"] = _on_event_loop()
+        return real_extract(data, filename)
+
+    def locked(name):
+        seen.setdefault("locked", _on_event_loop())
+        return real_locked(name)
+
+    client = TestClient(create_app(store), headers={"X-Requested-With": "SlideCaptain"})
+    assert client.post("/api/projects", json={"name": "p1", "title": "검토"}).status_code in (200, 201)
+    monkeypatch.setattr(app_module, "extract_xlsx", extract)
+    monkeypatch.setattr(store, "locked", locked)
+    assert _upload(client, "표.xlsx", _make_xlsx("시트", {"A1": "값"})).status_code == 200
+    xlsx_seen = dict(seen)
+    seen.clear()
+    assert _upload(client, "메모.md", "자료".encode()).status_code == 200
+    assert xlsx_seen == {"extract": False, "locked": False}
+    assert seen == {"locked": False}

@@ -236,3 +236,40 @@ def test_generation_with_a_missing_cli_records_provider_missing_not_login_requir
     finally:
         connections.close()
     assert response.status_code == 503 and response.json()["code"] == "provider_missing"
+
+
+# -- 실행기의 마지막 예외 갈래 (최종 리뷰 SV-01, C2 계획 4.4 (8)) ----------------------------------------
+# 제공자가 정상 응답한 뒤 판정(덱 읽기)에서 예기치 않은 예외가 난다. 원인은 입력이 아니라 앱 내부이고, 이미 비용을 쓴
+# 응답은 원장에 남기되 판정을 마치지 못했으므로 다시 열 수 있는 held가 아니라 stale(보기와 버리기만)로 둔다
+
+def test_unexpected_error_after_the_provider_is_internal_and_keeps_the_result_as_stale(tmp_path):
+    from slidecaptain.pipeline.provider import ProviderResponse
+    from slidecaptain.storage.file_store import FileProjectStore
+
+    state = {"after": False}
+
+    class Provider:
+        async def complete(self, prompt, schema):
+            state["after"] = True
+            return ProviderResponse(structured={"chapters": [{"topic": "표지", "conclusion": "", "template": "cover",
+                                                              "source_refs": []}]}, raw_text="r")
+
+    class Store(FileProjectStore):
+        def load_deck_with_etag(self, name):
+            if state["after"]:
+                raise RuntimeError("판정 중 예기치 않은 오류(시험 주입)")
+            return super().load_deck_with_etag(name)
+
+    store = Store(tmp_path / "projects")
+    store.create_project("p1", "보고")
+    store.write_source("p1", "자료.md", "시장 규모는 500억 원이다")
+    with TestClient(create_app(store, provider=Provider()), headers=HEADERS) as client:
+        job_id = client.post("/api/projects/p1/jobs", json={"request_id": "req-00000001", "kind": "structure",
+                                                             "params": {}}).json()["id"]
+        client.app.state.job_runner._handles[job_id].wait_sync(10)
+        state["after"] = False
+        view = client.get(f"/api/projects/p1/jobs/{job_id}").json()
+    assert view["state"] == "failed"
+    assert (view["error"]["error_class"], view["error"]["status"]) == ("internal", 500)
+    assert view["result"] is not None
+    assert view["candidate_status"] == "stale"

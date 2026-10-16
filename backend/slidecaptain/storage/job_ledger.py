@@ -457,6 +457,13 @@ class JobLedger:
                     "INSERT INTO chapter_applies (project, chapter_id, kind, at) VALUES (?, ?, 'reset', ?)",
                     (_nfc(project), chapter_id, _now()))
 
+    def chapters_with_records(self, project: str) -> list[str]:
+        """그 이름으로 반영 기록이 남은 장 ID들. 같은 이름으로 다시 만든 프로젝트의 기준을 떼어 낼 때 쓴다."""
+        with self._lock, self._reading():
+            rows = self._conn.execute("SELECT DISTINCT chapter_id FROM chapter_applies WHERE project = ? ORDER BY chapter_id",
+                                      (_nfc(project),)).fetchall()
+        return [row["chapter_id"] for row in rows]
+
     def last_apply(self, project: str, chapter_id: str) -> tuple[str, Any] | None:
         """그 장의 마지막 기록: ("applied", 슬롯) 또는 ("reset", None). 기록이 없으면 None."""
         with self._lock, self._reading():

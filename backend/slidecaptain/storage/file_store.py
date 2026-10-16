@@ -19,6 +19,7 @@ import re
 import tempfile
 import threading
 import unicodedata
+from collections.abc import Callable
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -36,6 +37,12 @@ from slidecaptain.storage import project_format
 
 _NAME_RE = re.compile(r"^[0-9A-Za-z가-힣][0-9A-Za-z가-힣 ._\-]{0,79}$")
 _WINDOWS_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+# 자료 폴더 루트에 앱이 쓰는 설정 파일 이름. 같은 이름의 프로젝트 폴더가 생기면 그 파일 자리를 차지해 다음 기동이 실패하거나
+# (ai-settings.json) 설정을 영구히 읽지 못한다(review-trust.json, preset.json). 비교는 NFC 뒤 casefold다: macOS와 Windows의
+# 기본 파일 시스템은 대소문자를 구별하지 않는다. preset.json.tmp는 구 고정 임시 파일명이며, 과거에 그 이름으로 만든 프로젝트가
+# 남아 있을 수 있어 계속 예약한다. 마침표로 시작하는 루트 파일(.slidecaptain-jobs.sqlite3 등)은 이름 규칙이 이미 막으므로
+# 넣지 않는다 (최종 리뷰 ST-02, C2 계획 4.4 (9))
+_ROOT_RESERVED = frozenset(n.casefold() for n in ("preset.json", "preset.json.tmp", "ai-settings.json", "review-trust.json"))
 _SNAPSHOT_RE = re.compile(r"^deck-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
 _DRAFT_RE = re.compile(r"^draft-(\d{8}-\d{6}-\d{6})(?:-\d+)?$")
 # 보존본 한 건의 덱 크기 상한. 독립 앱 브리지의 요청 본문 상한(desktop/runtime.cjs MAX_FILE)과 같다
@@ -252,7 +259,9 @@ class ProjectStore(Protocol):
     """저장소 인터페이스 (설계서 2.2). 파일 구현 외의 구현(DB 등)으로 교체 가능하게 한다."""
 
     def list_projects(self) -> list[ProjectInfo]: ...
-    def create_project(self, name: str, title: str = "") -> ProjectInfo: ...
+    def create_project(
+        self, name: str, title: str = "", before_create: Callable[[str], None] | None = None
+    ) -> ProjectInfo: ...
     def locked(self, name: str) -> AbstractContextManager[None]: ...
     def load_deck(self, name: str) -> Deck: ...
     def deck_etag(self, name: str) -> str: ...
@@ -508,20 +517,24 @@ class FileProjectStore:
 
     # -- 프로젝트 ----------------------------------------------------------
 
-    def create_project(self, name: str, title: str = "") -> ProjectInfo:
+    def create_project(
+        self, name: str, title: str = "", before_create: Callable[[str], None] | None = None
+    ) -> ProjectInfo:
+        """before_create는 잠금 안에서 이름 검증과 존재 확인을 마친 뒤, 폴더를 만들기 전에 불린다. 예외를 던지면 폴더를
+        만들지 않는다. 같은 이름의 원장 반영 기록을 새 프로젝트에서 떼어 내는 데 쓴다 (C2 계획 4.4 (10), 리뷰 PR-02)."""
         name = _nfc(name)
         _validate_name(name, "프로젝트")
-        if name in ("preset.json", "preset.json.tmp"):
-            # preset.json.tmp는 구 고정 임시 파일명(현재는 .preset-<무작위>.tmp)과의 충돌 방지용으로
-            # 계속 막는다: 과거에 이 이름으로 만든 프로젝트가 남아 있을 수 있어 이름 자체를 계속 예약해 둔다.
+        if name.casefold() in _ROOT_RESERVED:
             raise InvalidName(
                 f"프로젝트 이름으로 쓸 수 없습니다: {name!r}. "
-                "전역 프리셋 파일과 이름이 겹칩니다. 다른 이름을 지어 주세요."
+                "앱 설정 파일과 이름이 겹칩니다. 다른 이름을 지어 주세요."
             )
         with self.locked(name):
             d = self.root / name
             if d.exists():
                 raise ProjectExists(f"같은 이름의 프로젝트가 이미 있습니다: {name}")
+            if before_create is not None:
+                before_create(name)
             try:
                 (d / "sources").mkdir(parents=True)
             except FileExistsError as e:

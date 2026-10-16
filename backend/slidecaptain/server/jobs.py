@@ -388,7 +388,7 @@ class JobRunner:
             outcome = self._ledger_failed(handle)
         except Exception:
             _LOG.exception("AI 생성 작업 실행 중 예기치 않은 오류: %s", job_id)
-            outcome = Outcome(self._fail(job_id, "input", 500, "AI 생성 작업을 처리하지 못했습니다.", None))
+            outcome = Outcome(self._fail_unexpected(handle))
         finally:
             handle.settled = True
             if release is not None:
@@ -479,6 +479,28 @@ class JobRunner:
         if result is not None and getattr(result, "status", None) == "ok" and _clean(reasons):
             self._on_success(handle.spec, result)
         return Outcome(row, result, reasons)
+
+    def _fail_unexpected(self, handle: JobHandle) -> JobRow | None:
+        """판정, 마무리, 원장 밖의 예기치 않은 예외. 원인은 앱 내부다(D3a-4의 _classify와 같은 규칙, 최종 리뷰 SV-01).
+
+        제공자가 이미 응답했고 행에 아직 결과가 없으면 비용을 쓴 응답을 원장에 남긴다. 판정을 마치지 못해 생성 도중 바뀐
+        기준에서 나온 결과인지 알 수 없으므로 다시 열 수 있는 held가 아니라 stale(보기와 버리기만)로 둔다(C2 계획 리뷰
+        PR-10). 이미 결과나 처분을 쓴 행은 덮지 않는다. 묶음은 하위 장 기록이 따로 있어 결과를 쓰지 않는다.
+        """
+        job_id = handle.job_id
+        detail = "AI 생성 작업을 처리하지 못했습니다."
+        result = None if handle.spec.batch else self._memory_result(handle)
+        row = self._read(job_id)
+        if (result is None or row is None or row.result is not None or row.candidate_status != "none"
+                or "failed" not in TRANSITIONS.get(row.state, ())):
+            return self._fail(job_id, "internal", 500, detail, None)
+        format_error = getattr(result, "status", None) == "format_error"
+        try:
+            return self.ledger.transition(job_id, expected=row.state, new="failed", result=_encode(result),
+                                          candidate_status="none" if format_error else "stale",
+                                          error_class="internal", error_status=500, error_detail=detail)
+        except (TransitionRejected, LedgerError):
+            return self._fail(job_id, "internal", 500, detail, None)
 
     def _fail(self, job_id: str, error_class: str, status: int, detail: str, code: str | None) -> JobRow | None:
         row = self._read(job_id)
