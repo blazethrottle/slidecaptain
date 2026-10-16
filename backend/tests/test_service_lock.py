@@ -20,14 +20,14 @@ from slidecaptain.storage.service_lock import DataDirInUse, acquire_service_lock
 BACKEND = Path(__file__).resolve().parents[1]
 
 _HOLDER = r"""
-import sys, time
+import os, sys, time
 from pathlib import Path
 from slidecaptain.storage.service_lock import acquire_service_lock
 lock = acquire_service_lock(Path(sys.argv[1]), timeout=0.5)
 if sys.argv[2] == "child":
     import subprocess
     subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-print("held", flush=True)
+print("held", os.getpid(), flush=True)
 sys.stdin.read()
 """
 
@@ -39,7 +39,12 @@ def _env():
 def _start_holder(data_dir: Path, mode: str = "plain") -> subprocess.Popen:
     proc = subprocess.Popen([sys.executable, "-P", "-c", _HOLDER, str(data_dir), mode],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=_env())
-    assert proc.stdout.readline().strip() == "held"
+    line = proc.stdout.readline()
+    assert line.startswith("held "), f"보유 프로세스가 잠금을 얻지 못했습니다: {line!r}"
+    pid = line.split()[1]
+    # 잠금에 적히는 PID는 잠금을 쥔 인터프리터의 것이다. Windows 가상 환경의 python.exe는 실제 인터프리터를
+    # 자식으로 띄우는 실행기라 Popen.pid와 다르다 (2026-10-16 회사 PC 실측, D2a 이월표 (12))
+    proc.holder_pid = int(pid)
     return proc
 
 
@@ -48,7 +53,7 @@ def test_second_service_on_the_same_folder_is_refused_with_holder_info(tmp_path)
     try:
         with pytest.raises(DataDirInUse) as caught:
             acquire_service_lock(tmp_path / "data", timeout=0.3)
-        assert caught.value.holder["pid"] == holder.pid
+        assert caught.value.holder["pid"] == holder.holder_pid
         assert caught.value.holder["product"] == "slidecaptain"
     finally:
         holder.stdin.close()

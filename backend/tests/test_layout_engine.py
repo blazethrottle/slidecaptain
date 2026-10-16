@@ -870,6 +870,21 @@ def test_matrix_items_render_as_a_bulleted_list_in_render_order():
     assert all(p.bullet for p in items_frame.paras)
 
 
+def test_matrix_items_are_vertically_centered_like_the_category_and_primary_cells():
+    # 2026-10-16 회사 PC 사람 확인: 분류 셀과 대표 항목은 행 가운데에 있는데 나열만 행 위쪽에 붙어,
+    # 오른쪽 글머리가 위로 치우쳐 보였다(앱 미리보기와 PowerPoint 모두 같은 모양)
+    deck = _deck([(
+        "matrix",
+        MatrixSlots(rows=[
+            MatrixRow(category="강점", primary="빠른 실행", items=["항목1", "항목2"]),
+            MatrixRow(category="약점"),
+            MatrixRow(category="기회"),
+        ]),
+    )])
+    slide = build_render_plan(deck, PRESET, FAKE).slides[0]
+    assert {_frame(slide, f":row0_{part}").valign for part in ("category", "primary", "items")} == {"middle"}
+
+
 def test_matrix_category_overflow_warns_only_that_rows_category_slot():
     long_category = "분류 이름이 지나치게 길어서 셀 높이를 넘긴다 " * 6
     deck = _deck([(

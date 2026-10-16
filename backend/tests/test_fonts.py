@@ -243,3 +243,73 @@ def test_ensure_fonts_installs_when_absent(tmp_path, monkeypatch):
     assert installer.ensure_fonts() == "installed"
     assert (user_dir / "NotoSansKR-Regular.ttf").exists()
     assert (user_dir / "NotoSansKR-Bold.ttf").exists()
+
+
+# ---- 시험 격리: 실제 Windows 계정 -----------------------------------------
+
+
+def _read_user_font_values() -> dict:
+    """글꼴 키가 있는지와, 값마다 (데이터, 형식). 복원이 원래 형식과 키의 유무까지 되돌릴 수 있게 함께 읽는다."""
+    import winreg
+
+    values: dict = {"key_exists": True}
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, installer._REG_KEY) as key:
+            for name in installer._REG_VALUE_NAMES:
+                try:
+                    values[name] = winreg.QueryValueEx(key, name)
+                except FileNotFoundError:
+                    values[name] = None
+    except FileNotFoundError:
+        values = {"key_exists": False, **dict.fromkeys(installer._REG_VALUE_NAMES)}
+    return values
+
+
+if sys.platform == "win32":
+    import winreg as _winreg
+
+    # 격리 픽스처가 시험 중에 진짜 쓰기 함수를 바꾸므로, 복원에는 모듈을 읽을 때 잡아 둔 원래 함수를 쓴다
+    _REAL_CREATE_KEY_EX = _winreg.CreateKeyEx
+    _REAL_SET_VALUE_EX = _winreg.SetValueEx
+
+
+def _restore_user_font_values(before: dict) -> None:
+    import winreg
+
+    if _read_user_font_values() == before:
+        return
+    access = winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE
+    with _REAL_CREATE_KEY_EX(winreg.HKEY_CURRENT_USER, installer._REG_KEY, 0, access) as key:
+        for name in installer._REG_VALUE_NAMES:
+            if before[name] is None:
+                try:
+                    winreg.DeleteValue(key, name)
+                except FileNotFoundError:
+                    pass
+            else:
+                data, kind = before[name]
+                _REAL_SET_VALUE_EX(key, name, 0, kind, data)
+        subkeys, value_count, _ = winreg.QueryInfoKey(key)
+    if not before["key_exists"] and subkeys == 0 and value_count == 0:
+        # 시험 전에 없던 키가 비어 남았으면 지운다. 다른 값이 생겼으면 손대지 않는다
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, installer._REG_KEY)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="실제 Windows 레지스트리와 GDI 글꼴 표가 있어야 한다")
+def test_font_install_during_tests_leaves_user_registry_and_session_fonts_alone():
+    # 2026-10-16 회사 PC 실측: 격리 픽스처가 글꼴 폴더만 임시 폴더로 돌려, 백엔드 전체 시험 뒤 사용자 계정의
+    # HKCU 글꼴 등록 2건이 pytest 임시 폴더를 가리켰다. 임시 폴더가 지워지면 등록이 끊기고, 앱이 사용자 폴더에
+    # 설치한 PC라면 정상 등록이 덮인다. 세션 글꼴 표 추가와 WM_FONTCHANGE 방송도 실제 데스크톱에 나간다.
+    # 이 시험은 레지스트리와 세션 글꼴 표만 관측한다. 방송은 관측할 수단이 없어 픽스처의 대체에만 기댄다
+    import ctypes
+
+    before = _read_user_font_values()
+    try:
+        paths = installer.install_fonts()
+        after = _read_user_font_values()
+        # RemoveFontResourceW는 세션 글꼴 표에 그 파일이 있었을 때만 0이 아닌 값을 낸다(있었다면 함께 지운다)
+        added = [p.name for p in paths if ctypes.windll.gdi32.RemoveFontResourceW(str(p.resolve()))]
+    finally:
+        _restore_user_font_values(before)
+    assert after == before
+    assert added == []

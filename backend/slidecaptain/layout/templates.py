@@ -826,7 +826,9 @@ def _build_matrix(
             item_bullets = [Bullet(text=item, level=0) for item in row.items]
             frames.append(Frame(
                 name=f"{chapter.id}:{name}_items",
-                x=mg["items_x"], y=row_y, w=mg["items_w"], h=row_h,
+                # 분류 셀과 대표 항목처럼 행 가운데에 둔다. 위에 붙이면 같은 행의 글자가 서로 다른 높이에 놓인다
+                # (2026-10-16 회사 PC 사람 확인)
+                x=mg["items_x"], y=row_y, w=mg["items_w"], h=row_h, valign="middle",
                 paras=_bullet_paras(item_bullets, mg["items_w"], fp(f"{name}_items"), metrics),
             ))
             measure = measure_bullets(item_bullets, mg["items_w"], r.body_pt, metrics.face(False), s)
