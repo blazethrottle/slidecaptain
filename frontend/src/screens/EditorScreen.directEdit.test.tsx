@@ -669,6 +669,16 @@ describe("위치 안내 줄", () => {
     expect(line).toHaveTextContent(/결론 상자: 가로 51pt/);
   });
 
+  it("되돌리면 옮긴 위치 안내를 지운다 (C2 W2 리뷰 W2R-08)", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    expect(moveLine()).toHaveTextContent(/결론 상자: 가로 51pt/);
+    await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));
+    expect(screen.queryByText(/결론 상자: 가로 51pt/)).toBeNull();
+  });
+
   it("모드를 끄면 위치 안내를 지운다", async () => {
     await open();
     await userEvent.click(modeButton());

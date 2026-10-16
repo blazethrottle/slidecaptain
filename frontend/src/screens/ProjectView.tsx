@@ -566,6 +566,9 @@ export function ProjectView({ project, onBack, jobPollMs = 1000, purposeSaveMs }
       setError("");
       setSaveStatus(null);
       setFocusChapter(chapterId ?? null);
+      // 다시 열기 행을 읽는 동안 다른 단계로 가면 마음을 바꾼 것이다. 넘긴 도식 작업 ID를 버린다 (C2 W2 리뷰 W2R-05).
+      // 같은 편집 단계 안의 다시 마운트는 ID를 그대로 이어 읽는다(W2R-10)
+      setReopenDiagram(null);
       focusStageAfterMove.current = true;
       setStage(next);
     }

@@ -248,8 +248,9 @@ export function EditorScreen({
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const key = e.key.toLowerCase();
-      if (key === "z" && !e.shiftKey) { e.preventDefault(); editor.undo(); }
-      if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); editor.redo(); }
+      // 되돌리기와 다시 하기는 요소 위치를 바꾸므로 옮긴 위치 안내를 지운다 (W2R-08)
+      if (key === "z" && !e.shiftKey) { e.preventDefault(); setMovePosition(""); editor.undo(); }
+      if (key === "y" || (key === "z" && e.shiftKey)) { e.preventDefault(); setMovePosition(""); editor.redo(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -431,8 +432,8 @@ export function EditorScreen({
         )}
       </section>
       <aside className="editor-right" inert={readOnly}>
-        <button onClick={editor.undo} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
-        <button onClick={editor.redo} disabled={!editor.canRedo}>다시 실행</button>
+        <button onClick={() => { setMovePosition(""); editor.undo(); }} disabled={!editor.canUndo}>되돌리기 (Ctrl+Z)</button>
+        <button onClick={() => { setMovePosition(""); editor.redo(); }} disabled={!editor.canRedo}>다시 실행</button>
         {mode && chapterId && (
           <DirectEditPanel projectName={project.name} deck={editor.deck} chapterId={chapterId} plan={slide}
             pageW={pageW} pageH={pageH} keys={keys} selectedKey={selected?.slot ?? null} onApply={editor.apply}

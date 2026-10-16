@@ -76,9 +76,12 @@ export function useDeckEditor(
 
   const reportConflict = useCallback((message: string, cause: ConflictCause = "other") => {
     // 응답 직후 같은 microtask에서 이어지는 저장도 막는다. React 상태 반영을 기다리지 않는다.
+    // 두 원인이 겹치면 확인할 것이 더 많은 쪽(반영 결과 미확인)을 남긴다. 뒤이은 묶음 종료나 늦은 412가 덮지 않는다(W2R-06)
+    const stillUnconfirmed = conflictRef.current && conflictCauseRef.current === "unconfirmed";
+    const next = stillUnconfirmed && cause === "other" ? "unconfirmed" : cause;
     conflictRef.current = true;
-    conflictCauseRef.current = cause;
-    setConflictCause(cause);
+    conflictCauseRef.current = next;
+    setConflictCause(next);
     setConflict(true);
     setSaveError(message);
     setSaveState("저장 실패");

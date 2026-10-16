@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, type Deck, type DiagramGenerationResult,
+import { api, AiConsentDeclined, ApiError, isStaleStoryPlan, messageOf, savedEtag, type Deck, type DiagramGenerationResult,
   type GenerationUsage, type RenderPlan, type StoryPlan, type DocumentChangePreview, type DocumentChangeBasis } from "../api/client";
 import { runJob, settle, staleError } from "../api/jobs";
 import { formatUsage } from "../api/usage";
@@ -352,6 +352,21 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   };
   // 새 도식 반영. 불러온 AI 후보가 있으면 반영하기 전에 처분 응답을 기다린다. 반영 뒤 처분이 실패하면 새 도식의 입력 해시가
   // 반영으로 바뀌지 않아 같은 후보를 다시 열어 한 번 더 넣을 수 있다(C2 계획 4.2, 계획 리뷰 PR-01)
+  // 서버 저장본이 이 탭의 마지막 저장과 다른가. 다르면 다른 곳이 저장한 것이다. 확인이 실패하면 판정하지 않고 다음 저장의
+  // 충돌 검사(412)에 맡긴다(ProjectView의 묶음 종결 확인과 같은 규칙) (C2 W2 리뷰 W2R-01)
+  const deckMovedElsewhere = async () => {
+    try {
+      const etag = await api.peekDeckEtag(projectName);
+      return etag !== null && etag !== savedEtag(projectName);
+    } catch {
+      return false;
+    }
+  };
+  const stopForElsewhere = () => {
+    currentBlocked.current = true; setGenerationConflict(true);
+    const message = "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요.";
+    setErrors([message]); onConflict?.(message);
+  };
   const applyNew = async (candidate: Deck) => {
     const job = loadedJob.current;
     if (job) {
@@ -359,11 +374,18 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       const lease = Symbol("diagram-settle"); generationLease.current = lease;
       setApplying(true); setErrors([]);
       try {
+        // 확인한 뒤 다른 곳이 저장했으면 처분하지 않는다. 처분부터 하면 후보는 사라지고 자동 저장은 412로 끝나 덱에 도식이
+        // 없다(W2R-01). 후보는 held로 남아 복구 화면에서 다시 열 수 있다
+        if (await deckMovedElsewhere()) {
+          if (requestId === serial.current && live.current) stopForElsewhere();
+          return;
+        }
         await api.settleCandidate(projectName, job, "applied");
       } catch (error) {
         if (requestId === serial.current && live.current) {
           if (error instanceof ApiError && error.status === 409) {
-            loadedJob.current = null;
+            // 안내는 다시 생성을 권하므로 확인 상태를 지워 적용 버튼을 끈다. 다시 확인하면 폼 내용의 일반 반영이 된다(W2R-03)
+            loadedJob.current = null; setChecked(null);
             setErrors(["다른 곳에서 이미 처리한 후보입니다. 현재 입력으로 다시 생성할 수 있습니다."]);
           } else setErrors([`AI 후보 처리를 기록하지 못해 반영하지 않았습니다. 다시 눌러 주세요. ${messageOf(error)}`]);
         }
@@ -375,6 +397,13 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       loadedJob.current = null;
       // 처분을 기다리는 동안 덱이 바뀌었거나 창이 닫혔으면 넣지 않는다. 후보는 이미 처분했지만 폼의 입력은 남는다
       if (!live.current || requestId !== serial.current || currentDeck.current !== base || currentBlocked.current) return;
+      // 처분을 기다리는 동안 다른 곳이 저장했으면 넣지 않는다. 넣으면 자동 저장이 412로 끝난다(W2R-01 둘째 경로). 후보는
+      // 이미 처분했으므로 이 좁은 틈은 남은 위험으로 기록한다(계획 11절)
+      if (await deckMovedElsewhere()) {
+        if (requestId === serial.current && live.current) stopForElsewhere();
+        return;
+      }
+      if (!live.current || requestId !== serial.current) return;
     }
     onApply(candidate, base, draft.id);
   };

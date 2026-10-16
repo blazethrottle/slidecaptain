@@ -357,3 +357,33 @@ it("묶음 중이라 반영하지 못했다는 안내는 작업 종료 알림을
   notifyProject({ kind: "job_ended", project: project.name }, { broadcast: false });
   await waitFor(() => expect(screen.queryByText(/묶음이 진행 중이라 후보를 반영할 수 없습니다/)).toBeNull());
 });
+
+
+// C2 계획 4.3 (20): 작업 종료 알림은 묶음 진행 중 안내만 지우고 반영 성공 안내는 남긴다 (C2 W2 리뷰 W2R-11의 변형 M12)
+it("반영 성공 안내는 작업 종료 알림을 받아도 남는다", async () => {
+  const server = newServer([olderBatch()]);
+  await openRecovery(server);
+  await applyFrom(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)));
+  const done = await screen.findByText(/에 반영했습니다/);
+  notifyProject({ kind: "job_ended", project: project.name }, { broadcast: false });
+  await new Promise((r) => setTimeout(r, 50));
+  expect(done).toBeInTheDocument();
+});
+
+// C2 계획 4.3 (21): 목록에서 사라진 후보의 "확인하지 못함" 표시는 지운다. 같은 후보가 다시 보여도 표시가 없다 (변형 M15)
+it("목록에서 사라졌다가 다시 보이는 후보에는 확인하지 못함 표시가 없다", async () => {
+  const server = newServer([olderBatch()], { applyStatus: 503,
+    applyBody: { detail: "덱을 저장하지 못했습니다.", code: "deck_write_failed" } });
+  await openRecovery(server);
+  const row = () => candidateRow(/장 내용 생성 \(2장 원가 구조\)/);
+  await applyFrom(await waitFor(row));
+  expect(await within(row()).findByText(/반영했는지 확인하지 못했습니다/)).toBeInTheDocument();
+  const kept = server.jobs;
+  server.jobs = [];
+  notifyProject({ kind: "job_ended", project: project.name }, { broadcast: false });
+  expect(await screen.findByText("남아 있는 AI 결과 후보가 없습니다.", {}, { timeout: 3000 })).toBeInTheDocument();
+  server.jobs = kept;
+  notifyProject({ kind: "job_ended", project: project.name }, { broadcast: false });
+  await waitFor(row, { timeout: 3000 });
+  expect(within(row()).queryByText(/반영했는지 확인하지 못했습니다/)).toBeNull();
+});

@@ -26,7 +26,8 @@ function diagramJob(over: Partial<JobView> = {}): JobView {
 }
 
 type Server = { job: JobView; settleStatus: number; settles: { action: string }[]; puts: { ifMatch: string | null; deck: Deck }[];
-  changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[]; reconcileStatus?: number };
+  changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[]; reconcileStatus?: number;
+  deckEtag?: string; settleGate?: Promise<void>; jobGate?: Promise<void> };
 
 // 측정은 덱의 도식 장마다 고정 렌더 계획의 도식 슬라이드를 복사해 돌려준다(작성 창의 확인이 새 장의 도식을 찾는다)
 function planFor(body: Deck): RenderPlan {
@@ -60,7 +61,7 @@ function serve(server: Server) {
       server.changes.push({ ifMatch: headers.get("If-Match"), body });
       return new Response(JSON.stringify(body.candidate), { headers: { ETag: '"after-apply"' } });
     }
-    if (url.endsWith("/deck")) return new Response(JSON.stringify(deck), { headers: { ETag: '"base"' } });
+    if (url.endsWith("/deck")) return new Response(JSON.stringify(deck), { headers: { ETag: server.deckEtag ?? '"base"' } });
     if (url.endsWith("/sources")) return new Response("[]");
     if (url.endsWith("/snapshots") || url.endsWith("/drafts")) return new Response("[]");
     if (url === "/api/preset") return new Response(JSON.stringify(preset));
@@ -77,13 +78,17 @@ function serve(server: Server) {
     if (url.endsWith("/progress")) return new Response(JSON.stringify(defaultProgress()));
     if (url.endsWith("/jobs/job-d1/candidate")) {
       server.settles.push(JSON.parse(init!.body as string));
+      if (server.settleGate) await server.settleGate;
       if (server.settleStatus !== 200) {
         return new Response(JSON.stringify({ detail: "처분할 결과 후보가 없거나 이미 처분했습니다." }), { status: server.settleStatus });
       }
       server.job = { ...server.job, candidate_status: "applied" };
       return new Response(JSON.stringify(server.job));
     }
-    if (url.endsWith("/jobs/job-d1")) return new Response(JSON.stringify(server.job));
+    if (url.endsWith("/jobs/job-d1")) {
+      if (server.jobGate) await server.jobGate;
+      return new Response(JSON.stringify(server.job));
+    }
     if (url.endsWith("/jobs")) return new Response(JSON.stringify(server.job.candidate_status === "held"
       || server.job.candidate_status === "stale" ? [server.job] : []));
     throw new Error(`unexpected ${url}`);
@@ -181,6 +186,35 @@ it.each([
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
 
+// C2 W2 리뷰 W2R-01: 확인한 뒤 반영하기 전에 다른 탭이 저장하면, 지금 코드는 처분부터 성공시켜 후보가 사라지고 자동 저장은
+// 412로 끝나 덱에 도식이 없다. 처분 전에 서버 저장본이 이 탭이 아는 것과 같은지 본다
+it("확인한 뒤 다른 탭이 저장했으면 처분하지 않고 충돌로 알리며 후보가 남는다", async () => {
+  const server = newServer();
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  server.deckEtag = '"other-tab-save"';
+  await userEvent.click(apply);
+  expect(await screen.findAllByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).not.toHaveLength(0);
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(server.settles).toEqual([]);
+  expect(server.puts).toEqual([]);
+  expect(server.job.candidate_status).toBe("held");
+});
+
+it("처분을 기다리는 동안 다른 탭이 저장했으면 덱에 넣지 않고 충돌로 알린다", async () => {
+  let open!: () => void;
+  const server = newServer({ settleGate: new Promise<void>((r) => { open = r; }) });
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  await userEvent.click(apply);
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));
+  server.deckEtag = '"other-tab-save"';
+  open();
+  expect(await screen.findAllByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).not.toHaveLength(0);
+  await new Promise((r) => setTimeout(r, 1500));
+  expect(server.puts).toEqual([]);
+});
+
 // C1 묶음 리뷰 BR-04: 불러온 뒤 다른 탭이 저장해 확인이 412로 막히면, 지금 코드는 후보를 이미 applied로 처분해 잃는다
 it("불러온 뒤 다른 탭의 저장으로 확인이 412이면 처분하지 않고 후보가 복구 목록에 남는다", async () => {
   const server = newServer();
@@ -213,6 +247,24 @@ it("다시 연 창을 닫은 뒤 편집 화면이 다시 마운트되어도 작�
   await waitFor(() => expect(screen.getByRole("button", { name: "구성" })).toHaveAttribute("aria-current", "step"));
   await userEvent.click(screen.getByRole("button", { name: "편집" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step"));
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+// C2 W2 리뷰 W2R-05: 다시 열기 행을 읽는 동안 사용자가 다른 단계로 가면 마음을 바꾼 것이다. 나중에 편집 단계로 돌아와도
+// 작성 창을 열지 않는다(같은 편집 단계 안의 다시 마운트만 이어 읽는다, W2R-10)
+it("다시 열기 응답 전에 다른 단계로 가면 나중에 편집 단계로 돌아와도 작성 창을 열지 않는다", async () => {
+  let release!: () => void;
+  const server = newServer({ jobGate: new Promise<void>((r) => { release = r; }) });
+  await openRecovery(server);
+  await userEvent.click(await screen.findByRole("button", { name: "도식 작성 창에서 열기" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step"));
+  await userEvent.click(screen.getByRole("button", { name: "구성" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "구성" })).toHaveAttribute("aria-current", "step"));
+  release();
+  server.jobGate = undefined;
+  await userEvent.click(screen.getByRole("button", { name: "편집" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "편집" })).toHaveAttribute("aria-current", "step"));
+  await new Promise((r) => setTimeout(r, 300));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
