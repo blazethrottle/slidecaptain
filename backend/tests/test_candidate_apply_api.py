@@ -290,6 +290,48 @@ def test_running_batch_blocks_both_routes_and_unfinished_jobs_are_not_terminal(s
     assert after.status_code == 200
 
 
+def test_running_batch_blocks_snapshot_and_draft_restore_and_they_open_after_it_ends(store):
+    """묶음 실행 중에는 스냅샷 복원과 보존본 복원도 서버가 막는다. 화면 잠금만으로는 알림을 받지 못한 탭이나 다른 빌드가
+    묶음의 사슬을 끊을 수 있다 (최종 리뷰 SC-14, C2 계획 4.4 (2), 리뷰 PR-07). 묶음이 끝나면 다시 복원된다(9절 가정 3)."""
+    _project(store)
+    _save_slide(store, {"chapter_id": "c1", "slots": slots("처음")})
+    store.save_deck("p1", store.load_deck("p1"))  # 스냅샷 하나
+    snapshot = store.list_snapshots("p1")[0]
+    draft = store.save_draft("p1", deck=store.load_deck("p1").model_dump(mode="json"), reason="conflict", source="editor",
+                             base_etag=store.deck_etag("p1"))
+    provider = ChapterProvider([slots("묶음")], gate_at=0)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        batch = _register_batch(client, store, ["c2"]).json()
+        assert provider.entered.wait(10)
+        before = store.deck_etag("p1")
+        snap = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+        drft = client.post(f"/api/projects/p1/drafts/{draft.id}/restore", headers={"If-Match": _etag(store)})
+        unchanged = store.deck_etag("p1") == before
+        provider.release.set()
+        _wait_batch(client, batch["id"])
+        after = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+    for response in (snap, drft):
+        assert response.status_code == 409 and response.json()["code"] == "batch_active", response.text
+        assert "복원할 수 없습니다" in response.json()["detail"]
+    assert unchanged
+    assert after.status_code == 200
+
+
+def test_restore_without_a_ledger_is_not_blocked_by_the_batch_check(store):
+    """원장이 없거나 열지 못한 실행에는 묶음도 없다. 복원 거절 판정이 새 503을 만들지 않는다 (C2 계획 리뷰 PR-07 ①)."""
+    _project(store)
+    store.save_deck("p1", store.load_deck("p1"))
+    snapshot = store.list_snapshots("p1")[0]
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        ledger, runner.ledger = runner.ledger, None
+        try:
+            response = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+        finally:
+            runner.ledger = ledger
+    assert response.status_code == 200, response.text
+
+
 def test_running_single_job_is_not_terminal(store):
     _project(store)
     provider = ChapterProvider([slots("새")], gate_at=0)
@@ -430,7 +472,22 @@ def test_selection_check_comes_before_the_stale_story_plan_at_registration(store
     assert rows == []
 
 
-# -- D3c-5 리뷰 반영 ---------------------------------------------------------------------------------------
+def test_selection_check_comes_before_the_stale_story_plan_at_batch_registration(store, monkeypatch):
+    """장 생성 묶음 등록도 선택 확인이 구성 계획 낡음보다 먼저다 (최종 리뷰 SV-09, C2 계획 4.4 (12)). 묶음 등록은
+    If-Match가 없으면 428, 내용이 있는 장이면 409를 먼저 내므로, 기준 ETag를 주고 내용이 없는 장으로 등록한다."""
+    _project(store)
+    monkeypatch.setattr("slidecaptain.server.app.require_current_story",
+                        lambda deck, sources: (_ for _ in ()).throw(StaleStoryPlan("보고 계획이 바뀌었습니다.")))
+    with TestClient(create_app(store), headers=HEADERS) as client:  # 제공자 없음
+        response = client.post("/api/projects/p1/jobs", headers={"If-Match": _etag(store)}, json={
+            "request_id": "req-00000001", "kind": "chapters", "params": {"chapter_ids": ["c1"]}})
+        rows = client.app.state.job_runner.ledger.list_jobs("p1")
+    assert response.status_code == 503, response.text
+    assert response.json().get("code") != "stale_story_plan"
+    assert rows == []
+
+
+# -- D3c-5 리뷰 반영---------------------------------------------------------------------------------------
 
 
 def test_edited_text_baseline_follows_the_apply_order_not_the_registration_order(store):
@@ -482,6 +539,28 @@ def test_restoring_a_snapshot_resets_the_baseline(store):
         ledger = client.app.state.job_runner.ledger
         record = ledger.last_apply("p1", "c1")
     assert restored.status_code == 200 and _slide(store).slots.conclusion == "처음"
+    assert record == ("reset", None) and preview["edited_units"] is None
+
+
+def test_restoring_a_draft_resets_the_baseline(store):
+    """보존본 복원도 스냅샷 복원처럼 바꾼 장의 "직접 고친 문구" 기준을 없앤다 (D3c 리뷰 F3). 이 무효화를 지워도 전체 시험이
+    통과하던 공백이다 (최종 리뷰 SV-12, 변형 SV-M08, C2 계획 4.5 (13))."""
+    _project(store)
+    provider = ChapterProvider([slots("A"), slots("B")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("처음")})
+        draft_deck = store.load_deck("p1").model_dump(mode="json")
+        draft = client.post("/api/projects/p1/drafts", json={"deck": draft_deck, "reason": "conflict", "source": "editor",
+                                                             "base_etag": _etag(store)})
+        assert draft.status_code == 201, draft.text
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        restored = client.post(f"/api/projects/p1/drafts/{draft.json()['id']}/restore", headers={"If-Match": _etag(store)})
+        b = _job(client, "chapter-0002")
+        preview = _preview(client, b["id"]).json()
+        record = client.app.state.job_runner.ledger.last_apply("p1", "c1")
+    assert restored.status_code == 200, restored.text
+    assert _slide(store).slots.conclusion == "처음"
     assert record == ("reset", None) and preview["edited_units"] is None
 
 
@@ -711,3 +790,84 @@ def test_diagram_job_params_reach_the_job_list_with_the_create_mode(diagram_inpu
     assert listed["params"]["mode"] == "create"
     assert {k: listed["params"][k] for k in DIAGRAM_REQUEST} == DIAGRAM_REQUEST
     assert listed["target"] == DIAGRAM_REQUEST["chapter_id"]
+
+
+# -- 같은 이름으로 다시 만든 프로젝트의 반영 기록 (최종 리뷰 ST-01, C2 계획 4.4 (10), 사용자 결정 Q4 A) -----------------
+# 반영 기록은 원장에 프로젝트 이름을 열쇠로 남고 폴더를 지워도 남는다. 기록은 지우지 않고(원장 무삭제 전제) 생성 때 reset을
+# 더해 새 프로젝트를 이전 기준에서 떼어 낸다. 이미 있는 이름이면 생성이 거절되므로 reset을 쓰지 않는다(리뷰 PR-02)
+
+def _applied_then(client, store):
+    _save_slide(store, {"chapter_id": "c1", "slots": slots("처음")})
+    job = _job(client, "chapter-0001")
+    assert _apply(client, store, job["id"]).status_code == 200
+    return client.app.state.job_runner.ledger
+
+
+def test_recreating_a_deleted_project_name_starts_without_the_old_baseline(store):
+    import shutil
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("A")])), headers=HEADERS) as client:
+        ledger = _applied_then(client, store)
+        assert ledger.last_apply("p1", "c1")[0] == "applied"
+        shutil.rmtree(store.root / "p1")  # 사용자가 폴더를 지웠다
+        created = client.post("/api/projects", json={"name": "p1", "title": "새 보고"})
+        record = ledger.last_apply("p1", "c1")
+    assert created.status_code == 201, created.text
+    assert record == ("reset", None)
+
+
+def test_creating_an_existing_project_name_is_refused_and_keeps_its_baseline(store):
+    _project(store)
+    with TestClient(create_app(store, provider=ChapterProvider([slots("A")])), headers=HEADERS) as client:
+        ledger = _applied_then(client, store)
+        refused = client.post("/api/projects", json={"name": "p1", "title": "같은 이름"})
+        record = ledger.last_apply("p1", "c1")
+    assert refused.status_code == 409
+    assert record is not None and record[0] == "applied"
+
+
+def test_ledger_write_failure_at_creation_creates_no_folder(store, monkeypatch):
+    from slidecaptain.storage.job_ledger import LedgerError
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        ledger = client.app.state.job_runner.ledger
+        ledger.record_apply("p9", "c1", "job-x", {"conclusion": "옛"})
+
+        def fail(project, chapter_ids):
+            raise LedgerError("시험 주입")
+        monkeypatch.setattr(ledger, "record_reset", fail)
+        response = client.post("/api/projects", json={"name": "p9", "title": "보고"})
+    assert response.status_code == 503, response.text
+    assert not (store.root / "p9").exists()
+
+
+def test_creating_a_project_without_a_ledger_still_creates_it(store):
+    """원장이 없거나 열지 못한 실행에서는 reset을 쓰지 않고 프로젝트를 만든다 (C2 계획 4.4 (10), W1 리뷰 W1R-09)."""
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        ledger, runner.ledger = runner.ledger, None
+        try:
+            response = client.post("/api/projects", json={"name": "p8", "title": "보고"})
+        finally:
+            runner.ledger = ledger
+    assert response.status_code == 201, response.text
+    assert (store.root / "p8").is_dir()
+
+
+def test_a_ledger_read_failure_does_not_block_restore(store, monkeypatch):
+    """복원은 사용자가 문제를 되돌리는 경로다. 묶음 판정의 원장 읽기가 실패하면 막지 않고 통과시킨다(원장 없음과 같은 정책,
+    C2 W1 리뷰 W1R-05). 같은 실패 중 프로젝트 생성은 계획대로 503이다(C2 계획 9절)."""
+    from slidecaptain.storage.job_ledger import LedgerError
+    _project(store)
+    store.save_deck("p1", store.load_deck("p1"))
+    snapshot = store.list_snapshots("p1")[0]
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        ledger = client.app.state.job_runner.ledger
+
+        def broken(*args, **kwargs):
+            raise LedgerError("시험 주입: 원장 읽기 실패")
+        monkeypatch.setattr(ledger, "list_jobs", broken)
+        monkeypatch.setattr(ledger, "chapters_with_records", broken)
+        restore = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+        create = client.post("/api/projects", json={"name": "새이름", "title": "보고"})
+    assert restore.status_code == 200, restore.text
+    assert create.status_code == 503

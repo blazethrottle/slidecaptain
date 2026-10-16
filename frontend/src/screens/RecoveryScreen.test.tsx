@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { api, ApiError } from "../api/client";
+import { api, ApiError, notifyProject } from "../api/client";
+import { deferred } from "../test/fixtures";
 import { batchView, chapterView, jobView } from "../test/jobs";
-import { draftSummaryText, RecoveryScreen } from "./RecoveryScreen";
+import { draftSummaryText, RecoveryScreen, resetMaybeApplied } from "./RecoveryScreen";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -14,6 +15,7 @@ vi.mock("../api/client", async (importOriginal) => {
 const project = { name: "p1", title: "제목", updated_at: "", status: "needs_recovery" as const };
 
 beforeEach(() => {
+  resetMaybeApplied();
   vi.mocked(api.listDrafts).mockResolvedValue([]);
   vi.mocked(api.getDraftSummary).mockResolvedValue(SAME);
   vi.mocked(api.listJobs).mockResolvedValue([]);
@@ -317,11 +319,15 @@ it("옮길 화면이 없으면 다시 생성 버튼을 숨기고, 이미 처분�
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-it("다른 장만 바뀐 후보는 같은 기준이라고 하지 않는다 (리뷰 R19)", async () => {
-  vi.mocked(api.listJobs).mockResolvedValue([jobView("chapter", { target: "c1", base_etag: '"aaaaaaaa"',
+// 장 해시는 슬라이드 문구를 담지 않으므로, 서버 사유가 deck_changed_elsewhere뿐이어도 그 장의 문구가 바뀌었을 수 있다.
+// 판정은 비교 화면(서버의 적용 미리 보기)이 하므로 행은 단정하지 않는다 (C1 W1 리뷰 W1R-08, C2 계획 4.3 (22), 리뷰 PR-09)
+it.each(["chapter", "condense"] as const)("다른 곳이 바뀐 %s 후보는 같은 기준이라고도 영향이 없다고도 하지 않는다", async (kind) => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView(kind, { target: "c1", base_etag: '"aaaaaaaa"',
     current_etag: '"bbbbbbbb"', stale_reasons: ["deck_changed_elsewhere"], result: { status: "ok", slots } })]);
   render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
-  expect(await screen.findByText(/덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다/)).toBeInTheDocument();
+  expect(await screen.findByText(/덱의 다른 부분이 바뀌었습니다\. 이 장의 문구가 바뀌었는지는 비교 화면에서 확인합니다/))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/영향이 없습니다|지금 입력과 같은 기준입니다/)).toBeNull();
 });
 
 it("멈춘 수리 후보는 멈춘 이유를 보인다 (리뷰 R17)", async () => {
@@ -345,4 +351,54 @@ it("화면에 전달한 후보(delivered)는 복구 목록에 넣지 않는다 (
   expect(await screen.findByText(/\(장 c3\)/)).toBeInTheDocument();
   expect(screen.queryByText(/\(장 c1\)/)).toBeNull();
   expect(screen.queryByText(/\(장 c2\)/)).toBeNull();
+});
+
+
+// -- 열어 둔 동안의 목록 갱신 (C1 계획 리뷰 PR-08, C2 계획 4.3 (20)) ---------------------------------------------------
+const NONE_LEFT = "남아 있는 AI 결과 후보가 없습니다.";
+const heldChapter = () => jobView("chapter", { target: "c1", result: { status: "ok", slots } });
+
+it("열어 둔 동안 이 탭의 작업이 끝나면 목록을 다시 읽어 새 후보를 보인다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([]).mockResolvedValue([heldChapter()]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  await screen.findByText(NONE_LEFT);
+  notifyProject({ kind: "job_ended", project: "p1" }, { broadcast: false });
+  await waitFor(() => expect(screen.queryByText(NONE_LEFT)).toBeNull(), { timeout: 3000 });
+  expect(api.listJobs).toHaveBeenCalledTimes(2);
+});
+
+it("다른 탭의 저장 알림도 목록을 다시 읽고, 다른 프로젝트의 알림은 무시한다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValueOnce([heldChapter()]).mockResolvedValue([]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  await waitFor(() => expect(api.listJobs).toHaveBeenCalledTimes(1));
+  const other = new BroadcastChannel("slidecaptain-project-events");
+  other.postMessage({ kind: "saved", project: "다른 프로젝트" });
+  await new Promise((r) => setTimeout(r, 1300));
+  expect(api.listJobs).toHaveBeenCalledTimes(1);
+  other.postMessage({ kind: "saved", project: "p1" });
+  expect(await screen.findByText(NONE_LEFT, {}, { timeout: 3000 })).toBeInTheDocument();
+  other.close();
+});
+
+it("먼저 시작한 읽기의 응답이 늦게 와도 나중 읽기의 목록을 덮지 않는다", async () => {
+  const first = deferred<ReturnType<typeof heldChapter>[]>();
+  vi.mocked(api.listJobs).mockReturnValueOnce(first.promise).mockResolvedValue([]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  notifyProject({ kind: "job_ended", project: "p1" }, { broadcast: false });
+  expect(await screen.findByText(NONE_LEFT, {}, { timeout: 3000 })).toBeInTheDocument();
+  first.resolve([heldChapter()]);
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.getByText(NONE_LEFT)).toBeInTheDocument();
+});
+
+// C2 W1 리뷰 W1R-06: 판정을 마치지 못해 stale로 남은 결과(실행기 마지막 예외 갈래)는 입력이 바뀌었는지 모른다. "만드는 동안
+// 입력이 바뀌었던 후보"라고 하지 않는다
+it("처리를 마치지 못한 결과는 입력이 바뀌었다고 하지 않고 보기와 버리기만 안내한다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("structure", { state: "failed", candidate_status: "stale", stale_reasons: [],
+    base_etag: '"aaaaaaaa"', current_etag: '"aaaaaaaa"',
+    error: { error_class: "internal", status: 500, detail: "AI 생성 작업을 처리하지 못했습니다.", code: null },
+    result: { status: "ok", structure: { chapters: [{ topic: "표지" }] } } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/처리를 마치지 못한 결과라 보기와 버리기만 할 수 있습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/만드는 동안 입력이 바뀌었던 후보입니다/)).toBeNull();
 });

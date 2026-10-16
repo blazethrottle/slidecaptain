@@ -10,7 +10,7 @@ import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
+  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, peekDeckEtag: vi.fn(async () => '"etag"'), startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
 });
 
 // D2b-5b: 도식 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다
@@ -81,8 +81,9 @@ it("AI 후보는 폼과 분리해 근거와 조건을 보이고 불러오기 뒤
   expectUsageCollapsed();  // 사용량은 접힌 진단 상세에 있다 (D3a-4, R12)
   await userEvent.click(screen.getByRole("button", { name: "작성 폼에 불러오기" }));
   expect(screen.getByLabelText("항목 1 내용")).toHaveValue("AI 접수 후보");
-  // D2b-5b: 불러온 후보는 반영으로 처분하고, 등록은 동의 전에 고정한 저장 ETag를 If-Match로 보낸다
-  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "applied");
+  // 불러오기는 처분하지 않는다. 새 도식은 적용할 때 처분 응답을 기다린 뒤 반영한다(C2 계획 4.2, 최종 리뷰 이월 (19)).
+  // 등록은 동의 전에 고정한 저장 ETag를 If-Match로 보낸다
+  expect(api.settleCandidate).not.toHaveBeenCalled();
   expect(vi.mocked(api.startJob).mock.calls[0][1].kind).toBe("diagram");
   expect(vi.mocked(api.startJob).mock.calls[0][3]).toBe('"etag"');
   expect(screen.getByLabelText("도식 제목")).toHaveValue("사용자 제목");
@@ -92,7 +93,45 @@ it("AI 후보는 폼과 분리해 근거와 조건을 보이고 불러오기 뒤
   await userEvent.click(screen.getByRole("button", { name: "입력과 배치 확인" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "도식 적용" })).toBeEnabled());
   await userEvent.click(screen.getByRole("button", { name: "도식 적용" }));
-  expect(onApply).toHaveBeenCalledOnce();
+  await waitFor(() => expect(onApply).toHaveBeenCalledOnce());
+  expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-1", "applied");
+  expect(vi.mocked(api.settleCandidate).mock.invocationCallOrder[0]).toBeLessThan(onApply.mock.invocationCallOrder[0]);
+});
+
+// 최종 리뷰 이월 (19): 창 안에서 만든 후보도 처분이 실패하면 반영하지 않는다. 지금 코드는 불러오기 때 처분 실패를 삼킨다
+it("창 안에서 만든 후보의 처분이 409이면 반영하지 않고 알린다", async () => {
+  const { onApply, draft } = open();
+  const plan = structuredClone(fixture.render_plan) as RenderPlan;
+  plan.slides = plan.slides.map(s => s.diagram ? { ...s, chapter_id: draft.id } : s);
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.settleCandidate).mockRejectedValue(new ApiError(409, "처분할 결과 후보가 없거나 이미 처분했습니다."));
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "작성 폼에 불러오기" }));
+  await userEvent.click(screen.getByRole("button", { name: "입력과 배치 확인" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "도식 적용" })).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "도식 적용" }));
+  expect(await screen.findByText(/다른 곳에서 이미 처리한 후보입니다/)).toBeInTheDocument();
+  expect(onApply).not.toHaveBeenCalled();
+  // 안내는 다시 생성을 권하므로 확인 상태를 지워 적용 버튼을 끈다 (C2 W2 리뷰 W2R-03)
+  expect(screen.getByRole("button", { name: "도식 적용" })).toBeDisabled();
+});
+
+// C2 계획 4.2, 리뷰 PR-15: 불러온 뒤 같은 창에서 다시 생성해 다른 후보를 불러오면 앞 후보는 쓰지 않으므로 버린다
+// (C2 W2 리뷰 W2R-11의 변형 M04)
+it("불러온 뒤 다시 생성한 다른 후보를 불러오면 앞 후보를 버린다", async () => {
+  open();
+  vi.mocked(api.startJob)
+    .mockImplementationOnce(async (name, body) => jobView("diagram", { id: "job-a",
+      result: (await generateDiagram(name, body.params as GenerateDiagramParams)) as unknown as Record<string, unknown> }))
+    .mockImplementationOnce(async (name, body) => jobView("diagram", { id: "job-b",
+      result: (await generateDiagram(name, body.params as GenerateDiagramParams)) as unknown as Record<string, unknown> }));
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "작성 폼에 불러오기" }));
+  expect(api.settleCandidate).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "작성 폼에 불러오기" }));
+  await waitFor(() => expect(api.settleCandidate).toHaveBeenCalledWith("synthetic", "job-a", "dismissed"));
+  expect(api.settleCandidate).not.toHaveBeenCalledWith("synthetic", "job-b", expect.anything());
 });
 
 it("기존 편집을 저장하지 못하면 AI를 호출하지 않고 작성 입력을 보존한다", async () => {

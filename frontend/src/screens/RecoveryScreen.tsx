@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, messageOf, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type Slots, type SnapshotInfo } from "../api/client";
+import { api, ApiError, messageOf, onProjectEvent, onRemoteProjectEvent, TERMINAL_JOB_STATES, type Deck, type DraftInfo, type DraftSummary, type JobView, type ProjectInfo, type Slots, type SnapshotInfo } from "../api/client";
 import { CandidateCompareDialog, STALE_BASE, type CompareSelection } from "../editor/CandidateCompareDialog";
 import { reopenRefusal } from "../editor/diagramReopen";
 import { blockingReasons, reasonText, slotsText } from "../api/jobs";
@@ -75,14 +75,22 @@ function candidateStatus(c: Candidate): string {
     return c.status === "stale" ? "만드는 동안 다른 저장이 있어 덱에 넣지 못한 결과입니다."
       : "덱에 넣지 못한 결과입니다.";
   }
+  // 실행기의 마지막 예외 갈래가 남긴 결과: 판정을 마치지 못해 입력이 바뀌었는지 모른다 (C2 계획 4.4 (8), W1 리뷰 W1R-06)
+  if (c.state === "failed" && c.job.error?.error_class === "internal" && c.status === "stale") {
+    return "처리를 마치지 못한 결과라 보기와 버리기만 할 수 있습니다. 필요하면 현재 입력으로 다시 생성해 주세요.";
+  }
   const cancelled = c.state === "cancelled" ? "취소한 뒤 도착한 결과입니다. " : "";
   const basis = `기준 저장본 ${shortEtag(c.job.base_etag)}, 지금 저장본 ${shortEtag(c.job.current_etag)}.`;
   const unreadable = c.job.current_etag === null || c.reasons.some((r) => r.startsWith("unknown_"));
-  // 장 재생성과 축약은 다른 장만 바뀐 경우 반영을 막지 않는다. 저장본 값이 달라도 그 사실을 밝힌다 (리뷰 R19)
+  // 장 재생성과 축약은 다른 장만 바뀐 경우 반영을 막지 않는다. 저장본 값이 달라도 그 사실을 밝힌다 (리뷰 R19). 장 해시는
+  // 슬라이드 문구를 담지 않아 그 장의 문구가 바뀌었을 수 있으므로, 두 종류는 영향을 단정하지 않고 비교 화면에 맡긴다
+  // (C1 W1 리뷰 W1R-08, C2 계획 4.3 (22))
   const elsewhere = c.job.stale_reasons.includes("deck_changed_elsewhere");
+  const chapterKind = c.job.kind === "chapter" || c.job.kind === "condense";
   return `${cancelled}${basis} ${unreadable ? "저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다."
-    : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons)}).`
-      : elsewhere ? "덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다." : "지금 입력과 같은 기준입니다."}`;
+    : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons, c.job.kind)}).`
+      : elsewhere ? (chapterKind ? "덱의 다른 부분이 바뀌었습니다. 이 장의 문구가 바뀌었는지는 비교 화면에서 확인합니다."
+        : "덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다.") : "지금 입력과 같은 기준입니다."}`;
 }
 
 function candidateText(c: Candidate): string {
@@ -129,21 +137,56 @@ function regenerateHint(c: Candidate, stage: OpenStage): string {
   return `이 화면을 닫고 '편집 단계로 옮겨 다시 생성'을 누른 뒤 '${action}'으로 현재 입력 기준 후보를 만들어 주세요.`;
 }
 
-function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApplyUnconfirmed }: {
+// 반영 응답이 5xx였던 후보(프로젝트별 후보 열쇠). 모듈 수준이라 배너의 "서버 내용 다시 읽기"로 복구 화면이 다시 마운트돼도
+// 같은 탭 안에서는 남는다. 탭을 새로 고치면 사라지고, 그때는 같은 후보를 다시 반영하면 서버가 정리한다 (C1 W1 리뷰 W1R-06,
+// C2 계획 4.3 (21))
+const maybeAppliedByProject = new Map<string, Set<string>>();
+
+// 시험용: 시험 사이에 비운다(ETag 캐시의 resetEtags와 같은 방식, C2 계획 리뷰 PR-25)
+export function resetMaybeApplied(): void {
+  maybeAppliedByProject.clear();
+}
+
+// 다른 탭이나 이 탭의 저장과 작업 알림을 합쳐 목록을 다시 읽는 간격. 진행 작업 조회 간격(ProjectView jobPollMs)과 같다
+const RELOAD_MS = 1000;
+
+function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApplyUnconfirmed, reloadMs = RELOAD_MS }: {
   project: ProjectInfo; deck?: Deck; onOpen?: (stage: OpenStage, chapterId?: string, diagramJobId?: string) => void;
-  onConflict?: () => void; onDeckSaved?: (deck: Deck) => void; onApplyUnconfirmed?: () => void;
+  onConflict?: () => void; onDeckSaved?: (deck: Deck) => void; onApplyUnconfirmed?: () => void; reloadMs?: number;
 }) {
   const [items, setItems] = useState<Candidate[] | null>(null);
   const [ended, setEnded] = useState<JobView[]>([]);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  // 안내 종류: batch_active는 묶음이 끝나면 지운다. 반영 성공과 다른 곳의 처분 안내는 지우지 않는다 (C1 W1 리뷰 W1R-11)
+  const [notice, setNoticeState] = useState<{ text: string; kind?: "batch_active" }>({ text: "" });
+  const setNotice = (text: string, kind?: "batch_active") => setNoticeState({ text, kind });
   const [comparing, setComparing] = useState<Candidate | null>(null);
   // 반영 응답이 5xx였던 후보. 저장됐을 수 있어 그 행에 알린다(계획 리뷰 PR-17)
-  const [maybeApplied, setMaybeApplied] = useState<Set<string>>(new Set());
+  const [maybeApplied, setMaybeAppliedState] = useState<Set<string>>(() => new Set(maybeAppliedByProject.get(project.name)));
+  const setMaybeApplied = (update: (keys: Set<string>) => Set<string>) => setMaybeAppliedState((keys) => {
+    const next = update(keys);
+    if (next.size) maybeAppliedByProject.set(project.name, next); else maybeAppliedByProject.delete(project.name);
+    return next;
+  });
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  const loadSerial = useRef(0);
   const heading = useRef<HTMLHeadingElement>(null);
-  const load = () => api.listJobs(project.name)
-    .then((jobs) => { setItems(candidatesOf(jobs)); setEnded(endedWithoutResult(jobs)); setError(""); })
-    .catch((e) => setError(`AI 결과 후보를 읽지 못했습니다. ${messageOf(e)}`));
+  // 읽기마다 번호를 매겨 가장 나중에 시작한 읽기의 응답만 받는다. 알림으로 시작한 읽기와 반영 뒤의 읽기가 겹치면 먼저
+  // 시작한 응답이 늦게 와 사라진 행을 되살릴 수 있다 (C2 계획 리뷰 PR-13)
+  const load = () => {
+    const serial = ++loadSerial.current;
+    return api.listJobs(project.name)
+      .then((jobs) => {
+        if (!live.current || serial !== loadSerial.current) return;
+        const next = candidatesOf(jobs);
+        setItems(next); setEnded(endedWithoutResult(jobs)); setError("");
+        // 목록에서 사라진 후보의 "확인하지 못함" 표시는 지운다(반영으로 정리됐거나 다른 곳에서 처분)
+        const present = new Set(next.map((c) => c.key));
+        setMaybeApplied((keys) => [...keys].every((k) => present.has(k)) ? keys : new Set([...keys].filter((k) => present.has(k))));
+      })
+      .catch((e) => { if (live.current && serial === loadSerial.current) setError(`AI 결과 후보를 읽지 못했습니다. ${messageOf(e)}`); });
+  };
   // 반영 뒤 처리. 목록을 먼저 다시 읽고 비교 화면을 닫는다. 반영으로 행이 사라졌으면 초점이 제목으로 간다(계획 리뷰 PR-16)
   const finish = async (message: string) => {
     setNotice(message);
@@ -167,10 +210,26 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
         setMaybeApplied((keys) => new Set(keys).add(c.key));
         await finish("");
       } else if (e instanceof ApiError && e.code === "candidate_settled") await finish(SETTLED_ELSEWHERE);
+      else if (e instanceof ApiError && e.code === "batch_active") { await finish(""); setNotice(messageOf(e), "batch_active"); }
       else await finish(messageOf(e));
     }
   };
   useEffect(() => { void load(); }, [project.name]);  // eslint-disable-line react-hooks/exhaustive-deps
+  // 열어 둔 동안 도착한 후보와 다른 탭의 처분을 보인다. 작업 시작과 끝, 저장 알림을 듣고, 자동 저장마다 읽지 않도록 마지막
+  // 알림 뒤 한 번으로 합친다. 비교 화면이 열려 있어도 목록만 다시 읽고 비교 대상은 바꾸지 않는다 (C1 계획 리뷰 PR-08,
+  // C2 계획 4.3 (20))
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bump = (event: { project: string; kind: string }) => {
+      if (event.project !== project.name) return;
+      if (event.kind === "job_ended") setNoticeState((n) => (n.kind === "batch_active" ? { text: "" } : n));
+      clearTimeout(timer);
+      timer = setTimeout(() => void load(), reloadMs);
+    };
+    const offLocal = onProjectEvent(bump);
+    const offRemote = onRemoteProjectEvent(bump);
+    return () => { offLocal(); offRemote(); clearTimeout(timer); };
+  }, [project.name, reloadMs]);  // eslint-disable-line react-hooks/exhaustive-deps
   const dismiss = async (c: Candidate) => {
     try {
       if (c.job.kind === "chapters") await api.dismissChapterCandidate(project.name, c.job.id, c.chapterId!);
@@ -188,7 +247,7 @@ function JobCandidates({ project, deck, onOpen, onConflict, onDeckSaved, onApply
       <p>AI가 만들었지만 아직 반영하거나 버리지 않은 결과입니다. 장 후보는 여기서 비교하고 반영할 수 있습니다.
         도식 후보는 도식 작성 창에서 엽니다. 구조안과 덱 전체 후보는 보기와 버리기만 합니다.</p>
       {error && <p role="alert">{error}</p>}
-      {notice && <p role="status">{notice}</p>}
+      {notice.text && <p role="status">{notice.text}</p>}
       {items === null ? (error ? null : <p>불러오는 중...</p>) : items.length === 0 ? (
         <p>남아 있는 AI 결과 후보가 없습니다.</p>
       ) : (

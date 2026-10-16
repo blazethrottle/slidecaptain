@@ -102,3 +102,38 @@ it("보존 뒤 읽기 실패는 되돌리지 못한 상태로 표시하고, 다�
   expect(result.current.reloadIncomplete).toBe(false);
   expect(result.current.deck).toBe(serverDeck);
 });
+
+// 반영 요청의 5xx는 다른 곳의 저장이 아니다. 저장을 멈추는 동작은 같지만 원인을 기억해 머리 표시와 되돌린 뒤 안내가 원인을
+// 말하게 한다 (최종 리뷰 SC-01, C2 계획 4.3 (11), 리뷰 PR-16)
+it("반영 결과 미확인 원인을 기억하고, 되돌려 보존한 뒤에도 그 원인을 알린다", async () => {
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  vi.mocked(api.getDeck).mockResolvedValue(serverDeck);
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  const { result } = renderHook(() => useDeckEditor("p1", S, () => {}, { measureMs: 0, saveMs: 0 }));
+  await act(async () => { result.current.reportConflict("반영 결과를 확인하지 못했습니다.", "unconfirmed"); });
+  expect(result.current.conflict).toBe(true);
+  expect(result.current.conflictCause).toBe("unconfirmed");
+  await act(async () => { result.current.apply(() => E1); });
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.preservedDraft).toEqual(draftInfo);
+  expect(result.current.preservedCause).toBe("unconfirmed");
+});
+
+it("원인 없이 알린 충돌은 다른 곳의 저장으로 본다", async () => {
+  vi.mocked(api.saveDraft).mockResolvedValue(draftInfo);
+  const { result } = await conflicted();
+  expect(result.current.conflictCause).toBe("other");
+  await act(async () => { result.current.apply(() => E2); });
+  await act(async () => { await result.current.reloadFromServer(); });
+  expect(result.current.preservedCause).toBe("other");
+});
+
+
+// C2 W2 리뷰 W2R-06: 반영 5xx 뒤 풀리기 전에 다른 곳의 충돌(묶음 종료, 늦은 412)이 이어져도, 확인할 것이 더 많은 원인을 남긴다
+it("반영 결과 미확인 원인은 뒤이은 다른 곳의 충돌로 내려가지 않는다", async () => {
+  vi.mocked(api.measure).mockResolvedValue(planWith(["하나"]));
+  const { result } = renderHook(() => useDeckEditor("p1", S, () => {}, { measureMs: 0, saveMs: 0 }));
+  await act(async () => { result.current.reportConflict("반영 결과를 확인하지 못했습니다.", "unconfirmed"); });
+  await act(async () => { result.current.reportConflict("다른 창에서 먼저 저장되었습니다."); });
+  expect(result.current.conflictCause).toBe("unconfirmed");
+});

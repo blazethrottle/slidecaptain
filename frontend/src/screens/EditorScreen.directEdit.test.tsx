@@ -651,3 +651,55 @@ describe("α 리뷰 반영", () => {
     expect(statusText()).toMatch(/결론 상자: 가로 0pt/);
   });
 });
+
+// 회사 PC 확인 이월 (4): 위치 안내 줄이 첫 이동 때 새로 생겨 미리보기를 한 줄 밀고, 다른 장으로 옮겨도 이전 장 요소의 위치를
+// 보였다. 안내는 직접 수정 모드 동안 자리를 잡은 줄에 두고, 장을 옮기거나 모드를 끄면 지운다 (C2 계획 4.3)
+describe("위치 안내 줄", () => {
+  const moveLine = () => document.querySelector<HTMLElement>(".move-status");
+
+  it("모드를 켜면 첫 이동 전에 자리를 잡고, 이동하면 같은 줄에 위치를 쓴다", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    const line = moveLine();
+    expect(line).not.toBeNull();
+    expect(line).toHaveTextContent("");
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    expect(moveLine()).toBe(line);
+    expect(line).toHaveTextContent(/결론 상자: 가로 51pt/);
+  });
+
+  it.each(["버튼", "Ctrl+Z"])("%s로 되돌리면 옮긴 위치 안내를 지운다 (C2 W2 리뷰 W2R-08, 묶음 리뷰 BR-06)", async (how) => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    expect(moveLine()).toHaveTextContent(/결론 상자: 가로 51pt/);
+    if (how === "버튼") await userEvent.click(screen.getByRole("button", { name: "되돌리기 (Ctrl+Z)" }));
+    else fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(screen.queryByText(/결론 상자: 가로 51pt/)).toBeNull());
+  });
+
+  it("모드를 끄면 위치 안내를 지운다", async () => {
+    await open();
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    await userEvent.click(modeButton());
+    expect(screen.queryByText(/결론 상자: 가로 51pt/)).toBeNull();
+  });
+
+  it("다른 장으로 옮기면 이전 장 요소의 위치를 지운다", async () => {
+    const two: Deck = { ...deck, structure: { ...deck.structure, chapters: [...deck.structure.chapters,
+      { id: "c2", topic: "둘째 주제", conclusion: "", template: "bullet_box", source_refs: [] }] },
+      slides: [...deck.slides, { ...deck.slides[0], chapter_id: "c2" }] };
+    vi.mocked(api.measure).mockResolvedValue({ ...plan, slides: [plan.slides[0], { ...plan.slides[0], chapter_id: "c2" }] });
+    await open({ deck: two });
+    await userEvent.click(modeButton());
+    act(() => frame("conclusion")!.focus());
+    fireEvent.keyDown(frame("conclusion")!, { key: "ArrowRight" });
+    expect(moveLine()).toHaveTextContent(/결론 상자: 가로 51pt/);
+    await userEvent.click(screen.getAllByText(/둘째 주제/)[0]);
+    await waitFor(() => expect(screen.queryByText(/결론 상자: 가로 51pt/)).toBeNull());
+  });
+});

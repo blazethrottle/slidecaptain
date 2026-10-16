@@ -14,9 +14,10 @@ it("상태 15종(작업 상태 2종, 단계 상태 3종 포함)은 문구와 아
     unmount();
   }
   // 다시 씀(D3a-3): 단계 상태 3종(확인하지 못함, 작성 중, 초안 확인됨)을 더해 12종에서 15종으로
-  expect(STATUS_KINDS).toHaveLength(15);
-  expect(labels.size).toBe(15);
-  expect(icons.size).toBe(15);
+  // C2 계획 4.3 (11): 반영 결과 미확인을 더해 16종
+  expect(STATUS_KINDS).toHaveLength(16);
+  expect(labels.size).toBe(16);
+  expect(icons.size).toBe(16);
 });
 
 // D2a 이월 (7), D3a-1. 지금 코드의 틀린 동작: 접근 가능한 이름이 "빈 원", "연필" 같은 모양 이름이다.
@@ -28,6 +29,7 @@ const ICON_NAMES: Record<(typeof STATUS_KINDS)[number], string> = {
   saved: "저장 완료",
   save_failed: "저장 실패 경고",
   conflict: "저장 충돌",
+  apply_unconfirmed: "반영 결과 미확인",
   ready: "준비 완료",
   needs_review: "주의",
   failed: "오류",

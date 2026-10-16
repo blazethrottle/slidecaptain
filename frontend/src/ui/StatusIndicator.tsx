@@ -6,7 +6,7 @@ import type { SaveState } from "../state/useDeckEditor";
 // 아이콘의 접근 가능한 이름은 모양이 아니라 상태의 뜻이고, 라벨 문구와 같은 말을 두 번 읽지 않도록 라벨과 다르게 쓴다 (D2a 이월 7)
 // "현재 보고 있는 단계"는 내비게이션의 선택 표시라 D3에서 다룬다. 작업 상태(취소 요청, 완료 불명)는 D2b다.
 export const STATUS_KINDS = [
-  "not_started", "unsaved", "saving", "saved", "save_failed", "conflict",
+  "not_started", "unsaved", "saving", "saved", "save_failed", "conflict", "apply_unconfirmed",
   "ready", "needs_review", "failed", "running", "cancel_requested", "completion_unknown",
   // 단계 상태 (D3a-3, 계획 4.2). 조회 실패, 현재 단계의 미저장 변경, 검토 단계의 준비됨
   "unknown", "in_progress", "draft_checked",
@@ -25,6 +25,8 @@ const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; 
   saved: { label: "저장됨", icon: "✓", iconName: "저장 완료", tone: "success" },
   save_failed: { label: "저장하지 못했습니다. 변경은 이 화면에 남아 있습니다", icon: "\u26A0\uFE0E", iconName: "저장 실패 경고", tone: "danger" },
   conflict: { label: "다른 곳에서 먼저 저장했습니다", icon: "\u21C4\uFE0E", iconName: "저장 충돌", tone: "danger" },
+  // 반영 요청의 5xx: 저장을 멈춘 이유가 다른 곳의 저장이 아니다 (최종 리뷰 SC-01, C2 계획 4.3 (11))
+  apply_unconfirmed: { label: "반영 결과 확인 필요", icon: "\u203C\uFE0E", iconName: "반영 결과 미확인", tone: "danger" },
   ready: { label: "준비됨", icon: "\u2611\uFE0E", iconName: "준비 완료", tone: "success" },
   needs_review: { label: "확인 필요", icon: "!", iconName: "주의", tone: "warning" },
   failed: { label: "실행 실패", icon: "✕", iconName: "오류", tone: "danger" },
@@ -41,11 +43,12 @@ const SPEC: Record<StatusKind, { label: string; icon: string; iconName: string; 
 };
 
 /** 저장 훅의 상태를 표시 종류로 옮긴다. 충돌은 저장 실패와 조치가 반대라 따로 둔다. */
-export function saveStatusKind(saveState: SaveState, conflict: boolean): StatusKind {
+export function saveStatusKind(saveState: SaveState, conflict: boolean, cause: "other" | "unconfirmed" = "other"): StatusKind {
   if (saveState === "저장됨") return "saved";
   if (saveState === "저장 대기") return "unsaved";
   if (saveState === "저장 중") return "saving";
-  return conflict ? "conflict" : "save_failed";
+  if (!conflict) return "save_failed";
+  return cause === "unconfirmed" ? "apply_unconfirmed" : "conflict";
 }
 
 /** 상태 한 줄. 작업 상태(생성 중, 취소 요청됨, 완료 여부 확인 필요)는 작업 원장에서 정해 넘긴다 (D2b-5c). */

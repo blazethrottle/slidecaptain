@@ -1,7 +1,10 @@
 // 편집 화면이 복구 화면에서 넘겨받은 도식 후보 작업을 여는 막힘 조건 (C1 계획 W2-b 4.3, W2 리뷰 W2R-08의 F5). 읽기 전용이면
 // 행을 읽지 않고 안내하며, 넘겨받은 작업 ID는 어느 경우에도 한 번 쓰고 부모에게 지우게 한다
 import { render, screen, waitFor } from "@testing-library/react";
-import { api, type Deck, type RenderPlan } from "../api/client";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
+import { api, type Deck, type JobView, type RenderPlan } from "../api/client";
+import { deferred } from "../test/fixtures";
 import { jobView } from "../test/jobs";
 import { EditorScreen } from "./EditorScreen";
 
@@ -74,4 +77,30 @@ it("행 읽기 응답 전에 읽기 전용이 되면 작성 창을 열지 않는
     topic: "t", role: "evidence", claim_ids: [] }, result: { status: "ok", diagram: { nodes: [], edges: [] } } }));
   expect(await screen.findByText(FAILED)).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+
+// C1 W2 리뷰 W2R-10: 지금 코드는 행을 읽기 전에 작업 ID를 지우게 한다. 읽는 사이 다시 마운트되면(묶음 종결, 덱 다시 읽기)
+// 앞 화면의 응답은 버려지고 새 화면은 지워진 ID를 받아, 작성 창도 안내도 없이 끝난다 (C2 계획 4.3 (23))
+it("행을 읽는 동안 다시 마운트되어도 새 화면이 그 작업을 이어 받아 처리한다", async () => {
+  const first = deferred<JobView>();
+  vi.mocked(api.getJob).mockReturnValueOnce(first.promise).mockResolvedValue(jobView("diagram"));
+  const consumed = vi.fn();
+  function Harness() {
+    const [id, setId] = useState<string | null>("job-d1");
+    const [mount, setMount] = useState(0);
+    return <>
+      <button onClick={() => setMount((n) => n + 1)}>다시 마운트</button>
+      <EditorScreen key={mount} project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+        reopenDiagramJob={id} onReopenConsumed={() => { consumed(); setId(null); }} />
+    </>;
+  }
+  render(<Harness />);
+  await waitFor(() => expect(api.getJob).toHaveBeenCalledTimes(1));
+  await userEvent.click(screen.getByRole("button", { name: "다시 마운트" }));
+  expect(await screen.findByText(FAILED)).toBeInTheDocument();  // 이 작업은 열 수 없는 행이라 안내로 끝난다
+  expect(api.getJob).toHaveBeenCalledTimes(2);
+  first.resolve(jobView("diagram"));
+  await new Promise((r) => setTimeout(r, 20));
+  expect(consumed).toHaveBeenCalledOnce();
 });

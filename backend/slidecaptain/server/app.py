@@ -946,7 +946,19 @@ def create_app(
 
     @app.post("/api/projects", response_model=ProjectInfo, status_code=201)
     def create_project(req: CreateProjectRequest):
-        return store.create_project(req.name, req.title)
+        current = runner.ledger
+
+        def detach_old_baselines(name: str) -> None:
+            """지운 프로젝트와 같은 이름이면 원장의 반영 기록이 새 프로젝트의 "직접 고친 문구" 기준으로 쓰인다. 기록은 지우지
+            않고(원장 무삭제 전제) 장마다 reset을 더한다. 원장 쓰기가 실패하면 폴더를 만들지 않는다 (최종 리뷰 ST-01, C2 계획
+            4.4 (10)). 원장이 없거나 열지 못한 실행에서는 쓰지 않는다(C2 계획 9절 가정 8)."""
+            try:
+                current.record_reset(name, current.chapters_with_records(name))
+            except LedgerError as exc:
+                raise HTTPException(503, "작업 기록에 쓰지 못해 프로젝트를 만들지 않았습니다. 잠시 뒤 다시 시도해 주세요.") from exc
+
+        return store.create_project(req.name, req.title,
+                                    before_create=detach_old_baselines if current is not None else None)
 
     @app.get("/api/projects/{name}/deck", response_model=Deck)
     def get_deck(name: str, response: Response):
@@ -1428,6 +1440,22 @@ def create_app(
     def create_final_publication(name: str, export_id: str, req: QualificationRequest, if_match: str | None = Header(default=None)):
         return _qualification_action(name, export_id, publish_final, req, if_match)
 
+    def _refuse_restore_during_batch(name: str) -> None:
+        """장 생성 묶음 실행 중에는 스냅샷과 보존본 복원을 막는다. 복원이 묶음의 사슬(장마다 직전 ETag)을 끊으면 남은 장
+        후보가 낡음이 된다. 화면 잠금은 알림을 받지 못한 탭과 다른 빌드에는 닿지 않는다 (최종 리뷰 SC-14, C2 계획 4.4 (2)).
+        원장이 없거나 열지 못한 실행에는 묶음도 없으므로 막지 않는다(C2 계획 리뷰 PR-07). 원장 읽기가 실패해도 막지 않는다."""
+        if runner.ledger is None:
+            return
+        try:
+            running = _batch_running(name)
+        except LedgerError:
+            # 복원은 사용자가 문제를 되돌리는 경로라, 원장 읽기 장애가 막지 않는다(원장 없음과 같은 정책, C2 W1 리뷰 W1R-05)
+            _LOG.exception("복원 전 장 생성 묶음 확인을 하지 못했습니다: %s", name)
+            return
+        if running:
+            raise JobFailed(409, "장 생성 묶음이 진행 중이라 복원할 수 없습니다. 묶음이 끝난 뒤 다시 복원해 주세요.",
+                            "batch_active")
+
     @app.post("/api/projects/{name}/snapshots/{snapshot_id}/restore", response_model=Deck)
     def restore_snapshot(
         name: str,
@@ -1437,6 +1465,7 @@ def create_app(
     ):
         expected_etag = if_match.strip('"') if if_match is not None else None
         with store.locked(name):
+            _refuse_restore_during_batch(name)
             try:
                 before = store.load_deck(name)
             except (StorageError, OSError):
@@ -1464,6 +1493,7 @@ def create_app(
     ):
         expected_etag = if_match.strip('"') if if_match is not None else None
         with store.locked(name):
+            _refuse_restore_during_batch(name)
             try:
                 before = store.load_deck(name)
             except (StorageError, OSError):
@@ -1550,53 +1580,59 @@ def create_app(
         if len(data) > max_bytes:
             raise HTTPException(422, too_large_message)
 
-        if is_xlsx:
-            try:
-                extraction = extract_xlsx(data, filename)
-            except XlsxTooLarge as e:
-                raise HTTPException(422, str(e)) from e
-            except XlsxUnreadable as e:
-                raise HTTPException(422, str(e)) from e
-            # 확인과 쓰기를 잠금 안에서 함께 수행한다 (텍스트 분기와 같은 이유). 중복 판정은
-            # 추출본 이름으로 한다: 사용자가 손으로 같은 이름의 자료를 만들어 뒀어도 그것을
-            # 엑셀 추출본으로 교체하는 의미다 (계획서 B2)
-            with store.locked(name):
-                if store.source_exists(name, extract_name) and not overwrite:
-                    raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
-                # 되돌리기용으로 기존 원본을 먼저 백업한다: 신규 업로드면 None이라 실패 시 지우면
-                # 되지만, 이미 정상이던 원본을 overwrite 하던 중이면 그냥 지우면 "새 원본만 지운
-                # 것"이 아니라 "이전에 있던 정상 원본까지 함께 사라지는" 데이터 손실이 된다
-                # (계획서 B2 리뷰 F1)
-                previous_upload = store.read_upload(name, filename)
-                store.write_upload(name, filename, data)
+        # 추출(openpyxl)과 프로젝트 잠금 대기는 동기 작업이다. 이벤트 루프 위에서 돌면 그동안 같은 프로세스의 다른 요청
+        # (상태 조회, 작업 조회와 취소, 창 닫기 확인)이 모두 멈춘다. 다른 라우트처럼 스레드에서 돈다 (최종 리뷰 SV-06,
+        # C2 계획 4.4 (7))
+        def store_upload() -> UploadResult:
+            if is_xlsx:
                 try:
-                    store.write_source(name, extract_name, extraction.text)
-                except Exception:
-                    # 추출본 쓰기가 실패하면 원본만 남는 상태를 만들지 않는다 (계획서 B2): 신규
-                    # 업로드였으면 지우고, 기존 원본을 덮어쓰던 중이었으면 그 이전 바이트로 복원한다
-                    if previous_upload is None:
-                        store.delete_upload(name, filename)
-                    else:
-                        store.write_upload(name, filename, previous_upload)
-                    raise
-            return UploadResult(
-                filename=filename,
-                chars=len(extraction.text),
-                sheets=extraction.sheets,
-                cells=extraction.cells,
-                truncated=extraction.truncated,
-                notes=extraction.notes,
-            )
+                    extraction = extract_xlsx(data, filename)
+                except XlsxTooLarge as e:
+                    raise HTTPException(422, str(e)) from e
+                except XlsxUnreadable as e:
+                    raise HTTPException(422, str(e)) from e
+                # 확인과 쓰기를 잠금 안에서 함께 수행한다 (텍스트 분기와 같은 이유). 중복 판정은
+                # 추출본 이름으로 한다: 사용자가 손으로 같은 이름의 자료를 만들어 뒀어도 그것을
+                # 엑셀 추출본으로 교체하는 의미다 (계획서 B2)
+                with store.locked(name):
+                    if store.source_exists(name, extract_name) and not overwrite:
+                        raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+                    # 되돌리기용으로 기존 원본을 먼저 백업한다: 신규 업로드면 None이라 실패 시 지우면
+                    # 되지만, 이미 정상이던 원본을 overwrite 하던 중이면 그냥 지우면 "새 원본만 지운
+                    # 것"이 아니라 "이전에 있던 정상 원본까지 함께 사라지는" 데이터 손실이 된다
+                    # (계획서 B2 리뷰 F1)
+                    previous_upload = store.read_upload(name, filename)
+                    store.write_upload(name, filename, data)
+                    try:
+                        store.write_source(name, extract_name, extraction.text)
+                    except Exception:
+                        # 추출본 쓰기가 실패하면 원본만 남는 상태를 만들지 않는다 (계획서 B2): 신규
+                        # 업로드였으면 지우고, 기존 원본을 덮어쓰던 중이었으면 그 이전 바이트로 복원한다
+                        if previous_upload is None:
+                            store.delete_upload(name, filename)
+                        else:
+                            store.write_upload(name, filename, previous_upload)
+                        raise
+                return UploadResult(
+                    filename=filename,
+                    chars=len(extraction.text),
+                    sheets=extraction.sheets,
+                    cells=extraction.cells,
+                    truncated=extraction.truncated,
+                    notes=extraction.notes,
+                )
 
-        text = decode_source_bytes(data, filename)  # 해석 실패는 InvalidSourceEncoding(422)
-        # 확인(source_exists)과 쓰기를 잠금 안에서 함께 수행한다: 잠금 밖이면 같은 새 이름의
-        # 두 업로드가 둘 다 확인을 통과해 나중 것이 조용히 덮어쓸 수 있다 (적대 리뷰 재현)
-        with store.locked(name):
-            # 이름 규칙 위반은 422, 프로젝트 부재는 404로 저장소 예외 매핑을 탄다
-            if store.source_exists(name, filename) and not overwrite:
-                raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
-            store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
-        return UploadResult(filename=filename, chars=len(text), sheets=None, cells=None, truncated=False, notes=[])
+            text = decode_source_bytes(data, filename)  # 해석 실패는 InvalidSourceEncoding(422)
+            # 확인(source_exists)과 쓰기를 잠금 안에서 함께 수행한다: 잠금 밖이면 같은 새 이름의
+            # 두 업로드가 둘 다 확인을 통과해 나중 것이 조용히 덮어쓸 수 있다 (적대 리뷰 재현)
+            with store.locked(name):
+                # 이름 규칙 위반은 422, 프로젝트 부재는 404로 저장소 예외 매핑을 탄다
+                if store.source_exists(name, filename) and not overwrite:
+                    raise HTTPException(409, f"같은 이름의 자료가 이미 있습니다: {filename}")
+                store.write_source(name, filename, text)  # 저장 시점에 UTF-8로 정규화된다
+            return UploadResult(filename=filename, chars=len(text), sheets=None, cells=None, truncated=False, notes=[])
+
+        return await asyncio.to_thread(store_upload)
 
     @app.get("/api/health")
     def get_health():
@@ -1767,7 +1803,7 @@ def create_app(
     def _chapters_spec(name: str, chapter_ids: list[str], if_match: str | None, selection_id: str | None,
                        request_id: str) -> JobSpec:
         """등록 검사 (계획서 D2b-4 정정 ①, D2b-4 리뷰 R16): 기준 ETag 428, 412, 중복 422, 자료 422, 없는 장 404,
-        도식 장 422, 이미 내용이 있는 장 409, 구성 계획 낡음 409, 선택 409. 거절하면 행을 만들지 않는다."""
+        도식 장 422, 이미 내용이 있는 장 409, 선택 503과 409, 구성 계획 낡음 409. 거절하면 행을 만들지 않는다."""
         if not if_match:
             raise HTTPException(428, "장 생성의 기준 저장본을 확인해야 합니다. 프로젝트를 다시 열어 주세요.")
         with store.locked(name):
@@ -1787,8 +1823,9 @@ def create_app(
         filled = next((cid for cid in chapter_ids if any(sl.chapter_id == cid for sl in deck.slides)), None)
         if filled is not None:
             raise HTTPException(409, f"이미 내용이 있는 장입니다: {by_id[filled].topic}. 편집 단계에서 다시 생성해 주세요.")
-        require_current_story(deck, sources)
+        # 선택 확인이 구성 계획 낡음보다 먼저다. 장 생성, 장 축약과 같은 순서 (D3c-7 리뷰 H5, 최종 리뷰 SV-09)
         _require_current_selection(selection_id)
+        require_current_story(deck, sources)
         revision = sources_fingerprint(sources)
         provider_id, model = _fixed_selection()
 
