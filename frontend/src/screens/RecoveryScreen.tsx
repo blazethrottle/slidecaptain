@@ -84,7 +84,7 @@ function candidateStatus(c: Candidate): string {
   const elsewhere = c.job.stale_reasons.includes("deck_changed_elsewhere");
   const chapterKind = c.job.kind === "chapter" || c.job.kind === "condense";
   return `${cancelled}${basis} ${unreadable ? "저장본이나 자료를 읽지 못해 지금 입력과 비교할 수 없습니다."
-    : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons)}).`
+    : c.reasons.length > 0 ? `이전 입력 기준 후보입니다(${reasonText(c.reasons, c.job.kind)}).`
       : elsewhere ? (chapterKind ? "덱의 다른 부분이 바뀌었습니다. 이 장의 문구가 바뀌었는지는 비교 화면에서 확인합니다."
         : "덱의 다른 부분만 바뀌어 이 장에는 영향이 없습니다.") : "지금 입력과 같은 기준입니다."}`;
 }

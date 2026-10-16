@@ -96,6 +96,10 @@ export function EditorScreen({
   const [mode, setMode] = useState(false);
   const [focusRequest, setFocusRequest] = useState<{ target: string | null; nonce: number } | undefined>();
   const [status, setStatus] = useState("");
+  // 직접 수정의 위치 안내. 공용 상태 줄은 비면 감춰져 첫 이동 때 미리보기를 한 줄 밀었으므로, 모드 동안 자리를 잡은 줄에 둔다.
+  // 장을 옮기거나 모드를 바꾸면 지운다(이전 장 요소의 위치를 보이지 않는다) (회사 PC 확인 이월 (4), C2 계획 4.3)
+  const [movePosition, setMovePosition] = useState("");
+  useEffect(() => { setMovePosition(""); }, [mode, chapterId]);
   const [pendingInput, setPendingInput] = useState(false);  // 확정 전 위치, 글자 크기 입력 (계획 리뷰 화면 S24)
   const dragging = useRef(false);
   const modeButton = useRef<HTMLButtonElement>(null);
@@ -126,7 +130,8 @@ export function EditorScreen({
 
   // 복구 화면이 넘긴 도식 후보를 작성 창과 함께 연다 (C1 계획 W2-b, 4.3). 넘긴 작업 ID는 한 번 쓰고 부모에게 지우게 한다.
   // 옮기는 사이 다른 탭이 처분했을 수 있어 행을 다시 읽는다. "도식 추가"가 막히는 조건(읽기 전용, 저장 충돌, 도식 AI 호출
-  // 중)이면 열지 않고 안내한다
+  // 중)이면 열지 않고 안내한다. ID는 마운트된 화면이 결과를 처리할 때 지운다: 읽는 사이 다시 마운트되면 앞 화면의 응답은
+  // 버려지므로, 새 화면이 같은 ID를 받아 다시 읽는다 (C1 W2 리뷰 W2R-10, C2 계획 4.3 (23))
   const reopenAtMount = useRef(reopenDiagramJob);
   const mountedRef = useRef(true);
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
@@ -134,13 +139,17 @@ export function EditorScreen({
     const jobId = reopenAtMount.current;
     if (!jobId) return;
     reopenAtMount.current = null;
-    onReopenConsumed?.();
-    const refuse = () => { if (mountedRef.current) setReopenNotice(REOPEN_FAILED); };
+    const refuse = () => {
+      if (!mountedRef.current) return;
+      onReopenConsumed?.();
+      setReopenNotice(REOPEN_FAILED);
+    };
     if (readOnlyRef.current || conflictNow.current) { refuse(); return; }
     api.getJob(project.name, jobId).then((job) => {
       if (!mountedRef.current) return;
       const opened = reopenDiagram(job, current.current.deck);
       if (!opened || readOnlyRef.current || conflictNow.current) { refuse(); return; }
+      onReopenConsumed?.();
       setReopenNotice("");
       setReopened(opened.candidate);
       setDiagramDraft(opened.draft);
@@ -296,7 +305,7 @@ export function EditorScreen({
     if (first) {
       const box = displayBoxes(slide, { [key]: { dx_pt: c.dx, dy_pt: c.dy } }, pageW, pageH).get(first.name);
       // 이동 결과는 배율과 상관없이 알린다 (재리뷰 RR12)
-      if (box) setStatus(`${roleName(key, template)}: 가로 ${Math.round(box.x)}pt, 세로 ${Math.round(box.y)}pt`);
+      if (box) setMovePosition(`${roleName(key, template)}: 가로 ${Math.round(box.x)}pt, 세로 ${Math.round(box.y)}pt`);
     }
   };
   const hideElement = (key: string) => {
@@ -397,6 +406,8 @@ export function EditorScreen({
           </p>
         )}
         <p role="status" className="sr-status">{status}</p>
+        {/* 비어 있어도 줄바꿈 없는 공백으로 한 줄 자리를 잡아 첫 이동이 미리보기를 밀지 않는다 */}
+        {mode && <p role="status" className="move-status">{movePosition || "\u00A0"}</p>}
         {slide && editor.plan ? (
           // 2026-08-29 태스크 11 리뷰 이월: 장 전환 시 편집창 잔존 방지 리마운트
           // 낡은 계획(덱이 바뀐 뒤 새 계획이 오기 전)으로는 편집을 열지 않는다 (2026-09-03 FC-05)

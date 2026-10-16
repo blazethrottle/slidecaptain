@@ -238,6 +238,16 @@ it.each([
   expect(screen.queryByRole("button", { name: "도식 작성 창에서 열기" })).not.toBeInTheDocument();
 });
 
+// 도식의 chapter_changed는 교체할 도식 장의 정의, 슬라이드, 구성 계획 연결이 바뀐 경우다. 장 후보용 문구("주제나 결론")로
+// 부르지 않는다 (C1 W2 리뷰 W2R-09, C2 계획 4.3 (23), 리뷰 PR-20)
+it("교체 대상이 바뀐 도식 후보는 도식에 맞는 이유를 보인다", async () => {
+  await openRecovery(newServer({ job: diagramJob({ target: "synthetic-flow", stale_reasons: ["chapter_changed"],
+    base_etag: '"aaaaaaaa"', current_etag: '"bbbbbbbb"',
+    params: { ...PARAMS, mode: "replace", chapter_id: "synthetic-flow" } }) }));
+  expect(await screen.findByText(/교체할 도식 장의 제목, 역할, 연결한 주장이나 도식 내용이 바뀌었습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/이 장의 주제나 결론이 바뀌었습니다/)).not.toBeInTheDocument();
+});
+
 it("다른 곳만 바뀐 후보(알림)는 열 수 있다", async () => {
   await openRecovery(newServer({ job: diagramJob({ stale_reasons: ["deck_changed_elsewhere"] }) }));
   expect(await screen.findByRole("button", { name: "도식 작성 창에서 열기" })).toBeInTheDocument();

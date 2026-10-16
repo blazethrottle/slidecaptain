@@ -147,8 +147,15 @@ export const STALE_REASON_LABELS = {
   not_applicable: "이전 버전에서 만든 결과라 반영 여부를 판정할 수 없습니다",  // 적용 라우트의 409 (D3c-5)
 } as const satisfies Record<ServerStaleReason | "slots_changed" | "candidate_stale" | "not_applicable", string>;
 
-export function reasonText(reasons: string[]): string {
-  const labels: Record<string, string> = STALE_REASON_LABELS;
+// 도식 후보에서 뜻이 다른 사유. 도식의 chapter_changed는 교체할 도식 장의 정의, 슬라이드, 구성 계획 연결(역할, 주장)이
+// 바뀐 경우다(pipeline/relevance.py). 장 후보의 "주제나 결론"으로 부르지 않는다 (C1 W2 리뷰 W2R-09, C2 계획 4.3 (23))
+const DIAGRAM_REASON_LABELS: Record<string, string> = {
+  chapter_changed: "교체할 도식 장의 제목, 역할, 연결한 주장이나 도식 내용이 바뀌었습니다",
+};
+
+export function reasonText(reasons: string[], kind?: string): string {
+  const labels: Record<string, string> = kind === "diagram" ? { ...STALE_REASON_LABELS, ...DIAGRAM_REASON_LABELS }
+    : STALE_REASON_LABELS;
   return reasons.map((r) => labels[r] ?? r).join(", ");
 }
 
