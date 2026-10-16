@@ -65,7 +65,8 @@ from slidecaptain.pipeline.connections import AIConnections, AISelection, AISett
 from slidecaptain.pipeline.provider import AIProvider, ProviderError
 from slidecaptain.pipeline.quality import QualityExportBlocked, assess_quality
 from slidecaptain.pipeline.relevance import (
-    batch_parts, batch_relevance, chapter_relevance, structure_parts, structure_relevance,
+    batch_parts, batch_relevance, chapter_relevance, diagram_parts, diagram_reasons, diagram_relevance, structure_parts,
+    structure_relevance,
 )
 from slidecaptain.pipeline.draft_summary import DraftSummary, summarize_draft
 from slidecaptain.pipeline.candidate_apply import (
@@ -693,6 +694,7 @@ def create_app(
         """작업 행을 응답으로 바꾼다. 프로젝트마다 덱과 자료를 한 번만 읽고(D2b-2 리뷰 R9, D2b-3 리뷰 R12),
         실행 중 판정과 같은 이유 이름을 쓴다(D2b-3 리뷰 R4)."""
         basis: dict[str, tuple] = {}
+        story_current: dict[str, bool | None] = {}  # 프로젝트마다 구성 계획이 지금 입력과 맞는가 (도식 held 후보에만 읽는다)
         views = []
         for row in rows:
             if row.project not in basis:
@@ -707,6 +709,23 @@ def create_app(
                 elif row.kind == "structure":
                     reasons = _structure_reasons(row.relevance_hash, row.base_etag, row.sources_fingerprint,
                                                  basis[row.project])
+                elif (row.kind == "diagram" and row.candidate_status == "held" and deck is not None
+                      and diagram_parts(row.relevance_hash) is not None):
+                    # 도식은 관련 입력 해시로 가른다(C1 계획 W2-a): 프롬프트 입력이나 교체 대상이 바뀌었으면 막고, 다른 곳만
+                    # 바뀌었으면 알림만 한다. 생성 도중 덱이 바뀐 후보(stale)는 덱 전체 비교 그대로다. 작성 창이 생성 직후
+                    # 이 사유로 412를 내기 때문이다(staleError). 해시가 없는 옛 행과 덱을 읽지 못한 경우도 그대로다
+                    reasons = diagram_reasons(deck, row.params if isinstance(row.params, dict) else {}, row.relevance_hash)
+                    reasons += ["unknown_sources"] if revision is None else (
+                        ["sources_changed"] if revision != row.sources_fingerprint else [])
+                    # 다른 장의 제목처럼 해시에 들지 않는 값도 구성 계획 지문을 낡게 한다. 그러면 작성 창의 확인이 409로 막히므로
+                    # 열기 전에 막는다(C1 W2 리뷰 W2R-06). 자료가 바뀐 경우는 sources_changed가 이미 막는다
+                    if not reasons:
+                        if row.project not in story_current:
+                            story_current[row.project] = _story_current(row.project, deck)
+                        if story_current[row.project] is False:
+                            reasons.append("story_plan_changed")
+                    if not reasons and current_etag != row.base_etag:
+                        reasons.append("deck_changed_elsewhere")
                 else:
                     reasons = ["unknown_deck"] if current_etag is None else (
                         ["deck_changed"] if current_etag != row.base_etag else [])
@@ -1692,6 +1711,8 @@ def create_app(
             except ValueError as exc:
                 _rewrite_invalid(exc)
             revision = sources_fingerprint(sources)
+            # 조회 때 낡음을 가를 관련 입력 (C1 계획 W2-a). 생성 종료 판정(_base_judge)은 지금처럼 덱 전체 비교다
+            relevance = diagram_relevance(deck, req.model_dump(mode="json"))
         _require_current_selection(selection_id)
         provider_id, model = _fixed_selection()
 
@@ -1700,7 +1721,7 @@ def create_app(
             return _with_basis(result, etag, revision)
 
         return JobSpec(kind="diagram", project=name, request_id=request_id, params=req.model_dump(mode="json"),
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance),
                        run=run, recheck=_stale_recheck("diagram", name, etag, revision),
                        judge=_base_judge(name, etag, revision), target=req.chapter_id)
 
@@ -2093,6 +2114,18 @@ def create_app(
             ledger.record_reset(name, changed)
         except LedgerError:
             _LOG.exception("장 후보 기준 무효화를 기록하지 못했습니다: %s", name)
+
+    def _story_current(name: str, deck: Deck) -> bool | None:
+        """구성 계획이 지금 덱과 자료로 계산한 지문과 같은가. 자료를 읽지 못하면 None(판정하지 않는다)."""
+        try:
+            sources = _load_sources(name, allow_empty=True)
+        except (HTTPException, StorageError, OSError, ValueError):
+            return None
+        try:
+            require_current_story(deck, sources)
+        except StaleStoryPlan:
+            return False
+        return True
 
     def _project_job(name: str, job_id: str) -> JobRow:
         row = runner.require_ledger().get_job(job_id)

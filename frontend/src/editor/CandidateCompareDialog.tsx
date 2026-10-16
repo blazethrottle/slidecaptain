@@ -40,7 +40,7 @@ function groupStop(all: HTMLElement[], name: string): HTMLElement {
 }
 
 export function CandidateCompareDialog({ projectName, jobId, chapterId, title, candidateSlots, onApply, onRegenerate,
-  regenerateHint, onStaleBase, onClose, returnFocus, fallbackFocus }: {
+  regenerateHint, onStaleBase, onUnavailable, onClose, returnFocus, fallbackFocus }: {
   projectName: string;
   jobId: string;
   chapterId?: string;  // 묶음 행이면 그 장. 단독 행은 비운다
@@ -52,6 +52,9 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
   onRegenerate?: () => void;  // 막힌 판정의 "현재 입력으로 다시 생성". 이 화면을 닫은 뒤 부른다(동의 창이 앱 화면 안에 뜬다)
   regenerateHint?: string;  // 다시 생성을 이 화면에서 열 수 없을 때 갈 길(리뷰 G9)
   onStaleBase: () => void;  // 이 탭이 모르는 저장본이 서버에 있다. 부르는 화면의 충돌 경로로 보낸다
+  // 미리 보기가 409로 이 후보를 비교할 수 없다고 답했다(다른 곳의 처분, 판정할 수 없는 행). 주면 비교 화면 안의 오류 대신
+  // 부르는 화면이 목록을 다시 읽고 안내한다(C1 계획 4.2, 리뷰 PR-06). 주지 않으면 지금처럼 오류 문장을 보인다
+  onUnavailable?: (error: ApiError) => void;
   onClose: () => void;
   returnFocus?: RefObject<HTMLElement | null>;
   fallbackFocus?: RefObject<HTMLElement | null>;  // 연 버튼이 사라졌을 때(반영 성공) 초점을 받을 곳
@@ -68,6 +71,8 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
   busy.current = applying;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onUnavailableRef = useRef(onUnavailable);
+  onUnavailableRef.current = onUnavailable;
 
   const load = async (units: string[] | null, edits: Record<string, EditChoice>) => {
     const mine = ++seq.current;
@@ -84,7 +89,9 @@ export function CandidateCompareDialog({ projectName, jobId, chapterId, title, c
       setPreview(next);
       setKeep(next.keep_current);
     } catch (e) {
-      if (mine === seq.current) setError(e instanceof ApiError ? e.message : "비교 내용을 불러오지 못했습니다. 다시 열어 주세요.");
+      if (mine !== seq.current) return;
+      if (e instanceof ApiError && e.status === 409 && onUnavailableRef.current) { onUnavailableRef.current(e); return; }
+      setError(e instanceof ApiError ? e.message : "비교 내용을 불러오지 못했습니다. 다시 열어 주세요.");
     } finally {
       if (mine === seq.current) setLoading(false);
     }

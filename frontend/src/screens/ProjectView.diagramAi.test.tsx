@@ -11,7 +11,8 @@ import { ProjectView } from "./ProjectView";
 vi.mock("./AISettingsPanel", () => ({ AISettingsPanel: ({ disabled }: { disabled: boolean }) => <button disabled={disabled}>모델 변경 검사</button> }));
 vi.mock("./NumericReviewPanel", () => ({ NumericReviewPanel: () => null }));
 
-beforeEach(() => { revokeConsent(); resetEtags(); });
+let jobExtra: Record<string, unknown> = {};  // 작업 조회 응답에 더할 칸(생성이 끝난 뒤의 조회 사유 등)
+beforeEach(() => { revokeConsent(); resetEtags(); jobExtra = {}; });
 afterEach(() => { vi.unstubAllGlobals(); });
 async function open() {
   const pending = deferred<Response>();
@@ -30,7 +31,7 @@ async function open() {
       jobView("diagram", { state: "running", candidate_status: "none" })), { status: 202 });
     if (url.endsWith("/jobs")) return new Response("[]");
     if (url.endsWith("/jobs/job-1")) return pending.promise.then(async (r) => new Response(JSON.stringify(
-      jobView("diagram", { result: await r.json() }))));
+      jobView("diagram", { result: await r.json(), ...jobExtra }))));
     if (url.endsWith("/jobs/job-1/candidate")) return new Response(JSON.stringify(jobView("diagram")));
     throw new Error(`unexpected ${url}`);
   });
@@ -102,4 +103,47 @@ it("도식 창을 닫아도 이미 보낸 요청이 끝날 때까지 모델 변�
   expect(screen.getByRole("button", { name: "모델 변경 검사" })).toBeEnabled();
   expect(screen.getByRole("button", { name: "도식 추가" })).toBeEnabled();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+
+// C1 W2 리뷰 W2R-01: 생성이 held로 끝난 직후 다른 곳이 덱을 바꾸면 조회 사유가 도식 해시의 사유(story_plan_changed 등)일 수 있다.
+// 작성 창은 W2 이전처럼 덱 변경으로 보고 412로 멈추고 후보를 버린다
+it.each(["story_plan_changed", "chapter_changed", "deck_changed_elsewhere"])(
+  "생성 직후 조회 사유가 %s이면 후보를 보이지 않고 충돌로 멈춘다", async (reason) => {
+  jobExtra = { stale_reasons: [reason] };
+  const { pending, fetch } = await open();
+  await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
+  const deck = fixture.deck as Deck;
+  const slide = deck.slides.find(s => s.slots.template === "diagram")!;
+  await act(async () => pending.resolve(new Response(JSON.stringify({ status: "ok",
+    diagram: slide.slots.template === "diagram" ? slide.slots.diagram : null,
+    raw_text: "", unverified_numbers: [], format_retried: false, usage: emptyUsage(), base_etag: '"base"', sources_fingerprint: "sources" }))));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs/job-1/candidate")
+    && JSON.parse(String(init?.body)).action === "dismissed")).toBe(true));
+  expect(screen.queryByRole("region", { name: "AI 도식 후보 검토" })).not.toBeInTheDocument();
+});
+
+// C1 묶음 리뷰 BR-03: 작성 창을 닫은 뒤 생성이 끝나면 해시 사유의 412 매핑을 하지 않는다. 다른 곳만 바뀐 후보는 복구 화면에서
+// 다시 열 수 있게 남기고, 생성 도중 기준이 바뀐 후보(deck_changed)는 지금처럼 버린다(계획 사실 7)
+it.each([
+  [["deck_changed_elsewhere"], false],
+  [["story_plan_changed"], false],
+  [["deck_changed"], true],
+])("창을 닫은 뒤 생성이 끝나고 조회 사유가 %j이면 버림 처분은 %s", async (reasons, dismissed) => {
+  jobExtra = { stale_reasons: reasons };
+  const { pending, fetch } = await open();
+  await userEvent.click(await screen.findByRole("button", { name: "전송에 동의하고 계속" }));
+  await waitFor(() => expect(fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs") && init?.method === "POST")).toBe(true));
+  await userEvent.click(screen.getByRole("button", { name: "변경 버리고 닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const deck = fixture.deck as Deck;
+  const slide = deck.slides.find(s => s.slots.template === "diagram")!;
+  await act(async () => pending.resolve(new Response(JSON.stringify({ status: "ok",
+    diagram: slide.slots.template === "diagram" ? slide.slots.diagram : null,
+    raw_text: "", unverified_numbers: [], format_retried: false, usage: emptyUsage(), base_etag: '"base"', sources_fingerprint: "sources" }))));
+  await waitFor(() => expect(screen.getByRole("button", { name: "도식 추가" })).toBeEnabled());  // 따라가기가 끝났다
+  const settled = fetch.mock.calls.some(([url, init]) => String(url).endsWith("/jobs/job-1/candidate")
+    && JSON.parse(String(init?.body)).action === "dismissed");
+  expect(settled).toBe(dismissed);
 });

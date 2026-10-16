@@ -30,7 +30,7 @@
 2. **D3 마무리 묶음의 범위**: 로드맵 최종 리뷰 이월표 (1), (2), (3), (7)~(13)이 "D3 마무리 묶음" 담당이다. C1 계획서와 함께 묶을지 사용자가 정한다.
 3. **A5 확인**: D3c α 랩업에서 세션이 사용자 대신 정한 "배지를 근거에서 빼기"는 아직 사용자 확인이 없다(되돌릴 수 있다).
 4. **정리 항목**(묻기 전에 지우지 않는다): 앞 핸드오프 3절의 목록에 더해 `~/Projects/slidecaptain-work/final-review-20261014/wt-storage`, `wt-server`, `wt-screen`(분리 HEAD `24beda2`), `wt-premerge`(`149aadd`), `exp-storage/`, `exp-server/`, `exp-screen/`, `exp-premerge/`. 머지가 끝난 `feat/windows-feedback-revision` 브랜치의 삭제 여부도 사용자가 정한다(삭제는 되돌릴 수 없는 조치).
-5. **회사 PC 확인 항목**: 실제 PowerPoint 표시, 한글 입력기, Windows 150% 배율, Windows 잠금과 자식 생존, 동기화 폴더의 원장 쓰기 시간. 회사 PC 클론은 `git pull`로 main을 받는다.
+5. **회사 PC 확인 항목**: 실제 PowerPoint 표시, 한글 입력기, Windows 150% 배율, Windows 잠금과 자식 생존, 동기화 폴더의 원장 쓰기 시간. 회사 PC 클론은 `git pull`로 main을 받는다. (2026-10-16 정정: C1 브랜치 `feat/d3-wrapup-c1`가 main에 아직 없으므로 브랜치는 [회사 PC 재개 인계](2026-10-16-windows-resume.md) 2절의 판별로 고른다.)
 
 ## 4. 이 세션에서 더한 운용 사실
 

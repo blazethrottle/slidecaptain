@@ -85,3 +85,77 @@ def batch_parts(value: str | None) -> dict[str, str] | None:
     if not isinstance(parsed, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()):
         return None
     return parsed
+
+
+DIAGRAM_MARKER = "d1:"
+
+
+def _diagram_parts(deck: Deck, params: dict) -> tuple[str | None, str | None]:
+    """도식 작업의 관련 입력 두 조각 (C1 계획 W2-a, 2026-10-16): (프롬프트 입력, 교체 대상).
+
+    프롬프트 입력은 `pipeline/diagram_generation.py`의 `diagram_prompt`가 덱에서 읽어 AI에 보내는 값이다: 메타의 제목, 피보고자,
+    보고 유형과 보고 목적 값(`_prompt_meta`), 구성 계획 요약(brief), 선택 주장, 그 주장들과 교체 대상 도식이 가리키는 근거 항목.
+    등록 본문(제목, 역할, 주장 ID, 지시문)은 작업 params에 이미 있으므로 넣지 않는다. 구성 계획이 없거나 선택 주장이 사라졌으면
+    None이다. 교체 대상은 mode가 replace일 때 대상 장의 정의, 슬라이드, 구성 계획의 연결이다. 대상이 없거나 도식 장이 아니면
+    None이다. 새 도식이면 빈 문자열이다(새 도식은 대상이 없다)."""
+    plan = deck.structure.story_plan
+    replace = params.get("mode") == "replace"
+    chapter_id = params.get("chapter_id")
+    target: str | None = ""
+    existing_slide = None
+    if replace:
+        chapter = next((c for c in deck.structure.chapters if c.id == chapter_id), None)
+        slide = next((s for s in deck.slides if s.chapter_id == chapter_id), None)
+        link = next((c for c in plan.chapters if c.chapter_id == chapter_id), None) if plan else None
+        if chapter is None or chapter.template != "diagram" or slide is None or slide.slots.template != "diagram":
+            target = None
+        else:
+            existing_slide = slide
+            target = _digest({"chapter": chapter.model_dump(mode="json"), "slide": slide.model_dump(mode="json"),
+                              "link": link.model_dump(mode="json") if link else None})
+    if plan is None:
+        return None, target
+    selected = list(dict.fromkeys(params.get("claim_ids") or []))
+    claims = [c for c in plan.claims if c.id in set(selected)]
+    if len(claims) != len(selected):
+        return None, target
+    evidence_ids = {eid for claim in claims for eid in claim.evidence_ids}
+    if existing_slide is not None:
+        diagram = existing_slide.slots.diagram
+        evidence_ids.update(eid for item in [*diagram.nodes, *diagram.edges] for eid in item.evidence_ids)
+    prompt = _digest({"meta": _prompt_meta(deck), "brief": plan.brief.model_dump(mode="json"),
+                      "claims": [c.model_dump(mode="json") for c in claims],
+                      "evidence": [e.model_dump(mode="json") for e in plan.evidence if e.id in evidence_ids]})
+    return prompt, target
+
+
+def diagram_relevance(deck: Deck, params: dict) -> str:
+    """도식 작업 행의 관련 입력: "d1:<프롬프트 입력>|<교체 대상>". 등록 때 남기고 조회 때 지금 덱으로 다시 계산해 비교한다.
+    생성 종료 때의 판정은 이 값을 쓰지 않는다(덱 전체 비교 그대로, 작성 창의 412와 묶여 있다)."""
+    prompt, target = _diagram_parts(deck, params)
+    return f"{DIAGRAM_MARKER}{prompt or ''}|{target or ''}"
+
+
+def diagram_parts(value: str | None) -> tuple[str, str] | None:
+    """이 빌드가 아는 도식 해시면 (프롬프트 입력, 교체 대상). 표지가 없는 옛 행이나 모르는 값은 None(덱 ETag로 판정한다)."""
+    if not value or not value.startswith(DIAGRAM_MARKER):
+        return None
+    parts = value[len(DIAGRAM_MARKER):].split("|")
+    return (parts[0], parts[1]) if len(parts) == 2 else None
+
+
+def diagram_reasons(deck: Deck, params: dict, relevance: str) -> list[str]:
+    """조회 때 도식 후보의 입력 낡음 사유. 자료와 덱 ETag 비교는 부르는 쪽이 더한다."""
+    fixed = diagram_parts(relevance)
+    if fixed is None:
+        return []
+    prompt, target = _diagram_parts(deck, params)
+    reasons = []
+    if params.get("mode") == "replace":
+        if target is None:
+            reasons.append("chapter_missing")
+        elif target != fixed[1]:
+            reasons.append("chapter_changed")
+    if prompt is None or prompt != fixed[0]:
+        reasons.append("story_plan_changed")
+    return reasons

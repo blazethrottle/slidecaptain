@@ -17,6 +17,9 @@ from slidecaptain.pipeline.relevance import BATCH_MARKER, batch_parts
 from slidecaptain.pipeline.story import StaleStoryPlan
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import StorageError
+from test_diagram_generation import REQUEST as DIAGRAM_REQUEST
+from test_diagram_generation import StubProvider as DiagramProvider
+from test_diagram_generation import diagram_input  # noqa: F401 (픽스처)
 from tests.test_jobs_batch import HEADERS, ChapterProvider, _project, slots
 from tests.test_jobs_batch import _register as _register_batch
 from tests.test_jobs_batch import _wait as _wait_batch
@@ -660,3 +663,51 @@ def test_a_chapter_back_from_another_template_has_no_baseline_from_before_the_sw
         response = _apply(client, store, c["id"])
     assert preview["edited_units"] is None and preview["keep_current"] == [] and not preview["already_applied"]
     assert response.status_code == 200 and _slide(store).slots.conclusion == "C 결론"
+
+
+# C1 계획(2026-10-15) W1-a: 새 묶음이 생긴 뒤에도 이전 묶음의 낡은 장 후보를 적용 라우트로 반영한다. 화면(복구 화면)이 기대는
+# 서버 계약이다. 묶음 등록은 빈 장만 받으므로 c2의 내용은 첫 묶음이 끝난 뒤 쓰고, 둘째 묶음은 c2를 넣지 않는다
+def test_older_batch_candidate_on_a_filled_chapter_applies_after_a_newer_batch(store):
+    _project(store)
+    provider = ChapterProvider([slots("하나"), slots("둘"), slots("셋")], gate_at=1)
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        older = _register_batch(client, store, ["c1", "c2"]).json()
+        assert provider.entered.wait(10)
+        current = store.load_deck("p1")
+        current.meta.presenter = "다른 창의 편집"  # 사슬만 끊고 후보의 관련 입력은 바꾸지 않는다
+        store.save_deck("p1", current, snapshot=False)
+        provider.release.set()
+        older_view = _wait_batch(client, older["id"])
+        _save_slide(store, {"chapter_id": "c2", "slots": slots("사용자가 쓴 내용")})
+        newer = _register_batch(client, store, ["c3"], request_id="batch-0002").json()
+        newer_before = _wait_batch(client, newer["id"])
+        listed = [j["id"] for j in client.get("/api/projects/p1/jobs").json()]
+        preview = _preview(client, older["id"], {"chapter_id": "c2"})
+        response = _apply(client, store, older["id"], {"chapter_id": "c2"})
+        older_after = client.get(f"/api/projects/p1/jobs/{older['id']}").json()
+        newer_after = client.get(f"/api/projects/p1/jobs/{newer['id']}").json()
+    assert older_view["chapters"][1]["candidate_status"] == "stale"
+    assert older["id"] in listed and newer["id"] in listed  # 복구 화면 목록에 이전 묶음이 남는다
+    assert preview.status_code == 200 and preview.json()["blocked_reasons"] == []
+    assert preview.json()["current"]["slots"]["conclusion"] == "사용자가 쓴 내용"  # 내용이 있는 장과 비교한다
+    assert response.status_code == 200, response.text
+    assert _slide(store, "c2").slots.conclusion == "둘"
+    assert older_after["chapters"][1]["candidate_status"] == "applied"
+    assert newer_after["chapters"] == newer_before["chapters"]
+
+
+# C1 계획 W1-a 고정: 도식 작업의 등록 본문은 params로 남고 목록 응답에 그대로 실린다. 새 도식에도 mode가 "create"로 있다
+# (계획 리뷰 PR-05). 복구 화면이 작성 창의 시작값을 이 값으로 채운다
+def test_diagram_job_params_reach_the_job_list_with_the_create_mode(diagram_input, store):
+    _, _, payload = diagram_input
+    with TestClient(create_app(store, provider=DiagramProvider(payload)), headers=HEADERS) as client:
+        etag = f'"{store.deck_etag("diagram")}"'
+        job = client.post("/api/projects/diagram/jobs", json={"request_id": "diagram-0001", "kind": "diagram",
+                                                              "params": DIAGRAM_REQUEST}, headers={"If-Match": etag})
+        assert job.status_code == 202, job.text
+        assert client.app.state.job_runner._handles[job.json()["id"]].wait_sync(10) is not None
+        listed = next(j for j in client.get("/api/projects/diagram/jobs").json() if j["id"] == job.json()["id"])
+    assert listed["candidate_status"] == "held"
+    assert listed["params"]["mode"] == "create"
+    assert {k: listed["params"][k] for k in DIAGRAM_REQUEST} == DIAGRAM_REQUEST
+    assert listed["target"] == DIAGRAM_REQUEST["chapter_id"]
