@@ -98,7 +98,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   onBusyChange?: (busy: boolean) => void;
   pollIntervalMs?: number;
   // 복구 화면에서 다시 연 AI 후보 (C1 계획 W2-b). 여는 순간 처분을 바꾸지 않는다: 시작값은 edit을 거치지 않는다(edit은
-  // 보이던 후보를 버린다). 불러오기는 처분 응답을 기다리고, 다른 곳이 먼저 처리했으면(409) 불러오지 않는다
+  // 보이던 후보를 버린다). 불러오기는 처분하지 않고 그 후보가 아직 held인지만 확인한다(C2 계획 4.2)
   initialCandidate?: ReopenedDiagram;
 }) {
   const [base] = useState(deck);
@@ -118,12 +118,14 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
   const [replacement,setReplacement] = useState<{preview:DocumentChangePreview;basis:DocumentChangeBasis}|null>(null);
   const [lossChecks,setLossChecks] = useState<string[]>([]);
   const [applying,setApplying] = useState(false);
-  const [loadingCandidate, setLoadingCandidate] = useState(false);  // 다시 연 후보의 처분 응답을 기다리는 중
+  const [loadingCandidate, setLoadingCandidate] = useState(false);  // 다시 연 후보의 상태 확인 응답을 기다리는 중
   const generationLease = useRef<symbol | null>(null);
   const generationJob = useRef<string | null>(initialCandidate?.jobId ?? null);  // 지금 보이는 후보를 만든 작업 (처분)
-  // 다시 연 후보의 작업. 이 후보의 불러오기만 처분 응답을 기다린다. 창 안에서 새로 만든 후보는 지금처럼 기다리지 않는다
-  // (그 삼킴은 로드맵 이월표 (19))
+  // 다시 연 후보의 작업. 이 후보는 불러오기 전에 아직 held인지 확인한다
   const reopenedJob = useRef<string | null>(initialCandidate?.jobId ?? null);
+  // 작성 폼에 불러온 후보의 작업. 처분은 불러오기가 아니라 반영과 함께 한다(C2 계획 4.2): 새 도식은 반영하기 전에 처분 응답을
+  // 기다리고, 교체 도식은 저장 성공 뒤에 처분한다. 불러온 뒤 반영하지 않고 닫으면 후보는 복구 목록에 남는다
+  const loadedJob = useRef<string | null>(null);
   const [generationFollowError, setGenerationFollowError] = useState("");
   const [generationFailure, setGenerationFailure] = useState<unknown>(null);
   const live = useRef(true);
@@ -330,6 +332,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         confirmation_token:replacement.preview.confirmation_token,acknowledged_loss_ids:lossChecks},replacement.basis.base_etag);
       // 서버에 저장된 결과다. 조건과 관계없이 넘기고 받을지는 편집 화면이 판정한다: 여기서 버리면 응답 ETag만 캐시에 남아
       // 다음 자동 저장이 이 반영을 덮는다 (D3c-6 리뷰 G11, D3c-5 리뷰 F1과 같은 모양)
+      // 교체 도식은 저장 성공 뒤 처분한다. 처분이 실패해도 교체 대상 해시가 반영 뒤 다시 열기를 막는다(C2 계획 4.2)
+      const job=loadedJob.current;loadedJob.current=null;
+      if(job)void settle(projectName,job,"applied");
       onApply(saved,base,draft.id,true);
     } catch(error) {
       if(requestId===serial.current && live.current) {
@@ -344,6 +349,34 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
       if(generationLease.current===lease)generationLease.current=null;
       if(live.current)setApplying(false);reportBusy?.(false);
     }
+  };
+  // 새 도식 반영. 불러온 AI 후보가 있으면 반영하기 전에 처분 응답을 기다린다. 반영 뒤 처분이 실패하면 새 도식의 입력 해시가
+  // 반영으로 바뀌지 않아 같은 후보를 다시 열어 한 번 더 넣을 수 있다(C2 계획 4.2, 계획 리뷰 PR-01)
+  const applyNew = async (candidate: Deck) => {
+    const job = loadedJob.current;
+    if (job) {
+      const requestId = ++serial.current;
+      const lease = Symbol("diagram-settle"); generationLease.current = lease;
+      setApplying(true); setErrors([]);
+      try {
+        await api.settleCandidate(projectName, job, "applied");
+      } catch (error) {
+        if (requestId === serial.current && live.current) {
+          if (error instanceof ApiError && error.status === 409) {
+            loadedJob.current = null;
+            setErrors(["다른 곳에서 이미 처리한 후보입니다. 현재 입력으로 다시 생성할 수 있습니다."]);
+          } else setErrors([`AI 후보 처리를 기록하지 못해 반영하지 않았습니다. 다시 눌러 주세요. ${messageOf(error)}`]);
+        }
+        return;
+      } finally {
+        if (generationLease.current === lease) generationLease.current = null;
+        if (live.current) setApplying(false);
+      }
+      loadedJob.current = null;
+      // 처분을 기다리는 동안 덱이 바뀌었거나 창이 닫혔으면 넣지 않는다. 후보는 이미 처분했지만 폼의 입력은 남는다
+      if (!live.current || requestId !== serial.current || currentDeck.current !== base || currentBlocked.current) return;
+    }
+    onApply(candidate, base, draft.id);
   };
   const cancel = () => { if (applying) return; live.current = false; serial.current++; onCancel(); };
   const slide = checked?.plan.slides.find(s => s.chapter_id === draft.id);
@@ -436,33 +469,40 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
               </p>}
               {reopenedJob.current && generationJob.current === reopenedJob.current && (
                 <p className="notice" id="reopened-candidate-note">입력을 고치면 이 후보를 버립니다. 먼저 작성 폼에 불러온 뒤 고쳐 주세요.
-                  불러온 후보는 복구 목록에서 빠집니다.</p>)}
+                  불러온 뒤 반영하지 않고 닫으면 후보는 복구 목록에 남습니다.</p>)}
               <button ref={loadButton} disabled={generating || loadingCandidate}
                 aria-describedby={reopenedJob.current && generationJob.current === reopenedJob.current ? "reopened-candidate-note" : undefined}
                 onClick={async () => {
                 if (!generationResult.diagram || currentDeck.current !== base || currentBlocked.current || generationLease.current) return;
                 const job = generationJob.current;
                 if (job && job === reopenedJob.current) {
-                  // 다시 연 후보는 처분이 성공해야 불러온다. 다른 탭이 먼저 불러왔으면 같은 도식이 두 번 들어간다(계획 리뷰 PR-01)
+                  // 다시 연 후보는 아직 held인지 확인한다. 다른 탭이 먼저 반영했거나 버렸으면 불러오지 않는다(계획 리뷰 PR-01)
                   setLoadingCandidate(true);
+                  let held = false;
                   try {
-                    await api.settleCandidate(projectName, job, "applied");
+                    held = (await api.getJob(projectName, job)).candidate_status === "held";
                   } catch (error) {
                     if (!live.current) return;
                     generationJob.current = null; reopenedJob.current = null;
                     setGenerationResult(null);
-                    setGenerationNotice(error instanceof ApiError && error.status === 409
-                      ? "다른 곳에서 이미 처리한 후보입니다. 현재 입력으로 다시 생성할 수 있습니다."
-                      : `후보를 불러오지 못했습니다. ${messageOf(error)}`);
+                    setGenerationNotice(`후보를 불러오지 못했습니다. ${messageOf(error)}`);
                     return;
                   } finally {
                     if (live.current) setLoadingCandidate(false);
                   }
                   if (!live.current) return;
-                } else if (job) {
-                  // 작성 폼에 불러온 후보는 반영한 것으로 처분한다. 다시 열어도 같은 후보를 권하지 않는다
-                  void settle(projectName, job, "applied");
+                  if (!held) {
+                    generationJob.current = null; reopenedJob.current = null;
+                    setGenerationResult(null);
+                    setGenerationNotice("다른 곳에서 이미 처리한 후보입니다. 현재 입력으로 다시 생성할 수 있습니다.");
+                    return;
+                  }
+                  // 확인을 기다리는 동안 덱이 바뀌었거나 막혔으면 불러오지 않는다(계획 리뷰 PR-15 ②)
+                  if (currentDeck.current !== base || currentBlocked.current) return;
                 }
+                // 앞서 불러온 다른 후보는 쓰지 않으므로 버린다. 실패하면 복구 목록에 남을 뿐이다(계획 리뷰 PR-15 ①)
+                if (loadedJob.current && loadedJob.current !== job) void settle(projectName, loadedJob.current, "dismissed");
+                if (job) loadedJob.current = job;
                 generationJob.current = null; reopenedJob.current = null;
                 edit({ ...draft, nodes: structuredClone(generationResult.diagram.nodes), edges: structuredClone(generationResult.diagram.edges) });
                 if(!draft.isNew)setAiReplacement(true);
@@ -561,7 +601,7 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         <button disabled={!checked || stale || checking || generating || applying || unavailable ||
           (aiReplacement && (!replacement || lossChecks.length!==replacement.preview.losses.length))} onClick={() => {
           if(aiReplacement){void applyReplacement();return;}
-          if (checked && currentDeck.current === base && !currentBlocked.current && !generationLease.current) onApply(checked.candidate, base, draft.id);
+          if (checked && currentDeck.current === base && !currentBlocked.current && !generationLease.current) void applyNew(checked.candidate);
         }}>도식 적용</button>
         <button disabled={applying} onClick={cancel}>변경 버리고 닫기</button>
       </footer>

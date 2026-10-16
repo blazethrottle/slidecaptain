@@ -26,7 +26,7 @@ function diagramJob(over: Partial<JobView> = {}): JobView {
 }
 
 type Server = { job: JobView; settleStatus: number; settles: { action: string }[]; puts: { ifMatch: string | null; deck: Deck }[];
-  changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[] };
+  changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[]; reconcileStatus?: number };
 
 // 측정은 덱의 도식 장마다 고정 렌더 계획의 도식 슬라이드를 복사해 돌려준다(작성 창의 확인이 새 장의 도식을 찾는다)
 function planFor(body: Deck): RenderPlan {
@@ -65,7 +65,12 @@ function serve(server: Server) {
     if (url.endsWith("/snapshots") || url.endsWith("/drafts")) return new Response("[]");
     if (url === "/api/preset") return new Response(JSON.stringify(preset));
     if (url.endsWith("/render-plan")) return new Response(JSON.stringify(planFor(JSON.parse(init!.body as string))));
-    if (url.endsWith("/story-plan/diagram")) return new Response(JSON.stringify(JSON.parse(init!.body as string).deck));
+    if (url.endsWith("/story-plan/diagram")) {
+      if (server.reconcileStatus) {  // 다른 탭이 그사이 저장했다
+        return new Response(JSON.stringify({ detail: "다른 창이나 프로그램에서 먼저 저장되었습니다." }), { status: server.reconcileStatus });
+      }
+      return new Response(JSON.stringify(JSON.parse(init!.body as string).deck));
+    }
     if (url === "/api/status") return new Response(JSON.stringify({ provider: "chatgpt", model: "m", selection_id: "s",
       checked_at: "", login: { logged_in: true } }));
     if (url === "/api/jobs/active") return new Response(JSON.stringify({ active: null, ledger_available: true }));
@@ -120,16 +125,20 @@ it("복구 화면에서 도식 후보를 작성 창과 함께 열고, 여는 동
   expect(server.settles).toEqual([]);
 });
 
-it("다시 연 후보를 불러와 확인하고 적용하면 처분이 applied이고 다음 자동 저장이 그 도식을 기준 저장본에 저장한다", async () => {
+// C2 계획 4.2: 불러오기는 처분하지 않는다. 새 도식은 적용할 때 처분 응답을 먼저 기다리고, 처분이 성공해야 덱에 넣는다
+// (C2 계획 리뷰 PR-01: 반영 뒤 처분이 실패하면 같은 후보를 다시 열어 두 번 넣을 수 있다)
+it("다시 연 후보를 불러와 확인하고 적용하면 적용할 때 applied로 처분하고 다음 자동 저장이 그 도식을 기준 저장본에 저장한다", async () => {
   const server = newServer();
   const dialog = await reopen(server);
   await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
   expect(await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/)).toBeInTheDocument();
-  expect(server.settles).toEqual([{ action: "applied" }]);
+  expect(server.settles).toEqual([]);
   await userEvent.click(within(dialog).getByRole("button", { name: "입력과 배치 확인" }));
   const apply = within(dialog).getByRole("button", { name: "도식 적용" });
   await waitFor(() => expect(apply).toBeEnabled());
+  expect(server.settles).toEqual([]);
   await userEvent.click(apply);
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));
   await waitFor(() => expect(server.puts).toHaveLength(1), { timeout: 4000 });
   expect(server.puts[0].ifMatch?.replace(/"/g, "")).toBe("base");
   expect(server.puts[0].deck.structure.chapters.map((c) => c.id)).toContain("new-diagram");
@@ -138,13 +147,61 @@ it("다시 연 후보를 불러와 확인하고 적용하면 처분이 applied�
     .toEqual(diagram!.nodes.map((n) => n.content));
 });
 
-it("다른 곳이 먼저 처분했으면(409) 불러오지 않고 알린다", async () => {
-  const server = newServer({ settleStatus: 409 });
+it("불러오기 전에 다른 곳이 먼저 처분했으면 불러오지 않고 알린다", async () => {
+  const server = newServer();
   const dialog = await reopen(server);
+  server.job = { ...server.job, candidate_status: "dismissed" };  // 다른 탭이 버렸다
   await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
   expect(await within(dialog).findByText(/다른 곳에서 이미 처리한 후보입니다/)).toBeInTheDocument();
   expect(within(dialog).queryByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/)).not.toBeInTheDocument();
   expect(within(dialog).queryByRole("region", { name: "AI 도식 후보 검토" })).not.toBeInTheDocument();
+  expect(server.settles).toEqual([]);
+});
+
+async function loadAndCheck(dialog: HTMLElement) {
+  await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
+  await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/);
+  await userEvent.click(within(dialog).getByRole("button", { name: "입력과 배치 확인" }));
+  const apply = within(dialog).getByRole("button", { name: "도식 적용" });
+  await waitFor(() => expect(apply).toBeEnabled());
+  return apply;
+}
+
+it.each([
+  [409, /다른 곳에서 이미 처리한 후보입니다/],
+  [500, /AI 후보 처리를 기록하지 못해 반영하지 않았습니다/],
+])("적용할 때 처분이 %s이면 덱에 넣지 않고 알린다", async (status, message) => {
+  const server = newServer({ settleStatus: status });
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  await userEvent.click(apply);
+  expect(await within(dialog).findByText(message)).toBeInTheDocument();
+  await new Promise((r) => setTimeout(r, 1500));  // 자동 저장(1.2초)이 돌 시간
+  expect(server.puts).toEqual([]);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
+
+// C1 묶음 리뷰 BR-04: 불러온 뒤 다른 탭이 저장해 확인이 412로 막히면, 지금 코드는 후보를 이미 applied로 처분해 잃는다
+it("불러온 뒤 다른 탭의 저장으로 확인이 412이면 처분하지 않고 후보가 복구 목록에 남는다", async () => {
+  const server = newServer();
+  const dialog = await reopen(server);
+  await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
+  await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/);
+  server.reconcileStatus = 412;
+  await userEvent.click(within(dialog).getByRole("button", { name: "입력과 배치 확인" }));
+  expect(await within(dialog).findByText("다른 창이나 프로그램에서 먼저 저장되었습니다.")).toBeInTheDocument();
+  expect(server.settles).toEqual([]);
+  expect(server.job.candidate_status).toBe("held");
+});
+
+it("불러온 뒤 반영하지 않고 닫으면 처분하지 않는다", async () => {
+  const server = newServer();
+  const dialog = await reopen(server);
+  await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
+  await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/);
+  await userEvent.click(within(dialog).getByRole("button", { name: "변경 버리고 닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(server.settles).toEqual([]);
 });
 
 it("다시 연 창을 닫은 뒤 편집 화면이 다시 마운트되어도 작성 창이 다시 열리지 않는다", async () => {
@@ -213,6 +270,7 @@ it("다시 연 교체 후보는 요청 제목으로 시작하고 손실 확인 �
   expect(within(dialog).getByLabelText("도식 제목")).toHaveValue("요청 때의 새 제목");
   await userEvent.click(within(dialog).getByRole("button", { name: "작성 폼에 불러오기" }));
   await within(dialog).findByText(/AI 후보의 항목과 관계를 작성 폼에 불러왔습니다/);
+  expect(server.settles).toEqual([]);
   await userEvent.click(within(dialog).getByRole("button", { name: "입력과 배치 확인" }));
   const box = await within(dialog).findByRole("checkbox", { name: "이 변경을 확인했습니다" });
   const apply = within(dialog).getByRole("button", { name: "도식 적용" });
@@ -221,7 +279,7 @@ it("다시 연 교체 후보는 요청 제목으로 시작하고 손실 확인 �
   await waitFor(() => expect(apply).toBeEnabled());
   await userEvent.click(apply);
   await waitFor(() => expect(server.changes).toHaveLength(1));
-  expect(server.settles).toEqual([{ action: "applied" }]);
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));  // 교체 도식은 저장 성공 뒤 처분한다
   expect(server.changes[0].body.acknowledged_loss_ids).toEqual(["loss-1"]);
   const slide = server.changes[0].body.candidate.slides.find((s) => s.chapter_id === "synthetic-flow")!;
   expect(slide.slots.template === "diagram" && slide.slots.diagram.nodes[0].content).toBe("AI 교체 후보 항목");
