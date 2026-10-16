@@ -249,7 +249,7 @@ export function EditorScreen({
   // 보존한 변경 건수는 상단 머리가 센다 (C18). 새로 보존하면 다시 세 달라고 알린다
   const preservedId = editor.preservedDraft?.id;
   useEffect(() => { if (preservedId) onDraftsChanged?.(); }, [preservedId, onDraftsChanged]);
-  const saveKind = saveStatusKind(editor.saveState, editor.conflict);
+  const saveKind = saveStatusKind(editor.saveState, editor.conflict, editor.conflictCause);
   useEffect(() => { onSaveStatusChange?.({ kind: saveKind }); }, [saveKind, onSaveStatusChange]);
   // 되돌리기 중에는 버튼이 잠긴 영역 안에 있어 초점이 사라진다. 끝나면 결과 안내로 초점을 옮긴다
   // 두 결과 안내(보존 실패, 보존 성공)는 초점 대상을 따로 갖는다. 하나의 ref를 나눠 가지면 두 문단이 함께
@@ -384,7 +384,8 @@ export function EditorScreen({
             {editor.reloadIncomplete
               ? <>변경을 보존했습니다({formatSavedAt(editor.preservedDraft.saved_at)}). 서버 내용은 아직 읽지 못해
                   화면은 바뀌지 않았습니다. "서버 내용으로 되돌리기"를 다시 눌러 주세요.</>
-              : <>다른 곳에서 먼저 저장해 서버 내용으로 되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
+              : <>{editor.preservedCause === "unconfirmed" ? "반영 결과를 확인하지 못해" : "다른 곳에서 먼저 저장해"} 서버 내용으로
+                  되돌렸습니다. 되돌리기 전의 변경은 보존했습니다
                   ({formatSavedAt(editor.preservedDraft.saved_at)}).</>}
             {" "}스냅샷 복구 화면의 "충돌로 보존한 변경"에서 보거나 복원하거나 지울 수 있습니다.{" "}
             <Button variant="text" onClick={editor.dismissPreservedDraft}>닫기</Button>

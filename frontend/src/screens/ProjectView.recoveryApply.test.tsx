@@ -4,11 +4,12 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { revokeConsent } from "../api/aiGate";
-import { resetEtags, type Deck, type JobView, type Slots } from "../api/client";
+import { notifyProject, resetEtags, type Deck, type JobView, type Slots } from "../api/client";
 import { compareDialog, previewOf } from "../test/compare";
 import { defaultProgress, planWith, preset, project } from "../test/fixtures";
 import { batchView, chapterResult, chapterView, jobView } from "../test/jobs";
 import { ProjectView } from "./ProjectView";
+import { resetMaybeApplied } from "./RecoveryScreen";
 
 vi.mock("./AISettingsPanel", () => ({ AISettingsPanel: () => null }));
 vi.mock("./NumericReviewPanel", () => ({ NumericReviewPanel: () => null }));
@@ -122,7 +123,7 @@ async function applyFrom(row: HTMLElement) {
   await userEvent.click(apply);
 }
 
-beforeEach(() => { revokeConsent(); resetEtags(); });
+beforeEach(() => { revokeConsent(); resetEtags(); resetMaybeApplied(); });
 afterEach(() => { vi.unstubAllGlobals(); });
 
 // 회귀 RED: 지금 코드는 복구 화면에 반영 입구가 없다(C1). 같은 장(c2)의 단독 다시 생성 후보를 함께 두어, 반영 뒤 덱 상태가
@@ -328,4 +329,31 @@ it("해시 없는 옛 단독 행과 끝나지 않은 하위 장에는 반영 버
   const runningRow = candidateRow(/장 내용 생성 \(2장 원가 구조\)/);
   expect(within(runningRow).queryByRole("button", { name: "비교하고 반영" })).not.toBeInTheDocument();
   expect(within(runningRow).queryByText(/반영 여부를 판정할 수 없습니다/)).not.toBeInTheDocument();
+});
+
+
+// C1 W1 리뷰 W1R-06: 5xx 뒤 배너의 "서버 내용 다시 읽기"로 복구 화면이 다시 마운트되면 지금 코드는 행 표시를 잃는다
+it("5xx 뒤 서버 내용 다시 읽기로 복구 화면이 다시 마운트되어도 그 행의 확인하지 못함 표시가 남는다", async () => {
+  const server = newServer([olderBatch()], { applyStatus: 503,
+    applyBody: { detail: "덱을 저장하지 못했습니다.", code: "deck_write_failed" } });
+  await openRecovery(server);
+  const row = () => candidateRow(/장 내용 생성 \(2장 원가 구조\)/);
+  await applyFrom(await waitFor(row));
+  expect(await within(row()).findByText(/반영했는지 확인하지 못했습니다/)).toBeInTheDocument();
+  const reads = server.deckReads;
+  await userEvent.click(screen.getByRole("button", { name: "서버 내용 다시 읽기" }));
+  await waitFor(() => expect(server.deckReads).toBeGreaterThan(reads));
+  await screen.findByRole("heading", { name: "AI 결과 후보" });
+  expect(await within(await waitFor(row)).findByText(/반영했는지 확인하지 못했습니다/)).toBeInTheDocument();
+});
+
+// C1 W1 리뷰 W1R-11: 묶음 중 반영 409(batch_active) 안내는 묶음이 끝나면 지운다
+it("묶음 중이라 반영하지 못했다는 안내는 작업 종료 알림을 받으면 사라진다", async () => {
+  const server = newServer([olderBatch()], { applyStatus: 409, applyBody: {
+    detail: "장 생성 묶음이 진행 중이라 후보를 반영할 수 없습니다. 묶음이 끝난 뒤 다시 반영해 주세요.", code: "batch_active" } });
+  await openRecovery(server);
+  await applyFrom(await waitFor(() => candidateRow(/장 내용 생성 \(2장 원가 구조\)/)));
+  expect(await screen.findByText(/묶음이 진행 중이라 후보를 반영할 수 없습니다/)).toBeInTheDocument();
+  notifyProject({ kind: "job_ended", project: project.name }, { broadcast: false });
+  await waitFor(() => expect(screen.queryByText(/묶음이 진행 중이라 후보를 반영할 수 없습니다/)).toBeNull());
 });

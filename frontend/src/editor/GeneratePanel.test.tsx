@@ -169,17 +169,18 @@ it("이 탭이 모르는 저장본으로 계산한 비교는 보이지 않고 �
 });
 
 it.each([
-  ["deck_conflict", "다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."],
-  ["deck_write_failed", APPLY_UNCONFIRMED],
-  ["ledger_write_failed", APPLY_UNCONFIRMED],
-])("적용 오류 %s는 편집기의 충돌 경로로 보내 자동 저장을 멈추고 다시 읽게 한다 (계획 4.7의 4, 6)", async (name, message) => {
+  ["deck_conflict", ["다른 창이나 프로그램에서 먼저 저장되었습니다. 최신 덱을 다시 읽어 주세요."]],
+  // 5xx는 원인 unconfirmed를 함께 넘겨 머리가 "다른 곳에서 먼저 저장했습니다"를 보이지 않게 한다 (C2 계획 4.3 (11))
+  ["deck_write_failed", [APPLY_UNCONFIRMED, "unconfirmed"]],
+  ["ledger_write_failed", [APPLY_UNCONFIRMED, "unconfirmed"]],
+])("적용 오류 %s는 편집기의 충돌 경로로 보내 자동 저장을 멈추고 다시 읽게 한다 (계획 4.7의 4, 6)", async (name, args) => {
   answer(okResult);
   vi.mocked(api.applyCandidate).mockRejectedValue(applyError(name));
   const onConflict = vi.fn();
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   await applyThroughCompare();
-  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(message));
+  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(...args));
   expect(screen.queryByRole("alert")).toBeNull();  // 안내는 편집기의 충돌 배너 하나다
 });
 
@@ -190,7 +191,7 @@ it("처리하지 못한 서버 예외(500)도 반영 결과를 모르는 경우�
   render(<GeneratePanel project={project} deck={deck} chapterId="c1" {...H} onConflict={onConflict} />);
   await userEvent.click(screen.getByText("이 장 다시 생성"));
   await applyThroughCompare();
-  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(APPLY_UNCONFIRMED));
+  await waitFor(() => expect(onConflict).toHaveBeenCalledWith(APPLY_UNCONFIRMED, "unconfirmed"));
   expect(screen.queryByRole("alert")).toBeNull();
 });
 

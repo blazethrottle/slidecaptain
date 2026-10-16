@@ -34,7 +34,8 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
   // 덱을 저장본으로 받는다. base는 요청 직전의 화면 덱이다. 그사이 덱이 바뀌었으면 받는 쪽이 버린다(도식 경로와 같다)
   onFlush: () => Promise<boolean>;
   onApplied: (saved: Deck, base: Deck) => void;
-  onConflict: (message: string) => void;  // 412와 확인하지 못한 결과: 자동 저장을 멈추고 다시 읽기를 연다
+  // 412와 확인하지 못한 결과: 자동 저장을 멈추고 다시 읽기를 연다. 5xx는 원인 unconfirmed로 알린다(C2 계획 4.3 (11))
+  onConflict: (message: string, cause?: "unconfirmed") => void;
   onApplyBusyChange?: (busy: boolean) => void;  // 요청 중 편집 화면을 잠근다(템플릿 전환과 같다)
   // 이미 보인 실패와 기준 시각. 다시 열 때 이 장의 가장 최근 작업이 그 뒤에 실패했으면 한 번 보인다 (D3a-β 재리뷰 F3)
   seenJobFailures?: Set<string>;
@@ -214,7 +215,7 @@ export function GeneratePanel({ project, deck, chapterId, onFlush, onApplied, on
       setEarlier(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 412) onConflict(e.message);
-      else if (e instanceof ApiError && e.status >= 500) onConflict(APPLY_UNCONFIRMED);
+      else if (e instanceof ApiError && e.status >= 500) onConflict(APPLY_UNCONFIRMED, "unconfirmed");
       if (chapterIdRef.current !== requestedChapterId) return;
       if (e instanceof ApiError && (e.status === 412 || e.status >= 500)) return;
       if (e instanceof ApiError && e.status === 409 && e.code && (APPLY_BLOCKING.has(e.code) || e.code === "not_applicable")) {

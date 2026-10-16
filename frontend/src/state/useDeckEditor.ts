@@ -7,6 +7,8 @@ import { normalizeDeckEdits } from "../editor/directEdit";
 export type SaveState = "저장됨" | "저장 대기" | "저장 중" | "저장 실패";
 export type Timings = { measureMs: number; saveMs: number };
 
+/** 충돌의 원인 (C2 계획 4.3 (11)). other: 다른 곳의 저장(412, 묶음 종료). unconfirmed: 반영 요청의 5xx */
+export type ConflictCause = "other" | "unconfirmed";
 const DEFAULT_TIMINGS: Timings = { measureMs: 300, saveMs: 1200 };  // 결정 1, 2
 
 export type Coalesce = "start" | "continue";
@@ -38,6 +40,12 @@ export function useDeckEditor(
   const [conflict, setConflict] = useState(false);
   const conflictRef = useRef(conflict);
   conflictRef.current = conflict;
+  // 충돌의 원인. 저장을 멈추는 동작은 같고, 머리 표시와 되돌린 뒤 안내만 원인을 말한다. unconfirmed는 반영 요청의 5xx다:
+  // 다른 곳의 저장이 아니라 서버가 반영했는지 확인하지 못한 경우다 (최종 리뷰 SC-01, C2 계획 4.3 (11))
+  const [conflictCause, setConflictCause] = useState<ConflictCause>("other");
+  const conflictCauseRef = useRef<ConflictCause>("other");
+  // 되돌릴 때 미저장 변경을 보존한 충돌의 원인. 보존 안내의 문구가 쓴다
+  const [preservedCause, setPreservedCause] = useState<ConflictCause>("other");
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
   // 충돌 해소의 미저장본 보존 (D2a-2): 진행 중 표시, 보존 결과, 보존 실패 시 복사할 내용
@@ -66,9 +74,11 @@ export function useDeckEditor(
   const saveChain = useRef<Promise<boolean>>(Promise.resolve(true));
   const inFlight = useRef(0);
 
-  const reportConflict = useCallback((message: string) => {
+  const reportConflict = useCallback((message: string, cause: ConflictCause = "other") => {
     // 응답 직후 같은 microtask에서 이어지는 저장도 막는다. React 상태 반영을 기다리지 않는다.
     conflictRef.current = true;
+    conflictCauseRef.current = cause;
+    setConflictCause(cause);
     setConflict(true);
     setSaveError(message);
     setSaveState("저장 실패");
@@ -234,6 +244,7 @@ export function useDeckEditor(
           try {
             preserved = await api.saveDraft(projectName, { reason: "conflict", source: "editor", deck: unsaved });
             lastPreserved.current = { deck: unsaved, info: preserved };
+            setPreservedCause(conflictCauseRef.current);
           } catch (e) {
             // 지난 충돌의 보존 성공 안내를 지운다. 남기면 두 결과 안내가 함께 그려지고 초점이 지난 안내로 간다 (D2a 이월 13)
             setPreservedDraft(null);
@@ -265,6 +276,8 @@ export function useDeckEditor(
         if (!preserved) setPreservedDraft(null);  // 이번 되돌리기에서 보존한 것이 없으면 지난 안내를 지운다
         conflictRef.current = false;
         setConflict(false);
+        conflictCauseRef.current = "other";
+        setConflictCause("other");
         setSaveState("저장됨");
         onDeckChangeRef.current(serverDeck);
       } catch (e) {
@@ -283,7 +296,8 @@ export function useDeckEditor(
   const retrySave = flushSave;  // 저장 실패 뒤 재시도 버튼의 별칭
 
   return {
-    deck, plan, saveState, saveError, measureError, conflict, reloading, preservedDraft, preserveFailure, reloadIncomplete,
+    deck, plan, saveState, saveError, measureError, conflict, conflictCause, reloading, preservedDraft, preservedCause,
+    preserveFailure, reloadIncomplete,
     planStale: plan !== null && planDeck !== deck,  // 계획이 현재 덱 기준이 아니다: 편집을 열면 안 된다
     planDeck,  // 계획을 만든 덱. 낡은 계획에서 끌기를 허용할지 정한다 (D3c-3, 재리뷰 RR15)
     canUndo: state.past.length > 0,

@@ -72,10 +72,14 @@ it("적용 중에는 편집 화면을 잠그고, 응답 덱을 저장본으로 �
 it("적용 결과를 확인하지 못하면 충돌 안내로 자동 저장을 멈추고 서버 내용으로 되돌리기를 연다", async () => {
   const { ApiError } = await import("../api/client");
   vi.mocked(api.applyCandidate).mockRejectedValue(new ApiError(503, "작업 기록을 읽거나 쓰지 못했습니다.", "ledger_write_failed"));
-  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }} />);
+  const onSaveStatusChange = vi.fn();
+  render(<EditorScreen project={project} deck={deck} onDeckChange={() => {}} timings={{ measureMs: 0, saveMs: 0 }}
+    onSaveStatusChange={onSaveStatusChange} />);
   await applyThroughCompare();
   expect(await screen.findByText(/반영 결과를 확인하지 못했습니다\. 서버 내용을 다시 읽어 주세요\./)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "서버 내용으로 되돌리기" })).toBeInTheDocument();
+  // 머리는 "다른 곳에서 먼저 저장했습니다"가 아니라 반영 결과 확인이 필요하다고 말한다 (최종 리뷰 SC-01, C2 계획 4.3 (11))
+  await waitFor(() => expect(onSaveStatusChange).toHaveBeenLastCalledWith({ kind: "apply_unconfirmed" }));
 });
 
 it("요청 중 충돌이 생기면 응답 덱을 받지 않아 충돌 안내와 화면 덱이 그대로다 (도식 경로와 같은 규칙)", async () => {
