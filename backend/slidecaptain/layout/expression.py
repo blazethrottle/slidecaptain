@@ -99,7 +99,9 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         plot_x=max(value_width,metrics.face(False).width_pt(axis_text,font))+font*1.5
         plot_y=font*2
         plot_w=frame.w-plot_x-font
-        plot_h=height-font*4
+        # 축 아래에 범주 이름 자리로 글자 크기의 2.5배를 둔다. PowerPoint는 12pt 범주 이름을 축 아래 15.5~25.5pt에
+        # 그려, 종전의 2배(24pt)로는 글자 아랫부분이 차트 틀에서 잘렸다 (2026-10-16 회사 PC, build 20430 실측)
+        plot_h=height-font*4.5
         if label_width>plot_w/2-font:
             raise ValueError('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
     if plot_w<font*4 or plot_h<font*4:

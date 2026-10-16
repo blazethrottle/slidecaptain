@@ -199,6 +199,18 @@ def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,k
     assert _shown(axis,chart.axis_minimum)=='0'  # 미리보기는 0 눈금을 '0'으로 그린다
 
 
+def test_column_chart_leaves_room_below_the_axis_for_powerpoint_category_labels():
+    # 2026-10-16 회사 PC 실측(PowerPoint 16.0 build 20430, 12pt): 범주 이름 글자는 x축 아래 15.5~25.5pt에 그려진다.
+    # 축 아래 공간이 24pt(글자 크기의 2배)라 글자 아랫부분이 차트 틀에서 잘렸다. 종전 축 서식('0.###')에서는
+    # PowerPoint가 그림 영역을 계획보다 9pt 위로 줄여 그려 가려져 있었다(그 대신 미리보기와 어긋났다)
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='column')
+    frame=next(f for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
+    chart=frame.chart
+    assert frame.h-(chart.plot_y+chart.plot_h)>=25.5/12*chart.font_pt+2
+
+
 def test_column_chart_leaves_room_for_the_axis_maximum_the_preview_draws():
     # 리뷰 발견(2026-10-16): 1234와 1000의 축 최댓값 '1357.40'이 값 글자보다 넓어, 미리보기가 축 글자를
     # 프레임 왼쪽 밖(-4.7pt)에서 그리기 시작해 앞자리가 잘렸다. 미리보기는 축 최댓값을 plot_x-font/2에 끝 맞춤한다
