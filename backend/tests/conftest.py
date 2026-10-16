@@ -6,6 +6,7 @@
 모은다. 헤더 자체를 검증하는 보호 테스트는 이 기본 헤더가 없는 클라이언트를 별도로 만든다.
 """
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,34 @@ def isolated_font_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path / "isolated_home")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "isolated_home" / "AppData" / "Local"))
     monkeypatch.setattr(installer, "_system_font_dirs", lambda: [])
+    if sys.platform == "win32":
+        _isolate_windows_font_registration(monkeypatch)
+
+
+class _NoRegistryKey:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _isolate_windows_font_registration(monkeypatch) -> None:
+    """실제 Windows 계정에 남는 글꼴 설치의 부작용을 막는다 (2026-10-16 회사 PC 실측).
+
+    폴더만 임시로 돌리면 `install_fonts`의 Windows 분기가 실제 HKCU 글꼴 등록에 임시 경로를 쓰고,
+    세션 글꼴 표에 임시 파일을 올리고, 모든 창에 WM_FONTCHANGE를 보낸다. 백엔드 전체 시험 한 번 뒤
+    사용자 계정의 등록 2건이 pytest 임시 폴더를 가리킨 채 남았다. 설치기 논리를 검증하는 시험은
+    `sys.modules`의 `winreg`와 `ctypes`를 가짜 모듈로 통째 바꾸므로 여기서 바꾼 진짜 모듈의 함수를
+    부르지 않는다. 그래서 진짜 모듈의 쓰기 함수만 아무 일도 하지 않는 함수로 바꾼다(읽기는 그대로 둔다).
+    """
+    import ctypes
+    import winreg
+
+    monkeypatch.setattr(winreg, "CreateKeyEx", lambda *args, **kwargs: _NoRegistryKey())
+    monkeypatch.setattr(winreg, "SetValueEx", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ctypes.windll.gdi32, "AddFontResourceW", lambda path: 1)
+    monkeypatch.setattr(ctypes.windll.user32, "SendMessageTimeoutW", lambda *args: 1)
 
 
 def pytest_sessionfinish(session, exitstatus):
