@@ -104,6 +104,72 @@ def test_chart_values_are_source_bound_and_geometries_stay_in_frame(kind):
         assert 0<=point.y<=point.y+point.h<=frame.h
 
 
+@pytest.mark.parametrize('maximum,expected',[('1320.0','1320'),('13.2','13.20'),('1.1','1.10'),('1','1.0'),('5','5'),
+                                             ('1100000000000.0','1100000000000')])
+def test_axis_maximum_text_keeps_only_the_decimals_its_ticks_need(maximum,expected):
+    # 2026-10-16 회사 PC 실측: 축 최댓값 문자열 '1320.0'이 미리보기 축에 그대로 보였다. 눈금은 최댓값의 1/5
+    # 간격이므로 다섯 눈금을 모두 정확히 보일 자릿수만 남긴다(13.2의 눈금 2.64는 두 자리가 필요하다)
+    from decimal import Decimal
+    from slidecaptain.layout.expression import axis_maximum_text
+    assert axis_maximum_text(Decimal(maximum))==expected
+
+
+def _shown(format_code,value):
+    """PowerPoint가 이 서식 기호로 값을 보일 글자. 미리보기와 같게 쓸 수 있는 '0'과 '0.00' 꼴만 받는다."""
+    import re
+    match=re.fullmatch(r'0(?:\.(0+))?',format_code)
+    assert match, f'미리보기와 같은 글자를 보장하지 못하는 서식: {format_code}'
+    return f'{float(value):.{len(match.group(1) or "")}f}'
+
+
+def _chart_labels(path,count):
+    """점마다 실제로 적용될 라벨 설정. 점별(c:dLbl), 계열(c:ser/c:dLbls), 차트(c:barChart/c:dLbls) 순으로 앞선 값이 이긴다."""
+    ns={'c':'http://schemas.openxmlformats.org/drawingml/2006/chart',
+        'a':'http://schemas.openxmlformats.org/drawingml/2006/main'}
+    with zipfile.ZipFile(path) as package:
+        root=ElementTree.fromstring(package.read(next(n for n in package.namelist() if n.startswith('ppt/charts/chart'))))
+    plot=root.find('.//c:plotArea/c:barChart/c:dLbls',ns)
+    series=root.find('.//c:ser/c:dLbls',ns)
+    points={int(d.find('c:idx',ns).get('val')):d for d in (series.findall('c:dLbl',ns) if series is not None else [])}
+
+    def effective(index,path,attr):
+        for level in (points.get(index),series,plot):
+            node=level.find(path,ns) if level is not None else None
+            if node is not None:
+                return node.get(attr)
+        return None
+
+    labels=[{'format':effective(i,'c:numFmt','formatCode'),'show':effective(i,'c:showVal','val'),
+             'position':effective(i,'c:dLblPos','val'),'size':effective(i,'c:txPr/a:p/a:pPr/a:defRPr','sz')}
+            for i in range(count)]
+    axis=root.find('.//c:valAx/c:numFmt',ns).get('formatCode')
+    return labels,axis
+
+
+@pytest.mark.parametrize('kind',['bar','column'])
+@pytest.mark.parametrize('values',[('1200','1000'),('1200','1000.5')])
+def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,kind,values):
+    # 2026-10-16 회사 PC 실측(PowerPoint 16.0 build 20430): '0.##############' 서식 때문에 값과 눈금이 '1200.',
+    # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 '1200'을 그리고 배치도 그 글자 폭으로 계산한다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    plan=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
+    chart=next(f.chart for f in plan.slides[0].frames if f.chart)
+    for point,value in zip(chart.points,values):
+        point.value=value
+    output=tmp_path/'chart.pptx'
+    write_pptx(plan,output)
+    labels,axis=_chart_labels(output,len(chart.points))
+    for point,label in zip(chart.points,labels):
+        # 계열이나 점에 라벨 설정을 새로 만들면 값 표시, 위치, 글꼴이 차트 단위 설정을 덮으므로 함께 본다
+        assert label['show']=='1'
+        assert label['position']=='outEnd'
+        assert label['size']==str(int(chart.font_pt*100))
+        assert _shown(label['format'],point.value)==point.value
+    assert _shown(axis,chart.axis_maximum)==chart.axis_maximum
+
+
 @pytest.mark.parametrize('damage',['missing_sources','stale_source','incompatible','forged_comparison','value_token'])
 def test_chart_never_falls_back_to_original_table_for_unverifiable_values(damage):
     from slidecaptain.models.expression import ChartSpec

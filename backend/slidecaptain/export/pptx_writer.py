@@ -318,9 +318,26 @@ def _chart_font(font,chart,style):
         ea.set('typeface',style.korean_font)
 
 
+def _number_format(text):
+    """미리보기가 그리는 글자와 같은 소수 자릿수의 서식. 종전의 '0.##############'은 정수 뒤에 마침표를 남겼다
+    (2026-10-16 회사 PC 실측: PowerPoint가 1200과 눈금 1320을 '1200.', '1320.'으로 보였다)."""
+    places=len(text.partition('.')[2])
+    return '0.'+'0'*places if places else '0'
+
+
+def _style_value_labels(labels,spec,style,number_format):
+    labels.number_format=number_format
+    labels.number_format_is_linked=False
+    labels.position=XL_LABEL_POSITION.OUTSIDE_END
+    labels.show_value=True
+    _chart_font(labels.font,spec,style)
+
+
 def _add_chart_shape(slide,frame,style):
     spec=frame.chart
-    data=_LiteralCategoryChartData(number_format='0.##############')
+    formats=[_number_format(point.value) for point in spec.points]
+    label_format=max(formats,key=len)
+    data=_LiteralCategoryChartData(number_format=label_format)
     data.categories=[point.label for point in spec.points]
     data.add_series(f'{spec.definition} ({spec.unit})',[float(point.value) for point in spec.points])
     shape=slide.shapes.add_chart(XL_CHART_TYPE.BAR_CLUSTERED if spec.kind=='bar' else XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -333,19 +350,28 @@ def _add_chart_shape(slide,frame,style):
     plot=chart.plots[0]
     plot.gap_width=100
     plot.has_data_labels=True
-    plot.data_labels.position=XL_LABEL_POSITION.OUTSIDE_END
-    plot.data_labels.number_format='0.##############'
-    _chart_font(plot.data_labels.font,spec,style)
+    _style_value_labels(plot.data_labels,spec,style,label_format)
     chart.value_axis.minimum_scale=float(spec.axis_minimum)
     chart.value_axis.maximum_scale=float(spec.axis_maximum)
     chart.value_axis.major_unit=float(spec.axis_maximum)/5
-    chart.value_axis.tick_labels.number_format='0.##############'
+    chart.value_axis.tick_labels.number_format=_number_format(spec.axis_maximum)
     for axis in (chart.category_axis,chart.value_axis):
         _chart_font(axis.tick_labels.font,spec,style)
-    for index,point in enumerate(spec.points):
+    if any(code!=label_format for code in formats):
+        # 자릿수가 다른 값은 점별 라벨에 제 서식을 준다. 점별 라벨을 만들면 python-pptx가 계열 단위 라벨 묶음을 값 숨김
+        # (showVal 0)으로 새로 만들어 차트 단위 설정을 덮으므로, 계열 단위에도 같은 설정을 적는다
+        _style_value_labels(chart.series[0].data_labels,spec,style,label_format)
+    for index,(point,code) in enumerate(zip(spec.points,formats)):
         fill=chart.series[0].points[index].format.fill
         fill.solid()
         fill.fore_color.rgb=RGBColor.from_string(point.color)
+        if code!=label_format:
+            label=chart.series[0].points[index].data_label
+            label.position=XL_LABEL_POSITION.OUTSIDE_END
+            _chart_font(label.font,spec,style)
+            dlbl=label._get_or_add_dLbl()
+            dlbl.insert_element_before(dlbl.makeelement(qn('c:numFmt'),{'formatCode':code,'sourceLinked':'0'}),
+                                       'c:spPr','c:txPr','c:dLblPos','c:showLegendKey','c:showVal')
     if spec.kind=='bar':
         scaling=chart.category_axis._element.find(qn('c:scaling'))
         orientation=scaling.find(qn('c:orientation'))

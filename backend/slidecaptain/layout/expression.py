@@ -24,6 +24,14 @@ def _supported_text(text,preset,metrics):
             raise ValueError('차트나 강조 문장에 글자 폭이 확인되지 않은 문자가 있습니다.')
 
 
+def axis_maximum_text(maximum):
+    """축 최댓값의 표시 글자. 눈금은 최댓값의 1/5 간격이므로 다섯 눈금을 모두 정확히 보일 소수 자릿수만 남긴다.
+    미리보기는 이 글자를 그대로 그리고, PPTX의 축 서식은 이 글자의 자릿수를 따른다. 종전의 format(maximum,'f')는
+    '1320.0'을 남겨 미리보기 축에 그대로 보였다 (2026-10-16 회사 PC 실측)."""
+    places=max(max(-(maximum*k/5).normalize().as_tuple().exponent,0) for k in range(1,6))
+    return format(maximum,f'.{places}f')
+
+
 def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     from slidecaptain.pipeline.story import require_current_story,_require_current_evidence
     if sources is None:
@@ -105,7 +113,7 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         points.append(ChartPoint(evidence_id=item.id,label=label,value=text_values[index],
                                  color=preset.colors.accent1 if index==0 else preset.colors.accent2,x=x,y=y,w=w,h=h))
     chart=ChartPlan(kind=slide.chart.kind,comparison_id=comparison.id,claim_id=comparison.claim_id,
-                    definition=basis.definition,unit=unit,conditions=conditions,axis_minimum='0',axis_maximum=format(maximum,'f'),
+                    definition=basis.definition,unit=unit,conditions=conditions,axis_minimum='0',axis_maximum=axis_maximum_text(maximum),
                     plot_x=plot_x,plot_y=plot_y,plot_w=plot_w,plot_h=plot_h,font_pt=font,
                     text_color=preset.colors.text,points=points)
     chart_frame=Frame(name=f'{slide.chapter_id}:chart',x=frame.x,y=frame.y,w=frame.w,h=height,chart=chart)
