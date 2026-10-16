@@ -167,6 +167,11 @@ def _chart_labels(path,count):
             assert _in_schema_order(container,_DLBLS_ORDER)
     for dlbl in points.values():
         assert _in_schema_order(dlbl,_DLBL_ORDER)
+    # PowerPoint가 빠진 설정을 위 단위에서 물려받는다는 가정에 기대지 않는다. 계열이나 점 단위 라벨을 만들었다면
+    # 그 요소가 서식, 값 표시, 위치, 글꼴을 스스로 갖고 있어야 한다 (2026-10-16 후속 리뷰)
+    for own in ([series] if series is not None else [])+list(points.values()):
+        for path in ('c:numFmt','c:showVal','c:dLblPos','c:txPr/a:p/a:pPr/a:defRPr'):
+            assert own.find(path,ns) is not None, path
     axis=root.find('.//c:valAx/c:numFmt',ns).get('formatCode')
     return labels,axis
 

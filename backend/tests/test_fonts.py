@@ -249,18 +249,19 @@ def test_ensure_fonts_installs_when_absent(tmp_path, monkeypatch):
 
 
 def _read_user_font_values() -> dict:
+    """글꼴 키가 있는지와, 값마다 (데이터, 형식). 복원이 원래 형식과 키의 유무까지 되돌릴 수 있게 함께 읽는다."""
     import winreg
 
-    values: dict = {}
+    values: dict = {"key_exists": True}
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, installer._REG_KEY) as key:
             for name in installer._REG_VALUE_NAMES:
                 try:
-                    values[name] = winreg.QueryValueEx(key, name)[0]
+                    values[name] = winreg.QueryValueEx(key, name)
                 except FileNotFoundError:
                     values[name] = None
     except FileNotFoundError:
-        values = dict.fromkeys(installer._REG_VALUE_NAMES)
+        values = {"key_exists": False, **dict.fromkeys(installer._REG_VALUE_NAMES)}
     return values
 
 
@@ -277,15 +278,21 @@ def _restore_user_font_values(before: dict) -> None:
 
     if _read_user_font_values() == before:
         return
-    with _REAL_CREATE_KEY_EX(winreg.HKEY_CURRENT_USER, installer._REG_KEY, 0, winreg.KEY_SET_VALUE) as key:
-        for name, value in before.items():
-            if value is None:
+    access = winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE
+    with _REAL_CREATE_KEY_EX(winreg.HKEY_CURRENT_USER, installer._REG_KEY, 0, access) as key:
+        for name in installer._REG_VALUE_NAMES:
+            if before[name] is None:
                 try:
                     winreg.DeleteValue(key, name)
                 except FileNotFoundError:
                     pass
             else:
-                _REAL_SET_VALUE_EX(key, name, 0, winreg.REG_SZ, value)
+                data, kind = before[name]
+                _REAL_SET_VALUE_EX(key, name, 0, kind, data)
+        subkeys, value_count, _ = winreg.QueryInfoKey(key)
+    if not before["key_exists"] and subkeys == 0 and value_count == 0:
+        # 시험 전에 없던 키가 비어 남았으면 지운다. 다른 값이 생겼으면 손대지 않는다
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, installer._REG_KEY)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="실제 Windows 레지스트리와 GDI 글꼴 표가 있어야 한다")
