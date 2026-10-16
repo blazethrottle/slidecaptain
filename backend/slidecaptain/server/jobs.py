@@ -481,7 +481,8 @@ class JobRunner:
         return Outcome(row, result, reasons)
 
     def _fail_unexpected(self, handle: JobHandle) -> JobRow | None:
-        """판정, 마무리, 원장 밖의 예기치 않은 예외. 원인은 앱 내부다(D3a-4의 _classify와 같은 규칙, 최종 리뷰 SV-01).
+        """판정, 마무리, 원장 밖의 예기치 않은 예외. 원인은 늘 internal이다(D3a-4 _classify의 마지막 갈래와 같다, 최종 리뷰
+        SV-01).
 
         제공자가 이미 응답했고 행에 아직 결과가 없으면 비용을 쓴 응답을 원장에 남긴다. 판정을 마치지 못해 생성 도중 바뀐
         기준에서 나온 결과인지 알 수 없으므로 다시 열 수 있는 held가 아니라 stale(보기와 버리기만)로 둔다(C2 계획 리뷰
@@ -489,6 +490,7 @@ class JobRunner:
         """
         job_id = handle.job_id
         detail = "AI 생성 작업을 처리하지 못했습니다."
+        # 묶음 run은 결과를 돌려주지 않으므로 지금은 효과가 없다. 의도를 밝히는 방어다 (C2 W1 리뷰 W1R-12)
         result = None if handle.spec.batch else self._memory_result(handle)
         row = self._read(job_id)
         if (result is None or row is None or row.result is not None or row.candidate_status != "none"
@@ -499,7 +501,8 @@ class JobRunner:
             return self.ledger.transition(job_id, expected=row.state, new="failed", result=_encode(result),
                                           candidate_status="none" if format_error else "stale",
                                           error_class="internal", error_status=500, error_detail=detail)
-        except (TransitionRejected, LedgerError):
+        except Exception:
+            # 마지막 수단의 처리기가 결과를 쓰다 다시 실패해도(직렬화, 열 검증) 행을 running으로 두지 않는다 (W1 리뷰 W1R-02)
             return self._fail(job_id, "internal", 500, detail, None)
 
     def _fail(self, job_id: str, error_class: str, status: int, detail: str, code: str | None) -> JobRow | None:

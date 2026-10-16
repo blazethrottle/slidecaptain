@@ -273,3 +273,95 @@ def test_unexpected_error_after_the_provider_is_internal_and_keeps_the_result_as
     assert (view["error"]["error_class"], view["error"]["status"]) == ("internal", 500)
     assert view["result"] is not None
     assert view["candidate_status"] == "stale"
+
+
+def _structure_app(tmp_path, *, judge_raises=True, structured=None):
+    from slidecaptain.pipeline.provider import ProviderResponse
+    from slidecaptain.storage.file_store import FileProjectStore
+
+    state = {"after": False}
+    answer = structured if structured is not None else {"chapters": [{"topic": "표지", "conclusion": "",
+                                                                       "template": "cover", "source_refs": []}]}
+
+    class Provider:
+        async def complete(self, prompt, schema):
+            state["after"] = True
+            return ProviderResponse(structured=answer, raw_text="r")
+
+    class Store(FileProjectStore):
+        def load_deck_with_etag(self, name):
+            if judge_raises and state["after"]:
+                raise RuntimeError("판정 중 예기치 않은 오류(시험 주입)")
+            return super().load_deck_with_etag(name)
+
+    store = Store(tmp_path / "projects")
+    store.create_project("p1", "보고")
+    store.write_source("p1", "자료.md", "시장 규모는 500억 원이다")
+    return TestClient(create_app(store, provider=Provider()), headers=HEADERS), state
+
+
+def _run_structure(client, state):
+    job_id = client.post("/api/projects/p1/jobs", json={"request_id": "req-00000001", "kind": "structure",
+                                                         "params": {}}).json()["id"]
+    client.app.state.job_runner._handles[job_id].wait_sync(10)
+    state["after"] = False
+    return client.get(f"/api/projects/p1/jobs/{job_id}").json()
+
+
+def test_a_second_failure_inside_the_last_resort_handler_still_ends_the_job(tmp_path, monkeypatch):
+    """마지막 수단의 처리기가 결과를 쓰다 다시 실패해도 행을 running으로 두지 않는다 (C2 W1 리뷰 W1R-02)."""
+    from slidecaptain.server import jobs as jobs_module
+
+    def broken(result):
+        raise TypeError("직렬화 실패(시험 주입)")
+    monkeypatch.setattr(jobs_module, "_encode", broken)
+    client, state = _structure_app(tmp_path)
+    with client:
+        view = _run_structure(client, state)
+    assert view["state"] == "failed"
+    assert (view["error"]["error_class"], view["error"]["status"]) == ("internal", 500)
+
+
+def test_unexpected_error_before_the_provider_answers_is_internal_without_a_result(tmp_path, monkeypatch):
+    """제공자 응답 전의 예기치 않은 예외도 원인은 internal이고 결과가 없다 (C2 W1 리뷰 W1R-07, 변형 M8a2)."""
+    from slidecaptain.storage.job_ledger import JobLedger
+    real = JobLedger.transition
+
+    def transition(self, job_id, *, expected, new, **changes):
+        if expected == "queued" and new == "running":
+            raise RuntimeError("실행 전이의 예기치 않은 오류(시험 주입)")
+        return real(self, job_id, expected=expected, new=new, **changes)
+    monkeypatch.setattr(JobLedger, "transition", transition)
+    client, state = _structure_app(tmp_path, judge_raises=False)
+    with client:
+        view = _run_structure(client, state)
+    assert view["state"] == "failed"
+    assert (view["error"]["error_class"], view["error"]["status"]) == ("internal", 500)
+    assert view["result"] is None and view["candidate_status"] == "none"
+
+
+def test_unexpected_error_after_validating_keeps_the_written_result_and_disposition(tmp_path, monkeypatch):
+    """판정을 마치고 결과와 처분을 쓴 뒤의 예외는 그 결과와 처분을 덮지 않는다 (C2 계획 4.4 (8), W1 리뷰 W1R-08, W1R-11)."""
+    from slidecaptain.storage.job_ledger import JobLedger
+    real = JobLedger.transition
+
+    def transition(self, job_id, *, expected, new, **changes):
+        if expected == "validating" and new == "succeeded":
+            raise RuntimeError("성공 전이 직전의 예기치 않은 오류(시험 주입)")
+        return real(self, job_id, expected=expected, new=new, **changes)
+    monkeypatch.setattr(JobLedger, "transition", transition)
+    client, state = _structure_app(tmp_path, judge_raises=False)
+    with client:
+        view = _run_structure(client, state)
+    assert view["state"] == "failed" and view["error"]["error_class"] == "internal"
+    assert view["result"] is not None and view["candidate_status"] == "held"
+
+
+def test_unexpected_error_after_a_format_error_result_keeps_it_out_of_the_candidates(tmp_path):
+    """형식 오류 결과는 판정이 실패해도 후보가 아니다(처분 none) (C2 W1 리뷰 W1R-08, 변형 M8f)."""
+    client, state = _structure_app(tmp_path, structured={"chapters": "형식이 아님"})
+    with client:
+        view = _run_structure(client, state)
+    assert view["state"] == "failed" and view["error"]["error_class"] == "internal"
+    assert view["result"] is not None and view["result"]["status"] == "format_error"
+    assert view["candidate_status"] == "none"

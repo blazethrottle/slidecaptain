@@ -390,3 +390,15 @@ it("먼저 시작한 읽기의 응답이 늦게 와도 나중 읽기의 목록�
   await new Promise((r) => setTimeout(r, 50));
   expect(screen.getByText(NONE_LEFT)).toBeInTheDocument();
 });
+
+// C2 W1 리뷰 W1R-06: 판정을 마치지 못해 stale로 남은 결과(실행기 마지막 예외 갈래)는 입력이 바뀌었는지 모른다. "만드는 동안
+// 입력이 바뀌었던 후보"라고 하지 않는다
+it("처리를 마치지 못한 결과는 입력이 바뀌었다고 하지 않고 보기와 버리기만 안내한다", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue([jobView("structure", { state: "failed", candidate_status: "stale", stale_reasons: [],
+    base_etag: '"aaaaaaaa"', current_etag: '"aaaaaaaa"',
+    error: { error_class: "internal", status: 500, detail: "AI 생성 작업을 처리하지 못했습니다.", code: null },
+    result: { status: "ok", structure: { chapters: [{ topic: "표지" }] } } })]);
+  render(<RecoveryScreen project={project} onBack={() => {}} onOpen={() => {}} />);
+  expect(await screen.findByText(/처리를 마치지 못한 결과라 보기와 버리기만 할 수 있습니다/)).toBeInTheDocument();
+  expect(screen.queryByText(/만드는 동안 입력이 바뀌었던 후보입니다/)).toBeNull();
+});

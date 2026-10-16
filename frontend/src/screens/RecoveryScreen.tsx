@@ -75,6 +75,10 @@ function candidateStatus(c: Candidate): string {
     return c.status === "stale" ? "만드는 동안 다른 저장이 있어 덱에 넣지 못한 결과입니다."
       : "덱에 넣지 못한 결과입니다.";
   }
+  // 실행기의 마지막 예외 갈래가 남긴 결과: 판정을 마치지 못해 입력이 바뀌었는지 모른다 (C2 계획 4.4 (8), W1 리뷰 W1R-06)
+  if (c.state === "failed" && c.job.error?.error_class === "internal" && c.status === "stale") {
+    return "처리를 마치지 못한 결과라 보기와 버리기만 할 수 있습니다. 필요하면 현재 입력으로 다시 생성해 주세요.";
+  }
   const cancelled = c.state === "cancelled" ? "취소한 뒤 도착한 결과입니다. " : "";
   const basis = `기준 저장본 ${shortEtag(c.job.base_etag)}, 지금 저장본 ${shortEtag(c.job.current_etag)}.`;
   const unreadable = c.job.current_etag === null || c.reasons.some((r) => r.startsWith("unknown_"));

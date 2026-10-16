@@ -838,3 +838,36 @@ def test_ledger_write_failure_at_creation_creates_no_folder(store, monkeypatch):
         response = client.post("/api/projects", json={"name": "p9", "title": "보고"})
     assert response.status_code == 503, response.text
     assert not (store.root / "p9").exists()
+
+
+def test_creating_a_project_without_a_ledger_still_creates_it(store):
+    """원장이 없거나 열지 못한 실행에서는 reset을 쓰지 않고 프로젝트를 만든다 (C2 계획 4.4 (10), W1 리뷰 W1R-09)."""
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        runner = client.app.state.job_runner
+        ledger, runner.ledger = runner.ledger, None
+        try:
+            response = client.post("/api/projects", json={"name": "p8", "title": "보고"})
+        finally:
+            runner.ledger = ledger
+    assert response.status_code == 201, response.text
+    assert (store.root / "p8").is_dir()
+
+
+def test_a_ledger_read_failure_does_not_block_restore(store, monkeypatch):
+    """복원은 사용자가 문제를 되돌리는 경로다. 묶음 판정의 원장 읽기가 실패하면 막지 않고 통과시킨다(원장 없음과 같은 정책,
+    C2 W1 리뷰 W1R-05). 같은 실패 중 프로젝트 생성은 계획대로 503이다(C2 계획 9절)."""
+    from slidecaptain.storage.job_ledger import LedgerError
+    _project(store)
+    store.save_deck("p1", store.load_deck("p1"))
+    snapshot = store.list_snapshots("p1")[0]
+    with TestClient(create_app(store), headers=HEADERS) as client:
+        ledger = client.app.state.job_runner.ledger
+
+        def broken(*args, **kwargs):
+            raise LedgerError("시험 주입: 원장 읽기 실패")
+        monkeypatch.setattr(ledger, "list_jobs", broken)
+        monkeypatch.setattr(ledger, "chapters_with_records", broken)
+        restore = client.post(f"/api/projects/p1/snapshots/{snapshot.id}/restore", headers={"If-Match": _etag(store)})
+        create = client.post("/api/projects", json={"name": "새이름", "title": "보고"})
+    assert restore.status_code == 200, restore.text
+    assert create.status_code == 503

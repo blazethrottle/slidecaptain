@@ -1443,8 +1443,16 @@ def create_app(
     def _refuse_restore_during_batch(name: str) -> None:
         """장 생성 묶음 실행 중에는 스냅샷과 보존본 복원을 막는다. 복원이 묶음의 사슬(장마다 직전 ETag)을 끊으면 남은 장
         후보가 낡음이 된다. 화면 잠금은 알림을 받지 못한 탭과 다른 빌드에는 닿지 않는다 (최종 리뷰 SC-14, C2 계획 4.4 (2)).
-        원장이 없거나 열지 못한 실행에는 묶음도 없으므로 막지 않는다(C2 계획 리뷰 PR-07)."""
-        if runner.ledger is not None and _batch_running(name):
+        원장이 없거나 열지 못한 실행에는 묶음도 없으므로 막지 않는다(C2 계획 리뷰 PR-07). 원장 읽기가 실패해도 막지 않는다."""
+        if runner.ledger is None:
+            return
+        try:
+            running = _batch_running(name)
+        except LedgerError:
+            # 복원은 사용자가 문제를 되돌리는 경로라, 원장 읽기 장애가 막지 않는다(원장 없음과 같은 정책, C2 W1 리뷰 W1R-05)
+            _LOG.exception("복원 전 장 생성 묶음 확인을 하지 못했습니다: %s", name)
+            return
+        if running:
             raise JobFailed(409, "장 생성 묶음이 진행 중이라 복원할 수 없습니다. 묶음이 끝난 뒤 다시 복원해 주세요.",
                             "batch_active")
 

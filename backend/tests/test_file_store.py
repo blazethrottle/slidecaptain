@@ -58,7 +58,7 @@ def test_invalid_project_names_rejected(store, bad):
 
 @pytest.mark.parametrize("bad", ["preset.json", "preset.json.tmp"])
 def test_project_name_colliding_with_global_preset_rejected(store, bad):
-    # 전역 프리셋 파일과 같은 이름의 프로젝트 폴더가 생기면 load_global_preset의
+    # 앱 설정 파일(전역 프리셋)과 같은 이름의 프로젝트 폴더가 생기면 load_global_preset의
     # read_text가 디렉터리를 읽으려다 실패한다 (2026-08-29 최종 리뷰 발견)
     with pytest.raises(InvalidName):
         store.create_project(bad)

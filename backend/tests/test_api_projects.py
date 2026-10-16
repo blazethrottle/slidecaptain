@@ -29,7 +29,7 @@ def test_create_invalid_name_unprocessable(client):
 
 
 def test_create_project_named_preset_json_unprocessable(client):
-    # preset.json 이름으로 프로젝트를 만들면 전역 프리셋 파일과 이름이 겹쳐
+    # preset.json 이름으로 프로젝트를 만들면 앱 설정 파일(전역 프리셋)과 이름이 겹쳐
     # load_global_preset이 죽는다 (2026-08-29 최종 리뷰 발견)
     r = client.post("/api/projects", json={"name": "preset.json"})
     assert r.status_code == 422
