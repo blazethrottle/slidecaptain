@@ -312,10 +312,17 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
   });
 
   it("충돌 안내 뒤 입력을 되돌린 채 다른 탭 묶음이 또 끝나 덱을 다시 읽으면 안내를 지우고 자동 저장을 이어 간다 (반영 재리뷰 F1)", async () => {
-    vi.mocked(api.putDeck).mockResolvedValue({ ok: true });
+    // 이 시험은 첫 묶음 종결 때 저장하지 않은 입력이 있어야 한다. 부하 아래에서는 글자 간격이 자동 저장 지연(20ms)을 넘어
+    // 입력 도중 저장이 나가 "저장본" 기준이 바뀌었고, 그러면 되돌린 제목도 저장본과 달라 둘째 종결에서 덱을 다시 읽지 않았다
+    // (C1 묶음 리뷰 BR-01). 그래서 마지막 단계 전까지는 저장 요청이 끝나지 않게 둔다: 기준은 처음 저장본 그대로다
+    let holdSaves = true;
+    vi.mocked(api.putDeck).mockImplementation(() => (holdSaves ? new Promise(() => {}) : Promise.resolve({ ok: true })));
     await openProject(FAST_SAVE);
     await act(async () => notifyProject({ kind: "job_started", project: project.name, jobId: "job-1" }, { broadcast: false }));
-    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고침");
+    // 부하 아래의 글자 간격을 강제한다: 입력 도중 자동 저장(20ms)이 나간다 (C1 묶음 리뷰 BR-01의 기제, C2 계획 4.5 (24))
+    await userEvent.type(screen.getByLabelText("보고서 제목"), " 고");
+    await new Promise((r) => setTimeout(r, FAST_SAVE * 3));
+    await userEvent.type(screen.getByLabelText("보고서 제목"), "침");
     await otherTabBatchEnds(batchDeck);
     await screen.findByText(/생성한 장이 문서에 반영되었습니다/);
     await waitFor(() => expect(screen.getByLabelText("보고서 제목")).toBeEnabled());
@@ -325,11 +332,15 @@ describe("묶음 종결 뒤 분기: 그 화면이 저장본과 다른 사본을 
     await otherTabBatchEnds(batchDeck);
     // 묶음 종결을 진행 확인 주기로 알아채고 덱을 다시 읽을 때까지 기다린 뒤 안내를 본다. 둘을 한 waitFor(기본 1초)에 묶으면
     // CI 부하에서 넘친다 (561a774의 macOS 실행에서 한 번 실패했다)
+    // 안쪽 한도를 시험 한도(10초)보다 작게 두어, 실패하면 "Test timed out" 대신 이 단언이 보이게 한다 (BR-01)
     await waitFor(() => expect(vi.mocked(api.getDeck).mock.calls.length).toBeGreaterThan(reads), { timeout: 5000 });
     await waitFor(() => expect(screen.queryByText(/생성한 장이 문서에 반영되었습니다/)).toBeNull());
+    holdSaves = false;
+    const before = vi.mocked(api.putDeck).mock.calls.length;
     await userEvent.type(screen.getByLabelText("보고서 제목"), " 다시");
-    await waitFor(() => expect(api.putDeck).toHaveBeenCalled());
-  });
+    await waitFor(() => expect(vi.mocked(api.putDeck).mock.calls.length).toBeGreaterThan(before));
+    expect(vi.mocked(api.putDeck).mock.calls.at(-1)![1].meta.title).toBe("제목 다시");
+  }, 10_000);
 
   it("이 탭의 묶음 종결 안내 뒤 실제 412가 오면 새 원인으로 적는다 (β 묶음 리뷰 B9)", async () => {
     vi.mocked(api.listSnapshots).mockResolvedValue([

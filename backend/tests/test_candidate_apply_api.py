@@ -542,6 +542,28 @@ def test_restoring_a_snapshot_resets_the_baseline(store):
     assert record == ("reset", None) and preview["edited_units"] is None
 
 
+def test_restoring_a_draft_resets_the_baseline(store):
+    """보존본 복원도 스냅샷 복원처럼 바꾼 장의 "직접 고친 문구" 기준을 없앤다 (D3c 리뷰 F3). 이 무효화를 지워도 전체 시험이
+    통과하던 공백이다 (최종 리뷰 SV-12, 변형 SV-M08, C2 계획 4.5 (13))."""
+    _project(store)
+    provider = ChapterProvider([slots("A"), slots("B")])
+    with TestClient(create_app(store, provider=provider), headers=HEADERS) as client:
+        _save_slide(store, {"chapter_id": "c1", "slots": slots("처음")})
+        draft_deck = store.load_deck("p1").model_dump(mode="json")
+        draft = client.post("/api/projects/p1/drafts", json={"deck": draft_deck, "reason": "conflict", "source": "editor",
+                                                             "base_etag": _etag(store)})
+        assert draft.status_code == 201, draft.text
+        a = _job(client, "chapter-0001")
+        assert _apply(client, store, a["id"]).status_code == 200
+        restored = client.post(f"/api/projects/p1/drafts/{draft.json()['id']}/restore", headers={"If-Match": _etag(store)})
+        b = _job(client, "chapter-0002")
+        preview = _preview(client, b["id"]).json()
+        record = client.app.state.job_runner.ledger.last_apply("p1", "c1")
+    assert restored.status_code == 200, restored.text
+    assert _slide(store).slots.conclusion == "처음"
+    assert record == ("reset", None) and preview["edited_units"] is None
+
+
 def test_single_rows_without_relevance_or_success_are_not_applicable(store):
     _project(store)
     with TestClient(create_app(store, provider=ChapterProvider([slots("하나"), slots("둘")])), headers=HEADERS) as client:
