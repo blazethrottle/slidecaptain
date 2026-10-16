@@ -39,8 +39,9 @@ def _env():
 def _start_holder(data_dir: Path, mode: str = "plain") -> subprocess.Popen:
     proc = subprocess.Popen([sys.executable, "-P", "-c", _HOLDER, str(data_dir), mode],
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=_env())
-    held, pid = proc.stdout.readline().split()
-    assert held == "held"
+    line = proc.stdout.readline()
+    assert line.startswith("held "), f"보유 프로세스가 잠금을 얻지 못했습니다: {line!r}"
+    pid = line.split()[1]
     # 잠금에 적히는 PID는 잠금을 쥔 인터프리터의 것이다. Windows 가상 환경의 python.exe는 실제 인터프리터를
     # 자식으로 띄우는 실행기라 Popen.pid와 다르다 (2026-10-16 회사 PC 실측, D2a 이월표 (12))
     proc.holder_pid = int(pid)

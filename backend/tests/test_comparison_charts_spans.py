@@ -15,16 +15,20 @@ from slidecaptain.models.preset import Preset
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.export.pptx_writer import write_pptx
-from slidecaptain.pipeline.story import story_fingerprint
+from slidecaptain.pipeline.story import _text_hash, story_fingerprint
 
 
-def chart_sample():
-    fixture=json.loads((Path(__file__).parent/'fixtures/q2d-numeric-review.json').read_text())
+def chart_sample(a_value='1,200'):
+    # a_value는 원문과 근거의 A팀 값을 함께 바꾼다. 원문이 바뀌므로 근거의 원문 해시도 다시 계산한다
+    raw=(Path(__file__).parent/'fixtures/q2d-numeric-review.json').read_text(encoding='utf-8')
+    fixture=json.loads(raw.replace('1,200',a_value))
+    for evidence in fixture['deck']['structure']['story_plan']['evidence']:
+        evidence['source_revision']=_text_hash(fixture['sources'][evidence['source_id']])
     deck=Deck.model_validate(fixture['deck'])
     payload=deck.model_dump(mode='json')
     payload['structure']['chapters'][0]['template']='table'
     payload['slides'][0]['slots']={'template':'table','columns':['팀','순매출'],
-                                  'rows':[['A','1200원'],['B','1000원']],'footnote':'같은 기간과 분모'}
+                                  'rows':[['A',a_value.replace(',','')+'원'],['B','1000원']],'footnote':'같은 기간과 분모'}
     deck=Deck.model_validate(payload)
     deck.structure.story_plan.input_fingerprint=story_fingerprint(deck.structure.story_plan,deck.meta,deck.structure.chapters,fixture['sources'])
     return deck,fixture['sources']
@@ -98,6 +102,7 @@ def test_chart_values_are_source_bound_and_geometries_stay_in_frame(kind):
     chart=frame.chart
     assert [p.value for p in chart.points]==['1200','1000']
     assert chart.axis_minimum=='0'
+    assert chart.axis_maximum=='1320'  # 종전 '1320.0'이 미리보기 축에 그대로 보였다 (2026-10-16)
     assert '단위 원' in chart.conditions and '분모 해당 없음' in chart.conditions
     for point in chart.points:
         assert 0<=point.x<=point.x+point.w<=frame.w
@@ -115,11 +120,25 @@ def test_axis_maximum_text_keeps_only_the_decimals_its_ticks_need(maximum,expect
 
 
 def _shown(format_code,value):
-    """PowerPoint가 이 서식 기호로 값을 보일 글자. 미리보기와 같게 쓸 수 있는 '0'과 '0.00' 꼴만 받는다."""
+    """PowerPoint가 이 서식 기호로 값을 보일 글자. '0', '0.00' 꼴과, 0만 '0'으로 보이는 '0.00;-0.00;0' 꼴만 받는다."""
     import re
-    match=re.fullmatch(r'0(?:\.(0+))?',format_code)
+    match=re.fullmatch(r'(0(?:\.(0+))?)(?:;-\1;(0))?',format_code)
     assert match, f'미리보기와 같은 글자를 보장하지 못하는 서식: {format_code}'
-    return f'{float(value):.{len(match.group(1) or "")}f}'
+    if match.group(3) and float(value)==0:
+        return match.group(3)
+    return f'{float(value):.{len(match.group(2) or "")}f}'
+
+
+def _in_schema_order(element,order):
+    tags=[child.tag.split('}')[1] for child in element]
+    known=[tag for tag in tags if tag in order]
+    return known==sorted(known,key=order.index)
+
+
+_DLBL_ORDER=['idx','delete','layout','tx','numFmt','spPr','txPr','dLblPos','showLegendKey','showVal','showCatName',
+             'showSerName','showPercent','showBubbleSize','separator','extLst']
+_DLBLS_ORDER=['dLbl','delete','numFmt','spPr','txPr','dLblPos','showLegendKey','showVal','showCatName','showSerName',
+              'showPercent','showBubbleSize','separator','showLeaderLines','leaderLines','extLst']
 
 
 def _chart_labels(path,count):
@@ -142,21 +161,30 @@ def _chart_labels(path,count):
     labels=[{'format':effective(i,'c:numFmt','formatCode'),'show':effective(i,'c:showVal','val'),
              'position':effective(i,'c:dLblPos','val'),'size':effective(i,'c:txPr/a:p/a:pPr/a:defRPr','sz')}
             for i in range(count)]
+    # ElementTree의 find는 순서를 보지 않으므로, PowerPoint가 복구 오류를 내는 스키마 순서 위반을 따로 본다
+    for container in (plot,series):
+        if container is not None:
+            assert _in_schema_order(container,_DLBLS_ORDER)
+    for dlbl in points.values():
+        assert _in_schema_order(dlbl,_DLBL_ORDER)
     axis=root.find('.//c:valAx/c:numFmt',ns).get('formatCode')
     return labels,axis
 
 
 @pytest.mark.parametrize('kind',['bar','column'])
-@pytest.mark.parametrize('values',[('1200','1000'),('1200','1000.5')])
-def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,kind,values):
+@pytest.mark.parametrize('a_value,values,axis_text',[('1,200',None,'1320'),('1,200',('1200','1000.5'),'1320'),
+                                                     ('1,234',None,'1357.40')])
+def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,kind,a_value,values,axis_text):
     # 2026-10-16 회사 PC 실측(PowerPoint 16.0 build 20430): '0.##############' 서식 때문에 값과 눈금이 '1200.',
-    # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 '1200'을 그리고 배치도 그 글자 폭으로 계산한다
+    # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 '1200'을 그리고 배치도 그 글자 폭으로 계산한다.
+    # 1234와 1000은 눈금(271.48 간격)에 소수 두 자리가 필요한 축이다(리뷰 발견: 정수 축만 시험했다)
     from slidecaptain.models.expression import ChartSpec
-    deck,sources=chart_sample()
+    deck,sources=chart_sample(a_value)
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
     plan=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
     chart=next(f.chart for f in plan.slides[0].frames if f.chart)
-    for point,value in zip(chart.points,values):
+    assert chart.axis_maximum==axis_text
+    for point,value in zip(chart.points,values or ()):
         point.value=value
     output=tmp_path/'chart.pptx'
     write_pptx(plan,output)
@@ -168,6 +196,19 @@ def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,k
         assert label['size']==str(int(chart.font_pt*100))
         assert _shown(label['format'],point.value)==point.value
     assert _shown(axis,chart.axis_maximum)==chart.axis_maximum
+    assert _shown(axis,chart.axis_minimum)=='0'  # 미리보기는 0 눈금을 '0'으로 그린다
+
+
+def test_column_chart_leaves_room_for_the_axis_maximum_the_preview_draws():
+    # 리뷰 발견(2026-10-16): 1234와 1000의 축 최댓값 '1357.40'이 값 글자보다 넓어, 미리보기가 축 글자를
+    # 프레임 왼쪽 밖(-4.7pt)에서 그리기 시작해 앞자리가 잘렸다. 미리보기는 축 최댓값을 plot_x-font/2에 끝 맞춤한다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample('1,234')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='column')
+    metrics=FontMetrics.load_default()
+    chart=next(f.chart for f in build_render_plan(deck,Preset(),metrics,sources=sources).slides[0].frames if f.chart)
+    assert chart.axis_maximum=='1357.40'
+    assert chart.plot_x-chart.font_pt/2-metrics.face(False).width_pt(chart.axis_maximum,chart.font_pt)>=0
 
 
 @pytest.mark.parametrize('damage',['missing_sources','stale_source','incompatible','forged_comparison','value_token'])

@@ -86,13 +86,17 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     text_values=[format(v,'f').rstrip('0').rstrip('.') if '.' in format(v,'f') else format(v,'f') for v in values]
     label_width=max(metrics.face(False).width_pt(label,font) for label in labels)
     value_width=max(metrics.face(False).width_pt(text,font) for text in text_values)
+    maximum=max(values)*Decimal('1.1') if max(values)>0 else Decimal(1)
+    axis_text=axis_maximum_text(maximum)
     if slide.chart.kind=='bar':
         plot_x=label_width+font*1.5
         plot_y=font
         plot_w=frame.w-plot_x-value_width-font*2
         plot_h=height-font*3
     else:
-        plot_x=value_width+font*1.5
+        # 세로 축 글자는 그림 영역 왼쪽에 끝 맞춤된다. 가장 넓은 눈금 글자는 최댓값이다(소수 자릿수가 모두 같다).
+        # 값 글자 폭만 잡으면 '1357.40'처럼 더 넓은 축 글자의 앞자리가 미리보기 왼쪽 밖으로 나간다 (2026-10-16 리뷰)
+        plot_x=max(value_width,metrics.face(False).width_pt(axis_text,font))+font*1.5
         plot_y=font*2
         plot_w=frame.w-plot_x-font
         plot_h=height-font*4
@@ -100,7 +104,6 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
             raise ValueError('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
     if plot_w<font*4 or plot_h<font*4:
         raise ValueError('차트 축과 값을 배치할 공간이 부족합니다.')
-    maximum=max(values)*Decimal('1.1') if max(values)>0 else Decimal(1)
     points=[]
     for index,(item,value,label) in enumerate(zip((left,right),values,labels)):
         ratio=float(value/maximum)
@@ -113,7 +116,7 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         points.append(ChartPoint(evidence_id=item.id,label=label,value=text_values[index],
                                  color=preset.colors.accent1 if index==0 else preset.colors.accent2,x=x,y=y,w=w,h=h))
     chart=ChartPlan(kind=slide.chart.kind,comparison_id=comparison.id,claim_id=comparison.claim_id,
-                    definition=basis.definition,unit=unit,conditions=conditions,axis_minimum='0',axis_maximum=axis_maximum_text(maximum),
+                    definition=basis.definition,unit=unit,conditions=conditions,axis_minimum='0',axis_maximum=axis_text,
                     plot_x=plot_x,plot_y=plot_y,plot_w=plot_w,plot_h=plot_h,font_pt=font,
                     text_color=preset.colors.text,points=points)
     chart_frame=Frame(name=f'{slide.chapter_id}:chart',x=frame.x,y=frame.y,w=frame.w,h=height,chart=chart)

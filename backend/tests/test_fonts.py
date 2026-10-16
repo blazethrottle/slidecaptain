@@ -292,7 +292,8 @@ def _restore_user_font_values(before: dict) -> None:
 def test_font_install_during_tests_leaves_user_registry_and_session_fonts_alone():
     # 2026-10-16 회사 PC 실측: 격리 픽스처가 글꼴 폴더만 임시 폴더로 돌려, 백엔드 전체 시험 뒤 사용자 계정의
     # HKCU 글꼴 등록 2건이 pytest 임시 폴더를 가리켰다. 임시 폴더가 지워지면 등록이 끊기고, 앱이 사용자 폴더에
-    # 설치한 PC라면 정상 등록이 덮인다. 세션 글꼴 표 추가와 WM_FONTCHANGE 방송도 실제 데스크톱에 나간다
+    # 설치한 PC라면 정상 등록이 덮인다. 세션 글꼴 표 추가와 WM_FONTCHANGE 방송도 실제 데스크톱에 나간다.
+    # 이 시험은 레지스트리와 세션 글꼴 표만 관측한다. 방송은 관측할 수단이 없어 픽스처의 대체에만 기댄다
     import ctypes
 
     before = _read_user_font_values()

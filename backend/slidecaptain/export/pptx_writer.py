@@ -325,6 +325,12 @@ def _number_format(text):
     return '0.'+'0'*places if places else '0'
 
 
+def _axis_number_format(text):
+    """축 눈금 서식. 소수 축이어도 0 눈금은 미리보기처럼 '0'으로 보인다(세 번째 칸이 0의 서식)."""
+    code=_number_format(text)
+    return code if code=='0' else f'{code};-{code};0'
+
+
 def _style_value_labels(labels,spec,style,number_format):
     labels.number_format=number_format
     labels.number_format_is_linked=False
@@ -354,7 +360,7 @@ def _add_chart_shape(slide,frame,style):
     chart.value_axis.minimum_scale=float(spec.axis_minimum)
     chart.value_axis.maximum_scale=float(spec.axis_maximum)
     chart.value_axis.major_unit=float(spec.axis_maximum)/5
-    chart.value_axis.tick_labels.number_format=_number_format(spec.axis_maximum)
+    chart.value_axis.tick_labels.number_format=_axis_number_format(spec.axis_maximum)
     for axis in (chart.category_axis,chart.value_axis):
         _chart_font(axis.tick_labels.font,spec,style)
     if any(code!=label_format for code in formats):
