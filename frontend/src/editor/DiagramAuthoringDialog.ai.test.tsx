@@ -10,7 +10,7 @@ import { createDiagramDraft, editDiagramDraft } from "./diagramDraft";
 
 vi.mock("../api/client", async (original) => {
   const mod = await original<typeof import("../api/client")>();
-  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
+  return { ...mod, savedEtag: () => '"etag"', api: { ...mod.api, peekDeckEtag: vi.fn(async () => '"etag"'), startJob: vi.fn(), prepareAi: vi.fn(), settleCandidate: vi.fn(), measure: vi.fn(), putDeck: vi.fn(), reconcileDiagramStory: vi.fn() } };
 });
 
 // D2b-5b: 도식 생성은 작업 API로 등록한다. 시험은 등록 기본 함수가 이 가짜 생성을 거쳐 끝난 작업을 돌려주게 한다

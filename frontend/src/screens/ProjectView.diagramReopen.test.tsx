@@ -27,7 +27,7 @@ function diagramJob(over: Partial<JobView> = {}): JobView {
 
 type Server = { job: JobView; settleStatus: number; settles: { action: string }[]; puts: { ifMatch: string | null; deck: Deck }[];
   changes: { ifMatch: string | null; body: { candidate: Deck; acknowledged_loss_ids: string[] } }[]; reconcileStatus?: number;
-  deckEtag?: string; settleGate?: Promise<void>; jobGate?: Promise<void> };
+  deckEtag?: string; settleGate?: Promise<void>; jobGate?: Promise<void>; deckReadGate?: Promise<void>; deckReadStatus?: number };
 
 // 측정은 덱의 도식 장마다 고정 렌더 계획의 도식 슬라이드를 복사해 돌려준다(작성 창의 확인이 새 장의 도식을 찾는다)
 function planFor(body: Deck): RenderPlan {
@@ -61,7 +61,11 @@ function serve(server: Server) {
       server.changes.push({ ifMatch: headers.get("If-Match"), body });
       return new Response(JSON.stringify(body.candidate), { headers: { ETag: '"after-apply"' } });
     }
-    if (url.endsWith("/deck")) return new Response(JSON.stringify(deck), { headers: { ETag: server.deckEtag ?? '"base"' } });
+    if (url.endsWith("/deck")) {
+      if (server.deckReadGate) await server.deckReadGate;
+      if (server.deckReadStatus) return new Response(JSON.stringify({ detail: "읽기 실패" }), { status: server.deckReadStatus });
+      return new Response(JSON.stringify(deck), { headers: { ETag: server.deckEtag ?? '"base"' } });
+    }
     if (url.endsWith("/sources")) return new Response("[]");
     if (url.endsWith("/snapshots") || url.endsWith("/drafts")) return new Response("[]");
     if (url === "/api/preset") return new Response(JSON.stringify(preset));
@@ -195,6 +199,9 @@ it("확인한 뒤 다른 탭이 저장했으면 처분하지 않고 충돌로 �
   server.deckEtag = '"other-tab-save"';
   await userEvent.click(apply);
   expect(await screen.findAllByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).not.toHaveLength(0);
+  // 작성 창은 막히고 편집 화면도 충돌 상태다(머리 표시). 안내 문구만으로는 둘을 구별하지 못한다 (C2 묶음 리뷰 BR-03)
+  expect(within(dialog).getByRole("button", { name: "도식 적용" })).toBeDisabled();
+  expect(await screen.findByLabelText("저장 충돌")).toBeInTheDocument();
   await new Promise((r) => setTimeout(r, 1500));
   expect(server.settles).toEqual([]);
   expect(server.puts).toEqual([]);
@@ -213,6 +220,41 @@ it("처분을 기다리는 동안 다른 탭이 저장했으면 덱에 넣지 �
   expect(await screen.findAllByText(/다른 창이나 프로그램에서 먼저 저장되었습니다/)).not.toHaveLength(0);
   await new Promise((r) => setTimeout(r, 1500));
   expect(server.puts).toEqual([]);
+});
+
+// C2 묶음 리뷰 BR-01: 처분 뒤의 저장본 확인이 끝날 때까지 적용과 닫기를 잠근다. 그 사이 닫으면 후보는 applied인데 덱에는
+// 도식이 없었다
+it("처분 뒤 저장본을 확인하는 동안 적용과 닫기가 잠기고, 확인이 끝나면 반영한다", async () => {
+  let openSettle!: () => void;
+  let openRead!: () => void;
+  const server = newServer({ settleGate: new Promise<void>((r) => { openSettle = r; }) });
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  await userEvent.click(apply);
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));
+  server.deckReadGate = new Promise<void>((r) => { openRead = r; });
+  openSettle();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(within(dialog).getByRole("button", { name: "도식 적용" })).toBeDisabled();
+  expect(within(dialog).getByRole("button", { name: "변경 버리고 닫기" })).toBeDisabled();
+  server.deckReadGate = undefined;
+  openRead();
+  await waitFor(() => expect(server.puts).toHaveLength(1), { timeout: 4000 });
+});
+
+// C2 묶음 리뷰 BR-02: 처분 전 저장본 확인이 실패하면 처분하지 않는다. 확인 없이 처분하면 W2R-01과 같은 결과가 될 수 있다
+it("처분 전 저장본 확인이 실패하면 처분하지 않고 다시 누르게 한다", async () => {
+  const server = newServer();
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  server.deckReadStatus = 500;
+  await userEvent.click(apply);
+  expect(await within(dialog).findByText(/저장본을 확인하지 못해 반영하지 않았습니다/)).toBeInTheDocument();
+  expect(server.settles).toEqual([]);
+  expect(server.job.candidate_status).toBe("held");
+  server.deckReadStatus = undefined;
+  await userEvent.click(within(dialog).getByRole("button", { name: "도식 적용" }));
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));
 });
 
 // C1 묶음 리뷰 BR-04: 불러온 뒤 다른 탭이 저장해 확인이 412로 막히면, 지금 코드는 후보를 이미 applied로 처분해 잃는다
