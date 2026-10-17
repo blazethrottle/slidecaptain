@@ -242,6 +242,21 @@ it("처분 뒤 저장본을 확인하는 동안 적용과 닫기가 잠기고, �
   await waitFor(() => expect(server.puts).toHaveLength(1), { timeout: 4000 });
 });
 
+// C2 확인 리뷰 FC-03: 처분 뒤 저장본 확인이 실패하면 반영한다. 이미 처분했으므로 막으면 후보만 사라진다(BR-02의 정책)
+it("처분 뒤 저장본 확인이 실패해도 반영하고 작성 창을 닫는다", async () => {
+  let openSettle!: () => void;
+  const server = newServer({ settleGate: new Promise<void>((r) => { openSettle = r; }) });
+  const dialog = await reopen(server);
+  const apply = await loadAndCheck(dialog);
+  await userEvent.click(apply);
+  await waitFor(() => expect(server.settles).toEqual([{ action: "applied" }]));
+  server.deckReadStatus = 500;  // 모든 GET /deck에 걸리므로 처분 응답 직전에 건다
+  openSettle();
+  await waitFor(() => expect(server.puts).toHaveLength(1), { timeout: 4000 });
+  server.deckReadStatus = undefined;
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
 // C2 묶음 리뷰 BR-02: 처분 전 저장본 확인이 실패하면 처분하지 않는다. 확인 없이 처분하면 W2R-01과 같은 결과가 될 수 있다
 it("처분 전 저장본 확인이 실패하면 처분하지 않고 다시 누르게 한다", async () => {
   const server = newServer();

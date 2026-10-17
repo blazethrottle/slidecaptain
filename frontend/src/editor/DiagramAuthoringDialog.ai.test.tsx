@@ -116,6 +116,29 @@ it("창 안에서 만든 후보의 처분이 409이면 반영하지 않고 알�
   expect(screen.getByRole("button", { name: "도식 적용" })).toBeDisabled();
 });
 
+// C2 확인 리뷰 FC-01: 처분 전 저장본 확인을 기다리는 동안 창이 사라지거나 덱이 바뀌거나 막히면 처분하지 않는다. 처분하면
+// 후보는 applied인데 덱에는 도식이 없다(다른 탭의 묶음 종결이 편집 화면을 다시 마운트하는 경로)
+it.each(["unmount", "deck", "blocked"])("처분 전 저장본 확인 중 %s이면 처분하지 않는다", async (change) => {
+  const view = open();
+  const plan = structuredClone(fixture.render_plan) as RenderPlan;
+  plan.slides = plan.slides.map(s => s.diagram ? { ...s, chapter_id: view.draft.id } : s);
+  vi.mocked(api.measure).mockResolvedValue(plan);
+  vi.mocked(api.settleCandidate).mockClear();
+  await userEvent.click(screen.getByRole("button", { name: "AI 도식 초안 생성" }));
+  await userEvent.click(await screen.findByRole("button", { name: "작성 폼에 불러오기" }));
+  await userEvent.click(screen.getByRole("button", { name: "입력과 배치 확인" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "도식 적용" })).toBeEnabled());
+  const peek = deferred<string | null>();
+  vi.mocked(api.peekDeckEtag).mockReturnValueOnce(peek.promise);
+  await userEvent.click(screen.getByRole("button", { name: "도식 적용" }));
+  await waitFor(() => expect(api.peekDeckEtag).toHaveBeenCalled());
+  if (change === "unmount") view.unmount();
+  else view.rerender(<DiagramAuthoringDialog {...view.props} {...(change === "deck" ? { deck: structuredClone(view.deck) } : { blocked: true })} />);
+  await act(async () => peek.resolve('"etag"'));
+  expect(api.settleCandidate).not.toHaveBeenCalled();
+  expect(view.onApply).not.toHaveBeenCalled();
+});
+
 // C2 계획 4.2, 리뷰 PR-15: 불러온 뒤 같은 창에서 다시 생성해 다른 후보를 불러오면 앞 후보는 쓰지 않으므로 버린다
 // (C2 W2 리뷰 W2R-11의 변형 M04)
 it("불러온 뒤 다시 생성한 다른 후보를 불러오면 앞 후보를 버린다", async () => {
