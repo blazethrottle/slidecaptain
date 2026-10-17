@@ -381,7 +381,9 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         // 확인한 뒤 다른 곳이 저장했으면 처분하지 않는다. 처분부터 하면 후보는 사라지고 자동 저장은 412로 끝나 덱에 도식이
         // 없다(W2R-01). 확인하지 못했어도 처분하지 않는다: 확인 없이 처분하면 같은 결과가 될 수 있다(BR-02)
         const before = await deckState();
-        if (!current()) return;
+        // 처분 뒤 확인(아래)과 같은 꼴로 덱과 막힘을 직접 본다. 요청 번호는 effect가 올리므로, 렌더와 effect 사이에 응답이
+        // 오면 요청 번호만으로는 놓친다 (C2 확인 리뷰 FC-01)
+        if (!current() || currentDeck.current !== base || currentBlocked.current) return;
         if (before === "moved") { stopForElsewhere(); return; }
         if (before === "unknown") { setErrors(["저장본을 확인하지 못해 반영하지 않았습니다. 다시 눌러 주세요."]); return; }
         try {
@@ -400,8 +402,8 @@ export function DiagramAuthoringDialog({ projectName, deck, initialDraft, onAppl
         // 처분을 기다리는 동안 덱이 바뀌었으면 넣지 않는다. 후보는 이미 처분했지만 폼의 입력은 남는다
         if (!current() || currentDeck.current !== base || currentBlocked.current) return;
         // 처분을 기다리는 동안 다른 곳이 저장했으면 넣지 않는다. 넣으면 자동 저장이 412로 끝난다(W2R-01 둘째 경로). 후보는
-        // 이미 처분했으므로 처분 요청과 응답 사이의 틈은 남은 위험으로 기록한다(계획 11절). 확인하지 못했으면 반영한다:
-        // 이미 처분했으므로 막으면 후보만 사라진다
+        // 이미 처분했으므로 처분 전 저장본 확인부터 처분 뒤 저장본 확인까지의 틈은 남은 위험으로 기록한다(계획 11절, 확인 리뷰
+        // FC-02). 확인하지 못했으면 반영한다: 이미 처분했으므로 막으면 후보만 사라진다
         const after = await deckState();
         if (!current()) return;
         if (after === "moved") { stopForElsewhere(); return; }
