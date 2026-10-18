@@ -13,7 +13,7 @@ from pathlib import Path
 from slidecaptain.export.exporter import export_deck_data
 from slidecaptain.models.deck import Deck
 from slidecaptain.models.expression import ChartSpec, TextSpan
-from slidecaptain.pipeline.story import story_fingerprint
+from slidecaptain.pipeline.story import _text_hash, story_fingerprint
 from slidecaptain.storage.file_store import FileProjectStore
 
 
@@ -37,7 +37,7 @@ def basic_deck():
         ("실행 절차", {"template": "divider", "section_no": "02", "section_title": "요청 처리 절차"}),
         ("회신 전 확인", {"template": "callout", "text": "요청 내용과 검토 결과를 대조한 뒤 회신한다.", "tone": "accent1"}),
         ("담당자 역할", {"template": "cards", "cards": [{"badge": "접수", "heading": "접수 담당", "bullets": [{"text": "요청을 기록하고 검토 담당자에게 전달한다."}], "tail": "요청 기록", "emphasis": True}, {"badge": "검토", "heading": "검토 담당", "bullets": [{"text": "자료를 확인하고 결과를 정리한다."}], "tail": "검토 결과"}]}),
-        ("처리 순서", {"template": "process", "steps": [{"heading": "접수", "subtitle": "요청 기록", "notes": ["내용 확인"]}, {"heading": "검토", "subtitle": "자료 확인", "notes": ["결과 정리"]}, {"heading": "회신", "subtitle": "결과 전달", "notes": ["기록 보관"]}]}),
+        ("처리 순서", {"template": "process", "steps": [{"heading": "접수", "subtitle": "요청 기록", "notes": ["내용 확인", "담당 접수팀"]}, {"heading": "검토", "subtitle": "자료 확인", "notes": ["결과 정리"]}, {"heading": "회신", "subtitle": "결과 전달", "notes": ["기록 보관"]}]}),
         ("확인 항목 분류", {"template": "matrix", "rows": [{"category": "접수", "primary": "요청", "items": ["내용", "회신 시점"]}, {"category": "검토", "primary": "자료", "items": ["누락", "불일치"]}, {"category": "회신", "primary": "결과", "items": ["다음 행동", "담당자"]}]}),
     ]
     return Deck.model_validate({"meta": {"title": "합성 요청 처리 보고"}, "structure": {"chapters": [
@@ -51,18 +51,22 @@ def samples():
     yield "templates", basic_deck(), {}, "10종 템플릿의 전체 페이지 표시와 편집"
     flow = fixture("q3b-project.json")
     yield "diagram", Deck.model_validate(flow["deck"]), flow["sources"], "도식의 노드, 연결선, 사실과 제안 구분"
-    for kind in ("bar", "column"):
+    # bar15는 유효숫자 15자리 값과 그 축(회사 PC 이월표 (7))을 PowerPoint가 미리보기와 같은 글자로 보이는지 본다
+    for name, kind, a_value in (("bar", "bar", "1200"), ("column", "column", "1200"), ("bar15", "bar", "123456789.123456")):
         item = fixture("q2d-numeric-review.json")
+        item = json.loads(json.dumps(item, ensure_ascii=False).replace("1,200", "1,200" if a_value == "1200" else a_value))
+        for evidence in item["deck"]["structure"]["story_plan"]["evidence"]:
+            evidence["source_revision"] = _text_hash(item["sources"][evidence["source_id"]])
         payload = item["deck"]
-        payload["meta"]["title"] = f"합성 비교 {kind}"
+        payload["meta"]["title"] = f"합성 비교 {name}"
         payload["structure"]["chapters"][0]["template"] = "table"
         payload["slides"][0]["slots"] = {"template": "table", "columns": ["팀", "순매출"],
-            "rows": [["A", "1200원"], ["B", "1000원"]], "footnote": "합성 자료, 같은 기간과 지표"}
+            "rows": [["A", f"{a_value}원"], ["B", "1000원"]], "footnote": "합성 자료, 같은 기간과 지표"}
         deck = Deck.model_validate(payload)
         plan = deck.structure.story_plan
         plan.input_fingerprint = story_fingerprint(plan, deck.meta, deck.structure.chapters, item["sources"])
         deck.slides[0].chart = ChartSpec(rule_version="comparison-chart-v1", comparison_id=plan.comparisons[0].id, kind=kind)
-        yield kind, deck, item["sources"], "차트 값 1200/1000, 원 단위, 기간, 0축과 데이터 편집"
+        yield name, deck, item["sources"], f"차트 값 {a_value}/1000, 원 단위, 기간, 0축과 데이터 편집"
     item = fixture("q2d-numeric-review.json")
     deck = Deck.model_validate(item["deck"])
     text = deck.slides[0].slots.bullets[0].text
