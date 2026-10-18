@@ -1,6 +1,6 @@
 """Deterministic sourced charts and measured exact-text emphasis."""
 
-from decimal import Decimal, localcontext
+from decimal import ROUND_CEILING, Decimal, localcontext
 from fractions import Fraction
 import re
 
@@ -22,6 +22,18 @@ def _supported_text(text,preset,metrics):
             continue
         if cp not in face.widths and not (HANGUL_START<=cp<=HANGUL_END and face.hangul_uniform_width is not None):
             raise ValueError('차트나 강조 문장에 글자 폭이 확인되지 않은 문자가 있습니다.')
+
+
+_MAX_SIGNIFICANT_DIGITS=15
+
+
+def _significant_digits(value):
+    return len(value.normalize().as_tuple().digits)
+
+
+def _round_up_significant(value,digits):
+    exponent=value.adjusted()-digits+1
+    return value.quantize(Decimal(1).scaleb(exponent),rounding=ROUND_CEILING)
 
 
 def axis_maximum_text(maximum):
@@ -63,6 +75,9 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
                 value=Decimal(exact.numerator)/Decimal(exact.denominator)
         if value<0 or value>Decimal('1000000000000') or Decimal(str(float(value)))!=value:
             raise ValueError('차트는 0~1조 범위에서 native 숫자로 정확히 표현할 수 있는 값만 지원합니다.')
+        if _significant_digits(value)>_MAX_SIGNIFICANT_DIGITS:
+            # PowerPoint는 15자리까지만 보이고 미리보기는 원문 자릿수를 보여 두 화면의 숫자가 달라진다 (회사 PC 이월표 (7))
+            raise ValueError('차트 값은 유효숫자 15자리까지 지원합니다. 원문 수치의 자릿수를 줄여 주세요.')
         values.append(value)
     labels=[]
     for item in (left,right):
@@ -81,12 +96,17 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         raise ValueError('차트의 단위/기간/분모 조건을 세 줄 안에 보존하지 못했습니다. 내용 영역을 확인해 주세요.')
     caption_h=len(condition_lines)*font*preset.spacing.line_spacing+preset.spacing.subtitle_gap
     height=frame.h-caption_h
-    if height<font*8 or frame.w<font*20:
+    # 세로 막대는 그림 영역이 높이에서 글자 크기의 4.5배를 빼고, 아래의 그림 영역 하한이 4배라 8.5배가 하한이다.
+    # 하한을 8배로 두면 8~8.5배 구간이 둘째 문구로 실패했다 (회사 PC 이월표 (13))
+    if height<font*(8.5 if slide.chart.kind=='column' else 8) or frame.w<font*20:
         raise ValueError('차트와 필수 조건을 배치할 공간이 부족합니다.')
     text_values=[format(v,'f').rstrip('0').rstrip('.') if '.' in format(v,'f') else format(v,'f') for v in values]
     label_width=max(metrics.face(False).width_pt(label,font) for label in labels)
     value_width=max(metrics.face(False).width_pt(text,font) for text in text_values)
     maximum=max(values)*Decimal('1.1') if max(values)>0 else Decimal(1)
+    if _significant_digits(maximum)>_MAX_SIGNIFICANT_DIGITS:
+        # 축 최댓값은 앱이 정하는 여유값이라 원문과 무관하다. 14자리로 올려 1/5 눈금까지 15자리 안에 둔다
+        maximum=_round_up_significant(maximum,_MAX_SIGNIFICANT_DIGITS-1)
     axis_text=axis_maximum_text(maximum)
     if slide.chart.kind=='bar':
         plot_x=label_width+font*1.5

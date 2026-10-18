@@ -306,3 +306,73 @@ def test_bold_face_width_changes_wrapping_and_is_not_replaced_by_regular_width()
     styled=_styled_lines([TextRun(text='AAAA',bold=True,color='202020'),TextRun(text=' BBBB',bold=False,color='202020')],8,12,Metrics(),1)
     assert len(styled)>len(plain)
     assert ''.join(run.text for line in styled for run in line)=='AAAA BBBB'
+
+
+def _chart_with_height(kind,height_in_fonts):
+    # 차트 틀 높이(조건 문장 칸을 뺀 높이)를 글자 크기의 배수로 맞춘다. 조건 칸 높이는 넉넉한 틀에서 한 번 잰다
+    from slidecaptain.models.expression import ChartSpec
+    from slidecaptain.models.render import Frame
+    from slidecaptain.layout.expression import build_comparison_chart
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    preset,metrics=Preset(),FontMetrics.load_default()
+    _chart,caption=build_comparison_chart(deck,deck.slides[0],Frame(name='c',x=0,y=0,w=600,h=400),preset,metrics,sources)
+    font=preset.font_roles.body_pt
+    frame=Frame(name='c',x=0,y=0,w=600,h=caption.h+font*height_in_fonts)
+    return lambda: build_comparison_chart(deck,deck.slides[0],frame,preset,metrics,sources)
+
+
+@pytest.mark.parametrize('kind,lower',[('column',8.5),('bar',8)])
+def test_narrow_chart_height_fails_with_the_single_space_message(kind,lower):
+    # 회사 PC 이월표 (13): 세로 막대는 축 아래 공간을 글자 크기의 2.5배로 늘린 뒤(1b106aa) 높이 8~8.5배 구간에서
+    # 둘째 문구("차트 축과 값을 배치할...")로 실패했다. 좁은 높이는 종류와 관계없이 첫 문구 하나로 안내한다
+    for height in (lower-0.25,lower-0.01):
+        with pytest.raises(ValueError,match='차트와 필수 조건을 배치할 공간이 부족합니다'):
+            _chart_with_height(kind,height)()
+    chart,_caption=_chart_with_height(kind,lower)()
+    assert chart.chart.plot_h>=chart.chart.font_pt*4
+
+
+@pytest.mark.parametrize('a_value',['1234567890.123456','12345678901.23456'])
+def test_chart_rejects_values_beyond_fifteen_significant_digits(a_value):
+    # 회사 PC 이월표 (7): PowerPoint는 유효숫자 15자리까지 보이고 미리보기는 원문 자릿수를 그대로 보인다.
+    # 16자리 값은 float 왕복을 통과해도 두 화면의 숫자가 달라지므로 그리지 않는다 (2026-10-18 사용자 결정 Q3 A)
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample(a_value)
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    with pytest.raises(ValueError,match='15자리'):
+        build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
+
+
+def test_fifteen_digit_value_draws_and_its_axis_maximum_stays_within_fifteen_digits():
+    # 15자리 값은 그린다. 축 최댓값은 값의 1.1배라 16자리가 될 수 있으므로(135802468.0358016) 그때만 14자리로 올린다.
+    # 눈금은 최댓값의 1/5이라 한 자리가 더 붙어도 15자리 안이다. 원문 숫자는 소수 6자리까지만 받는다
+    from decimal import Decimal
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample('123456789.123456')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='column')
+    chart=next(f.chart for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
+    assert chart.points[0].value=='123456789.123456'
+    maximum=Decimal(chart.axis_maximum)
+    assert maximum>=Decimal('123456789.123456')*Decimal('1.1')
+    for k in range(1,6):
+        assert len((maximum*k/5).normalize().as_tuple().digits)<=15
+
+
+@pytest.mark.parametrize('kind,crosses',[('bar','max'),('column','autoZero')])
+def test_bar_chart_value_axis_crosses_at_the_bottom_like_the_preview(tmp_path,kind,crosses):
+    # 회사 PC 이월표 (5): 가로 막대는 첫 범주를 위에 두려고 범주 순서를 뒤집는다(maxMin). 값 축은 첫 범주 쪽에서
+    # 교차하므로 PowerPoint가 값 축을 위에 그렸다. 미리보기는 값 축 글자를 아래에 그린다.
+    # PowerPoint 표시는 회사 PC 렌더로 확인한다. 이 시험은 XML 설정만 붙잡는다
+    from slidecaptain.models.expression import ChartSpec
+    ns={'c':'http://schemas.openxmlformats.org/drawingml/2006/chart'}
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    output=tmp_path/'chart.pptx'
+    write_pptx(build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources),output)
+    with zipfile.ZipFile(output) as package:
+        root=ElementTree.fromstring(package.read(next(n for n in package.namelist() if n.startswith('ppt/charts/chart'))))
+    assert [node.get('val') for node in root.findall('.//c:valAx/c:crosses',ns)]==[crosses]
+    assert [node.get('val') for node in root.findall('.//c:catAx/c:crosses',ns)]==['autoZero']
+    orientation=root.find('.//c:catAx/c:scaling/c:orientation',ns)
+    assert (orientation is not None and orientation.get('val')=='maxMin')==(kind=='bar')
