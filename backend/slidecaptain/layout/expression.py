@@ -27,6 +27,11 @@ def _supported_text(text,preset,metrics):
 _MAX_SIGNIFICANT_DIGITS=15
 
 
+class ChartUnavailable(ValueError):
+    """비교 차트를 그릴 수 없는 이유. 렌더 계획 라우트가 500 대신 422와 이 문구로 답해 화면이 안내를 보인다
+    (C3 리뷰 C3R-01: 15자리 안내가 "요청이 실패했습니다"로만 보였다)."""
+
+
 def _significant_digits(value):
     return len(value.normalize().as_tuple().digits)
 
@@ -47,7 +52,7 @@ def axis_maximum_text(maximum):
 def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     from slidecaptain.pipeline.story import require_current_story,_require_current_evidence
     if sources is None:
-        raise ValueError('비교 차트는 프로젝트의 실제 원문 자료와 함께 확인해야 합니다.')
+        raise ChartUnavailable('비교 차트는 프로젝트의 실제 원문 자료와 함께 확인해야 합니다.')
     require_current_story(deck,sources)
     story=deck.structure.story_plan
     _require_current_evidence(story,sources)
@@ -56,11 +61,11 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     left,right=evidence[comparison.left_evidence_id],evidence[comparison.right_evidence_id]
     assessment=assess_comparison(comparison,left.metric_basis,right.metric_basis,left.value,right.value)
     if assessment.status!='compatible':
-        raise ValueError('비교 조건이 일치하지 않거나 정보가 부족하여 차트를 그릴 수 없습니다.')
+        raise ChartUnavailable('비교 조건이 일치하지 않거나 정보가 부족하여 차트를 그릴 수 없습니다.')
     reasons=[]
     operands=[_parse_operand(item,reasons) for item in (left,right)]
     if reasons or any(value is None for value in operands):
-        raise ValueError('차트의 원문 숫자와 전체 단위를 확정하지 못했습니다.')
+        raise ChartUnavailable('차트의 원문 숫자와 전체 단위를 확정하지 못했습니다.')
     basis=left.metric_basis
     unit=comparison.unit_normalization.target_unit if comparison.unit_normalization else basis.unit
     values=[]
@@ -68,16 +73,19 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         if comparison.unit_normalization:
             factor=unit_scale_factor(item.metric_basis.unit,unit)
             if factor is None:
-                raise ValueError('등록된 단위 배율을 확인하지 못했습니다.')
+                raise ChartUnavailable('등록된 단위 배율을 확인하지 못했습니다.')
             exact=Fraction(value)*factor
             with localcontext() as context:
                 context.prec=80
                 value=Decimal(exact.numerator)/Decimal(exact.denominator)
-        if value<0 or value>Decimal('1000000000000') or Decimal(str(float(value)))!=value:
-            raise ValueError('차트는 0~1조 범위에서 native 숫자로 정확히 표현할 수 있는 값만 지원합니다.')
+        if value<0 or value>Decimal('1000000000000'):
+            raise ChartUnavailable('차트는 0~1조 범위에서 native 숫자로 정확히 표현할 수 있는 값만 지원합니다.')
         if _significant_digits(value)>_MAX_SIGNIFICANT_DIGITS:
-            # PowerPoint는 15자리까지만 보이고 미리보기는 원문 자릿수를 보여 두 화면의 숫자가 달라진다 (회사 PC 이월표 (7))
-            raise ValueError('차트 값은 유효숫자 15자리까지 지원합니다. 원문 수치의 자릿수를 줄여 주세요.')
+            # PowerPoint는 15자리까지만 보이고 미리보기는 원문 자릿수를 보여 두 화면의 숫자가 달라진다 (회사 PC 이월표 (7)).
+            # float 왕복 검사보다 먼저 두어, float로 왕복하지 않는 17자리 이상 값도 같은 안내를 받게 한다 (C3 리뷰 C3R-04)
+            raise ChartUnavailable('차트 값은 유효숫자 15자리까지 지원합니다. 원문 수치의 자릿수를 줄여 주세요.')
+        if Decimal(str(float(value)))!=value:
+            raise ChartUnavailable('차트는 0~1조 범위에서 native 숫자로 정확히 표현할 수 있는 값만 지원합니다.')
         values.append(value)
     labels=[]
     for item in (left,right):
@@ -93,19 +101,20 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     font=preset.font_roles.body_pt
     condition_lines=break_paragraph(conditions,frame.w,font,metrics.face(False),preset.spacing.safety_ratio)
     if len(condition_lines)>3:
-        raise ValueError('차트의 단위/기간/분모 조건을 세 줄 안에 보존하지 못했습니다. 내용 영역을 확인해 주세요.')
+        raise ChartUnavailable('차트의 단위/기간/분모 조건을 세 줄 안에 보존하지 못했습니다. 내용 영역을 확인해 주세요.')
     caption_h=len(condition_lines)*font*preset.spacing.line_spacing+preset.spacing.subtitle_gap
     height=frame.h-caption_h
     # 세로 막대는 그림 영역이 높이에서 글자 크기의 4.5배를 빼고, 아래의 그림 영역 하한이 4배라 8.5배가 하한이다.
     # 하한을 8배로 두면 8~8.5배 구간이 둘째 문구로 실패했다 (회사 PC 이월표 (13))
     if height<font*(8.5 if slide.chart.kind=='column' else 8) or frame.w<font*20:
-        raise ValueError('차트와 필수 조건을 배치할 공간이 부족합니다.')
+        raise ChartUnavailable('차트와 필수 조건을 배치할 공간이 부족합니다.')
     text_values=[format(v,'f').rstrip('0').rstrip('.') if '.' in format(v,'f') else format(v,'f') for v in values]
     label_width=max(metrics.face(False).width_pt(label,font) for label in labels)
     value_width=max(metrics.face(False).width_pt(text,font) for text in text_values)
     maximum=max(values)*Decimal('1.1') if max(values)>0 else Decimal(1)
-    if _significant_digits(maximum)>_MAX_SIGNIFICANT_DIGITS:
-        # 축 최댓값은 앱이 정하는 여유값이라 원문과 무관하다. 14자리로 올려 1/5 눈금까지 15자리 안에 둔다
+    if any(_significant_digits(maximum*k/5)>_MAX_SIGNIFICANT_DIGITS for k in range(1,6)):
+        # 축 최댓값은 앱이 정하는 여유값이라 원문과 무관하다. 다섯 눈금 가운데 하나라도 15자리를 넘으면 최댓값을 14자리로
+        # 올려 눈금까지 15자리 안에 둔다. 최댓값만 보면 최댓값이 15자리일 때 눈금이 16자리가 됐다 (C3 리뷰 C3R-03)
         maximum=_round_up_significant(maximum,_MAX_SIGNIFICANT_DIGITS-1)
     axis_text=axis_maximum_text(maximum)
     if slide.chart.kind=='bar':
@@ -123,9 +132,9 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         # 그려, 종전의 2배(24pt)로는 글자 아랫부분이 차트 틀에서 잘렸다 (2026-10-16 회사 PC, build 20430 실측)
         plot_h=height-font*4.5
         if label_width>plot_w/2-font:
-            raise ValueError('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
+            raise ChartUnavailable('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
     if plot_w<font*4 or plot_h<font*4:
-        raise ValueError('차트 축과 값을 배치할 공간이 부족합니다.')
+        raise ChartUnavailable('차트 축과 값을 배치할 공간이 부족합니다.')
     points=[]
     for index,(item,value,label) in enumerate(zip((left,right),values,labels)):
         ratio=float(value/maximum)

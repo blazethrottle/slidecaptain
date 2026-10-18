@@ -49,6 +49,7 @@ from slidecaptain.export.qualification import (
     publish_final, read_export_qualification, render_export,
 )
 from slidecaptain.layout.engine import build_render_plan
+from slidecaptain.layout.expression import ChartUnavailable
 from slidecaptain.layout.direct_edits import font_limit
 from slidecaptain.models.direct_edit import frame_keys
 from slidecaptain.layout.diagram_page import DiagramRenderBlocked
@@ -837,6 +838,11 @@ def create_app(
     async def provider_error_handler(request, exc: ProviderError):
         # 등록 단계의 오류도 원장 행과 같은 원인 코드를 싣는다 (D3a-4, 계획 4.3)
         return JSONResponse(status_code=503, content={"detail": str(exc), "code": exc.code})
+
+    @app.exception_handler(ChartUnavailable)
+    async def chart_unavailable_handler(request, exc: ChartUnavailable):
+        # 비교 차트를 그릴 수 없는 이유(15자리 초과, 공간 부족 등)는 다시 시도해도 같으므로 문구를 그대로 보인다 (C3R-01)
+        return JSONResponse(status_code=422, content={"detail": str(exc), "code": "chart_unavailable"})
 
     @app.exception_handler(BriefMismatch)
     async def brief_mismatch_handler(request, exc: BriefMismatch):

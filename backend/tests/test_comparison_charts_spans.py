@@ -333,10 +333,11 @@ def test_narrow_chart_height_fails_with_the_single_space_message(kind,lower):
     assert chart.chart.plot_h>=chart.chart.font_pt*4
 
 
-@pytest.mark.parametrize('a_value',['1234567890.123456','12345678901.23456'])
+@pytest.mark.parametrize('a_value',['1234567890.123456','12345678901.23456','999999999999.123456'])
 def test_chart_rejects_values_beyond_fifteen_significant_digits(a_value):
     # 회사 PC 이월표 (7): PowerPoint는 유효숫자 15자리까지 보이고 미리보기는 원문 자릿수를 그대로 보인다.
-    # 16자리 값은 float 왕복을 통과해도 두 화면의 숫자가 달라지므로 그리지 않는다 (2026-10-18 사용자 결정 Q3 A)
+    # 16자리 값은 float 왕복을 통과해도 두 화면의 숫자가 달라지므로 그리지 않는다 (2026-10-18 사용자 결정 Q3 A).
+    # float로 왕복하지 않는 18자리 값도 같은 안내를 받는다(C3 리뷰 C3R-04: 검사 순서 때문에 예전 문구로 거절됐다)
     from slidecaptain.models.expression import ChartSpec
     deck,sources=chart_sample(a_value)
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
@@ -376,3 +377,38 @@ def test_bar_chart_value_axis_crosses_at_the_bottom_like_the_preview(tmp_path,ki
     assert [node.get('val') for node in root.findall('.//c:catAx/c:crosses',ns)]==['autoZero']
     orientation=root.find('.//c:catAx/c:scaling/c:orientation',ns)
     assert (orientation is not None and orientation.get('val')=='maxMin')==(kind=='bar')
+
+
+@pytest.mark.parametrize('a_value',['500000000.00001','550000000.00001'])
+def test_axis_ticks_stay_within_fifteen_digits_when_the_maximum_itself_has_fifteen(a_value):
+    # C3 리뷰 C3R-03: 최댓값이 정확히 15자리(550000000.0000110)이면 눈금(최댓값의 k/5)이 16자리가 됐다.
+    # 다섯 눈금 가운데 하나라도 15자리를 넘으면 최댓값을 14자리로 올린다
+    from decimal import Decimal
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample(a_value)
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    chart=next(f.chart for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
+    maximum=Decimal(chart.axis_maximum)
+    assert maximum>=Decimal(a_value)*Decimal('1.1')
+    assert all(len((maximum*k/5).normalize().as_tuple().digits)<=15 for k in range(1,6))
+
+
+def test_render_plan_routes_answer_422_with_the_chart_reason(tmp_path):
+    # C3 리뷰 C3R-01: 차트를 그릴 수 없는 이유가 500 "요청이 실패했습니다"로만 보였다. 다시 시도해도 같으므로 문구를 보인다
+    from fastapi.testclient import TestClient
+    from slidecaptain.models.expression import ChartSpec
+    from slidecaptain.server.app import create_app
+    from slidecaptain.storage.file_store import FileProjectStore
+    deck,sources=chart_sample('1234567890.123456')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    store=FileProjectStore(tmp_path/'projects')
+    store.create_project('p1')
+    for filename,text in sources.items():
+        store.write_source('p1',filename,text)
+    store.save_deck('p1',deck,snapshot=False)
+    with TestClient(create_app(store),headers={'X-Requested-With':'SlideCaptain'}) as client:
+        for response in (client.get('/api/projects/p1/render-plan'),
+                         client.post('/api/projects/p1/render-plan',json=deck.model_dump(mode='json'))):
+            assert response.status_code==422
+            assert response.json()=={'detail':'차트 값은 유효숫자 15자리까지 지원합니다. 원문 수치의 자릿수를 줄여 주세요.',
+                                      'code':'chart_unavailable'}

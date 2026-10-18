@@ -726,7 +726,8 @@ def _build_process(
                 lines=_para_lines(step.subtitle, pg["text_w"], r.subtitle_pt, False, preset, metrics),
             ))
             if (sw := _fixed_height_warning(
-                chapter, f"{name}_subtitle", step.subtitle, pg["text_w"], pg["subtitle_h"],
+                chapter, f"{name}_subtitle", step.subtitle, pg["text_w"],
+                pg["subtitle_h"] if step.notes else pg["subtitle_h_without_notes"],
                 r.subtitle_pt, False, preset, metrics,
             )) is not None:
                 warnings.append(sw)

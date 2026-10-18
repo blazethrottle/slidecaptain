@@ -20,7 +20,7 @@ from slidecaptain.export.pptx_writer import write_pptx
 from slidecaptain.layout.direct_edits import warning_key
 from slidecaptain.layout.engine import build_render_plan
 from slidecaptain.metrics.font_metrics import FontMetrics
-from slidecaptain.models.deck import Chapter, Deck, DeckMeta, Slide, Structure
+from slidecaptain.models.deck import Chapter, Deck, DeckMeta, ProcessSlots, ProcessStep, Slide, Structure
 from slidecaptain.models.direct_edit import frame_keys, numeric_path_key
 from slidecaptain.models.preset import Preset
 from slidecaptain.pipeline.quality import assess_quality
@@ -510,7 +510,10 @@ def test_element_scale_matches_a_globally_scaled_preset(long):
                 if slide.slots.template == "process" and re.fullmatch(r"step\d+", key):
                     # 단계의 부제 자리는 보조 라벨 줄 높이(본문 글자 크기)를 뺀 나머지다(2026-10-18 C3). 프리셋 전체 배율은
                     # 라벨도 줄여 부제 자리를 넓히지만, 단계 글자만 키우거나 줄이면 라벨은 그대로라 부제 자리도 그대로다
-                    subtitle_h = round(process_geometry(PRESET, len(slide.slots.steps))["subtitle_h"], 3)
+                    # 라벨이 없는 단계는 라벨 자리를 예약하지 않는다(C3R-02)
+                    pg = process_geometry(PRESET, len(slide.slots.steps))
+                    step = slide.slots.steps[int(key[4:])]
+                    subtitle_h = round(pg["subtitle_h"] if step.notes else pg["subtitle_h_without_notes"], 3)
                     expected = (expected[0], [(slot, needed, subtitle_h if slot.endswith("_subtitle") else available)
                                               for slot, needed, available in expected[1]])
                 if slide.slots.template == "process" and re.fullmatch(r"step\d+_labels", key):
@@ -535,6 +538,11 @@ def test_scaled_process_note_warns_when_it_leaves_the_row():
         page = build_slide(chapter, slide.slots, 1, PRESET, METRICS, presenter="", font_scales={"step0_labels": scale})
         labels = [(w.slot, round(w.needed_pt, 2), round(w.available_pt, 2)) for w in page.warnings if "_labels" in w.slot]
         assert labels == expected, scale
+    # 3단계 행은 라벨 칸이 넉넉해 1.3배(21.84pt) 라벨도 넘치지 않는다. 배율 없는 높이(16.8pt)로 검사하면 여기서 경고가
+    # 났다 (C3 리뷰 C3R-06: 이 결함을 다시 넣는 변형을 잡는 시험이 없었다)
+    three = ProcessSlots(steps=[ProcessStep(heading=f"단계{i}", subtitle="부", notes=["라벨"]) for i in range(3)])
+    page = build_slide(chapter, three, 1, PRESET, METRICS, presenter="", font_scales={"step0_labels": 1.3})
+    assert [w.slot for w in page.warnings if "_labels" in w.slot] == []
 
 
 def test_hiding_an_element_drops_every_warning_of_that_element():

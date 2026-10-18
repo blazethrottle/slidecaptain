@@ -76,6 +76,8 @@ def samples():
 
 
 def prepare(parent):
+    # 상대 경로면 아래 relative_to가 실패해 반쯤 만든 폴더가 남는다 (C3 리뷰 C3R-12)
+    parent = Path(parent).resolve()
     # Exclusive creation means a repeat run cannot overwrite earlier feedback.
     parent.mkdir(parents=True, exist_ok=True)
     root = parent / datetime.now().strftime("run-%Y%m%d-%H%M%S-%f")

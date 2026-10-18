@@ -193,6 +193,9 @@ def process_geometry(
     note_area = row_h - s.process_heading_height - 2 * s.process_subtitle_gap
     note_lines = max(0, min(PROCESS_MAX_NOTES, math.floor(note_area / note_h)))
     subtitle_h = note_area - note_lines * note_h
+    # 라벨이 없는 단계는 라벨 자리를 예약하지 않는다(C3 리뷰 C3R-02, 사용자 결정 2026-10-18). 종전(라벨이 오른쪽 칸)의
+    # 부제 자리와 같아, 라벨 없이 그 상한까지 부제를 쓴 기존 덱에 경고가 새로 생기지 않는다
+    subtitle_h_without_notes = row_h - s.process_heading_height - s.process_subtitle_gap
     return {
         "content_top": g["content_top"],
         "row_h": row_h,
@@ -203,6 +206,7 @@ def process_geometry(
         "label_x": text_x,
         "label_w": text_w,
         "subtitle_h": subtitle_h,
+        "subtitle_h_without_notes": subtitle_h_without_notes,
         "note_lines": note_lines,
     }
 
@@ -332,6 +336,7 @@ def capacity_contract(
         "process": {
             "step_heading_max_lines": max_lines(s.process_heading_height, r.body_pt, ls),
             "step_subtitle_max_lines": max_lines(process["subtitle_h"], r.subtitle_pt, ls),
+            "step_subtitle_without_notes_max_lines": max_lines(process["subtitle_h_without_notes"], r.subtitle_pt, ls),
             "step_label_max_lines": max_lines(process_note_height(preset), r.body_pt, ls),
             "step_notes_max_lines": int(process["note_lines"]),
         },
