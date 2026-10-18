@@ -16,8 +16,8 @@ def test_review_kit_exports_all_pages_and_keeps_previous_run(tmp_path):
     first = kit.prepare(tmp_path)
     manifest = json.loads((first / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["ai_calls"] == 0 and manifest["human_status"] == "not_run"
-    assert len(manifest["artifacts"]) == 5
-    assert sum(len(a["pages"]) for a in manifest["artifacts"]) == 15
+    assert len(manifest["artifacts"]) == 6  # 2026-10-18 C3: 유효숫자 15자리 값 가로 막대(bar15) 추가
+    assert sum(len(a["pages"]) for a in manifest["artifacts"]) == 16
     originals = {}
     for item in manifest["artifacts"]:
         path = first / item["file"]
@@ -29,6 +29,9 @@ def test_review_kit_exports_all_pages_and_keeps_previous_run(tmp_path):
             charts = [s.chart for s in pptx.slides[0].shapes if s.has_chart]
             assert len(charts) == 1
             assert charts[0].series[0].values == (1200.0, 1000.0)
+        if item["id"] == "bar15":
+            charts = [s.chart for s in pptx.slides[0].shapes if s.has_chart]
+            assert charts[0].series[0].values == (123456789.123456, 1000.0)
         quality = json.loads(path.with_suffix(".quality.json").read_text(encoding="utf-8"))
         assert quality["final_export_allowed"] is False
     saved_feedback = first / "feedback.json"

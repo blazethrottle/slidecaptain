@@ -408,25 +408,32 @@ def test_process_contract_answers_without_step_count_argument():
     # capacity_contract("process", PRESET) 처럼 step_count를 생략하는 기존 호출부(service.py)가
     # 죽지 않아야 한다: 기본값 3이 안전하다
     contract = capacity_contract("process", PRESET)
-    assert set(contract) == {"step_heading_max_lines", "step_subtitle_max_lines", "step_label_max_lines"}
+    assert set(contract) == {
+        "step_heading_max_lines", "step_subtitle_max_lines", "step_subtitle_without_notes_max_lines",
+        "step_label_max_lines", "step_notes_max_lines",
+    }
     assert all(v >= 0 for v in contract.values())
 
 
-def _process_slots(n: int, subtitle: str = "") -> ProcessSlots:
-    return ProcessSlots(steps=[ProcessStep(heading=f"단계{i}", subtitle=subtitle) for i in range(n)])
+def _process_slots(n: int, subtitle: str = "", notes: list[str] | None = None) -> ProcessSlots:
+    return ProcessSlots(steps=[ProcessStep(heading=f"단계{i}", subtitle=subtitle, notes=notes or []) for i in range(n)])
 
 
+@pytest.mark.parametrize("with_notes", [False, True])
 @pytest.mark.parametrize("step_count", [3, 4, 5, 6])
-def test_process_contract_boundary_of_subtitle_lines_fits_and_plus_one_overflows(step_count):
+def test_process_contract_boundary_of_subtitle_lines_fits_and_plus_one_overflows(step_count, with_notes):
     """단계 3, 4, 5, 6개 각각에서 계약대로 부제를 채우면 실측이 통과하는지. 행이 낮아질수록
     (단계가 늘수록) 부제 상한도 함께 줄어야 한다(process_geometry의 row_h 축소가 그대로
-    반영됨을 실측으로 확인)."""
+    반영됨을 실측으로 확인). 보조 라벨이 있는 단계와 없는 단계의 상한은 따로 본다(2026-10-18 C3 리뷰 C3R-02:
+    라벨이 없는 단계는 라벨 자리를 예약하지 않는다)."""
     k = char_hints("process", PRESET, REAL, step_count=step_count)["단계 부제"]
-    n = capacity_contract("process", PRESET, step_count=step_count)["step_subtitle_max_lines"]
+    contract = capacity_contract("process", PRESET, step_count=step_count)
+    n = contract["step_subtitle_max_lines" if with_notes else "step_subtitle_without_notes_max_lines"]
+    notes = ["가"] * contract["step_notes_max_lines"] if with_notes else None
 
     def slide(lines: int):
         subtitle = " ".join([H * k] * lines) if lines > 0 else ""
-        return _slide("process", _process_slots(step_count, subtitle=subtitle))
+        return _slide("process", _process_slots(step_count, subtitle=subtitle, notes=notes))
 
     if n > 0:
         assert not _slot_warnings(slide(n), "step0_subtitle"), "계약대로 채웠는데 넘침 경고가 났다"
@@ -469,7 +476,10 @@ def test_existing_nine_templates_contract_values_unchanged_by_matrix_signature()
         "card_tail_max_lines": 1,
     }
     assert capacity_contract("process", PRESET) == {
-        "step_heading_max_lines": 1, "step_subtitle_max_lines": 4, "step_label_max_lines": 1,
+        # 2026-10-18 C3: 보조 라벨이 있는 단계는 라벨 두 줄을 단계 글자 아래에 예약해 부제가 4줄에서 2줄로 준다(사용자 결정).
+        # 라벨이 없는 단계는 종전과 같은 4줄이다(C3R-02, 사용자 결정)
+        "step_heading_max_lines": 1, "step_subtitle_max_lines": 2, "step_subtitle_without_notes_max_lines": 4,
+        "step_label_max_lines": 1, "step_notes_max_lines": 2,
     }
 
 

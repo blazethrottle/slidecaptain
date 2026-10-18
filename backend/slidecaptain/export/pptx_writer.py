@@ -385,6 +385,10 @@ def _add_chart_shape(slide,frame,style):
             orientation=scaling.makeelement(qn('c:orientation'),{})
             scaling.append(orientation)
         orientation.set('val','maxMin')
+        # 값 축은 범주 축의 첫 범주 쪽에서 교차한다(autoZero). 범주 순서를 뒤집으면 첫 범주가 위로 가서 PowerPoint가
+        # 값 축을 위에 그리고 그림 영역을 계획보다 약 15.5pt 내려 그렸다(2026-10-16 회사 PC 실측, 이월표 (5)).
+        # 마지막 범주 쪽(max)에서 교차시켜 미리보기처럼 값 축을 아래에 둔다
+        chart.value_axis._element.find(qn('c:crosses')).set('val','max')
     plot_area=chart._chartSpace.xpath('./c:chart/c:plotArea')[0]
     layout=plot_area.find(qn('c:layout'))
     if layout is None:

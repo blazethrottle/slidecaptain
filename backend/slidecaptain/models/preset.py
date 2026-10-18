@@ -140,6 +140,10 @@ class Spacing(BaseModel):
     process_badge_gap: float = Field(default=16.0, ge=0)
     process_heading_height: float = Field(default=20.0, gt=0)
     process_subtitle_gap: float = Field(default=4.0, ge=0)
+    # 2026-10-18 C3(회사 PC 이월표 (1), 사용자 결정): 보조 라벨(notes)은 오른쪽 140pt 칸을 떠나 단계 이름과 부제 아래에
+    # 한 줄에 하나씩 쌓인다(capacity.process_geometry). 아래 세 필드는 더 쓰지 않지만 지우거나 새 필드를 더하지 않는다:
+    # 저장된 preset.json이 이 이름을 담고 있을 수 있고 모델이 모르는 필드를 거절하며(extra="forbid"), 프리셋 전체가
+    # 품질 지문과 도식 지문에 들어가 필드를 더하면 번호 단계와 무관한 모든 덱의 내보내기가 낡음으로 표시된다
     process_label_width: float = Field(default=140.0, gt=0)
     process_label_gap: float = Field(default=16.0, ge=0)
     process_label_height: float = Field(default=14.0, gt=0)

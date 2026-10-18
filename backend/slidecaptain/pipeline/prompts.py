@@ -92,8 +92,10 @@ _CONTRACT_LABELS = {
     "card_badge_max_lines": "카드 배지",
     "card_tail_max_lines": "카드 꼬리 라벨",
     "step_heading_max_lines": "단계 제목",
-    "step_subtitle_max_lines": "단계 부제",
+    "step_subtitle_max_lines": "보조 라벨이 있는 단계의 부제",
+    "step_subtitle_without_notes_max_lines": "보조 라벨이 없는 단계의 부제",
     "step_label_max_lines": "단계 보조 라벨",
+    "step_notes_max_lines": "단계 하나의 보조 라벨 전체(라벨 하나가 한 줄)",
     "row_category_max_lines": "분류 셀",
     "row_primary_max_lines": "대표 항목",
     "row_items_max_lines": "나열 항목",
@@ -200,8 +202,8 @@ _SLOT_NOTES: dict[str, str] = {
         "핵심 카드 하나에만 true를 쓰고 나머지는 false로 둔다"
     ),
     "process": (
-        "notes는 단계 오른쪽에 붙는 보조 라벨 목록이다(선택, 최대 2개): 기간이나 담당처럼 짧은 "
-        "부가 정보만 담는다. 단계 번호는 데이터에 넣지 않는다: 순서대로 자동으로 매겨진다"
+        "notes는 단계 이름과 부제 아래에 한 줄에 하나씩 붙는 보조 라벨 목록이다(선택, 최대 2개): 기간이나 "
+        "담당처럼 짧은 부가 정보만 담는다. 단계 번호는 데이터에 넣지 않는다: 순서대로 자동으로 매겨진다"
     ),
     "matrix": (
         "category는 그 행의 분류축 이름(필수)이다. primary는 그 분류의 대표 항목 한 줄(선택), "

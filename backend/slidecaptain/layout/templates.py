@@ -679,10 +679,10 @@ def _build_process(
     실제 형태다. 번호는 데이터가 아니라 렌더 순서(i+1)에서 나온다: 장 제목이 슬롯이 아니라
     구조안 순서(chapter.topic)에서 오는 것과 같은 원칙이다.
 
-    행마다 배지(둥근 사각형, 조정값 0.5)/제목+부제(선택)/보조 라벨(선택, 최대 2개)이 서로 다른
-    가로 칸에 있어 프레임 셋으로 나뉜다: 하나의 세로 텍스트 상자로는 "배지 왼쪽, 라벨 오른쪽"을
-    표현할 수 없다(cards가 배지/제목/불릿/꼬리를 세로로 쌓아 한 프레임에 담는 것과 다른 점: cards는
-    전부 같은 칸에서 위아래로 쌓이지만 process는 칸 자체가 가로로 나뉜다).
+    행마다 배지(둥근 사각형, 조정값 0.5)/제목+부제(선택)/보조 라벨(선택, 최대 2개)이 프레임 셋으로 나뉜다.
+    배지는 왼쪽 칸이고, 보조 라벨은 단계 글자와 같은 칸에서 그 아래에 쌓인다(2026-10-18 C3, 회사 PC 이월표 (1).
+    종전에는 오른쪽 140pt 칸이었다). 라벨을 단계 글자 프레임에 합치지 않는 이유는 직접 수정 기록과 화면의
+    편집 대응이 라벨 프레임 이름(step{i}_labels)과 그 안의 문단 번호로 라벨을 찾기 때문이다.
     """
     fp = fp or (lambda _key: preset)  # D3c-2: 요소마다 글자 배율을 곱한 프리셋
     s, r, c = preset.spacing, preset.font_roles, preset.colors
@@ -726,7 +726,8 @@ def _build_process(
                 lines=_para_lines(step.subtitle, pg["text_w"], r.subtitle_pt, False, preset, metrics),
             ))
             if (sw := _fixed_height_warning(
-                chapter, f"{name}_subtitle", step.subtitle, pg["text_w"], pg["subtitle_h"],
+                chapter, f"{name}_subtitle", step.subtitle, pg["text_w"],
+                pg["subtitle_h"] if step.notes else pg["subtitle_h_without_notes"],
                 r.subtitle_pt, False, preset, metrics,
             )) is not None:
                 warnings.append(sw)
@@ -735,23 +736,31 @@ def _build_process(
             paras=text_paras,
         ))
         if step.notes:
+            # 라벨은 단계 이름과 부제의 실제 줄 바로 아래에 붙인다. 행 아래 끝에 두면 부제가 짧은 3단계 행에서 큰 빈칸이
+            # 생긴다. 부제가 넘치는 경우에도 라벨 자리를 지키도록 예약 높이(제목, 간격, 부제 자리)에서 멈춘다 (C3)
+            text_h = sum(len(p.lines) * p.font_pt * s.line_spacing for p in text_paras)
+            reserved_h = s.process_heading_height + s.process_subtitle_gap + pg["subtitle_h"]
+            labels_y = row_y + min(text_h, reserved_h) + s.process_subtitle_gap
+            labels_h = row_y + row_h - labels_y
             r = fp(f"{name}_labels").font_roles
-            label_paras = []
+            note_h = line_height_pt(r.body_pt, s.line_spacing)  # 라벨 글자 배율(D3c-2)을 받은 한 줄
+            label_paras, used_h = [], 0.0
             for j, note in enumerate(step.notes):
-                label_paras.append(Para(
-                    text=note, font_pt=r.footnote_pt, color=c.text, align="right",
-                    lines=_para_lines(note, pg["label_w"], r.footnote_pt, False, preset, metrics),
-                ))
+                lines = _para_lines(note, pg["label_w"], r.body_pt, False, preset, metrics)
+                label_paras.append(Para(text=note, font_pt=r.body_pt, color=c.ink_soft, lines=lines))
+                used_h += max(1, len(lines)) * note_h
                 if (lw := _fixed_height_warning(
                     # slot은 라벨 프레임 자신의 slot("{name}_labels")과 같은 접두어로 시작해야
                     # Preview.tsx의 isWarned()가 이 경고를 그 프레임에 매칭한다(DB-3 리뷰 발견 1)
-                    chapter, f"{name}_labels_{j}", note, pg["label_w"], s.process_label_height,
-                    r.footnote_pt, False, preset, metrics,
+                    chapter, f"{name}_labels_{j}", note, pg["label_w"], note_h, r.body_pt, False, preset, metrics,
                 )) is not None:
                     warnings.append(lw)
+                elif used_h > labels_h + 0.01:
+                    # 행에 이 라벨의 줄이 남지 않았다(6단계의 둘째 라벨). 기본 크기에서는 줄 수 계약(step_notes_max_lines)과 같은 판정이다
+                    warnings.append(_measure_warning(chapter, f"{name}_labels_{j}", used_h, labels_h))
             frames.append(Frame(
-                name=f"{chapter.id}:{name}_labels", x=pg["label_x"], y=row_y, w=pg["label_w"], h=row_h,
-                paras=label_paras,
+                name=f"{chapter.id}:{name}_labels", x=pg["label_x"], y=labels_y, w=pg["label_w"],
+                h=labels_h, paras=label_paras,
             ))
     frames.append(_page_number_frame(chapter, page_no, preset))
     return SlidePlan(chapter_id=chapter.id, template="process", frames=frames, warnings=warnings)

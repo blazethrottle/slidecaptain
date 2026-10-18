@@ -510,8 +510,8 @@ def test_contract_block_tells_that_fewer_items_allow_more_text():
     )
 
     assert "개수를 줄이면" in prompt
-    assert "3개면 단계 부제 최대 4줄" in prompt
-    assert "5개면 단계 부제 최대 2줄" in prompt
+    assert "3개면 보조 라벨이 있는 단계의 부제 최대 4줄" in prompt
+    assert "5개면 보조 라벨이 있는 단계의 부제 최대 2줄" in prompt
     # 최대 개수 행은 계약 본문이 이미 말하므로 표에서 되풀이하지 않는다
     assert "6개면" not in prompt
 
