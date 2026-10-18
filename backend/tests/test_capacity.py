@@ -408,7 +408,9 @@ def test_process_contract_answers_without_step_count_argument():
     # capacity_contract("process", PRESET) 처럼 step_count를 생략하는 기존 호출부(service.py)가
     # 죽지 않아야 한다: 기본값 3이 안전하다
     contract = capacity_contract("process", PRESET)
-    assert set(contract) == {"step_heading_max_lines", "step_subtitle_max_lines", "step_label_max_lines"}
+    assert set(contract) == {
+        "step_heading_max_lines", "step_subtitle_max_lines", "step_label_max_lines", "step_notes_max_lines",
+    }
     assert all(v >= 0 for v in contract.values())
 
 
@@ -469,7 +471,8 @@ def test_existing_nine_templates_contract_values_unchanged_by_matrix_signature()
         "card_tail_max_lines": 1,
     }
     assert capacity_contract("process", PRESET) == {
-        "step_heading_max_lines": 1, "step_subtitle_max_lines": 4, "step_label_max_lines": 1,
+        # 2026-10-18 C3: 보조 라벨 두 줄을 단계 글자 아래에 예약해 부제가 4줄에서 2줄로 준다(사용자 결정)
+        "step_heading_max_lines": 1, "step_subtitle_max_lines": 2, "step_label_max_lines": 1, "step_notes_max_lines": 2,
     }
 
 

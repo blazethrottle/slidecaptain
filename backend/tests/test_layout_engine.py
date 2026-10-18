@@ -649,12 +649,50 @@ def test_process_rows_do_not_overlap_and_stay_within_the_content_area(n):
         assert badge.x + badge.w <= text.x + 0.01, "배지가 제목 블록과 겹친다"
         assert badge.y >= text.y - 0.01
         assert badge.y + badge.h <= text.y + text.h + 0.01
-    # 기하 함수 자체도 배지/제목/라벨 세 칸이 겹치지 않고 본문 폭 전체에 걸친다
+    # 기하 함수 자체도 배지와 단계 글자 두 칸이 겹치지 않고 본문 폭 전체에 걸친다. 보조 라벨은 단계 글자와 같은 칸이다
+    # (2026-10-18 C3: 오른쪽 140pt 라벨 칸을 없앴다)
     pg = process_geometry(PRESET, n)
     assert pg["badge_x"] == pytest.approx(PRESET.spacing.margin_left)
     assert pg["badge_x"] + PRESET.spacing.process_badge_size <= pg["text_x"] + 0.01
-    assert pg["text_x"] + pg["text_w"] <= pg["label_x"] + 0.01
-    assert pg["label_x"] + pg["label_w"] == pytest.approx(PRESET.spacing.margin_left + g["content_width"])
+    assert pg["text_x"] + pg["text_w"] == pytest.approx(PRESET.spacing.margin_left + g["content_width"])
+    assert (pg["label_x"], pg["label_w"]) == (pg["text_x"], pg["text_w"])
+
+
+@pytest.mark.parametrize("n,subtitle_lines", [(3, 1), (3, 2), (4, 1), (5, 0), (6, 0)])
+def test_process_notes_sit_right_below_the_step_text_inside_the_row(n, subtitle_lines):
+    """회사 PC 이월표 (1), 사용자 결정(2026-10-18): 보조 라벨은 단계 이름과 부제의 실제 줄 바로 아래에 본문 크기,
+    보조 글자색, 왼쪽 정렬로 한 줄에 하나씩 쌓인다. 행 아래 끝에 붙이면 부제가 짧은 행에서 빈칸이 생긴다."""
+    from slidecaptain.layout.templates import _para_lines
+    from slidecaptain.metrics.capacity import process_geometry, process_note_height
+
+    s, r = PRESET.spacing, PRESET.font_roles
+    pg = process_geometry(PRESET, n)
+    subtitle = "가" if subtitle_lines else ""
+    while subtitle_lines and len(_para_lines(subtitle, pg["text_w"], r.subtitle_pt, False, PRESET, FAKE)) < subtitle_lines:
+        subtitle += "가"
+    notes = ["기간 2주", "담당 기획팀"][: int(pg["note_lines"])]
+    slide = build_render_plan(_process_deck(n, subtitle=subtitle, notes=notes), PRESET, FAKE).slides[0]
+    for i in range(n):
+        text, labels = _frame(slide, f":step{i}"), _frame(slide, f":step{i}_labels")
+        assert [len(p.lines) for p in text.paras] == [1] + ([subtitle_lines] if subtitle_lines else [])
+        text_h = sum(len(p.lines) * p.font_pt * s.line_spacing for p in text.paras)
+        assert labels.y == pytest.approx(text.y + text_h + s.process_subtitle_gap)
+        assert (labels.x, labels.w) == (text.x, text.w)
+        assert labels.y + len(notes) * process_note_height(PRESET) <= text.y + text.h + 0.01, "라벨이 행 밖으로 나간다"
+        assert labels.y + labels.h == pytest.approx(text.y + text.h)
+        assert [(p.text, p.font_pt, p.color, p.align) for p in labels.paras] == [
+            (note, r.body_pt, PRESET.colors.ink_soft, "left") for note in notes
+        ]
+    assert not [w for w in slide.warnings if "_labels" in w.slot]
+
+
+def test_process_second_note_warns_when_six_step_rows_leave_room_for_one():
+    """6단계는 행이 낮아 라벨이 한 줄만 들어간다(step_notes_max_lines 1). 둘째 라벨은 넘침 경고로 알린다."""
+    from slidecaptain.metrics.capacity import capacity_contract
+
+    assert capacity_contract("process", PRESET, step_count=6)["step_notes_max_lines"] == 1
+    slide = build_render_plan(_process_deck(6, notes=["기간 2주", "담당 기획팀"]), PRESET, FAKE).slides[0]
+    assert sorted(w.slot for w in slide.warnings) == [f"step{i}_labels_1" for i in range(6)]
 
 
 def test_process_row_height_shrinks_as_step_count_grows():

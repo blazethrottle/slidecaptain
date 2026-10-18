@@ -160,6 +160,17 @@ def cards_geometry(
     return {"card_w": card_w, "card_h": card_h, "inner_w": inner_w, "bullets_h": bullets_h}
 
 
+# ProcessStep.notes의 최대 개수(models/deck.py). 라벨은 한 줄에 하나씩 쌓이므로 행에 들어가는 줄 수와 이 값 중 작은 쪽이 상한이다
+PROCESS_MAX_NOTES = 2
+
+
+def process_note_height(preset: Preset) -> float:
+    """보조 라벨 한 줄의 높이. 본문 크기 한 줄이며, 프리셋 필드를 더하지 않으려고 글자 크기와 행간에서 계산한다
+    (프리셋 필드를 더하면 모든 덱의 지문이 바뀐다, models/preset.py process_label_* 주석). 부제와 라벨 사이 간격은
+    제목과 부제 사이 간격(process_subtitle_gap)을 같이 쓴다."""
+    return line_height_pt(preset.font_roles.body_pt, preset.spacing.line_spacing)
+
+
 def process_geometry(
     preset: Preset, step_count: int = 3, eyebrow: str = "", subtitle: str = ""
 ) -> dict[str, float]:
@@ -168,16 +179,20 @@ def process_geometry(
     세로로 쌓이므로 단계가 늘수록 행 "높이"(row_h)가 낮아진다. badge_x/text_x/text_w/label_x/
     label_w는 가로 좌표라 단계 수와 무관하다(cards의 card_w가 카드 수에 따라 변하는 것과 대비된다).
 
-    subtitle_h는 그 행에서 부제에 남는 세로 여유다: 제목(process_heading_height)과 그 아래
-    간격을 뺀 나머지이므로, 행이 낮아지면(단계가 늘면) 함께 줄어든다.
+    보조 라벨은 단계 이름과 부제 아래에 한 줄에 하나씩 쌓이고 단계 글자와 같은 폭을 쓴다(2026-10-18 C3, 회사 PC
+    이월표 (1). 종전에는 본문 오른쪽 끝 140pt 칸에 9pt로 오른쪽 정렬되어 단계 이름과 멀었다). note_lines는 행에
+    들어가는 라벨 줄 수(최대 PROCESS_MAX_NOTES)이고, subtitle_h는 제목, 간격, 라벨 자리를 뺀 나머지다. 그래서
+    단계가 늘면 부제 자리가 먼저 줄고, 6단계처럼 행이 낮으면 라벨도 한 줄만 들어간다.
     """
     s = preset.spacing
     g = content_geometry(preset, eyebrow, subtitle)
     row_h = (g["content_bottom"] - g["content_top"] - s.process_row_gap * (step_count - 1)) / step_count
     text_x = s.margin_left + s.process_badge_size + s.process_badge_gap
-    label_x = s.margin_left + g["content_width"] - s.process_label_width
-    text_w = label_x - s.process_label_gap - text_x
-    subtitle_h = row_h - s.process_heading_height - s.process_subtitle_gap
+    text_w = s.margin_left + g["content_width"] - text_x
+    note_h = process_note_height(preset)
+    note_area = row_h - s.process_heading_height - 2 * s.process_subtitle_gap
+    note_lines = max(0, min(PROCESS_MAX_NOTES, math.floor(note_area / note_h)))
+    subtitle_h = note_area - note_lines * note_h
     return {
         "content_top": g["content_top"],
         "row_h": row_h,
@@ -185,9 +200,10 @@ def process_geometry(
         "badge_x": s.margin_left,
         "text_x": text_x,
         "text_w": text_w,
-        "label_x": label_x,
-        "label_w": s.process_label_width,
+        "label_x": text_x,
+        "label_w": text_w,
         "subtitle_h": subtitle_h,
+        "note_lines": note_lines,
     }
 
 
@@ -316,7 +332,8 @@ def capacity_contract(
         "process": {
             "step_heading_max_lines": max_lines(s.process_heading_height, r.body_pt, ls),
             "step_subtitle_max_lines": max_lines(process["subtitle_h"], r.subtitle_pt, ls),
-            "step_label_max_lines": max_lines(s.process_label_height, r.footnote_pt, ls),
+            "step_label_max_lines": max_lines(process_note_height(preset), r.body_pt, ls),
+            "step_notes_max_lines": int(process["note_lines"]),
         },
         "matrix": {
             "row_category_max_lines": max_lines(matrix_category_inner_h, r.body_pt, ls),
@@ -398,7 +415,7 @@ def char_hints(
         return {
             "단계 제목": hangul_chars_for_width(pg["text_w"], r.body_pt, bold, s.safety_ratio),
             "단계 부제": hangul_chars_for_width(pg["text_w"], r.subtitle_pt, regular, s.safety_ratio),
-            "보조 라벨": hangul_chars_for_width(pg["label_w"], r.footnote_pt, regular, s.safety_ratio),
+            "보조 라벨": hangul_chars_for_width(pg["label_w"], r.body_pt, regular, s.safety_ratio),
         }
     if template == "matrix":
         mg = matrix_geometry(preset, row_count)

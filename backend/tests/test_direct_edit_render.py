@@ -5,6 +5,7 @@
 PPTX 바이트 불변, 출력 지문, 숨긴 근거 표시 검사, 최대 크기 라우트를 지킨다.
 """
 
+import re
 import io
 import json
 from pathlib import Path
@@ -494,6 +495,7 @@ def test_element_scale_matches_a_globally_scaled_preset(long):
 
     공통 슬롯은 기하가 글자 크기에 기대므로 뺀다(최대 크기 라우트 시험이 덮는다)."""
     from slidecaptain.layout.templates import _font_preset, build_slide
+    from slidecaptain.metrics.capacity import process_geometry
 
     checked = 0
     for slide in _sample_slides(long):
@@ -504,9 +506,35 @@ def test_element_scale_matches_a_globally_scaled_preset(long):
             for scale in (0.8, 1.3):
                 own = build_slide(chapter, slide.slots, 1, PRESET, METRICS, presenter="", font_scales={key: scale})
                 whole = build_slide(chapter, slide.slots, 1, _font_preset(PRESET, scale), METRICS, presenter="")
-                assert _element(own, key) == _element(whole, key), (slide.slots.template, key, scale)
+                expected = _element(whole, key)
+                if slide.slots.template == "process" and re.fullmatch(r"step\d+", key):
+                    # 단계의 부제 자리는 보조 라벨 줄 높이(본문 글자 크기)를 뺀 나머지다(2026-10-18 C3). 프리셋 전체 배율은
+                    # 라벨도 줄여 부제 자리를 넓히지만, 단계 글자만 키우거나 줄이면 라벨은 그대로라 부제 자리도 그대로다
+                    subtitle_h = round(process_geometry(PRESET, len(slide.slots.steps))["subtitle_h"], 3)
+                    expected = (expected[0], [(slot, needed, subtitle_h if slot.endswith("_subtitle") else available)
+                                              for slot, needed, available in expected[1]])
+                if slide.slots.template == "process" and re.fullmatch(r"step\d+_labels", key):
+                    # 라벨 칸의 높이는 같은 행의 단계 글자가 끝나는 자리에 기댄다. 그래서 라벨만 키운 결과와 전체를 키운
+                    # 결과의 경고는 다르다(아래 test_scaled_process_note_warns_when_it_leaves_the_row). 문단만 맞춘다
+                    assert _element(own, key)[0] == expected[0], (slide.slots.template, key, scale)
+                else:
+                    assert _element(own, key) == expected, (slide.slots.template, key, scale)
                 checked += 1
     assert checked > 40
+
+
+def test_scaled_process_note_warns_when_it_leaves_the_row():
+    """6단계 행에 부제와 라벨이 있으면 라벨 칸에 기본 크기 한 줄(16.8pt)만 남는다. 라벨만 1.3배로 키우면 그 줄(21.84pt)이
+    행 밖으로 나가므로 넘침 경고를 낸다. 1배는 경고가 없다 (2026-10-18 C3, 라벨은 배율 받은 줄 높이로 검사한다)."""
+    from test_direct_edits import SAMPLES
+    from slidecaptain.layout.templates import build_slide
+
+    slide = Slide(chapter_id="c1", slots={"template": "process", **SAMPLES["process"]["full"]})
+    chapter = Chapter(id="c1", topic="장 제목", template="process")
+    for scale, expected in ((1.0, []), (1.3, [("step0_labels_0", 21.84, 16.8)])):
+        page = build_slide(chapter, slide.slots, 1, PRESET, METRICS, presenter="", font_scales={"step0_labels": scale})
+        labels = [(w.slot, round(w.needed_pt, 2), round(w.available_pt, 2)) for w in page.warnings if "_labels" in w.slot]
+        assert labels == expected, scale
 
 
 def test_hiding_an_element_drops_every_warning_of_that_element():
