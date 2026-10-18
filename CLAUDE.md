@@ -52,6 +52,7 @@
 
 - 2026-09-30 게시 안전성: 기본 exporter도 no-follow/regular-file/고정 핸들 잠금을 사용하고 게시 대상 identity/hash와 디렉터리를 다시 검사한다. 비공개 `.slidecaptain-export-*` staging은 경로 교체 중 제3파일 삭제를 피하려고 보존한다. 자동 cleanup은 없고 저장 공간이 누적된다. 이 한계를 숨기거나 경로 기반 일괄 삭제로 바꾸지 않는다. Windows 실기기 통과를 macOS 테스트로 주장하지 않는다.
 
+- 범용 개발 교훈 (2026-10-18 사용자 결정): 기기와 도구에 상관없이 지킬 개발 교훈의 정본은 위키 저장소의 공통 지침 `engineering.md`다. 설치본은 Claude `~/.claude/llm-wiki/engineering.md`, Codex `~/.agents/instructions/llm-wiki/engineering.md`에 있다. 코드를 바꾸는 세션은 시작할 때 이 파일을 읽는다. 이 저장소에서 실제로 사고가 난 셋은 push마다 두 OS의 CI가 끝날 때까지 확인하기, 커밋 전에 백엔드와 프런트 전체 시험 돌리기, 미커밋 수정이 있는 파일에 `git checkout --` 쓰지 않기다. 이 Mac의 Claude 메모리에 남긴 교훈은 다른 기기와 Codex가 읽지 못하므로 정본을 저장소에 쓴다.
 - TDD: 실패하는 테스트부터. 커밋은 태스크 단위, 한국어 커밋 메시지 (feat/fix/test/docs 접두)
 - 작업은 feature 브랜치에서 진행하고 완료 후 main에 머지한다
 - 품질 게이트: 계획서 확정 전 적대 리뷰, 태스크마다 독립 리뷰, 브랜치 전체 최종 리뷰 (superpowers 스킬 흐름을 따른다)
