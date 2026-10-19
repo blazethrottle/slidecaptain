@@ -21,6 +21,35 @@ REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "backend/tests/fixtures"
 
 
+def targeted_review():
+    """C3 T4's manual checks; preparing files never supplies a verdict."""
+    checks = [
+        ("bar-axis", "가로 막대 값 축과 그림 영역", "bar", 1,
+         "미리보기와 PowerPoint에서 값 축 글자 0, 1320과 그림 영역 위쪽 시작을 비교한다.",
+         "값 축은 아래에 있고 그림 영역 위쪽 시작 차이는 1pt 이내다. 측정값을 메모한다."),
+        ("bar15-values", "15자리 값과 축 글자", "bar15", 1,
+         "미리보기와 PowerPoint의 데이터 값과 축 최댓값을 비교한다.",
+         "값 123456789.123456과 축 최댓값 135802468.035810이 같은 글자로 보인다."),
+        ("column-labels", "세로 막대 범주 이름", "column", 1,
+         "A팀, B팀 글자가 축 아래 미리보기와 같은 높이에 있는지 확인한다.",
+         "기본 12pt에서 글자 획이 축 아래 약 15~25pt이고 잘리지 않는다."),
+        ("process-labels", "번호 단계 보조 라벨 배치", "templates", 9,
+         "첫 단계의 라벨 두 개를 포함해 번호 단계 페이지를 미리보기와 PowerPoint에서 비교한다.",
+         "라벨이 단계 이름과 부제 아래 왼쪽 정렬로 쌓이고 행 안에 있다. 사용자가 판정한다."),
+        ("process-label-movement", "라벨 직접 이동과 선택 테두리", "templates", 9,
+         "합성 프로젝트 templates의 편집 화면에서 라벨을 선택하고 직접 이동해 본다.",
+         "사용자가 가로 이동 범위 0~144pt와 선택 테두리 크기를 판정한다. 원하는 변경을 메모한다(C3R-05)."),
+        ("status-icon", "반영 결과 확인 필요 아이콘", None, None,
+         "Windows 앱의 '반영 결과 확인 필요' 상태에서 느낌표 두 개(‼︎, U+203C U+FE0E)를 확인한다. "
+         "양식의 문자만 보고 통과 처리하지 않는다. 실제 앱 상태를 재현하지 못하면 미평가로 남긴다.",
+         "실제 앱에서 글자 모양으로 표시되고 네모나 대체 문자로 깨지지 않는다. Windows 버전과 배율을 기록한다."),
+    ]
+    return {"version": "c3-t4-v1", "checks": [
+        dict(zip(("id", "title", "artifact_id", "page", "instruction", "expected"), row))
+        for row in checks
+    ]}
+
+
 def fixture(name):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
@@ -84,7 +113,8 @@ def prepare(parent):
     root.mkdir()
     store = FileProjectStore(root / "store")
     manifest = {"version": "windows-review-v1", "created_at": datetime.now(timezone.utc).isoformat(),
-                "ai_calls": 0, "human_status": "not_run", "artifacts": []}
+                "ai_calls": 0, "human_status": "not_run", "artifacts": [],
+                "targeted_review": targeted_review()}
     try:
         manifest["git_commit"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip()
         manifest["worktree_dirty"] = bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=REPO))

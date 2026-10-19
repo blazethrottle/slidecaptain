@@ -18,6 +18,18 @@ def test_review_kit_exports_all_pages_and_keeps_previous_run(tmp_path):
     assert manifest["ai_calls"] == 0 and manifest["human_status"] == "not_run"
     assert len(manifest["artifacts"]) == 6  # 2026-10-18 C3: 유효숫자 15자리 값 가로 막대(bar15) 추가
     assert sum(len(a["pages"]) for a in manifest["artifacts"]) == 16
+    checklist = manifest["targeted_review"]
+    assert checklist["version"] == "c3-t4-v1"
+    assert len(checklist["checks"]) == 6
+    assert len({check["id"] for check in checklist["checks"]}) == 6
+    artifacts = {item["id"]: item for item in manifest["artifacts"]}
+    for check in checklist["checks"]:
+        assert check["title"] and check["instruction"] and check["expected"]
+        assert "verdict" not in check  # 준비가 사람의 판정을 만들지 않는다.
+        if check["artifact_id"] is not None:
+            assert check["page"] in {p["page"] for p in artifacts[check["artifact_id"]]["pages"]}
+        else:
+            assert check["id"] == "status-icon" and check["page"] is None
     originals = {}
     for item in manifest["artifacts"]:
         path = first / item["file"]
