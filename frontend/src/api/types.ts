@@ -830,6 +830,8 @@ export interface components {
              * @default sonnet
              */
             model: string;
+            /** Effort */
+            effort?: string | null;
         };
         /** AISettings */
         AISettings: {
@@ -886,6 +888,11 @@ export interface components {
             login: components["schemas"]["LoginStatus"];
             /** Model */
             model?: string | null;
+            /**
+             * Effort
+             * @description 요청할 추론 강도. null은 제공자 기본값이며 실제 적용 확인값이 아니다
+             */
+            effort?: string | null;
             /** Selection Id */
             selection_id?: string | null;
             /** Last Generation At */
@@ -3057,6 +3064,18 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /** Supported Efforts */
+            supported_efforts?: string[];
+            /** Default Effort */
+            default_effort?: string | null;
+            /**
+             * Capability Source
+             * @default unverified
+             * @enum {string}
+             */
+            capability_source: "unverified" | "codex_model_list";
+            /** Capabilities Checked At */
+            capabilities_checked_at?: string | null;
         };
         /** NativeRenderRecord */
         NativeRenderRecord: {

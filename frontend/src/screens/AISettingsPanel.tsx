@@ -29,6 +29,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [provider, setProvider] = useState<ProviderId>("claude");
   const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
   const [attempts, setAttempts] = useState<Partial<Record<ProviderId, LoginAttempt>>>({});
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -41,6 +42,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
     if (reset) {
       setProvider(data.selection.provider ?? "claude");
       setModel(data.selection.model ?? "");
+      setEffort(data.selection.effort ?? "");
     }
   };
 
@@ -80,6 +82,17 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
   }, [pending]);
 
   const current = settings?.providers.find(p => p.id === provider);
+  const selectedModel = current?.models.find(m => m.id === model);
+  const supportedEfforts = selectedModel?.supported_efforts ?? [];
+  const effortAvailable = !effort || (provider === "chatgpt" && supportedEfforts.includes(effort));
+  const chooseModel = (nextProvider: ProviderId, nextModel: string) => {
+    if (provider !== nextProvider || model !== nextModel) {
+      setEffort(nextProvider === settings?.selection.provider && nextModel === settings.selection.model
+        ? settings.selection.effort ?? "" : "");
+    }
+    setProvider(nextProvider); setModel(nextModel);
+    setNotice(""); setError("");
+  };
   const attempt = attempts[provider];
   const authURL = safeLoginURL(attempt?.auth_url);
   const locked = disabled || working || !!settings?.busy;
@@ -101,7 +114,8 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
     {open && <div id={id} className="ai-settings-body">
       <h2>AI 연결</h2>
       <p>서비스 선택 → 공식 계정 로그인 → 모델 선택과 저장 순서로 연결합니다.</p>
-      {settings && <p className="hint">현재 적용: {selectedName} / {settings.selection.model}</p>}
+      {settings && <p className="hint">현재 적용: {selectedName} / {settings.selection.model}
+        {settings.selection.provider === "chatgpt" && ` / 요청 추론 강도: ${settings.selection.effort ?? "제공자 기본값"}`}</p>}
       {working && <p role="status">처리 중...</p>}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
@@ -112,8 +126,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
             disabled={!available(choice.provider, choice.model)}
             aria-pressed={provider === choice.provider && model === choice.model}
             onClick={() => {
-              setProvider(choice.provider); setModel(choice.model);
-              setNotice(""); setError("");
+              chooseModel(choice.provider, choice.model);
             }}>{choice.label}</button>)}
         </div>
         <p className="hint">사용할 모델을 직접 고른 뒤 선택 저장으로 확정하세요.</p>
@@ -123,10 +136,8 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
         <div className="field"><label>AI 서비스
           <select value={provider} onChange={e => {
             const next = e.target.value as ProviderId;
-            setProvider(next);
-            setModel(next === settings?.selection.provider ? settings.selection.model ?? ""
+            chooseModel(next, next === settings?.selection.provider ? settings.selection.model ?? ""
               : settings?.providers.find(p => p.id === next)?.models[0]?.id ?? "");
-            setNotice(""); setError("");
           }}>
             <option value="claude">Claude</option><option value="chatgpt">Codex (ChatGPT)</option>
           </select>
@@ -154,17 +165,30 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
           <a className="ai-login-link" href={authURL} target="_blank" rel="noopener noreferrer">공식 로그인 페이지 열기</a>
         </p>}
         <div className="field"><label>언어모델
-          <select value={model} onChange={e => setModel(e.target.value)} disabled={!current?.models.length}>
+          <select value={model} onChange={e => chooseModel(provider, e.target.value)} disabled={!current?.models.length}>
             {!current?.models.some(m => m.id === model) && <option value="">모델을 선택해 주세요</option>}
             {current?.models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
         </label></div>
         {current?.models_error && <p role="alert">{current.models_error}</p>}
         <p className="hint">{provider === "chatgpt" ? "설치된 Codex가 제공하는 모델 목록입니다. 계정별 이용 가능 여부와 한도는 실제 요청 시 확인됩니다."
-          : "Sonnet, Opus, Haiku는 최신 버전을 가리키는 모델 별칭입니다. 계정과 한도에 따라 이용 가능 여부가 달라질 수 있습니다."}</p>
-        <button disabled={!current?.models.some(m => m.id === model) || attempt?.state === "pending"}
+          : "Sonnet, Opus, Haiku는 모델 별칭입니다. 정확한 버전과 지원 추론 강도는 아직 확인되지 않았습니다. 계정과 한도에 따라 이용 가능 여부가 달라질 수 있습니다."}</p>
+        {provider === "chatgpt" && <>
+          <div className="field"><label>추론 강도 (Effort)
+            <select value={effort} onChange={e => { setEffort(e.target.value); setNotice(""); }} disabled={!selectedModel}>
+              <option value="">제공자 기본값</option>
+              {!effortAvailable && <option value={effort} disabled>{effort} (지원 확인 필요)</option>}
+              {supportedEfforts.map(value => <option key={value} value={value}>{value}</option>)}
+            </select>
+          </label></div>
+          {selectedModel?.default_effort && <p className="hint">모델 목록의 기본 강도: {selectedModel.default_effort}</p>}
+          {!supportedEfforts.length && <p className="hint">지원 추론 강도 정보가 없습니다. 제공자 기본값을 사용할 수 있습니다.</p>}
+          <p className="hint">요청할 강도를 선택합니다. 실제 적용 강도는 응답에서 확인되지 않습니다.</p>
+        </>}
+        {!effortAvailable && <p role="alert">지원 정보가 바뀌었습니다. 추론 강도를 다시 선택해 주세요.</p>}
+        <button disabled={!selectedModel || !effortAvailable || attempt?.state === "pending"}
           onClick={() => void run(async () => {
-            await api.selectAI({ provider, model });
+            await api.selectAI({ provider, model, ...(effort ? { effort } : {}) });
             revokeConsent();
             await load(true);
             window.dispatchEvent(new Event("slidecaptain:ai-selection"));

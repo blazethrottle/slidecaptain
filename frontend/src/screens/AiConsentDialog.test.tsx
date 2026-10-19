@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api, type AppStatus } from "../api/client";
 import { AiConsentDialog } from "./AiConsentDialog";
+import { compactStatus, fullStatus } from "../ui/AiStatusLine";
 
 vi.mock("../api/client", async (importOriginal) => {
   const mod = await importOriginal<typeof import("../api/client")>();
@@ -13,6 +14,15 @@ const STATUS: AppStatus = {
   provider: "subscription", model: "sonnet", last_generation_at: null, checked_at: "2026-09-04T09:00:00+09:00",
   login: { logged_in: true, auth_method: "claude.ai", account: "co***@example.com", cli_version: null, error: null },
 };
+
+it.each([null, "high"])("생성 상태와 전송 동의는 요청 추론 강도 %s를 표시한다", (effort) => {
+  const status: AppStatus = { ...STATUS, provider: "chatgpt", model: "gpt-test", effort };
+  const expected = `요청 추론 강도: ${effort ?? "제공자 기본값"}`;
+  expect(compactStatus(status)).toContain(expected);
+  expect(fullStatus(status)).toContain(expected);
+  render(<AiConsentDialog statusSnapshot={status} onConfirm={() => {}} onCancel={() => {}} />);
+  expect(screen.getByText(expected)).toBeInTheDocument();
+});
 
 function neverResolves<T>(): Promise<T> {
   return new Promise(() => {});

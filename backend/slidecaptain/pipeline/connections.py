@@ -1,6 +1,6 @@
 """Local, single-owner AI connections. Credentials stay with the official clients.
 
-Settings contain only a provider and model. A generation lease pins both for all
+Settings contain only a provider, model and optional effort. A lease pins these for all
 retries, and a revision binds the browser's disclosure to that exact selection.
 """
 
@@ -12,10 +12,11 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .auth_status import LoginStatus, check_login, resolve_cli_path
 from .provider import ProviderNotAvailable
@@ -28,11 +29,29 @@ class AISelection(BaseModel, frozen=True):
     model_config = ConfigDict(extra="forbid")
     provider: ProviderId = "claude"
     model: str = Field(default="sonnet", min_length=1, max_length=150, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]-]*$")
+    effort: str | None = Field(default=None, min_length=1)
+
+    @field_validator("effort")
+    @classmethod
+    def nonblank_effort(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("추론 강도는 비어 있을 수 없습니다.")
+        return value
 
 
 class ModelOption(BaseModel):
     id: str
     label: str
+    supported_efforts: list[str] = Field(default_factory=list)
+    default_effort: str | None = None
+    capability_source: Literal["unverified", "codex_model_list"] = "unverified"
+    capabilities_checked_at: datetime | None = None
+
+
+def _supports_effort(selection: AISelection, model: ModelOption) -> bool:
+    return selection.effort is None or (
+        selection.provider == "chatgpt" and selection.effort in model.supported_efforts
+    )
 
 
 class LoginAttempt(BaseModel):
@@ -212,13 +231,16 @@ class AIConnections:
         with self._lock:
             self._idle()
             models = self.connections[selection.provider].models()
-            if selection.model not in {m.id for m in models}:
+            model = next((m for m in models if m.id == selection.model), None)
+            if model is None:
                 raise ValueError("이 서비스에서 선택할 수 없는 모델입니다. 모델 목록을 다시 확인해 주세요.")
+            if not _supports_effort(selection, model):
+                raise ValueError("선택한 모델에서 지원을 확인할 수 없는 추론 강도입니다. AI 연결 화면에서 다시 선택해 주세요.")
             self.settings_path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(dir=self.settings_path.parent, prefix=".ai-settings-", suffix=".tmp")
             try:
                 with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(selection.model_dump_json() + "\n")
+                    f.write(selection.model_dump_json(exclude_none=True) + "\n")
                 os.replace(name, self.settings_path)
             finally:
                 Path(name).unlink(missing_ok=True)
@@ -273,7 +295,7 @@ class AIConnections:
     def generation(self, selection_id: str | None):
         with self._lock:
             if selection_id != self.selection_id:
-                raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
+                raise ConnectionConflict("AI 서비스, 모델 또는 추론 강도가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
             self._idle()
             connection = self.connections[self.selection.provider]
             if connection.login_status().state == "pending":
@@ -294,9 +316,14 @@ class AIConnections:
                 raise ProviderNotAvailable(status.error or "구독 로그인을 확인해 주세요.", code="login_required")
             if status.logged_in is not True:
                 raise ProviderNotAvailable(status.error or "AI 연결 상태를 확인하지 못했습니다.", code="provider_call_failed")
-            if self.selection.model not in {m.id for m in connection.models()}:
+            model = next((m for m in connection.models() if m.id == self.selection.model), None)
+            if model is None:
                 raise ProviderNotAvailable("선택한 모델을 사용할 수 없습니다. AI 연결 화면에서 모델을 다시 선택해 주세요.", code="model_unavailable")
-            provider = connection.provider(self.selection.model)
+            if not _supports_effort(self.selection, model):
+                raise ProviderNotAvailable("선택한 추론 강도의 지원 정보가 바뀌었습니다. AI 연결 화면에서 다시 선택해 주세요.", code="model_unavailable")
+            # Keep the provider default path unchanged for clients without effort support.
+            provider = (connection.provider(self.selection.model, effort=self.selection.effort)
+                        if self.selection.effort is not None else connection.provider(self.selection.model))
             self._active += 1
         try:
             yield provider

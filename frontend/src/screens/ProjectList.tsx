@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, messageOf, type AppStatus, type ProjectInfo } from "../api/client";
 import { AISettingsPanel } from "./AISettingsPanel";
-import { describeStatus } from "../ui/AiStatusLine";
+import { fullStatus } from "../ui/AiStatusLine";
 
 export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
   const [projects, setProjects] = useState<ProjectInfo[] | null>(null);
@@ -17,8 +17,7 @@ export function ProjectList({ onOpen }: { onOpen: (p: ProjectInfo) => void }) {
     const refresh = () => api.getStatus()
       .then((s) => {
         setDataDir(s.data_dir ?? null);
-        setStatusLine((s.provider === "claude" || s.provider === "chatgpt"
-          ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}. ` : "") + describeStatus(s));
+        setStatusLine(fullStatus(s));
       })
       .catch(() => setStatusLine("AI 연결 상태를 불러오지 못했습니다."));
     void refresh();

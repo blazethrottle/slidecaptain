@@ -20,7 +20,13 @@ export function describeStatus(status: AppStatus): string {
 
 function providerPrefix(s: AppStatus): string {
   return s.provider === "claude" || s.provider === "chatgpt"
-    ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}` : "";
+    ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}`
+      + (s.provider === "chatgpt" ? ` / 요청 추론 강도: ${s.effort ?? "제공자 기본값"}` : "") : "";
+}
+
+export function fullStatus(s: AppStatus): string {
+  const prefix = providerPrefix(s);
+  return (prefix ? `${prefix}. ` : "") + describeStatus(s);
 }
 
 /** 프로젝트 화면 상단 머리의 짧은 연결 표시 (D3a-2, 제품 설계 3절 배치도의 "Claude, 회사 계정"). */
@@ -37,7 +43,7 @@ export function AiStatusLine({ compact = false, className = "ai-status" }: { com
     let alive = true;
     // 상태 조회 실패는 화면을 막지 않는다 (오류 영역이 아니라 상태 줄에만 남긴다)
     const refresh = () => api.getStatus()
-      .then((s) => { if (alive) setLine(compact ? compactStatus(s) : (providerPrefix(s) ? `${providerPrefix(s)}. ` : "") + describeStatus(s)); })
+      .then((s) => { if (alive) setLine(compact ? compactStatus(s) : fullStatus(s)); })
       .catch(() => { if (alive) setLine("AI 연결 상태를 불러오지 못했습니다."); });
     void refresh();
     window.addEventListener("slidecaptain:ai-selection", refresh);

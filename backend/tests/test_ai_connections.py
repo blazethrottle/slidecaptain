@@ -82,6 +82,97 @@ def test_bad_saved_settings_fail_closed(manager):
         AIConnections(manager.settings_path, connections=manager.connections)
 
 
+def effort_connection(manager):
+    connection = manager.connections["chatgpt"]
+    connection.models = lambda: [ModelOption(id="gpt-test", label="Test", supported_efforts=["low", "high"])]
+    return connection
+
+
+def test_effort_persists_restarts_and_invalidates_old_consent(manager):
+    effort_connection(manager)
+    manager.select(AISelection(provider="chatgpt", model="gpt-test", effort="low"))
+    token = manager.selection_id
+    manager.select(AISelection(provider="chatgpt", model="gpt-test", effort="high"))
+    assert manager.selection_id != token
+    assert json.loads(manager.settings_path.read_text())["effort"] == "high"
+    reloaded = AIConnections(manager.settings_path, connections=manager.connections)
+    assert reloaded.selection.effort == "high"
+    with pytest.raises(ConnectionConflict):
+        with manager.generation(token):
+            pytest.fail("changed effort must invalidate consent")
+    manager.select(AISelection(provider="chatgpt", model="gpt-test"))
+    assert json.loads(manager.settings_path.read_text()) == {"provider": "chatgpt", "model": "gpt-test"}
+
+
+@pytest.mark.parametrize("effort", ["adaptive.v2", "Future Level"])
+def test_official_effort_strings_are_preserved_without_invented_syntax(manager, effort):
+    connection = manager.connections["chatgpt"]
+    connection.models = lambda: [ModelOption(id="gpt-test", label="Test", supported_efforts=[effort])]
+    manager.select(AISelection(provider="chatgpt", model="gpt-test", effort=effort))
+    reloaded = AIConnections(manager.settings_path, connections=manager.connections)
+    assert reloaded.selection.effort == effort
+
+
+@pytest.mark.parametrize("effort", ["", "  ", 2])
+def test_empty_or_nonstring_effort_is_rejected(effort):
+    with pytest.raises(ValueError):
+        AISelection(provider="chatgpt", model="gpt-test", effort=effort)
+
+
+@pytest.mark.parametrize("provider,model,effort", [
+    ("chatgpt", "gpt-test", "max"), ("claude", "sonnet", "high"),
+])
+def test_unsupported_effort_does_not_replace_settings(manager, provider, model, effort):
+    effort_connection(manager)
+    manager.select(AISelection())
+    before, token = manager.settings_path.read_bytes(), manager.selection_id
+    with pytest.raises(ValueError, match="추론 강도"):
+        manager.select(AISelection(provider=provider, model=model, effort=effort))
+    assert manager.settings_path.read_bytes() == before
+    assert manager.selection_id == token
+
+
+def test_removed_effort_blocks_generation_before_provider_creation(manager):
+    from slidecaptain.pipeline.provider import ProviderNotAvailable
+    connection = effort_connection(manager)
+    manager.select(AISelection(provider="chatgpt", model="gpt-test", effort="high"))
+    connection.models = lambda: [ModelOption(id="gpt-test", label="Test")]
+    connection.provider = lambda *args, **kwargs: pytest.fail("unavailable effort must not create provider")
+    with pytest.raises(ProviderNotAvailable, match="추론 강도") as error:
+        with manager.generation(manager.selection_id):
+            pytest.fail("must not generate")
+    assert error.value.code == "model_unavailable"
+
+
+def test_generation_pins_effort_and_rejects_mid_generation_change(manager):
+    connection = effort_connection(manager)
+    created = []
+    provider = object()
+    def create(model, *, effort=None):
+        created.append((model, effort))
+        return provider
+    connection.provider = create
+    manager.select(AISelection(provider="chatgpt", model="gpt-test", effort="high"))
+    with manager.generation(manager.selection_id) as pinned:
+        assert pinned is provider
+        with pytest.raises(ConnectionConflict):
+            manager.select(AISelection(provider="chatgpt", model="gpt-test", effort="low"))
+    assert created == [("gpt-test", "high")]
+
+
+def test_effort_api_rejects_unsupported_and_returns_capabilities(store, manager):
+    effort_connection(manager)
+    with TestClient(create_app(store, ai_connections=manager), headers={"X-Requested-With": "SlideCaptain"}) as client:
+        models = client.get("/api/ai/settings").json()["providers"][1]["models"]
+        assert models[0]["supported_efforts"] == ["low", "high"]
+        response = client.put("/api/ai/selection", json={"provider": "chatgpt", "model": "gpt-test", "effort": "max"})
+        assert response.status_code == 422
+        response = client.put("/api/ai/selection", json={"provider": "chatgpt", "model": "gpt-test", "effort": "low"})
+        assert response.status_code == 200
+        assert response.json()["effort"] == "low"
+        assert client.get("/api/status").json()["effort"] == "low"
+
+
 def test_busy_generation_pins_provider_and_rejects_changes(manager):
     token = manager.selection_id
     with manager.generation(token) as provider:

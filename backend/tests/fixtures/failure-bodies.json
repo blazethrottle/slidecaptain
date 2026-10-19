@@ -237,7 +237,7 @@
   "selection_changed": {
    "body": {
     "code": "selection_changed",
-    "detail": "AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요."
+    "detail": "AI 서비스, 모델 또는 추론 강도가 변경되었습니다. 전송 대상을 다시 확인해 주세요."
    },
    "status": 409
   },
