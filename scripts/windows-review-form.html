@@ -16,6 +16,9 @@ body{max-width:1080px;margin:32px auto;padding:0 20px;font:16px/1.6 system-ui,sa
 <label>표시된 글꼴과 글꼴 대체 여부<input id="fonts" placeholder="Noto Sans KR 설치 확인, 대체·경고 여부"></label>
 <label>전체 피드백<textarea id="overall" placeholder="전체 흐름, 글자 크기·정렬, 강조·색, 표·차트·도식, 페이지 균형·가독성, 가장 먼저 고칠 점"></textarea></label>
 </section>
+<section id="targeted-review" hidden><h2>C3 회사 PC 확인 항목</h2>
+<p>항목마다 확인한 결과와 관찰 메모를 남겨 주세요. 아직 확인하지 않은 항목은 미평가로 둡니다. 이 기록은 제출 승인을 변경하지 않습니다.</p>
+<div id="checks"></div></section>
 <main id="artifacts"></main>
 <section><h2>직접 만든 보고서의 피드백</h2><p>회사 원문이나 민감한 수치 대신 페이지 번호와 표시·편집 문제를 적어 주세요. 실제 업무 자료는 회사 PC에 보관합니다.</p>
 <label>검수한 PPTX 파일명 또는 별칭<input id="own-file"></label>
@@ -28,6 +31,42 @@ function element(tag,text){const e=document.createElement(tag);if(text!==undefin
 function select(){const e=element('select');for(const [v,t]of options){const o=element('option',t);o.value=v;e.append(o);}return e;}
 document.querySelector('#version').textContent='테스트 버전: '+(manifest.git_commit||'미확인')+(manifest.worktree_dirty?' (준비 당시 미커밋 변경 있음)':'');
 document.querySelector('#date').value=new Date().toLocaleDateString('sv-SE');
+const targeted=manifest.targeted_review;
+const checks=targeted?.checks||[];
+for(const check of checks){
+ const item=element('div');item.dataset.check=check.id;item.append(element('h3',check.title));
+ const artifact=manifest.artifacts.find(a=>a.id===check.artifact_id);
+ if(artifact){const link=element('a',artifact.title+' '+check.page+'쪽 PPTX 열기');link.href=artifact.file;item.append(link);}
+ else item.append(element('p','대상: Windows 앱 화면 (PPTX 항목 아님)'));
+ item.append(element('p',check.instruction),element('p','기대 결과: '+check.expected));
+ const verdict=element('label','판정');verdict.append(select());
+ const note=element('label','관찰 메모와 측정값');note.append(element('textarea'));
+ item.append(verdict,note);document.querySelector('#checks').append(item);
+}
+document.querySelector('#targeted-review').hidden=checks.length===0;
+function checkIdentity(check){
+ const artifact=manifest.artifacts.find(a=>a.id===check.artifact_id);
+ return {id:check.id,artifact_id:check.artifact_id,artifact_sha256:artifact?.sha256??null,page:check.page};
+}
+function collectChecks(){
+ return {version:targeted.version,checks:checks.map(check=>{
+  const item=[...document.querySelectorAll('[data-check]')].find(e=>e.dataset.check===check.id);
+  return {...checkIdentity(check),verdict:item.querySelector('select').value||null,note:item.querySelector('textarea').value||null};
+ })};
+}
+function validateChecks(data){
+ const saved=data.targeted_review;
+ if(saved===undefined)return; // 기존 v1 피드백은 새 항목 없이 저장되어 있다.
+ if(!saved||saved.version!==targeted?.version||!Array.isArray(saved.checks)||saved.checks.length!==checks.length)throw Error('이 확인 목록과 다른 버전의 피드백입니다.');
+ const seen=new Set();
+ for(const row of saved.checks){
+  const check=checks.find(c=>c.id===row?.id);
+  if(!check||seen.has(row.id))throw Error('확인 항목이 없거나 중복되어 있습니다.');
+  seen.add(row.id);
+  if(Object.entries(checkIdentity(check)).some(([key,value])=>row[key]!==value))throw Error('확인 항목의 표본 또는 페이지가 다릅니다. 원래 검수 회차의 양식을 열어 주세요.');
+  if((row.verdict!==null&&!options.some(([value])=>value&&value===row.verdict))||(row.note!==null&&typeof row.note!=='string'))throw Error('확인 항목의 판정 또는 메모 형식이 잘못되었습니다.');
+ }
+}
 for(const artifact of manifest.artifacts){
  const s=element('section');s.dataset.artifact=artifact.id;s.append(element('h2',artifact.title));
  const a=element('a','PPTX 파일 열기');a.href=artifact.file;s.append(a,element('p',artifact.focus),element('small','기준 SHA-256: '+artifact.sha256));
@@ -38,9 +77,20 @@ for(const artifact of manifest.artifacts){
  const note=element('label','문제 위치·기대 결과·실제 결과·원하는 수정');const textarea=element('textarea');textarea.dataset.note='';textarea.placeholder='표시: 잘림·겹침·글꼴·색·줄맞춤 / 편집: 글자·표·차트 데이터·도식 수정 후 별도 파일로 저장하고 재열기';note.append(textarea);s.append(note);document.querySelector('#artifacts').append(s);
 }
 const fields=['reviewer','date','powerpoint','environment','fonts','overall','own-file','own-note'];
-function collect(){return {version:'windows-review-feedback-v1',run_created_at:manifest.created_at,git_commit:manifest.git_commit,worktree_dirty:manifest.worktree_dirty,saved_at:new Date().toISOString(),environment:Object.fromEntries(fields.map(k=>[k,document.getElementById(k).value||null])),evaluations:[...document.querySelectorAll('[data-artifact]')].map(s=>{const a=manifest.artifacts.find(a=>a.id===s.dataset.artifact);const raw=s.querySelector('[data-minutes]').value;return {artifact_id:a.id,artifact_sha256:a.sha256,criteria:Object.fromEntries([...s.querySelectorAll('[data-criterion]')].map(e=>[e.dataset.criterion,e.value||null])),pages:[...s.querySelectorAll('[data-page]')].map(e=>({page:Number(e.dataset.page),verdict:e.querySelector('select').value||null})),note:s.querySelector('[data-note]').value||null,revision_minutes:raw===''?null:Number(raw)};})};}
+function collect(){return {version:'windows-review-feedback-v1',run_created_at:manifest.created_at,git_commit:manifest.git_commit,worktree_dirty:manifest.worktree_dirty,saved_at:new Date().toISOString(),...(targeted?{targeted_review:collectChecks()}:{}),environment:Object.fromEntries(fields.map(k=>[k,document.getElementById(k).value||null])),evaluations:[...document.querySelectorAll('[data-artifact]')].map(s=>{const a=manifest.artifacts.find(a=>a.id===s.dataset.artifact);const raw=s.querySelector('[data-minutes]').value;return {artifact_id:a.id,artifact_sha256:a.sha256,criteria:Object.fromEntries([...s.querySelectorAll('[data-criterion]')].map(e=>[e.dataset.criterion,e.value||null])),pages:[...s.querySelectorAll('[data-page]')].map(e=>({page:Number(e.dataset.page),verdict:e.querySelector('select').value||null})),note:s.querySelector('[data-note]').value||null,revision_minutes:raw===''?null:Number(raw)};})};}
 function restore(data){
- if(data.version!=='windows-review-feedback-v1'||data.run_created_at!==manifest.created_at)throw Error('이 검수 회차에서 저장한 JSON만 불러올 수 있습니다. 이전 회차 폴더의 양식을 열어 주세요.');
+ if(!data||data.version!=='windows-review-feedback-v1'||data.run_created_at!==manifest.created_at)throw Error('이 검수 회차에서 저장한 JSON만 불러올 수 있습니다. 이전 회차 폴더의 양식을 열어 주세요.');
+ validateChecks(data);
+ if(!Array.isArray(data.evaluations))throw Error('피드백의 페이지 판정 목록이 잘못되었습니다.');
+ for(const row of data.evaluations){
+  const artifact=manifest.artifacts.find(a=>a.id===row?.artifact_id);
+  if(!artifact||row.artifact_sha256!==artifact.sha256)throw Error('피드백의 표본이 다릅니다. 원래 검수 회차의 양식을 열어 주세요.');
+  if(row.pages!==undefined&&(!Array.isArray(row.pages)||row.pages.some(p=>!p||typeof p!=='object')))throw Error('피드백의 페이지 판정 형식이 잘못되었습니다.');
+ }
+ for(const item of document.querySelectorAll('[data-check]')){
+  const row=data.targeted_review?.checks.find(c=>c.id===item.dataset.check);
+  item.querySelector('select').value=row?.verdict||'';item.querySelector('textarea').value=row?.note||'';
+ }
  for(const k of fields)document.getElementById(k).value=data.environment?.[k]||'';
  for(const row of data.evaluations||[]){const s=[...document.querySelectorAll('[data-artifact]')].find(s=>s.dataset.artifact===row.artifact_id);if(!s)continue;
  for(const e of s.querySelectorAll('[data-criterion]'))e.value=row.criteria?.[e.dataset.criterion]||'';
