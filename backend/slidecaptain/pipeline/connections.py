@@ -4,6 +4,8 @@ Settings contain only a provider, model and optional effort. A lease pins these 
 retries, and a revision binds the browser's disclosure to that exact selection.
 """
 
+import asyncio
+import concurrent.futures
 import json
 import os
 import subprocess
@@ -12,7 +14,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -42,16 +44,69 @@ class AISelection(BaseModel, frozen=True):
 class ModelOption(BaseModel):
     id: str
     label: str
+    # 제공자 목록이 알려 준 정확한 모델 버전(예: sonnet -> claude-sonnet-5). 모르면 None이다. 목록은 이용 권한의 증거가 아니다
+    resolved_model: str | None = None
     supported_efforts: list[str] = Field(default_factory=list)
     default_effort: str | None = None
-    capability_source: Literal["unverified", "codex_model_list"] = "unverified"
+    capability_source: Literal["unverified", "codex_model_list", "claude_sdk_init"] = "unverified"
     capabilities_checked_at: datetime | None = None
 
 
 def _supports_effort(selection: AISelection, model: ModelOption) -> bool:
-    return selection.effort is None or (
-        selection.provider == "chatgpt" and selection.effort in model.supported_efforts
-    )
+    # 제공자와 관계없이 선택한 모델의 지원 목록에 있는 강도만 받는다. 지원 정보가 없는 모델은 제공자 기본값만 쓴다 (D4b)
+    return selection.effort is None or selection.effort in model.supported_efforts
+
+
+# Claude 모델 목록 (D4b, docs/plans/2026-10-20-revision-d4b-claude-models.md). 공식 SDK의 CLI 초기화 응답에서 읽고 프롬프트를
+# 보내지 않는다. 조회마다 CLI를 띄우므로 캐시하고, 연결 신원이 바뀌면 버린다
+CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")  # ClaudeAgentOptions.effort가 받는 값
+CLAUDE_CATALOG_TTL_S = 600.0
+CLAUDE_CATALOG_RETRY_S = 60.0
+CLAUDE_CATALOG_TIMEOUT_S = 30.0
+
+
+def _read_claude_catalog() -> dict:
+    """사용자의 기존 Claude Code 프로필로 CLI 초기화 응답을 읽는다. 도구와 사용자 설정 파일을 읽지 않고 프롬프트를 보내지
+    않는다. 응답의 계정 정보는 호출자가 쓰지 않는다. 호출자의 이벤트 루프와 섞이지 않게 별도 스레드에서 돈다."""
+    cli = resolve_cli_path()
+    if cli is None:
+        raise ProviderNotAvailable("Claude Code를 찾지 못해 모델 목록을 확인하지 못했습니다. 설치 후 다시 확인해 주세요.",
+                                   code="provider_missing")
+
+    async def read():
+        from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
+        with tempfile.TemporaryDirectory(prefix="slidecaptain-claude-", ignore_cleanup_errors=True) as directory:
+            options = ClaudeAgentOptions(cli_path=str(cli), cwd=directory, tools=[], setting_sources=[],
+                                         env={"DISABLE_TELEMETRY": "1"}, max_turns=1)
+            async with ClaudeSDKClient(options=options) as client:
+                return await asyncio.wait_for(client.get_server_info(), timeout=CLAUDE_CATALOG_TIMEOUT_S)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        info = pool.submit(asyncio.run, read()).result(timeout=CLAUDE_CATALOG_TIMEOUT_S + 15)
+    return info if isinstance(info, dict) else {}
+
+
+def _short_text(value) -> str | None:
+    return value if isinstance(value, str) and value.strip() and len(value) <= 200 else None
+
+
+def _claude_catalog_models(info: dict) -> list[ModelOption]:
+    checked_at = datetime.now(timezone.utc)
+    models, seen = [], set()
+    items = info.get("models") if isinstance(info, dict) else None
+    for item in items[:100] if isinstance(items, list) else []:
+        model_id = _short_text(item.get("value")) if isinstance(item, dict) else None
+        if model_id is None or model_id in seen:
+            continue
+        advertised = item.get("supportedEffortLevels")
+        efforts = [effort for effort in CLAUDE_EFFORTS if isinstance(advertised, list) and effort in advertised]
+        models.append(ModelOption(
+            id=model_id, label=_short_text(item.get("displayName")) or model_id,
+            resolved_model=_short_text(item.get("resolvedModel")), supported_efforts=efforts,
+            capability_source="claude_sdk_init", capabilities_checked_at=checked_at,
+        ))
+        seen.add(model_id)
+    return models
 
 
 class LoginAttempt(BaseModel):
@@ -92,10 +147,15 @@ CONNECTION_CONFLICT_CODES = frozenset({"selection_changed", "login_pending", "id
 class ClaudeConnection:
     """Owner's existing Claude Code profile; never exports its OAuth credentials."""
 
-    def __init__(self):
+    def __init__(self, *, catalog_reader=None):
         self._process = None
         self._started = 0.0
         self._attempt = LoginAttempt(state="idle")
+        self._read_catalog = catalog_reader or _read_claude_catalog
+        self._catalog_lock = threading.Lock()
+        self._catalog: list[ModelOption] | None = None
+        self._catalog_at = 0.0
+        self._failure: tuple[ProviderNotAvailable, float] | None = None
 
     def status(self):
         status = check_login()
@@ -105,11 +165,43 @@ class ClaudeConnection:
         return status
 
     def models(self):
-        return [ModelOption(id=name, label=label) for name, label in
-                [("sonnet", "Sonnet"), ("opus", "Opus"), ("haiku", "Haiku")]]
+        """설치된 Claude Code가 이 계정에 알려 준 모델 목록(캐시 10분). 조회가 실패하면 마지막 목록을 쓰고, 목록이 없으면
+        원인 코드와 함께 알린다. 실패한 뒤 1분 동안은 다시 띄우지 않는다(화면 조회가 매번 CLI를 기다리지 않게)."""
+        with self._catalog_lock:
+            now = time.monotonic()
+            if self._catalog is not None and now - self._catalog_at < CLAUDE_CATALOG_TTL_S:
+                return list(self._catalog)
+            if self._catalog is None and self._failure is not None and now - self._failure[1] < CLAUDE_CATALOG_RETRY_S:
+                raise self._failure[0]
+            try:
+                models = _claude_catalog_models(self._read_catalog())
+                if not models:
+                    raise ProviderNotAvailable("Claude Code가 모델 목록을 알려 주지 않았습니다. Claude Code를 업데이트한 뒤 "
+                                               "다시 확인해 주세요.", code="provider_call_failed")
+            except ProviderNotAvailable as e:
+                error = e
+            except TimeoutError:
+                error = ProviderNotAvailable("Claude 모델 목록 확인이 시간 안에 끝나지 않았습니다. 잠시 뒤 다시 확인해 주세요.",
+                                             code="provider_timeout")
+            except Exception:
+                error = ProviderNotAvailable("Claude 모델 목록을 읽지 못했습니다. Claude Code 설치와 로그인을 확인해 주세요.",
+                                             code="provider_call_failed")
+            else:
+                self._catalog, self._catalog_at, self._failure = models, now, None
+                return list(models)
+            self._failure = (error, now)
+            if self._catalog is not None:
+                # 마지막 목록으로 계속 쓰되, 1분 뒤에 다시 조회한다
+                self._catalog_at = now - CLAUDE_CATALOG_TTL_S + CLAUDE_CATALOG_RETRY_S
+                return list(self._catalog)
+            raise error
 
-    def provider(self, model):
-        return SubscriptionProvider(model=model)
+    def invalidate_models(self):
+        with self._catalog_lock:
+            self._catalog, self._catalog_at, self._failure = None, 0.0, None
+
+    def provider(self, model, *, effort=None):
+        return SubscriptionProvider(model=model, effort=effort)
 
     def start_login(self):
         if self.login_status().state == "pending":
@@ -195,8 +287,13 @@ class AIConnections:
         identity = (status.logged_in, status.auth_method, status.account)
         previous = self._identities.get(provider)
         self._identities[provider] = identity
-        if previous is not None and previous != identity and provider == self.selection.provider:
-            self.selection_id = uuid.uuid4().hex
+        if previous is not None and previous != identity:
+            # 모델 목록은 계정마다 다르다(2026-10-20 실측). 신원이 바뀌면 캐시한 목록을 버린다 (D4b)
+            invalidate = getattr(self.connections[provider], "invalidate_models", None)
+            if invalidate is not None:
+                invalidate()
+            if provider == self.selection.provider:
+                self.selection_id = uuid.uuid4().hex
 
     def _idle(self):
         if self._active:

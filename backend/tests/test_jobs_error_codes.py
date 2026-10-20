@@ -95,6 +95,9 @@ RAISE_SITES = [
     ("pipeline/codex.py", "Codex 응답 형식을 읽지 못했습니다.", "ProviderCallFailed", "provider_call_failed"),
     ("pipeline/connections.py", "Claude Code를 찾지 못했습니다. 설치 후", "ProviderNotAvailable", "provider_missing"),
     ("pipeline/connections.py", "Claude Code 로그인 창을 열지 못했습니다.", "ProviderNotAvailable", "provider_missing"),
+    # D4b Claude 모델 목록 (2026-10-20)
+    ("pipeline/connections.py", "Claude Code를 찾지 못해 모델 목록을", "ProviderNotAvailable", "provider_missing"),
+    ("pipeline/connections.py", "Claude Code가 모델 목록을 알려 주지 않았습니다.", "ProviderNotAvailable", "provider_call_failed"),
     ("pipeline/connections.py", "AI 생성이 진행 중입니다.", "ConnectionConflict", "settings_busy"),
     ("pipeline/connections.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),

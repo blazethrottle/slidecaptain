@@ -3066,6 +3066,8 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /** Resolved Model */
+            resolved_model?: string | null;
             /** Supported Efforts */
             supported_efforts?: string[];
             /** Default Effort */
@@ -3075,7 +3077,7 @@ export interface components {
              * @default unverified
              * @enum {string}
              */
-            capability_source: "unverified" | "codex_model_list";
+            capability_source: "unverified" | "codex_model_list" | "claude_sdk_init";
             /** Capabilities Checked At */
             capabilities_checked_at?: string | null;
         };

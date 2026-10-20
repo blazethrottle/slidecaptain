@@ -21,7 +21,7 @@ export function describeStatus(status: AppStatus): string {
 function providerPrefix(s: AppStatus): string {
   return s.provider === "claude" || s.provider === "chatgpt"
     ? `${s.provider === "claude" ? "Claude" : "ChatGPT"} / ${s.model}`
-      + (s.provider === "chatgpt" ? ` / 요청 추론 강도: ${s.effort ?? "제공자 기본값"}` : "") : "";
+      + ` / 요청 추론 강도: ${s.effort ?? "제공자 기본값"}` : "";
 }
 
 export function fullStatus(s: AppStatus): string {

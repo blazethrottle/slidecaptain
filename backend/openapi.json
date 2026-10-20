@@ -8929,6 +8929,17 @@
             "type": "string",
             "title": "Label"
           },
+          "resolved_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Model"
+          },
           "supported_efforts": {
             "items": {
               "type": "string"
@@ -8951,7 +8962,8 @@
             "type": "string",
             "enum": [
               "unverified",
-              "codex_model_list"
+              "codex_model_list",
+              "claude_sdk_init"
             ],
             "title": "Capability Source",
             "default": "unverified"

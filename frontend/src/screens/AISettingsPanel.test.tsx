@@ -84,7 +84,8 @@ it("Codex LUNA 빠른 선택은 명시적 저장 전에는 적용하지 않는�
   expect(screen.getByLabelText("AI 서비스")).toHaveValue("chatgpt");
   expect(screen.getByLabelText("언어모델")).toHaveValue("gpt-6-luna");
   expect(api.selectAI).not.toHaveBeenCalled();
-  expect(screen.getByText("현재 적용: Claude / sonnet")).toBeInTheDocument();
+  // D4b(2026-10-20): Claude 선택도 요청 강도를 함께 보인다
+  expect(screen.getByText("현재 적용: Claude / sonnet / 요청 추론 강도: 제공자 기본값")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Codex LUNA" })).toHaveAttribute("aria-pressed", "true");
   vi.mocked(api.getAISettings).mockResolvedValue(withLuna({ provider: "chatgpt", model: "gpt-6-luna" }));
   await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
@@ -172,9 +173,29 @@ it("모델 또는 서비스를 바꾸면 이전 모델의 추론 강도를 전�
   expect(screen.queryByRole("option", { name: "high" })).toBeNull();
   await userEvent.selectOptions(screen.getByLabelText("추론 강도 (Effort)"), "medium");
   await userEvent.click(screen.getByRole("button", { name: "Claude Sonnet" }));
-  expect(screen.queryByLabelText("추론 강도 (Effort)")).toBeNull();
+  // D4b(2026-10-20): Claude도 강도 칸을 보인다. 이 모델은 지원 정보가 없어 제공자 기본값만 고를 수 있다
+  expect(screen.getByLabelText("추론 강도 (Effort)")).toHaveValue("");
+  expect(screen.getByText("지원 추론 강도 정보가 없습니다. 제공자 기본값을 사용할 수 있습니다.")).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
   expect(api.selectAI).toHaveBeenCalledWith({ provider: "claude", model: "sonnet" });
+});
+
+it("Claude 공식 목록의 정확 버전을 보이고 지원 강도를 저장한다 (D4b)", async () => {
+  vi.mocked(api.selectAI).mockResolvedValue({ provider: "claude", model: "sonnet", effort: "high" });
+  vi.mocked(api.getAISettings).mockResolvedValue({ ...settings, selection: { provider: "claude", model: "sonnet" },
+    providers: [{ ...settings.providers[0], models: [
+      { id: "sonnet", label: "Sonnet", resolved_model: "claude-sonnet-5", capability_source: "claude_sdk_init",
+        supported_efforts: ["low", "medium", "high", "xhigh", "max"] },
+      { id: "haiku", label: "Haiku", resolved_model: "claude-haiku-4-5-20251001", capability_source: "claude_sdk_init",
+        supported_efforts: [] },
+    ] }, settings.providers[1]] });
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  expect(await screen.findByRole("option", { name: "Sonnet (claude-sonnet-5)" })).toBeInTheDocument();
+  expect(screen.getByText(/설치된 Claude Code가 이 계정에 알려 준 모델 목록입니다/)).toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText("추론 강도 (Effort)"), "high");
+  await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
+  expect(api.selectAI).toHaveBeenCalledWith({ provider: "claude", model: "sonnet", effort: "high" });
 });
 
 it("지원 목록에서 사라진 저장 강도를 자동 대체하지 않고 재선택을 요구한다", async () => {

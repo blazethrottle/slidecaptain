@@ -167,9 +167,11 @@ def build_call_usage(result: ResultMessage, assistant_model: str | None) -> Call
 
 
 class SubscriptionProvider:
-    def __init__(self, model: str | None = None, timeout_s: float = 300.0) -> None:
+    def __init__(self, model: str | None = None, timeout_s: float = 300.0, effort: str | None = None) -> None:
         self.model = model or DEFAULT_MODEL
         self.timeout_s = timeout_s
+        # 사용자가 고른 추론 강도. None이면 CLI에 넘기지 않아 제공자 기본값을 쓴다 (D4b)
+        self.effort = effort
 
     async def complete(self, prompt: str, schema: dict) -> ProviderResponse:
         cli = resolve_cli_path()
@@ -185,6 +187,7 @@ class SubscriptionProvider:
             # 스키마 불일치 시 SDK 자체의 재프롬프트 여지는 없다: 그 경우는 앱의 형식 게이트가 담당한다.
             max_turns=2,
             model=self.model,
+            effort=self.effort,
             output_format={"type": "json_schema", "schema": schema},
         )
 

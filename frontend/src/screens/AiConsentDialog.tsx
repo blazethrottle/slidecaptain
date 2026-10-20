@@ -113,7 +113,7 @@ export function AiConsentDialog({ onConfirm, onCancel, statusSnapshot }: {
           제공자가 전송된 내용을 보관하거나 학습에 쓰는지는 이 앱이 단정하지 않습니다. 제공자의
           정책을 확인해 주세요.
         </p>
-        {status !== "loading" && status !== "error" && status.provider === "chatgpt" &&
+        {status !== "loading" && status !== "error" && (status.provider === "chatgpt" || status.provider === "claude") &&
           <p>요청 추론 강도: {status.effort ?? "제공자 기본값"}</p>}
         <p>이 확인은 지금 연 브라우저 탭의 현재 서비스, 모델과 추론 강도에만 유효합니다. 연결 설정을 바꾸거나 탭을 다시 열면 다시 묻습니다.</p>
         <div className="actions">
