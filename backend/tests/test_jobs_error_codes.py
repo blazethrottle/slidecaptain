@@ -96,7 +96,7 @@ RAISE_SITES = [
     ("pipeline/connections.py", "Claude Code를 찾지 못했습니다. 설치 후", "ProviderNotAvailable", "provider_missing"),
     ("pipeline/connections.py", "Claude Code 로그인 창을 열지 못했습니다.", "ProviderNotAvailable", "provider_missing"),
     ("pipeline/connections.py", "AI 생성이 진행 중입니다.", "ConnectionConflict", "settings_busy"),
-    ("pipeline/connections.py", "AI 서비스 또는 모델이 변경되었습니다.", "ConnectionConflict", "selection_changed"),
+    ("pipeline/connections.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),
     ("pipeline/connections.py", "AI 연결 상태가 변경되었습니다.", "ConnectionConflict", "identity_changed"),
     ("pipeline/connections.py", "AI 연결에 로그인되어 있지 않습니다.", "ProviderNotAvailable", "login_required"),
@@ -105,7 +105,8 @@ RAISE_SITES = [
     ("pipeline/connections.py", "구독 로그인을 확인해 주세요.", "ProviderNotAvailable", "login_required"),
     ("pipeline/connections.py", "AI 연결 상태를 확인하지 못했습니다.", "ProviderNotAvailable", "provider_call_failed"),
     ("pipeline/connections.py", "선택한 모델을 사용할 수 없습니다.", "ProviderNotAvailable", "model_unavailable"),
-    ("server/app.py", "AI 서비스 또는 모델이 변경되었습니다.", "ConnectionConflict", "selection_changed"),
+    ("pipeline/connections.py", "선택한 추론 강도의 지원 정보가 바뀌었습니다.", "ProviderNotAvailable", "model_unavailable"),
+    ("server/app.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
 ]
 
 

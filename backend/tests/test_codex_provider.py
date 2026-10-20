@@ -63,6 +63,64 @@ def test_structured_generation_pins_model_schema_and_reports_real_usage(tmp_path
     assert rpc.closed
 
 
+@pytest.mark.parametrize("effort", [None, "high", "adaptive.v2"])
+def test_connection_passes_selected_effort_to_each_turn(tmp_path, effort):
+    rpc = FakeRPC(tmp_path)
+    connection = CodexConnection(tmp_path, rpc_factory=lambda _: rpc)
+    provider = connection.provider("gpt-test", effort=effort)
+    for _ in range(2):
+        asyncio.run(provider.complete("question", {}))
+    turns = [params for method, params in rpc.calls if method == "turn/start"]
+    assert len(turns) == 2
+    for turn in turns:
+        assert turn["model"] == "gpt-test"
+        if effort is None:
+            assert "effort" not in turn
+        else:
+            assert turn["effort"] == effort
+
+
+def test_model_pages_preserve_only_advertised_efforts_and_known_default(tmp_path):
+    class Pages(FakeRPC):
+        def request(self, method, params=None):
+            if method != "model/list":
+                pytest.fail("catalog lookup must not start login or generation")
+            self.calls.append((method, params))
+            if params["cursor"] is None:
+                return {"data": [{"model": "first"}], "nextCursor": "page-2"}
+            return {"data": [{"model": "second", "displayName": "Second",
+                "supportedReasoningEfforts": [{"reasoningEffort": "high"}, {"reasoningEffort": "adaptive.v2"},
+                    {"reasoningEffort": "high"}, {"reasoningEffort": ""}, {"reasoningEffort": 2}, None],
+                "defaultReasoningEffort": "high"}], "nextCursor": None}
+    rpc = Pages(tmp_path)
+    first, second = CodexConnection(tmp_path, rpc_factory=lambda _: rpc).models()
+    assert first.supported_efforts == [] and first.default_effort is None
+    assert second.supported_efforts == ["high", "adaptive.v2"]
+    assert second.default_effort == "high"
+    assert second.capability_source == "codex_model_list"
+    assert second.capabilities_checked_at.tzinfo is not None
+    assert first.capabilities_checked_at == second.capabilities_checked_at
+
+
+@pytest.mark.parametrize("advertised", [None, "high", {}, [None, {"reasoningEffort": "  "}]])
+def test_invalid_effort_metadata_never_invents_support(tmp_path, advertised):
+    rpc = FakeRPC(tmp_path)
+    rpc.request = lambda *args: {"data": [{"model": "test", "supportedReasoningEfforts": advertised,
+                                          "defaultReasoningEffort": "high"}]}
+    model = CodexConnection(tmp_path, rpc_factory=lambda _: rpc).models()[0]
+    assert model.supported_efforts == []
+    assert model.default_effort is None
+
+
+def test_unadvertised_default_is_not_offered(tmp_path):
+    rpc = FakeRPC(tmp_path)
+    rpc.request = lambda *args: {"data": [{"model": "test", "supportedReasoningEfforts": [{"reasoningEffort": "low"}],
+                                          "defaultReasoningEffort": "high"}]}
+    model = CodexConnection(tmp_path, rpc_factory=lambda _: rpc).models()[0]
+    assert model.supported_efforts == ["low"]
+    assert model.default_effort is None
+
+
 @pytest.mark.parametrize("mode", ["api_key", "failed", "invalid_json", "timeout"])
 def test_failure_and_raw_text_paths_close_process(tmp_path, mode):
     rpc = FakeRPC(tmp_path)

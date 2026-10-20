@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -217,6 +218,7 @@ class CodexConnection:
 
     def models(self):
         models, cursor, seen = [], None, set()
+        checked_at = datetime.now(timezone.utc)
         for _ in range(10):
             result = self._client().request("model/list", {"limit": 100, "includeHidden": False, "cursor": cursor})
             for item in result.get("data", []):
@@ -226,7 +228,18 @@ class CodexConnection:
                 if not isinstance(model, str) or "text" not in item.get("inputModalities", ["text"]):
                     continue
                 if model not in seen:
-                    models.append(ModelOption(id=model, label=item.get("displayName") or model))
+                    advertised = item.get("supportedReasoningEfforts")
+                    efforts = []
+                    for option in advertised if isinstance(advertised, list) else []:
+                        effort = option.get("reasoningEffort") if isinstance(option, dict) else None
+                        if isinstance(effort, str) and effort.strip() and effort not in efforts:
+                            efforts.append(effort)
+                    default = item.get("defaultReasoningEffort")
+                    models.append(ModelOption(
+                        id=model, label=item.get("displayName") or model,
+                        supported_efforts=efforts, default_effort=default if default in efforts else None,
+                        capability_source="codex_model_list", capabilities_checked_at=checked_at,
+                    ))
                     seen.add(model)
             next_cursor = result.get("nextCursor")
             if not next_cursor:
@@ -282,8 +295,8 @@ class CodexConnection:
         self._attempt = LoginAttempt(state="cancelled", message="로그인 대기를 취소했습니다.")
         return self._attempt
 
-    def provider(self, model):
-        return CodexProvider(self.home, model=model, rpc_factory=self._factory)
+    def provider(self, model, *, effort=None):
+        return CodexProvider(self.home, model=model, effort=effort, rpc_factory=self._factory)
 
     def close(self):
         if self._rpc is not None:
@@ -331,8 +344,9 @@ def strict_output_schema(schema):
 
 
 class CodexProvider:
-    def __init__(self, home: Path, *, model: str, timeout_s=300, rpc_factory=CodexRPC):
+    def __init__(self, home: Path, *, model: str, effort: str | None = None, timeout_s=300, rpc_factory=CodexRPC):
         self.home, self.model, self.timeout_s, self._factory = home, model, timeout_s, rpc_factory
+        self.effort = effort
 
     async def complete(self, prompt, schema):
         stop = threading.Event()
@@ -365,6 +379,7 @@ class CodexProvider:
             turn = client.request("turn/start", {"threadId": thread_id,
                 "input": [{"type": "text", "text": prompt}], "outputSchema": wire_schema,
                 "model": self.model, "approvalPolicy": "on-request",
+                **({"effort": self.effort} if self.effort is not None else {}),
                 "sandboxPolicy": {"type": "readOnly", "networkAccess": False},
             })
             turn_id = turn["turn"]["id"]

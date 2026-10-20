@@ -264,6 +264,7 @@ class AppStatus(BaseModel):
     provider: Literal["subscription", "none", "claude", "chatgpt"]
     login: LoginStatus
     model: str | None = None
+    effort: str | None = Field(default=None, description="요청할 추론 강도. null은 제공자 기본값이며 실제 적용 확인값이 아니다")
     selection_id: str | None = None
     last_generation_at: str | None = None  # 프로세스 메모리에만 기록, 재시작 시 초기화
     checked_at: str = Field(description="로그인 상태를 마지막으로 확인한 시각 (최대 60초 전 값일 수 있다)")
@@ -507,7 +508,7 @@ def create_app(
         if ai_connections is None:
             _require_service()
         elif selection_id != ai_connections.selection_id:
-            raise ConnectionConflict("AI 서비스 또는 모델이 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
+            raise ConnectionConflict("AI 서비스, 모델 또는 추론 강도가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")
 
     def _sources_revision(name: str) -> str | None:
         try:
@@ -1666,7 +1667,7 @@ def create_app(
     def get_status():
         if ai_connections is not None:
             selection, selection_id, login = ai_connections.selected_status()
-            return AppStatus(provider=selection.provider, model=selection.model, login=login,
+            return AppStatus(provider=selection.provider, model=selection.model, effort=selection.effort, login=login,
                              selection_id=selection_id, checked_at=_now_iso(),
                              last_generation_at=generation_success.get((selection.provider, selection.model)),
                              data_dir=_data_dir_status())
@@ -1684,6 +1685,7 @@ def create_app(
             provider="subscription" if provider is not None else "none",
             login=status_state["login"],
             model=getattr(provider, "model", None),
+            effort=getattr(provider, "effort", None),
             last_generation_at=status_state["last_generation_at"],
             checked_at=status_state["checked_at"],
             data_dir=_data_dir_status(),

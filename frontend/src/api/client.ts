@@ -65,7 +65,8 @@ export type UploadResult = components["schemas"]["UploadResult"];
 export type AppStatus = components["schemas"]["AppStatus"];
 export type LoginStatus = components["schemas"]["LoginStatus"];
 export type AISettings = components["schemas"]["AISettings"];
-export type AISelection = Required<components["schemas"]["AISelection"]>;
+export type AISelection = Required<Pick<components["schemas"]["AISelection"], "provider" | "model">>
+  & Pick<components["schemas"]["AISelection"], "effort">;
 export type ReconcileDiagramRequest = components["schemas"]["ReconcileDiagramRequest"];
 export type DiagramGenerationResult = components["schemas"]["DiagramGenerationResult"];
 export type GenerateDiagramRequest = Omit<components["schemas"]["GenerateDiagramRequest"],"mode"> & Partial<Pick<components["schemas"]["GenerateDiagramRequest"],"mode">>;

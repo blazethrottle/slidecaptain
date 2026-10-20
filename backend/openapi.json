@@ -2863,6 +2863,18 @@
             "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:/\\[\\]-]*$",
             "title": "Model",
             "default": "sonnet"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort"
           }
         },
         "additionalProperties": false,
@@ -3042,6 +3054,18 @@
               }
             ],
             "title": "Model"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effort",
+            "description": "요청할 추론 강도. null은 제공자 기본값이며 실제 적용 확인값이 아니다"
           },
           "selection_id": {
             "anyOf": [
@@ -8904,6 +8928,45 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "supported_efforts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Efforts"
+          },
+          "default_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Effort"
+          },
+          "capability_source": {
+            "type": "string",
+            "enum": [
+              "unverified",
+              "codex_model_list"
+            ],
+            "title": "Capability Source",
+            "default": "unverified"
+          },
+          "capabilities_checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capabilities Checked At"
           }
         },
         "type": "object",

@@ -12,9 +12,9 @@ const settings: AISettings = {
   selection: { provider: "claude", model: "sonnet" }, selection_id: "one", busy: false,
   providers: [
     { id: "claude", label: "Claude", login: { logged_in: true, account: "te***@example.com" },
-      models: [{ id: "sonnet", label: "Sonnet" }], login_attempt: { state: "idle", message: "" } },
+      models: [{ id: "sonnet", label: "Sonnet", capability_source: "unverified" }], login_attempt: { state: "idle", message: "" } },
     { id: "chatgpt", label: "ChatGPT", login: { logged_in: false },
-      models: [{ id: "gpt-test", label: "GPT Test" }], login_attempt: { state: "idle", message: "" } },
+      models: [{ id: "gpt-test", label: "GPT Test", capability_source: "codex_model_list" }], login_attempt: { state: "idle", message: "" } },
   ],
 };
 
@@ -69,8 +69,8 @@ it("열기 전 조회하지 않고 생성 중에는 설정을 열 수 없다", a
 function withLuna(selection = settings.selection): AISettings {
   return { ...settings, selection, providers: [settings.providers[0], {
     ...settings.providers[1], models: [
-      { id: "gpt-6-sol", label: "GPT-6-Sol" },
-      { id: "gpt-6-luna", label: "GPT-6-Luna" },
+      { id: "gpt-6-sol", label: "GPT-6-Sol", capability_source: "codex_model_list" },
+      { id: "gpt-6-luna", label: "GPT-6-Luna", capability_source: "codex_model_list" },
     ],
   }] };
 }
@@ -127,4 +127,84 @@ it("열린 설정은 Esc로 닫히고 초점이 여닫기 버튼으로 돌아온
   await userEvent.keyboard("{Escape}");
   expect(toggle).toHaveAttribute("aria-expanded", "false");
   expect(document.activeElement).toBe(toggle);
+});
+
+function withEfforts(effort: string | null = "high"): AISettings {
+  return { ...settings, selection: { provider: "chatgpt", model: "gpt-6-luna", effort }, providers: [settings.providers[0], {
+    ...settings.providers[1], models: [
+      { id: "gpt-6-luna", label: "Luna", capability_source: "codex_model_list", supported_efforts: ["low", "high"], default_effort: "low" },
+      { id: "gpt-other", label: "Other", capability_source: "codex_model_list", supported_efforts: ["medium"] },
+    ],
+  }] };
+}
+
+it("저장한 추론 강도와 지원 수준을 읽고 같은 빠른 선택 및 새로고침에서 유지한다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue(withEfforts());
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  const effort = await screen.findByLabelText("추론 강도 (Effort)");
+  expect(effort).toHaveValue("high");
+  expect(screen.getByText(/현재 적용:.*요청 추론 강도: high/)).toBeInTheDocument();
+  await userEvent.selectOptions(effort, "low");
+  await userEvent.click(screen.getByRole("button", { name: "Codex LUNA" }));
+  await userEvent.click(screen.getByRole("button", { name: "연결 상태 다시 확인" }));
+  expect(effort).toHaveValue("low");
+  await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
+  expect(api.selectAI).toHaveBeenCalledWith({ provider: "chatgpt", model: "gpt-6-luna", effort: "low" });
+});
+
+it("명시 추론 강도를 기본값으로 바꾸면 이전 형식으로 저장한다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue(withEfforts());
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  await userEvent.selectOptions(await screen.findByLabelText("추론 강도 (Effort)"), "");
+  await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
+  expect(api.selectAI).toHaveBeenCalledWith({ provider: "chatgpt", model: "gpt-6-luna" });
+});
+
+it("모델 또는 서비스를 바꾸면 이전 모델의 추론 강도를 전송하지 않는다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue(withEfforts());
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  await screen.findByLabelText("추론 강도 (Effort)");
+  await userEvent.selectOptions(screen.getByLabelText("언어모델"), "gpt-other");
+  expect(screen.getByLabelText("추론 강도 (Effort)")).toHaveValue("");
+  expect(screen.queryByRole("option", { name: "high" })).toBeNull();
+  await userEvent.selectOptions(screen.getByLabelText("추론 강도 (Effort)"), "medium");
+  await userEvent.click(screen.getByRole("button", { name: "Claude Sonnet" }));
+  expect(screen.queryByLabelText("추론 강도 (Effort)")).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
+  expect(api.selectAI).toHaveBeenCalledWith({ provider: "claude", model: "sonnet" });
+});
+
+it("지원 목록에서 사라진 저장 강도를 자동 대체하지 않고 재선택을 요구한다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue(withEfforts("max"));
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  const effort = await screen.findByLabelText("추론 강도 (Effort)");
+  expect(effort).toHaveValue("max");
+  expect(screen.getByRole("button", { name: "선택 저장" })).toBeDisabled();
+  expect(screen.getByRole("alert")).toHaveTextContent("추론 강도를 다시 선택");
+  await userEvent.selectOptions(effort, "");
+  expect(screen.getByRole("button", { name: "선택 저장" })).toBeEnabled();
+});
+
+it("재조회로 지원 정보가 없어져도 미저장 강도를 보존하고 저장을 차단한다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue(withEfforts());
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  await userEvent.selectOptions(await screen.findByLabelText("추론 강도 (Effort)"), "low");
+  const refreshed = withEfforts();
+  refreshed.providers[1].models[0].supported_efforts = [];
+  vi.mocked(api.getAISettings).mockResolvedValue(refreshed);
+  await userEvent.click(screen.getByRole("button", { name: "연결 상태 다시 확인" }));
+  expect(screen.getByLabelText("추론 강도 (Effort)")).toHaveValue("low");
+  expect(screen.getByRole("button", { name: "선택 저장" })).toBeDisabled();
+});
+
+it("생성 중 추론 강도도 잠근다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue({ ...withEfforts(), busy: true });
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  expect(await screen.findByLabelText("추론 강도 (Effort)")).toBeDisabled();
 });
