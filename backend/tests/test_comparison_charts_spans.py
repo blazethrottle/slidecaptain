@@ -315,6 +315,57 @@ def test_chart_takes_eighty_percent_of_the_table_area_centered(kind):
     assert chart.h+caption.h==pytest.approx(table.h*0.8)
 
 
+def _chart_deck(kind,mutate=None,eyebrow=False):
+    # 표본 덱의 저장 형태를 고친 뒤 구성 계획 지문을 다시 맞춘다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample()
+    payload=deck.model_dump(mode='json')
+    if mutate:
+        mutate(payload)
+    deck=Deck.model_validate(payload)
+    deck.structure.story_plan.input_fingerprint=story_fingerprint(deck.structure.story_plan,deck.meta,deck.structure.chapters,sources)
+    if eyebrow:
+        deck.slides[0].eyebrow='분류 라벨'
+        deck.slides[0].subtitle='부제 문장 한 줄'
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    return deck,sources
+
+
+def _long_definition(payload):
+    for evidence in payload['structure']['story_plan']['evidence']:
+        evidence['metric_basis']['definition']=('부가세를 제외한 순매출 합계 '*30)[:190]
+
+
+def _long_entity(payload):
+    for index,evidence in enumerate(payload['structure']['story_plan']['evidence']):
+        evidence['metric_basis']['entity']=('가나다라마바사아자차카타파하'*4)[:29]+'AB'[index]
+
+
+@pytest.mark.parametrize('kind,mutate,eyebrow,overrides',[
+    ('bar',_long_definition,False,{}),
+    ('column',_long_definition,False,{}),
+    ('column',_long_entity,False,{}),
+    ('column',None,True,{'font_roles':{'body_pt':24}}),
+    ('bar',None,True,{'spacing':{'margin_top':140,'margin_bottom':130}}),
+    ('column',None,True,{'spacing':{'margin_top':140,'margin_bottom':130}}),
+])
+def test_chart_falls_back_to_the_whole_table_area_when_eighty_percent_does_not_fit(kind,mutate,eyebrow,overrides):
+    # C3 후속 리뷰 TCR-02: 80% 영역에서는 긴 조건 문장(세 줄 초과), 긴 범주 라벨, 큰 본문 글자, 큰 여백일 때 종전에는
+    # 그려지던 차트가 "공간이 부족합니다" 계열로 실패했고, 차트 실패는 덱 전체 렌더를 422로 막는다. 줄인 영역에 들어가지
+    # 않으면 표 자리 전체에 종전처럼 그린다
+    from slidecaptain.models.preset import apply_overrides
+    preset=apply_overrides(Preset(),overrides) if overrides else Preset()
+    deck,sources=_chart_deck(kind,mutate,eyebrow)
+    table_deck=deck.model_copy(deep=True)
+    table_deck.slides[0].chart=None
+    table=next(f for f in build_render_plan(table_deck,preset,FontMetrics.load_default(),sources=sources).slides[0].frames if f.table)
+    frames=build_render_plan(deck,preset,FontMetrics.load_default(),sources=sources).slides[0].frames
+    chart=next(f for f in frames if f.chart)
+    caption=next(f for f in frames if f.name.endswith(':chart_conditions'))
+    assert (chart.x,chart.y,chart.w)==(table.x,table.y,table.w)
+    assert chart.h+caption.h==pytest.approx(table.h)
+
+
 def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels():
     # 2026-10-20 회사 PC 실측(PowerPoint 16.0 build 20430, 12pt): 값 축 글자 칸은 약 28pt다. 그림 영역 아래 공간이
     # 24pt(글자 크기의 2배)면 PowerPoint가 글자 칸을 차트 틀 안에 넣으려고 그림 영역을 계획보다 4.2pt 위에 그렸다.

@@ -32,6 +32,11 @@ class ChartUnavailable(ValueError):
     (C3 리뷰 C3R-01: 15자리 안내가 "요청이 실패했습니다"로만 보였다)."""
 
 
+class ChartSpaceUnavailable(ChartUnavailable):
+    """받은 틀이 좁아 차트를 그릴 수 없는 이유(조건 세 줄, 범주 라벨 폭, 높이와 폭 하한). 엔진은 줄인 차트 영역에서 이
+    이유로 실패하면 표 자리 전체로 다시 그린다(장 제목과 차트 비율 리뷰 TCR-02). 값과 근거의 이유는 이 종류가 아니다."""
+
+
 def _significant_digits(value):
     return len(value.normalize().as_tuple().digits)
 
@@ -120,13 +125,13 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     font=preset.font_roles.body_pt
     condition_lines=break_paragraph(conditions,frame.w,font,metrics.face(False),preset.spacing.safety_ratio)
     if len(condition_lines)>3:
-        raise ChartUnavailable('차트의 단위/기간/분모 조건을 세 줄 안에 보존하지 못했습니다. 내용 영역을 확인해 주세요.')
+        raise ChartSpaceUnavailable('차트의 단위/기간/분모 조건을 세 줄 안에 보존하지 못했습니다. 내용 영역을 확인해 주세요.')
     caption_h=len(condition_lines)*font*preset.spacing.line_spacing+preset.spacing.subtitle_gap
     height=frame.h-caption_h
     # 세로 막대는 그림 영역이 높이에서 글자 크기의 4.5배를 빼고, 아래의 그림 영역 하한이 4배라 8.5배가 하한이다.
     # 하한을 8배로 두면 8~8.5배 구간이 둘째 문구로 실패했다 (회사 PC 이월표 (13))
     if height<font*(8.5 if slide.chart.kind=='column' else 8) or frame.w<font*20:
-        raise ChartUnavailable('차트와 필수 조건을 배치할 공간이 부족합니다.')
+        raise ChartSpaceUnavailable('차트와 필수 조건을 배치할 공간이 부족합니다.')
     text_values=[format(v,'f').rstrip('0').rstrip('.') if '.' in format(v,'f') else format(v,'f') for v in values]
     display_values=[chart_display_text(v) for v in values]
     label_width=max(metrics.face(False).width_pt(label,font) for label in labels)
@@ -154,9 +159,9 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         # 그려, 종전의 2배(24pt)로는 글자 아랫부분이 차트 틀에서 잘렸다 (2026-10-16 회사 PC, build 20430 실측)
         plot_h=height-font*4.5
         if label_width>plot_w/2-font:
-            raise ChartUnavailable('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
+            raise ChartSpaceUnavailable('차트 범주 라벨을 한 줄로 보존할 폭이 부족합니다.')
     if plot_w<font*4 or plot_h<font*4:
-        raise ChartUnavailable('차트 축과 값을 배치할 공간이 부족합니다.')
+        raise ChartSpaceUnavailable('차트 축과 값을 배치할 공간이 부족합니다.')
     points=[]
     for index,(item,value,label) in enumerate(zip((left,right),values,labels)):
         ratio=float(value/maximum)
