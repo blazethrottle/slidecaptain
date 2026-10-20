@@ -7,6 +7,7 @@
 import math
 import re
 
+from slidecaptain.metrics.capacity import TITLE_FIT_FLOORS
 from slidecaptain.metrics.color import readable_text_color
 from slidecaptain.models.direct_edit import ElementEdit
 from slidecaptain.models.preset import BODY_MIN_PT, FOOTNOTE_MIN_PT, Preset
@@ -53,6 +54,16 @@ def _sizes_by_key(page: SlidePlan) -> dict[str, list[float]]:
     return sizes
 
 
+def _base_sizes(page: SlidePlan, preset: Preset) -> dict[str, list[float]]:
+    """배율의 기준 크기. 제목 요소는 칸에 맞춘 크기가 아니라 맞춤 전 프리셋 크기다. 엔진이 직접 정한 크기(배율)를 맞춤 전
+    크기에 곱하므로(templates.build_slide), 화면이 입력한 pt를 같은 기준의 배율로 저장해야 한다(확인 리뷰 TFR-01)."""
+    sizes = _sizes_by_key(page)
+    for key, (role, _floor) in TITLE_FIT_FLOORS.items():
+        if key in sizes:
+            sizes[key] = [getattr(preset.font_roles, role)] * len(sizes[key])
+    return sizes
+
+
 def _text_keys(page: SlidePlan) -> set[str]:
     """글이 있는 요소. 빈 표지 부제처럼 빈 문단만 있는 요소는 글자 크기를 바꿀 것이 없다 (D3c-2 리뷰 F10).
 
@@ -71,7 +82,7 @@ def clamp_scales(
 ) -> tuple[dict[str, float], list[CapacityWarning]]:
     """배율을 OOXML 한계로 자르고, 자른 요소와 읽기 하한 아래로 줄인 요소에 경고를 단다 (계획 리뷰 저장 S6, S7,
     재리뷰 RR18). 문단이 없거나 글이 없는 요소의 배율은 버린다."""
-    sizes = _sizes_by_key(base)
+    sizes = _base_sizes(base, preset)
     texts = _text_keys(base)
     result: dict[str, float] = {}
     warnings: list[CapacityWarning] = []
@@ -172,9 +183,11 @@ def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str
                            eyebrow=slide.eyebrow, subtitle=slide.subtitle, font_scales=scales)
 
     base = build(None)
-    sizes = _sizes_by_key(base).get(key)
+    sizes = _base_sizes(base, preset).get(key)
     if not sizes or key not in _text_keys(base):
         return None
+    # 배율이 없을 때 지금 크기는 그려진 크기다. 제목 요소는 칸에 맞춰 기준 크기보다 작을 수 있다
+    rendered = max(_sizes_by_key(base)[key])
     keys = frame_keys(slide)
     others = {k: e.font_scale for k, e in slide.direct_edits.items() if e.font_scale is not None and k != key}
     low, high = scale_limits(sizes, preset)
@@ -205,7 +218,7 @@ def font_limit(chapter, slide, preset: Preset, metrics, presenter: str, key: str
             best = ok
     return {
         "base_pt": largest,
-        "current_pt": round(largest * current, 2),
+        "current_pt": round(largest * current, 2) if current != 1 else round(rendered, 2),
         "fits_up_to_pt": None if best is None else math.floor(largest * best * 100) / 100,
         "min_pt": round(largest * low, 2),
         "max_pt": round(largest * high, 2),

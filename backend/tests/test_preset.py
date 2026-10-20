@@ -16,7 +16,8 @@ def test_default_preset_values():
     assert p.language == "ko-KR"
     assert p.fonts.korean == "Noto Sans KR"
     assert p.font_roles.body_pt == 12.0
-    assert p.font_roles.title_pt == 20.0
+    # 2026-10-20 사용자 결정(회사 PC 이월표 (17), 시안 C): 장 제목 20pt가 본문 차트에 비해 작아 28pt로 키웠다
+    assert p.font_roles.title_pt == 28.0
     assert p.font_roles.footnote_pt == 9.0
     assert p.spacing.margin_left == 50.0
     assert p.spacing.line_spacing == 1.4
@@ -176,7 +177,9 @@ def test_eyebrow_size_is_added_without_touching_existing_font_roles():
     fonts = Preset().font_roles
 
     assert fonts.eyebrow_pt == 10.5
-    assert fonts.title_pt == 20.0
+    assert fonts.title_pt == 28.0  # 2026-10-20 사용자 결정으로 20pt에서 바꿨다(회사 PC 이월표 (17))
+    # 같은 날 제목 위계 결정(이월표 (21) A): 표지 > 섹션 > 장 제목
+    assert fonts.cover_title_pt == 36.0 and fonts.section_title_pt == 32.0
     assert fonts.subtitle_pt == 14.0
     assert fonts.body_pt == 12.0
     assert fonts.footnote_pt == 9.0

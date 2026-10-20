@@ -92,9 +92,11 @@ def test_preset_get_put_and_render_uses_it(client):
     r = client.get("/api/preset")
     assert r.status_code == 200
     preset = r.json()
-    preset["font_roles"]["title_pt"] = 30.0
+    # 24pt는 제목 칸(40pt)에 한 줄이 들어가는 크기다. 종전의 30pt는 행간을 포함해 42pt라 2026-10-20 제목 맞춤이 28pt로
+    # 줄인다(templates.TITLE_FIT_FLOORS). 이 시험은 렌더가 전역 프리셋을 밑판으로 쓰는지만 본다
+    preset["font_roles"]["title_pt"] = 24.0
     assert client.put("/api/preset", json=preset).status_code == 200
-    assert client.get("/api/preset").json()["font_roles"]["title_pt"] == 30.0
+    assert client.get("/api/preset").json()["font_roles"]["title_pt"] == 24.0
     # 렌더 계획이 전역 프리셋을 밑판으로 쓴다
     client.post("/api/projects", json={"name": "p1", "title": "제목"})
     deck = client.get("/api/projects/p1/deck").json()
@@ -105,7 +107,7 @@ def test_preset_get_put_and_render_uses_it(client):
     title_para = next(
         p for f in plan["slides"][0]["frames"] if f["name"].endswith(":title") for p in f["paras"]
     )
-    assert title_para["font_pt"] == 30.0
+    assert title_para["font_pt"] == 24.0
 
 
 def test_preset_put_below_floor_422(client):
