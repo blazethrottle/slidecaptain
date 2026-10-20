@@ -341,9 +341,13 @@ def _style_value_labels(labels,spec,style,number_format):
 
 def _add_chart_shape(slide,frame,style):
     spec=frame.chart
-    formats=[_number_format(point.value) for point in spec.points]
+    # 라벨 서식은 표시 글자의 자릿수를 따르고, 내장 데이터에는 원문 값을 넣는다. PowerPoint는 원문 값을 이 서식으로
+    # 사사오입해 표시 글자와 같은 글자를 보인다 (2026-10-20 회사 PC 실측, 회사 PC 이월표 (18))
+    formats=[_number_format(point.display) for point in spec.points]
     label_format=max(formats,key=len)
-    data=_LiteralCategoryChartData(number_format=label_format)
+    # 내장 워크북 칸의 서식은 원문 자릿수를 따른다. PowerPoint "데이터 편집" 표가 칸 서식으로 값을 보이므로, 표시
+    # 자릿수를 주면 원문이 반올림돼 보였다 (C3 후속 리뷰 CDR-01). 라벨과 축은 제 서식을 따로 가진다(sourceLinked 0)
+    data=_LiteralCategoryChartData(number_format=max((_number_format(point.value) for point in spec.points),key=len))
     data.categories=[point.label for point in spec.points]
     data.add_series(f'{spec.definition} ({spec.unit})',[float(point.value) for point in spec.points])
     shape=slide.shapes.add_chart(XL_CHART_TYPE.BAR_CLUSTERED if spec.kind=='bar' else XL_CHART_TYPE.COLUMN_CLUSTERED,
@@ -359,7 +363,10 @@ def _add_chart_shape(slide,frame,style):
     _style_value_labels(plot.data_labels,spec,style,label_format)
     chart.value_axis.minimum_scale=float(spec.axis_minimum)
     chart.value_axis.maximum_scale=float(spec.axis_maximum)
-    chart.value_axis.major_unit=float(spec.axis_maximum)/5
+    # 미리보기처럼 눈금 글자는 0과 최댓값만 보이고 눈금선은 그리지 않는다. 종전에는 주 눈금선과 중간 눈금 글자가 보였고
+    # bar15에서 값 글자가 최댓값 눈금선과 겹쳤다 (2026-10-20 회사 PC 관측, 이월표 (16) 사용자 결정 A)
+    chart.value_axis.has_major_gridlines=False
+    chart.value_axis.major_unit=float(spec.axis_maximum)
     chart.value_axis.tick_labels.number_format=_axis_number_format(spec.axis_maximum)
     for axis in (chart.category_axis,chart.value_axis):
         _chart_font(axis.tick_labels.font,spec,style)
