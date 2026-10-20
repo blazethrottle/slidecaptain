@@ -94,13 +94,40 @@ def test_title_that_does_not_fit_even_at_the_floor_stays_there_and_warns(build, 
     assert _frame(plan, key).paras[0].font_pt == floor and _warned(plan, key)
 
 
-@pytest.mark.parametrize("topic", ["짧은 제목", "가" * 40])
-def test_direct_edit_scale_multiplies_the_fitted_size(topic):
-    # 직접 수정 배율은 칸에 맞춘 크기에 곱한다. 맞춤이 사용자가 키운 제목을 다시 줄이면 키운 효과가 사라지기 때문이다.
-    # 키운 제목이 넘치면 경고로 알린다(리뷰 TCR-03: 종전 20pt에 1.2배를 둔 덱은 업데이트 뒤 더 커진다, D4 릴리스 안내)
-    base = _frame(_content(topic), "title").paras[0].font_pt
-    plan = _content(topic, scales={"title": 1.2})
-    assert _frame(plan, "title").paras[0].font_pt == round(base * 1.2, 2)
+@pytest.mark.parametrize("scale", [0.8, 1.2])
+def test_direct_edit_size_does_not_depend_on_the_title_text(scale):
+    # 직접 정한 크기는 맞춤 전 크기(28pt)에 배율을 곱해 그대로 그린다. 화면은 입력한 pt를 맞춤 전 크기에 대한 배율로
+    # 저장하므로, 맞춘 크기에 곱하면 제목 문구를 고칠 때 크기가 바뀌었다(확인 리뷰 TFR-01: 40자 제목에 26pt를 넣고
+    # 짧게 고치면 33.09pt). 키운 제목이 넘치면 경고로 알린다
+    sizes = {_frame(_content(topic, scales={"title": scale}), "title").paras[0].font_pt for topic in ("짧은 제목", "가" * 40)}
+    assert sizes == {round(28 * scale, 2)}
+
+
+def test_font_limit_reports_the_unfitted_base_and_the_rendered_size():
+    # 화면은 base_pt로 입력값을 배율로 바꾸고 current_pt를 지금 크기로 보인다(DirectEditPanel). 긴 제목은 배율이 없을 때
+    # 맞춘 크기로 그려지므로 current_pt가 그 크기다
+    from slidecaptain.layout.direct_edits import font_limit
+    from slidecaptain.models.deck import Slide
+
+    topic = "가" * 40
+    chapter = Chapter(id="c1", topic=topic, template="bullet_box")
+    slide = Slide(chapter_id="c1", slots=BulletBoxSlots(conclusion="결론"))
+    limit = font_limit(chapter, slide, Preset(), M, "", "title")
+    fitted = _frame(_content(topic), "title").paras[0].font_pt
+    assert limit["base_pt"] == 28 and limit["current_pt"] == fitted < 28
+
+
+def test_cover_and_section_line_contract_uses_the_fit_floor():
+    # 확인 리뷰 TFR-03: 행간을 넓힌 프리셋에서 새 크기(36, 32pt) 기준 줄 수가 0이 되어 프롬프트에 "최대 0줄"이 실렸다.
+    # 렌더는 하한(28, 24pt)까지 줄여 그리므로 계약도 하한 크기로 센다
+    from slidecaptain.metrics.capacity import capacity_contract
+    from slidecaptain.models.preset import apply_overrides
+
+    wide = apply_overrides(Preset(), {"spacing": {"line_spacing": 1.6}})
+    assert capacity_contract("cover", wide)["cover_title_max_lines"] == 1
+    assert capacity_contract("divider", wide)["section_title_max_lines"] == 1
+    plan = _cover("합성 요청 처리 보고", wide)
+    assert not _warned(plan, "cover_title")
 
 
 def test_diagram_page_with_a_title_that_fit_at_20pt_still_renders():

@@ -12,6 +12,7 @@ from slidecaptain.metrics.capacity import (
     callout_geometry,
     card_geometry,
     cards_geometry,
+    TITLE_FIT_FLOORS,
     cover_geometry,
     divider_geometry,
     line_height_pt,
@@ -59,12 +60,10 @@ def _font_preset(preset: Preset, scale: float) -> Preset:
 
 
 # 제목 맞춤 (2026-10-20 사용자 결정: 회사 PC 이월표 (22) A, (21) A). 장 제목 28pt, 표지 제목 36pt, 섹션 제목 32pt가 칸에
-# 들어가지 않으면 1pt씩 줄이되, 키우기 전의 기본 크기(아래 값) 아래로는 줄이지 않는다. 종전 크기에서 칸에 들어가던 제목은
-# 반드시 들어가므로 업데이트 뒤에 넘침 경고나 도식 장의 렌더 막힘이 새로 생기지 않는다(리뷰 TCR-01, TCR-06). 어느 크기도
-# 들어가지 않으면 하한 크기로 그리고 넘침 경고는 종전처럼 난다. 직접 수정 배율은 맞춘 크기에 곱한다: 사용자가 키운 제목을
-# 맞춤이 다시 줄이면 키운 효과가 사라진다. 그래서 키운 제목이 넘치면 경고로 알린다(리뷰 TCR-03은 D4 릴리스 안내)
-TITLE_FIT_FLOORS = {"title": ("title_pt", 20.0), "cover_title": ("cover_title_pt", 28.0),
-                    "section_title": ("section_title_pt", 24.0)}
+# 들어가지 않으면 1pt씩 줄이되, 키우기 전의 기본 크기(capacity.TITLE_FIT_FLOORS) 아래로는 줄이지 않는다. 종전 크기에서
+# 칸에 들어가던 제목은 반드시 들어가므로 업데이트 뒤에 넘침 경고나 도식 장의 렌더 막힘이 새로 생기지 않는다(리뷰 TCR-01,
+# TCR-06). 어느 크기도 들어가지 않으면 하한 크기로 그리고 넘침 경고는 종전처럼 난다. 직접 수정으로 크기를 정한 제목은
+# 맞추지 않고 맞춤 전 크기에 배율을 곱해 그린다(build_slide, 확인 리뷰 TFR-01)
 
 
 def fitted_font_pt(text: str, width_pt: float, height_pt: float, font_pt: float, floor_pt: float, bold: bool,
@@ -906,9 +905,12 @@ def build_slide(
             presets[scale] = _font_preset(preset, scale)
         if key not in titles:
             return presets[scale]
-        # 제목 요소는 칸에 맞춘 크기에 그 요소의 배율을 곱한다. 문단과 넘침 경고가 같은 프리셋을 받으므로 둘이 어긋나지 않는다
+        # 제목 요소는 배율이 없으면 칸에 맞춘 크기를 쓴다. 문단과 넘침 경고가 같은 프리셋을 받으므로 둘이 어긋나지 않는다.
+        # 직접 정한 크기(배율)는 맞춤 전 크기에 곱해 그대로 그린다. 화면은 입력한 pt를 맞춤 전 크기에 대한 배율로 저장하므로
+        # (direct_edits.font_limit의 base_pt), 맞춘 크기에 곱하면 제목 문구를 고칠 때 크기가 바뀐다(확인 리뷰 TFR-01).
+        # 키운 제목이 넘치면 경고로 알린다
         if key not in fitted:
-            fitted[key] = _font_preset(fit_title_preset(preset, key, titles[key], metrics), scale)
+            fitted[key] = presets[scale] if scale != 1 else fit_title_preset(preset, key, titles[key], metrics)
         return fitted[key]
 
     plan = _dispatch(chapter, slots, page_no, preset, metrics, presenter, eyebrow, subtitle, fp)
