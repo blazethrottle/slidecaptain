@@ -216,6 +216,18 @@ def test_column_chart_leaves_room_below_the_axis_for_powerpoint_category_labels(
     assert frame.h-(chart.plot_y+chart.plot_h)>=25.5/12*chart.font_pt+2
 
 
+def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels():
+    # 2026-10-20 회사 PC 실측(PowerPoint 16.0 build 20430, 12pt): 값 축 글자 칸은 약 28pt다. 그림 영역 아래 공간이
+    # 24pt(글자 크기의 2배)면 PowerPoint가 글자 칸을 차트 틀 안에 넣으려고 그림 영역을 계획보다 4.2pt 위에 그렸다.
+    # 같은 PPTX의 높이만 바꿔 보면 28pt에서 0.16pt 위, 30pt에서 계획과 일치했다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    frame=next(f for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
+    chart=frame.chart
+    assert frame.h-(chart.plot_y+chart.plot_h)>=28.2/12*chart.font_pt
+
+
 def test_column_chart_leaves_room_for_the_axis_maximum_the_preview_draws():
     # 리뷰 발견(2026-10-16): 1234와 1000의 축 최댓값 '1357.40'이 값 글자보다 넓어, 미리보기가 축 글자를
     # 프레임 왼쪽 밖(-4.7pt)에서 그리기 시작해 앞자리가 잘렸다. 미리보기는 축 최댓값을 plot_x-font/2에 끝 맞춤한다
