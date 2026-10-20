@@ -238,6 +238,18 @@ def matrix_geometry(
     }
 
 
+# 제목 맞춤의 하한(요소 열쇠 -> (글자 역할, 하한 pt)). 2026-10-20 장 제목 28pt, 표지 36pt, 섹션 32pt로 키우기 전의 기본
+# 크기다(회사 PC 이월표 (21), (22) 사용자 결정 A). 레이아웃(templates.fit_title_preset)과 AI 칸 용량 계약이 같은 값을 쓴다
+TITLE_FIT_FLOORS = {"title": ("title_pt", 20.0), "cover_title": ("cover_title_pt", 28.0),
+                    "section_title": ("section_title_pt", 24.0)}
+
+
+def title_fit_floor_pt(preset: Preset, key: str) -> float:
+    """제목 요소가 칸에 맞춰 줄어들 수 있는 가장 작은 크기. 프리셋 크기가 하한보다 작으면 그 크기다."""
+    role, floor = TITLE_FIT_FLOORS[key]
+    return min(getattr(preset.font_roles, role), floor)
+
+
 def cover_geometry(preset: Preset) -> dict:
     """표지 프레임 기하 (x, w 와 칸별 (y, h)). y 리터럴의 프리셋 승격은 단계 5B 이월 항목이라 값은 그대로 둔다."""
     s = preset.spacing
@@ -245,7 +257,9 @@ def cover_geometry(preset: Preset) -> dict:
         "x": s.margin_left + s.cover_indent,
         "w": preset.page_width_pt - 2 * (s.margin_left + s.cover_indent),
         "fields": {
-            "cover_title": (200.0, 48.0),
+            # 36pt 한 줄(행간 1.4배로 50.4pt)이 들어가도록 48pt에서 54pt로 키우고, 아래 끝(248pt)은 그대로 둔다
+            # (2026-10-20 표지 제목 36pt, 회사 PC 이월표 (21))
+            "cover_title": (194.0, 54.0),
             "subtitle": (260.0, 24.0),
             "date": (430.0, 18.0),
             "presenter": (452.0, 18.0),
@@ -261,7 +275,8 @@ def divider_geometry(preset: Preset) -> dict:
         "w": preset.page_width_pt - 2 * (s.margin_left + s.cover_indent),
         "fields": {
             "section_no": (218.0, 20.0),
-            "section_title": (246.0, 44.0),
+            # 32pt 한 줄(44.8pt)이 들어가도록 44pt에서 46pt로 키웠다 (2026-10-20 섹션 제목 32pt, 회사 PC 이월표 (21))
+            "section_title": (246.0, 46.0),
         },
     }
 
@@ -293,13 +308,16 @@ def capacity_contract(
 
     contracts: dict[str, dict[str, int]] = {
         "cover": {
-            "cover_title_max_lines": max_lines(cover["cover_title"][1], r.cover_title_pt, ls),
+            # 표지와 섹션 제목의 줄 수는 맞춤 하한 크기로 센다. 렌더가 하한까지 줄여 그리므로, 새 크기로 세면 행간을 넓힌
+            # 프리셋에서 "최대 0줄"이 실렸다(확인 리뷰 TFR-03). 글자 수 안내(char_hints)는 새 크기 기준이라 더 엄격하다
+            "cover_title_max_lines": max_lines(cover["cover_title"][1], title_fit_floor_pt(preset, "cover_title"), ls),
             "subtitle_max_lines": max_lines(cover["subtitle"][1], r.subtitle_pt, ls),
             "date_max_lines": max_lines(cover["date"][1], r.body_pt, ls),
         },
         "divider": {
             "section_no_max_lines": max_lines(divider["section_no"][1], r.subtitle_pt, ls),
-            "section_title_max_lines": max_lines(divider["section_title"][1], r.section_title_pt, ls),
+            "section_title_max_lines": max_lines(divider["section_title"][1], title_fit_floor_pt(preset, "section_title"),
+                                                 ls),
         },
         "summary": {
             "points_max_lines": items_that_fit(

@@ -2600,12 +2600,12 @@ export interface components {
         FontRoles: {
             /**
              * Cover Title Pt
-             * @default 28
+             * @default 36
              */
             cover_title_pt: number;
             /**
              * Section Title Pt
-             * @default 24
+             * @default 32
              */
             section_title_pt: number;
             /**
@@ -2615,7 +2615,7 @@ export interface components {
             eyebrow_pt: number;
             /**
              * Title Pt
-             * @default 20
+             * @default 28
              */
             title_pt: number;
             /**
@@ -3241,10 +3241,10 @@ export interface components {
             fonts: components["schemas"]["Fonts"];
             /**
              * @default {
-             *       "cover_title_pt": 28,
-             *       "section_title_pt": 24,
+             *       "cover_title_pt": 36,
+             *       "section_title_pt": 32,
              *       "eyebrow_pt": 10.5,
-             *       "title_pt": 20,
+             *       "title_pt": 28,
              *       "subtitle_pt": 14,
              *       "body_pt": 12,
              *       "box_pt": 12,

@@ -128,7 +128,7 @@
         "warnings": [],
         "diagram": {
           "rule_version": "q3b-render-v1",
-          "input_fingerprint": "61e8ded7deae6bf47c949aa76bd9c80ecc9a4f7741138d593fd3f85131893f67",
+          "input_fingerprint": "84a3c76d69c7b7e5f3f3d24e496c71c2e062cb6420a089f67e34ea4b599fd656",
           "layout": {
             "diagram_id": "synthetic-flow",
             "page_width_pt": 960.0,
@@ -510,7 +510,7 @@
                 {
                   "text": "요청 처리 흐름",
                   "level": 0,
-                  "font_pt": 20.0,
+                  "font_pt": 28.0,
                   "bold": true,
                   "color": "202020",
                   "align": "left",

@@ -2,7 +2,7 @@
   "matched": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "10ba17b14bbafda326204689b7a23ad57a9e5e7777133f440641e89bdd81f780",
+    "input_fingerprint": "7429be36f8c475c83af7258dc085ea6c2baaa7e2c25091e3af2f02202c03fcb6",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -134,7 +134,7 @@
   "mismatched": {
     "gate_version": "preflight-v2",
     "status": "needs_revision",
-    "input_fingerprint": "d671aa0f1973417fd01e33f463b278fe1f80ee2fd162b8911acda0e680041063",
+    "input_fingerprint": "9b4f8287f755ee94ecc7cd4fb9ffbede3481794fceb1e53646414f4679031c51",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -268,7 +268,7 @@
   "stale": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "d4f5324450b931864ea88393392cbf4cfad6a89f0384d04b471535143fa52c66",
+    "input_fingerprint": "77a82b7d6cfced02c01e57436f647fa248811f4907d05ca273d4c7eef2aedbfa",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -366,7 +366,7 @@
   "empty": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "8c42f7d73de1a6e497c795d2210c4e7fda644fedc89b193cfc26114ae15c1f2e",
+    "input_fingerprint": "b834f9e09ed4aa078aa9dfc91a9c0aa8ffd5c6e8cf09d5a236cb625808bd5274",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,

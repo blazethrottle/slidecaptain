@@ -7568,13 +7568,13 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Cover Title Pt",
-            "default": 28.0
+            "default": 36.0
           },
           "section_title_pt": {
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Section Title Pt",
-            "default": 24.0
+            "default": 32.0
           },
           "eyebrow_pt": {
             "type": "number",
@@ -7586,7 +7586,7 @@
             "type": "number",
             "exclusiveMinimum": 0.0,
             "title": "Title Pt",
-            "default": 20.0
+            "default": 28.0
           },
           "subtitle_pt": {
             "type": "number",
@@ -9323,10 +9323,10 @@
           "font_roles": {
             "$ref": "#/components/schemas/FontRoles",
             "default": {
-              "cover_title_pt": 28.0,
-              "section_title_pt": 24.0,
+              "cover_title_pt": 36.0,
+              "section_title_pt": 32.0,
               "eyebrow_pt": 10.5,
-              "title_pt": 20.0,
+              "title_pt": 28.0,
               "subtitle_pt": 14.0,
               "body_pt": 12.0,
               "box_pt": 12.0,
