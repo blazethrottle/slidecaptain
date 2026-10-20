@@ -121,7 +121,10 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         plot_x=label_width+font*1.5
         plot_y=font
         plot_w=frame.w-plot_x-value_width-font*2
-        plot_h=height-font*3
+        # 그림 영역 아래에 값 축 글자 자리로 글자 크기의 2.5배를 둔다. PowerPoint는 12pt 값 축 글자 칸으로 약 28pt를 쓰고,
+        # 종전의 2배(24pt)에서는 그 칸을 차트 틀 안에 넣으려고 그림 영역을 계획보다 4.2pt 위에 그렸다 (2026-10-20 회사 PC,
+        # build 20430 실측. 30pt에서 계획과 일치)
+        plot_h=height-font*3.5
     else:
         # 세로 축 글자는 그림 영역 왼쪽에 끝 맞춤된다. 가장 넓은 눈금 글자는 최댓값이다(소수 자릿수가 모두 같다).
         # 값 글자 폭만 잡으면 '1357.40'처럼 더 넓은 축 글자의 앞자리가 미리보기 왼쪽 밖으로 나간다 (2026-10-16 리뷰)
