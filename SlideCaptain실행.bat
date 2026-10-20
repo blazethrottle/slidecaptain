@@ -1,4 +1,5 @@
 @echo off
+setlocal
 rem Slide Captain 실행: 서버를 켜고 브라우저를 연다. 서버 창("Slide Captain server")을 닫으면 앱이 꺼진다.
 cd /d "%~dp0backend"
 set "URL=http://127.0.0.1:8765"

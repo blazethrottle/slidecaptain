@@ -377,14 +377,22 @@ def test_numeric_review_skips_table_cells_that_the_chart_replaces(kind):
     table_paths={path for _chapter,path,_text in numeric_fields(deck)}
     assert any(path.startswith('/slots/rows') for path in table_paths)
     before=assess_numeric_review(deck,sources)
+    before_deck=deck.model_dump(mode='json')
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
     paths={path for _chapter,path,_text in numeric_fields(deck)}
     assert not any(path.startswith(('/slots/rows','/slots/columns')) for path in paths)
     assert '/slots/footnote' in paths
     report=assess_numeric_review(deck,sources)
     assert not any(item.path.startswith('/slots/rows') for item in report.items)
-    # 검사 대상이 바뀌므로 표만 있던 덱과 같은 결과가 같은 지문으로 읽히지 않는다
-    assert report.input_fingerprint!=before.input_fingerprint
+    # 검사 대상이 바뀌므로 차트 장이 있는 덱은 지문에 칸 선택 규칙의 표지를 더한다. 차트가 없는 덱은 표지 없이 종전
+    # 지문 그대로다(리뷰 DPR-03: 위 비교만으로는 표지가 없어도 통과했다)
+    from slidecaptain.models.report_purpose import output_dump
+    def legacy(d):
+        basis={'rule_version':'q2d-v1','deck':output_dump(d),
+               'sources':{key:hashlib.sha256(text.encode('utf-8')).hexdigest() for key,text in sources.items()}}
+        return hashlib.sha256(json.dumps(basis,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest()
+    assert before.input_fingerprint==legacy(Deck.model_validate(before_deck))
+    assert report.input_fingerprint!=legacy(deck)
 
 
 def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels():

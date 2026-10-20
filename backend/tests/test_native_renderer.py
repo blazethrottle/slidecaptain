@@ -52,6 +52,17 @@ def test_native_adapter_waits_for_its_own_powerpoint_without_killing_it():
     from slidecaptain.export import renderer
     assert 'Wait-Process' in renderer._SCRIPT
     assert 'Stop-Process' not in renderer._SCRIPT and 'Kill(' not in renderer._SCRIPT
+    # 남은 COM 참조를 거둬야 PowerPoint가 곧 끝난다. 이 줄이 빠지면 기다림이 매번 제한까지 간다(리뷰 DPR-08, 추정)
+    assert '[GC]::Collect(); [GC]::WaitForPendingFinalizers()' in renderer._SCRIPT
+
+
+def test_python_timeout_covers_the_render_and_the_exit_wait():
+    # 리뷰 DPR-01: 스크립트는 렌더 뒤 PowerPoint 종료를 최대 30초 기다린다. 파이썬 제한이 렌더 120초만 잡으면, 오래
+    # 걸린 렌더가 페이지를 다 만들고도 시간 초과로 기록될 수 있다
+    import re
+    from slidecaptain.export import renderer
+    wait = int(re.search(r'Wait-Process -Id \$owned -Timeout (\d+)', renderer._SCRIPT).group(1))
+    assert renderer.RENDER_TIMEOUT_SECONDS >= 120 + wait
 
 
 def _powerpoint_ready():

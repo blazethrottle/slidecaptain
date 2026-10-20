@@ -251,8 +251,8 @@ test("Windows에서 C 런타임이 읽지 못하는 TZ는 서비스에 넘기지
   assert.equal(env.PATH, "C:\\bin");
   assert.equal(env.PYTHONPATH, "backend");
   assert.equal(base.TZ, "Asia/Seoul"); // 앱 자신의 환경은 바꾸지 않는다
-  assert.equal(serviceEnvironment({ tz: "UTC" }, {}, "win32").tz, undefined);
-  for (const valid of ["KST-9", "EST5EDT", "PST8PDT", "UTC0", "KST-09:00"]) {
+  assert.equal(serviceEnvironment({ tz: "Asia/Seoul" }, {}, "win32").tz, undefined); // 이름의 대소문자와 관계없이 본다
+  for (const valid of ["KST-9", "EST5EDT", "PST8PDT", "UTC0", "KST-09:00", "UTC"]) {
     assert.equal(serviceEnvironment({ TZ: valid }, {}, "win32").TZ, valid, valid);
   }
 });

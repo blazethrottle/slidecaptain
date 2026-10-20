@@ -118,7 +118,8 @@ $presentation = $null
 $owned = @()
 try {
     $app = New-Object -ComObject PowerPoint.Application
-    # The guard above saw no PowerPoint, so the process COM just started is ours.
+    # The guard above saw no PowerPoint, so the process COM just started is most likely the one this render launched.
+    # Ownership is still not proved (a user may start PowerPoint in between); it is only waited for, never quit or killed.
     $owned = @(Get-Process POWERPNT -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
     $presentation = $app.Presentations.Open($InputFile, -1, 0, 0)
     $width = 1920
@@ -139,6 +140,11 @@ try {
 '''
 
 
+# 렌더 120초와 렌더 뒤 PowerPoint 종료 기다림 30초(_SCRIPT의 Wait-Process)를 합한 제한. 렌더만 잡으면 오래 걸린 렌더가
+# 페이지를 다 만들고도 시간 초과로 기록될 수 있었다 (D4 회사 PC 묶음 리뷰 DPR-01)
+RENDER_TIMEOUT_SECONDS = 150
+
+
 def _render_powerpoint_unlocked(artifact: Path, destination: Path, expected_count: int) -> tuple[dict[str, str], list[bytes]]:
     if not 1 <= expected_count <= MAX_PAGES:
         raise RenderUnavailable('PowerPoint 렌더 페이지 한도(1~200)를 초과했습니다.')
@@ -152,7 +158,7 @@ def _render_powerpoint_unlocked(artifact: Path, destination: Path, expected_coun
         try:
             completed = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-File', str(script),
                                         str(artifact.resolve()), str(destination.resolve())],
-                                       timeout=120, capture_output=True, check=False)
+                                       timeout=RENDER_TIMEOUT_SECONDS, capture_output=True, check=False)
         except subprocess.TimeoutExpired as exc:
             # subprocess.run terminates only our PowerShell child. Never kill a
             # user's PowerPoint by process name; COM cleanup is best effort.
