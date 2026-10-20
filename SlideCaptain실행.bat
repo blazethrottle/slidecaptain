@@ -1,4 +1,5 @@
 @echo off
+setlocal
 rem Slide Captain 실행: 서버를 켜고 브라우저를 연다. 서버 창("Slide Captain server")을 닫으면 앱이 꺼진다.
 cd /d "%~dp0backend"
 set "URL=http://127.0.0.1:8765"
@@ -9,6 +10,9 @@ rem 이미 서버가 떠 있으면(두 번 실행 등) 새로 켜지 않고 브라우저만 연다.
 
 rem cmd /k: 서버가 오류로 바로 죽어도 창이 남아 오류 메시지를 읽을 수 있게 한다.
 echo Slide Captain 서버를 켜는 중입니다. 잠시 기다려 주세요.
+rem 서버는 Windows 시간대 설정을 쓴다. Windows C 런타임은 TZ를 KST-9 같은 형식으로만 읽어서, Asia/Seoul 같은 값이면
+rem 서버의 현지 시각이 UTC+1이 된다(2026-10-16 회사 PC 실측, 회사 PC 확인 이월표 (8)).
+set "TZ="
 start "Slide Captain server" cmd /k .venv\Scripts\python.exe -m slidecaptain serve
 
 rem 서버가 응답할 때까지 최대 30회 확인한다(회당 1~2초: curl 최대 1초 + ping 1초, 합쳐서 최대 1분 남짓). 응답하면 브라우저를 연다.

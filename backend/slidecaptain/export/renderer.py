@@ -115,8 +115,12 @@ $ErrorActionPreference = 'Stop'
 if (Get-Process POWERPNT -ErrorAction SilentlyContinue) { throw 'PowerPoint is already running. Close it before server rendering.' }
 $app = $null
 $presentation = $null
+$owned = @()
 try {
     $app = New-Object -ComObject PowerPoint.Application
+    # The guard above saw no PowerPoint, so the process COM just started is most likely the one this render launched.
+    # Ownership is still not proved (a user may start PowerPoint in between); it is only waited for, never quit or killed.
+    $owned = @(Get-Process POWERPNT -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
     $presentation = $app.Presentations.Open($InputFile, -1, 0, 0)
     $width = 1920
     $height = [int][Math]::Round($width * $presentation.PageSetup.SlideHeight / $presentation.PageSetup.SlideWidth)
@@ -128,8 +132,17 @@ try {
     # COM is a singleton and a user may start it after the guard. Release only
     # our reference; never Quit an application whose process ownership is unproved.
     if ($app -ne $null) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($app) }
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+    # Wait (never kill) for the PowerPoint we started to exit, so that the next render's guard does not refuse it.
+    # A user who opened PowerPoint meanwhile shares that process; then stop waiting after the timeout.
+    if ($owned.Count -gt 0) { Wait-Process -Id $owned -Timeout 30 -ErrorAction SilentlyContinue }
 }
 '''
+
+
+# 렌더 120초와 렌더 뒤 PowerPoint 종료 기다림 30초(_SCRIPT의 Wait-Process)를 합한 제한. 렌더만 잡으면 오래 걸린 렌더가
+# 페이지를 다 만들고도 시간 초과로 기록될 수 있었다 (D4 회사 PC 묶음 리뷰 DPR-01)
+RENDER_TIMEOUT_SECONDS = 150
 
 
 def _render_powerpoint_unlocked(artifact: Path, destination: Path, expected_count: int) -> tuple[dict[str, str], list[bytes]]:
@@ -145,7 +158,7 @@ def _render_powerpoint_unlocked(artifact: Path, destination: Path, expected_coun
         try:
             completed = subprocess.run([str(powershell), '-NoProfile', '-NonInteractive', '-File', str(script),
                                         str(artifact.resolve()), str(destination.resolve())],
-                                       timeout=120, capture_output=True, check=False)
+                                       timeout=RENDER_TIMEOUT_SECONDS, capture_output=True, check=False)
         except subprocess.TimeoutExpired as exc:
             # subprocess.run terminates only our PowerShell child. Never kill a
             # user's PowerPoint by process name; COM cleanup is best effort.

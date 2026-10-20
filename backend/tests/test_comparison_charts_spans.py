@@ -366,6 +366,35 @@ def test_chart_falls_back_to_the_whole_table_area_when_eighty_percent_does_not_f
     assert chart.h+caption.h==pytest.approx(table.h)
 
 
+@pytest.mark.parametrize('kind',['bar','column'])
+def test_numeric_review_skips_table_cells_that_the_chart_replaces(kind):
+    # 회사 PC 이월표 (14): 차트가 있는 장은 표를 그리지 않는데(엔진이 표 자리를 차트로 바꾼다), 수치 검토가 표의 원문
+    # 수치 칸을 unlinked_expression으로 세어 제출 차단 사유가 붙었다. 도식 장처럼 보이는 칸만 검사한다. 각주는 계속 본다
+    from slidecaptain.models.expression import ChartSpec
+    from slidecaptain.pipeline.numeric_review import assess_numeric_review, numeric_fields
+    deck,sources=chart_sample()
+    deck.slides[0].slots.footnote='같은 기간 2개 팀'
+    table_paths={path for _chapter,path,_text in numeric_fields(deck)}
+    assert any(path.startswith('/slots/rows') for path in table_paths)
+    before=assess_numeric_review(deck,sources)
+    before_deck=deck.model_dump(mode='json')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    paths={path for _chapter,path,_text in numeric_fields(deck)}
+    assert not any(path.startswith(('/slots/rows','/slots/columns')) for path in paths)
+    assert '/slots/footnote' in paths
+    report=assess_numeric_review(deck,sources)
+    assert not any(item.path.startswith('/slots/rows') for item in report.items)
+    # 검사 대상이 바뀌므로 차트 장이 있는 덱은 지문에 칸 선택 규칙의 표지를 더한다. 차트가 없는 덱은 표지 없이 종전
+    # 지문 그대로다(리뷰 DPR-03: 위 비교만으로는 표지가 없어도 통과했다)
+    from slidecaptain.models.report_purpose import output_dump
+    def legacy(d):
+        basis={'rule_version':'q2d-v1','deck':output_dump(d),
+               'sources':{key:hashlib.sha256(text.encode('utf-8')).hexdigest() for key,text in sources.items()}}
+        return hashlib.sha256(json.dumps(basis,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False).encode('utf-8')).hexdigest()
+    assert before.input_fingerprint==legacy(Deck.model_validate(before_deck))
+    assert report.input_fingerprint!=legacy(deck)
+
+
 def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels():
     # 2026-10-20 회사 PC 실측(PowerPoint 16.0 build 20430, 12pt): 값 축 글자 칸은 약 28pt다. 그림 영역 아래 공간이
     # 24pt(글자 크기의 2배)면 PowerPoint가 글자 칸을 차트 틀 안에 넣으려고 그림 영역을 계획보다 4.2pt 위에 그렸다.
