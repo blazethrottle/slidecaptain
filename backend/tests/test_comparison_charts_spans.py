@@ -109,24 +109,28 @@ def test_chart_values_are_source_bound_and_geometries_stay_in_frame(kind):
         assert 0<=point.y<=point.y+point.h<=frame.h
 
 
-@pytest.mark.parametrize('maximum,expected',[('1320.0','1320'),('13.2','13.20'),('1.1','1.10'),('1','1.0'),('5','5'),
-                                             ('1100000000000.0','1100000000000')])
-def test_axis_maximum_text_keeps_only_the_decimals_its_ticks_need(maximum,expected):
-    # 2026-10-16 회사 PC 실측: 축 최댓값 문자열 '1320.0'이 미리보기 축에 그대로 보였다. 눈금은 최댓값의 1/5
-    # 간격이므로 다섯 눈금을 모두 정확히 보일 자릿수만 남긴다(13.2의 눈금 2.64는 두 자리가 필요하다)
+@pytest.mark.parametrize('maximum,expected',[('1320.00','1320'),('13.20','13.2'),('1.10','1.1'),('1','1'),('5','5'),
+                                             ('1100000000000.00','1100000000000'),('135802468.04','135802468.04')])
+def test_axis_maximum_text_keeps_only_the_decimals_the_maximum_needs(maximum,expected):
+    # 2026-10-16 회사 PC 실측: 축 최댓값 문자열 '1320.0'이 미리보기 축에 그대로 보였다. 2026-10-20 회사 PC 이월표 (16)
+    # 사용자 결정 A로 눈금은 0과 최댓값 둘뿐이라, 최댓값 자체의 자릿수만 남긴다(종전에는 다섯 눈금의 자릿수를 남겼다)
     from decimal import Decimal
     from slidecaptain.layout.expression import axis_maximum_text
     assert axis_maximum_text(Decimal(maximum))==expected
 
 
 def _shown(format_code,value):
-    """PowerPoint가 이 서식 기호로 값을 보일 글자. '0', '0.00' 꼴과, 0만 '0'으로 보이는 '0.00;-0.00;0' 꼴만 받는다."""
+    """PowerPoint가 이 서식 기호로 값을 보일 글자. '0', '0.00' 꼴과, 0만 '0'으로 보이는 '0.00;-0.00;0' 꼴만 받는다.
+    PowerPoint는 float 값을 유효숫자 15자리 십진수로 읽은 뒤 사사오입한다(2026-10-20 회사 PC 실측: 1.005, 2.675,
+    123456789.125가 '0.00'에서 1.01, 2.68, 123456789.13. Python의 '.2f'는 1.005를 1.00으로 보인다)."""
     import re
+    from decimal import ROUND_HALF_UP, Decimal
     match=re.fullmatch(r'(0(?:\.(0+))?)(?:;-\1;(0))?',format_code)
     assert match, f'미리보기와 같은 글자를 보장하지 못하는 서식: {format_code}'
     if match.group(3) and float(value)==0:
         return match.group(3)
-    return f'{float(value):.{len(match.group(2) or "")}f}'
+    places=len(match.group(2) or '')
+    return format(Decimal(format(float(value),'.15g')).quantize(Decimal(1).scaleb(-places),rounding=ROUND_HALF_UP),'f')
 
 
 def _in_schema_order(element,order):
@@ -177,20 +181,21 @@ def _chart_labels(path,count):
 
 
 @pytest.mark.parametrize('kind',['bar','column'])
-@pytest.mark.parametrize('a_value,values,axis_text',[('1,200',None,'1320'),('1,200',('1200','1000.5'),'1320'),
-                                                     ('1,234',None,'1357.40')])
+@pytest.mark.parametrize('a_value,values,axis_text',[('1,200',None,'1320'),('1,200',(('1200','1200'),('1000.5','1000.5')),'1320'),
+                                                     ('1,234',None,'1357.4'),('123456789.123456',None,'135802468.04'),
+                                                     ('1,200',(('1.005','1.01'),('2.675','2.68')),'1320')])
 def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,kind,a_value,values,axis_text):
     # 2026-10-16 회사 PC 실측(PowerPoint 16.0 build 20430): '0.##############' 서식 때문에 값과 눈금이 '1200.',
-    # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 '1200'을 그리고 배치도 그 글자 폭으로 계산한다.
-    # 1234와 1000은 눈금(271.48 간격)에 소수 두 자리가 필요한 축이다(리뷰 발견: 정수 축만 시험했다)
+    # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 표시 글자(display)를 그리고 배치도 그 글자 폭으로 계산한다.
+    # 소수 3자리 이상인 값은 소수 2자리로 보인다(2026-10-20 회사 PC 이월표 (18) 사용자 결정 A). values는 (원문, 표시) 쌍이다
     from slidecaptain.models.expression import ChartSpec
     deck,sources=chart_sample(a_value)
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
     plan=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
     chart=next(f.chart for f in plan.slides[0].frames if f.chart)
     assert chart.axis_maximum==axis_text
-    for point,value in zip(chart.points,values or ()):
-        point.value=value
+    for point,(value,display) in zip(chart.points,values or ()):
+        point.value,point.display=value,display
     output=tmp_path/'chart.pptx'
     write_pptx(plan,output)
     labels,axis=_chart_labels(output,len(chart.points))
@@ -199,9 +204,61 @@ def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,k
         assert label['show']=='1'
         assert label['position']=='outEnd'
         assert label['size']==str(int(chart.font_pt*100))
-        assert _shown(label['format'],point.value)==point.value
+        assert _shown(label['format'],point.value)==point.display
     assert _shown(axis,chart.axis_maximum)==chart.axis_maximum
     assert _shown(axis,chart.axis_minimum)=='0'  # 미리보기는 0 눈금을 '0'으로 그린다
+
+
+@pytest.mark.parametrize('a_value,display',[('1,200','1200'),('1,234.5','1234.5'),('1,234.56','1234.56'),
+                                            ('123456789.123456','123456789.12'),('2.999','3.00'),('1.005','1.01'),
+                                            ('0.004','0.00')])
+def test_chart_shows_at_most_two_decimals_and_keeps_the_source_value(tmp_path,a_value,display):
+    # 2026-10-20 회사 PC 이월표 (18) 사용자 결정 A: 소수 3자리 이상인 차트 값은 소수 셋째 자리에서 사사오입해 2자리로
+    # 보인다. 2자리 이하는 그대로 보이고 0을 채우지 않는다. 원문 값은 렌더 계획과 PPTX 내장 데이터에 그대로 남는다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample(a_value)
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    plan=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
+    chart=next(f.chart for f in plan.slides[0].frames if f.chart)
+    source=a_value.replace(',','')
+    assert [(p.value,p.display) for p in chart.points]==[(source,display),('1000','1000')]
+    output=tmp_path/'chart.pptx'
+    write_pptx(plan,output)
+    reopened=next(shape.chart for shape in Presentation(output).slides[0].shapes if shape.has_chart)
+    assert reopened.series[0].values==(float(source),1000.0)
+    descr=next(shape for shape in Presentation(output).slides[0].shapes if shape.has_chart)._element.nvGraphicFramePr.cNvPr.get('descr')
+    assert json.loads(descr)['points'][0]['value']==source
+
+
+def test_preview_value_width_is_measured_on_the_display_text():
+    # 값 글자 자리는 표시 글자 폭으로 잡는다. 원문 폭으로 잡으면 15자리 값에서 그림 영역이 쓸데없이 좁아진다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample('123456789.123456')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    metrics=FontMetrics.load_default()
+    frame=next(f for f in build_render_plan(deck,Preset(),metrics,sources=sources).slides[0].frames if f.chart)
+    chart=frame.chart
+    width=metrics.face(False).width_pt('123456789.12',chart.font_pt)
+    assert chart.plot_w==pytest.approx(frame.w-chart.plot_x-width-chart.font_pt*2)
+
+
+@pytest.mark.parametrize('kind',['bar','column'])
+def test_pptx_value_axis_has_no_gridlines_and_only_zero_and_maximum_ticks(tmp_path,kind):
+    # 2026-10-20 회사 PC 이월표 (16) 사용자 결정 A: PowerPoint가 주 눈금선과 중간 눈금 글자(264~1056)를 그렸고
+    # 미리보기는 0과 최댓값만 그렸다. bar15에서는 값 글자가 최댓값 눈금선과 겹쳤다. PowerPoint를 미리보기에 맞춘다
+    from slidecaptain.models.expression import ChartSpec
+    ns={'c':'http://schemas.openxmlformats.org/drawingml/2006/chart'}
+    deck,sources=chart_sample()
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    plan=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
+    chart=next(f.chart for f in plan.slides[0].frames if f.chart)
+    output=tmp_path/'chart.pptx'
+    write_pptx(plan,output)
+    with zipfile.ZipFile(output) as package:
+        root=ElementTree.fromstring(package.read(next(n for n in package.namelist() if n.startswith('ppt/charts/chart'))))
+    assert root.findall('.//c:valAx/c:majorGridlines',ns)==[] and root.findall('.//c:valAx/c:minorGridlines',ns)==[]
+    assert root.findall('.//c:catAx/c:majorGridlines',ns)==[]
+    assert [float(node.get('val')) for node in root.findall('.//c:valAx/c:majorUnit',ns)]==[float(chart.axis_maximum)]
 
 
 def test_column_chart_leaves_room_below_the_axis_for_powerpoint_category_labels():
@@ -230,14 +287,15 @@ def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels()
 
 def test_column_chart_leaves_room_for_the_axis_maximum_the_preview_draws():
     # 리뷰 발견(2026-10-16): 1234와 1000의 축 최댓값 '1357.40'이 값 글자보다 넓어, 미리보기가 축 글자를
-    # 프레임 왼쪽 밖(-4.7pt)에서 그리기 시작해 앞자리가 잘렸다. 미리보기는 축 최댓값을 plot_x-font/2에 끝 맞춤한다
+    # 프레임 왼쪽 밖(-4.7pt)에서 그리기 시작해 앞자리가 잘렸다. 미리보기는 축 최댓값을 PowerPoint 실측처럼
+    # plot_x-font*1.125에 끝 맞춤한다(2026-10-20 회사 PC, 종전 font/2)
     from slidecaptain.models.expression import ChartSpec
     deck,sources=chart_sample('1,234')
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='column')
     metrics=FontMetrics.load_default()
     chart=next(f.chart for f in build_render_plan(deck,Preset(),metrics,sources=sources).slides[0].frames if f.chart)
-    assert chart.axis_maximum=='1357.40'
-    assert chart.plot_x-chart.font_pt/2-metrics.face(False).width_pt(chart.axis_maximum,chart.font_pt)>=0
+    assert chart.axis_maximum=='1357.4'
+    assert chart.plot_x-chart.font_pt*1.125-metrics.face(False).width_pt(chart.axis_maximum,chart.font_pt)>=0
 
 
 @pytest.mark.parametrize('damage',['missing_sources','stale_source','incompatible','forged_comparison','value_token'])
@@ -357,19 +415,16 @@ def test_chart_rejects_values_beyond_fifteen_significant_digits(a_value):
         build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources)
 
 
-def test_fifteen_digit_value_draws_and_its_axis_maximum_stays_within_fifteen_digits():
-    # 15자리 값은 그린다. 축 최댓값은 값의 1.1배라 16자리가 될 수 있으므로(135802468.0358016) 그때만 14자리로 올린다.
-    # 눈금은 최댓값의 1/5이라 한 자리가 더 붙어도 15자리 안이다. 원문 숫자는 소수 6자리까지만 받는다
+def test_fifteen_digit_value_draws_and_its_axis_maximum_has_at_most_two_decimals():
+    # 15자리 값은 그린다. 축 최댓값은 값의 1.1배를 소수 2자리로 올린 값이다(135802468.0358016 -> 135802468.04).
+    # 눈금이 0과 최댓값뿐이라(회사 PC 이월표 (16)) 최댓값 자체만 15자리 안이면 된다
     from decimal import Decimal
     from slidecaptain.models.expression import ChartSpec
     deck,sources=chart_sample('123456789.123456')
     deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='column')
     chart=next(f.chart for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
     assert chart.points[0].value=='123456789.123456'
-    maximum=Decimal(chart.axis_maximum)
-    assert maximum>=Decimal('123456789.123456')*Decimal('1.1')
-    for k in range(1,6):
-        assert len((maximum*k/5).normalize().as_tuple().digits)<=15
+    assert chart.axis_maximum=='135802468.04'
 
 
 @pytest.mark.parametrize('kind,crosses',[('bar','max'),('column','autoZero')])
@@ -391,10 +446,10 @@ def test_bar_chart_value_axis_crosses_at_the_bottom_like_the_preview(tmp_path,ki
     assert (orientation is not None and orientation.get('val')=='maxMin')==(kind=='bar')
 
 
-@pytest.mark.parametrize('a_value',['500000000.00001','550000000.00001'])
-def test_axis_ticks_stay_within_fifteen_digits_when_the_maximum_itself_has_fifteen(a_value):
-    # C3 리뷰 C3R-03: 최댓값이 정확히 15자리(550000000.0000110)이면 눈금(최댓값의 k/5)이 16자리가 됐다.
-    # 다섯 눈금 가운데 하나라도 15자리를 넘으면 최댓값을 14자리로 올린다
+@pytest.mark.parametrize('a_value',['500000000.00001','550000000.00001','999999999999.99','1000000000000'])
+def test_axis_maximum_covers_the_value_within_two_decimals_and_fifteen_digits(a_value):
+    # C3 리뷰 C3R-03은 최댓값이 15자리일 때 눈금(최댓값의 k/5)이 16자리가 되는 문제였다. 2026-10-20부터 눈금은 0과
+    # 최댓값뿐이고(회사 PC 이월표 (16)) 최댓값은 소수 2자리로 올린다((18)). 값이 1조 이하라 15자리를 넘지 않는다
     from decimal import Decimal
     from slidecaptain.models.expression import ChartSpec
     deck,sources=chart_sample(a_value)
@@ -402,7 +457,8 @@ def test_axis_ticks_stay_within_fifteen_digits_when_the_maximum_itself_has_fifte
     chart=next(f.chart for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
     maximum=Decimal(chart.axis_maximum)
     assert maximum>=Decimal(a_value)*Decimal('1.1')
-    assert all(len((maximum*k/5).normalize().as_tuple().digits)<=15 for k in range(1,6))
+    assert -maximum.as_tuple().exponent<=2
+    assert len(maximum.normalize().as_tuple().digits)<=15
 
 
 def test_render_plan_routes_answer_422_with_the_chart_reason(tmp_path):

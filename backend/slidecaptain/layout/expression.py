@@ -1,6 +1,6 @@
 """Deterministic sourced charts and measured exact-text emphasis."""
 
-from decimal import ROUND_CEILING, Decimal, localcontext
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, localcontext
 from fractions import Fraction
 import re
 
@@ -36,16 +36,26 @@ def _significant_digits(value):
     return len(value.normalize().as_tuple().digits)
 
 
-def _round_up_significant(value,digits):
-    exponent=value.adjusted()-digits+1
-    return value.quantize(Decimal(1).scaleb(exponent),rounding=ROUND_CEILING)
+_DISPLAY_PLACES=Decimal('0.01')
+
+
+def chart_display_text(value):
+    """차트 값의 표시 글자. 소수 2자리 이하는 원문 그대로, 3자리 이상은 소수 셋째 자리에서 사사오입해 2자리로 보인다
+    (2026-10-20 회사 PC 이월표 (18) 사용자 결정 A). PowerPoint도 원문 값에 '0.00' 서식을 주면 같은 글자를 보인다
+    (2026-10-20 회사 PC 실측: 1.005, 2.675가 1.01, 2.68). 원문 값은 ChartPoint.value와 PPTX 내장 데이터에 남는다."""
+    text=format(value,'f')
+    if '.' in text:
+        text=text.rstrip('0').rstrip('.')
+    if len(text.partition('.')[2])<=2:
+        return text
+    return format(value.quantize(_DISPLAY_PLACES,rounding=ROUND_HALF_UP),'f')
 
 
 def axis_maximum_text(maximum):
-    """축 최댓값의 표시 글자. 눈금은 최댓값의 1/5 간격이므로 다섯 눈금을 모두 정확히 보일 소수 자릿수만 남긴다.
-    미리보기는 이 글자를 그대로 그리고, PPTX의 축 서식은 이 글자의 자릿수를 따른다. 종전의 format(maximum,'f')는
+    """축 최댓값의 표시 글자. 눈금은 0과 최댓값 둘뿐이므로(2026-10-20 회사 PC 이월표 (16)) 최댓값 자체의 소수 자릿수만
+    남긴다. 미리보기는 이 글자를 그대로 그리고, PPTX의 축 서식은 이 글자의 자릿수를 따른다. 종전의 format(maximum,'f')는
     '1320.0'을 남겨 미리보기 축에 그대로 보였다 (2026-10-16 회사 PC 실측)."""
-    places=max(max(-(maximum*k/5).normalize().as_tuple().exponent,0) for k in range(1,6))
+    places=max(-maximum.normalize().as_tuple().exponent,0)
     return format(maximum,f'.{places}f')
 
 
@@ -109,13 +119,13 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
     if height<font*(8.5 if slide.chart.kind=='column' else 8) or frame.w<font*20:
         raise ChartUnavailable('차트와 필수 조건을 배치할 공간이 부족합니다.')
     text_values=[format(v,'f').rstrip('0').rstrip('.') if '.' in format(v,'f') else format(v,'f') for v in values]
+    display_values=[chart_display_text(v) for v in values]
     label_width=max(metrics.face(False).width_pt(label,font) for label in labels)
-    value_width=max(metrics.face(False).width_pt(text,font) for text in text_values)
-    maximum=max(values)*Decimal('1.1') if max(values)>0 else Decimal(1)
-    if any(_significant_digits(maximum*k/5)>_MAX_SIGNIFICANT_DIGITS for k in range(1,6)):
-        # 축 최댓값은 앱이 정하는 여유값이라 원문과 무관하다. 다섯 눈금 가운데 하나라도 15자리를 넘으면 최댓값을 14자리로
-        # 올려 눈금까지 15자리 안에 둔다. 최댓값만 보면 최댓값이 15자리일 때 눈금이 16자리가 됐다 (C3 리뷰 C3R-03)
-        maximum=_round_up_significant(maximum,_MAX_SIGNIFICANT_DIGITS-1)
+    value_width=max(metrics.face(False).width_pt(text,font) for text in display_values)
+    # 축 최댓값은 앱이 정하는 여유값이라 원문과 무관하다. 반올림해 보이지 않고 값 자체를 소수 2자리로 올려 정한다
+    # (회사 PC 이월표 (18)). 값이 1조 이하라 최댓값은 정수 13자리와 소수 2자리, 15자리 안이다. 눈금은 0과 최댓값뿐이라
+    # 종전처럼 다섯 눈금의 자릿수를 볼 필요가 없다(C3 리뷰 C3R-03은 눈금 k/5가 16자리가 되는 문제였다)
+    maximum=(max(values)*Decimal('1.1')).quantize(_DISPLAY_PLACES,rounding=ROUND_CEILING) if max(values)>0 else Decimal(1)
     axis_text=axis_maximum_text(maximum)
     if slide.chart.kind=='bar':
         plot_x=label_width+font*1.5
@@ -147,7 +157,7 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         else:
             band=plot_w/2
             x,y,w,h=plot_x+band*(index+.25),plot_y+plot_h*(1-ratio),band*.5,plot_h*ratio
-        points.append(ChartPoint(evidence_id=item.id,label=label,value=text_values[index],
+        points.append(ChartPoint(evidence_id=item.id,label=label,value=text_values[index],display=display_values[index],
                                  color=preset.colors.accent1 if index==0 else preset.colors.accent2,x=x,y=y,w=w,h=h))
     chart=ChartPlan(kind=slide.chart.kind,comparison_id=comparison.id,claim_id=comparison.claim_id,
                     definition=basis.definition,unit=unit,conditions=conditions,axis_minimum='0',axis_maximum=axis_text,

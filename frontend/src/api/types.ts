@@ -1372,6 +1372,8 @@ export interface components {
             label: string;
             /** Value */
             value: string;
+            /** Display */
+            display: string;
             /** Color */
             color: string;
             /** X */

@@ -4321,6 +4321,10 @@
             "type": "string",
             "title": "Value"
           },
+          "display": {
+            "type": "string",
+            "title": "Display"
+          },
           "color": {
             "type": "string",
             "pattern": "^[0-9A-Fa-f]{6}$",
@@ -4351,6 +4355,7 @@
           "evidence_id",
           "label",
           "value",
+          "display",
           "color",
           "x",
           "y",

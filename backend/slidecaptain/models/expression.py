@@ -60,7 +60,8 @@ class ChartPoint(BaseModel):
     model_config=ConfigDict(extra='forbid',allow_inf_nan=False)
     evidence_id: str
     label: str
-    value: str
+    value: str  # 원문 값 그대로. PPTX 내장 데이터와 막대 길이에 쓴다
+    display: str  # 화면과 PPTX 라벨에 보이는 글자. 소수 3자리 이상이면 2자리로 사사오입한다 (회사 PC 이월표 (18))
     color: str = Field(pattern=r'^[0-9A-Fa-f]{6}$')
     x: float
     y: float
