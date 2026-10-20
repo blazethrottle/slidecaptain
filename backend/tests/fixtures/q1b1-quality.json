@@ -2,7 +2,7 @@
   "matched": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "30a84ca311b1bb66a26b799398868e4a0b91bdb4ec356c4deb4460215d7ac107",
+    "input_fingerprint": "7429be36f8c475c83af7258dc085ea6c2baaa7e2c25091e3af2f02202c03fcb6",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -134,7 +134,7 @@
   "mismatched": {
     "gate_version": "preflight-v2",
     "status": "needs_revision",
-    "input_fingerprint": "fa4eadc15a4fc8a130264d7e11ed8d9231f9eae0f6c662ca8a25aecf0d55a535",
+    "input_fingerprint": "9b4f8287f755ee94ecc7cd4fb9ffbede3481794fceb1e53646414f4679031c51",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -268,7 +268,7 @@
   "stale": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "932234d1f6f17cba6f497c3928b8a245ae3b35eaae5c03ac22320f2486ed1232",
+    "input_fingerprint": "77a82b7d6cfced02c01e57436f647fa248811f4907d05ca273d4c7eef2aedbfa",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,
@@ -366,7 +366,7 @@
   "empty": {
     "gate_version": "preflight-v2",
     "status": "draft",
-    "input_fingerprint": "a2e1d8f7f64e5f1c860c7c946b1a63f47dffe41dfd519114644a577f77a0281b",
+    "input_fingerprint": "b834f9e09ed4aa078aa9dfc91a9c0aa8ffd5c6e8cf09d5a236cb625808bd5274",
     "artifact_sha256": null,
     "slide_count": 1,
     "draft_export_allowed": true,

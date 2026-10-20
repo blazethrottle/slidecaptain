@@ -58,6 +58,45 @@ def _font_preset(preset: Preset, scale: float) -> Preset:
     return preset.model_copy(update={"font_roles": roles.model_copy(update=scaled)})
 
 
+# 제목 맞춤 (2026-10-20 사용자 결정: 회사 PC 이월표 (22) A, (21) A). 장 제목 28pt, 표지 제목 36pt, 섹션 제목 32pt가 칸에
+# 들어가지 않으면 1pt씩 줄이되, 키우기 전의 기본 크기(아래 값) 아래로는 줄이지 않는다. 종전 크기에서 칸에 들어가던 제목은
+# 반드시 들어가므로 업데이트 뒤에 넘침 경고나 도식 장의 렌더 막힘이 새로 생기지 않는다(리뷰 TCR-01, TCR-06). 어느 크기도
+# 들어가지 않으면 하한 크기로 그리고 넘침 경고는 종전처럼 난다. 직접 수정 배율은 맞춘 크기에 곱한다: 사용자가 키운 제목을
+# 맞춤이 다시 줄이면 키운 효과가 사라진다. 그래서 키운 제목이 넘치면 경고로 알린다(리뷰 TCR-03은 D4 릴리스 안내)
+TITLE_FIT_FLOORS = {"title": ("title_pt", 20.0), "cover_title": ("cover_title_pt", 28.0),
+                    "section_title": ("section_title_pt", 24.0)}
+
+
+def fitted_font_pt(text: str, width_pt: float, height_pt: float, font_pt: float, floor_pt: float, bold: bool,
+                   preset: Preset, metrics) -> float:
+    """높이가 고정된 칸에 줄바꿈 결과가 들어가는 가장 큰 글자 크기. 판정은 넘침 경고(_fixed_height_warning)와 같다."""
+    floor = min(font_pt, floor_pt)
+    if not text:
+        return font_pt
+    s = preset.spacing
+    size = font_pt
+    while size > floor:
+        if measure_lines(text, width_pt, size, metrics.face(bold), s) <= max_lines(height_pt, size, s.line_spacing):
+            return size
+        size = round(max(floor, size - 1), 2)
+    return floor
+
+
+def fit_title_preset(preset: Preset, key: str, text: str, metrics) -> Preset:
+    """제목 요소(key: title, cover_title, section_title)의 글자 크기를 칸에 맞춘 프리셋."""
+    role, floor = TITLE_FIT_FLOORS[key]
+    if key == "title":
+        width, height = slide_geometry(preset)["content_width"], preset.spacing.title_height
+    else:
+        geo = cover_geometry(preset) if key == "cover_title" else divider_geometry(preset)
+        width, height = geo["w"], geo["fields"][key][1]
+    start = getattr(preset.font_roles, role)
+    size = fitted_font_pt(text, width, height, start, floor, True, preset, metrics)
+    if size == start:
+        return preset
+    return preset.model_copy(update={"font_roles": preset.font_roles.model_copy(update={role: size})})
+
+
 def _para_lines(
     text: str, width_pt: float, font_pt: float, bold: bool, preset: Preset, metrics
 ) -> list[str]:
@@ -854,12 +893,23 @@ def build_slide(
     """font_scales: 요소 열쇠마다 글자 배율 (D3c-2). 그 요소의 문단과 용량 경고가 같은 배율을 쓴다(재리뷰 RR26)."""
     scales = font_scales or {}
     presets: dict[float, Preset] = {}
+    titles = {"title": chapter.topic}
+    if isinstance(slots, CoverSlots):
+        titles = {"cover_title": slots.title}
+    elif isinstance(slots, DividerSlots):
+        titles = {"section_title": slots.section_title}
+    fitted: dict[str, Preset] = {}
 
     def fp(key: str) -> Preset:
         scale = scales.get(key, 1.0)
         if scale not in presets:
             presets[scale] = _font_preset(preset, scale)
-        return presets[scale]
+        if key not in titles:
+            return presets[scale]
+        # 제목 요소는 칸에 맞춘 크기에 그 요소의 배율을 곱한다. 문단과 넘침 경고가 같은 프리셋을 받으므로 둘이 어긋나지 않는다
+        if key not in fitted:
+            fitted[key] = _font_preset(fit_title_preset(preset, key, titles[key], metrics), scale)
+        return fitted[key]
 
     plan = _dispatch(chapter, slots, page_no, preset, metrics, presenter, eyebrow, subtitle, fp)
     # 표지와 간지는 그 자체가 제목 슬라이드라 공통 슬롯을 그리지 않는다

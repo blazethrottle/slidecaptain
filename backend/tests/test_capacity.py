@@ -116,8 +116,10 @@ from slidecaptain.models.deck import (
     CardsSlots,
     Chapter,
     CompareSlots,
+    CoverSlots,
     Deck,
     DeckMeta,
+    DividerSlots,
     MatrixRow,
     MatrixSlots,
     ProcessSlots,
@@ -218,8 +220,16 @@ def test_hinted_chars_fit_one_line_in_each_context():
     assert len(left.paras[0].lines) == 1 and len(left.paras[1].lines) == 1
     assert s.warnings == []
 
-    assert char_hints("cover", PRESET, REAL) == {"표지 제목": 30, "부제": 60}
-    assert char_hints("divider", PRESET, REAL) == {"섹션 제목": 35}
+    # 2026-10-20 표지 제목 36pt, 섹션 제목 32pt(회사 PC 이월표 (21)): 안내는 새 크기 기준이다(종전 30자, 35자). 더 긴
+    # 제목은 칸에 맞춰 28pt, 24pt까지 줄어 그려지므로(templates.TITLE_FIT_FLOORS) 안내는 실측보다 엄격한 쪽이다
+    assert char_hints("cover", PRESET, REAL) == {"표지 제목": 23, "부제": 60}
+    assert char_hints("divider", PRESET, REAL) == {"섹션 제목": 26}
+    cover = _slide("cover", CoverSlots(title=H * 23))
+    assert len(next(f for f in cover.frames if f.name.endswith(":cover_title")).paras[0].lines) == 1
+    assert next(f for f in cover.frames if f.name.endswith(":cover_title")).paras[0].font_pt == 36
+    divider = _slide("divider", DividerSlots(section_title=H * 26))
+    title = next(f for f in divider.frames if f.name.endswith(":section_title")).paras[0]
+    assert len(title.lines) == 1 and title.font_pt == 32 and divider.warnings == []
     assert char_hints("summary", PRESET, REAL) == {"본문 한 줄": 73}
     assert char_hints("table", PRESET, REAL) == {"본문 한 줄": 73}
 

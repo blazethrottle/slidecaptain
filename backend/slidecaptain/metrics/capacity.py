@@ -245,7 +245,9 @@ def cover_geometry(preset: Preset) -> dict:
         "x": s.margin_left + s.cover_indent,
         "w": preset.page_width_pt - 2 * (s.margin_left + s.cover_indent),
         "fields": {
-            "cover_title": (200.0, 48.0),
+            # 36pt 한 줄(행간 1.4배로 50.4pt)이 들어가도록 48pt에서 54pt로 키우고, 아래 끝(248pt)은 그대로 둔다
+            # (2026-10-20 표지 제목 36pt, 회사 PC 이월표 (21))
+            "cover_title": (194.0, 54.0),
             "subtitle": (260.0, 24.0),
             "date": (430.0, 18.0),
             "presenter": (452.0, 18.0),
@@ -261,7 +263,8 @@ def divider_geometry(preset: Preset) -> dict:
         "w": preset.page_width_pt - 2 * (s.margin_left + s.cover_indent),
         "fields": {
             "section_no": (218.0, 20.0),
-            "section_title": (246.0, 44.0),
+            # 32pt 한 줄(44.8pt)이 들어가도록 44pt에서 46pt로 키웠다 (2026-10-20 섹션 제목 32pt, 회사 PC 이월표 (21))
+            "section_title": (246.0, 46.0),
         },
     }
 

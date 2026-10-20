@@ -494,7 +494,7 @@ def test_element_scale_matches_a_globally_scaled_preset(long):
     """요소별 배율의 문단과 경고는 프리셋 전체에 같은 배율을 준 결과와 같다 (계획 4.4, D3c-2 리뷰 F8의 M1~M4).
 
     공통 슬롯은 기하가 글자 크기에 기대므로 뺀다(최대 크기 라우트 시험이 덮는다)."""
-    from slidecaptain.layout.templates import _font_preset, build_slide
+    from slidecaptain.layout.templates import TITLE_FIT_FLOORS, _font_preset, build_slide
     from slidecaptain.metrics.capacity import process_geometry
 
     checked = 0
@@ -520,6 +520,14 @@ def test_element_scale_matches_a_globally_scaled_preset(long):
                     # 라벨 칸의 높이는 같은 행의 단계 글자가 끝나는 자리에 기댄다. 그래서 라벨만 키운 결과와 전체를 키운
                     # 결과의 경고는 다르다(아래 test_scaled_process_note_warns_when_it_leaves_the_row). 문단만 맞춘다
                     assert _element(own, key)[0] == expected[0], (slide.slots.template, key, scale)
+                elif key in TITLE_FIT_FLOORS:
+                    # 제목 요소는 칸에 맞춘 기본 크기에 배율을 곱한다(2026-10-20 제목 맞춤). 프리셋 전체 배율은 바뀐 크기에서
+                    # 다시 칸에 맞추므로, 맞춤이 일어나는 제목은 두 결과가 다르다. 문단 크기가 맞춘 기본 크기 x 배율인지
+                    # 본다(맞춤 자체는 test_title_fit.py가 덮는다)
+                    base = build_slide(chapter, slide.slots, 1, PRESET, METRICS, presenter="")
+                    sizes = [size for _name, paras in _element(own, key)[0] for _text, size, _lines in paras]
+                    assert sizes == [round(size * scale, 2) for _name, paras in _element(base, key)[0]
+                                     for _text, size, _lines in paras], (slide.slots.template, key, scale)
                 else:
                     assert _element(own, key) == expected, (slide.slots.template, key, scale)
                 checked += 1

@@ -8,7 +8,7 @@ import math
 from slidecaptain.layout.diagram import build_diagram_layout, _metrics_snapshot, _supported_text
 from slidecaptain.layout.style import style_from_preset
 from slidecaptain.layout.templates import (
-    _common_slot_frames, _footnote_frame, _page_number_frame, _title_frame, slide_geometry,
+    _common_slot_frames, _footnote_frame, _page_number_frame, _title_frame, fit_title_preset, slide_geometry,
 )
 from slidecaptain.metrics.font_metrics import FontMetrics
 from slidecaptain.models.deck import Chapter
@@ -81,7 +81,9 @@ def build_diagram_render_plan(
     for slot, builder in (
         ('eyebrow', lambda: _common_slot_frames(chapter, g, eyebrow, '', preset, metrics)),
         ('subtitle', lambda: _common_slot_frames(chapter, g, '', subtitle, preset, metrics)),
-        ('title', lambda: [_title_frame(chapter, preset, metrics, g)]),
+        # 장 제목은 내용 템플릿과 같이 칸에 맞춘 크기로 그린다. 도식 장은 제목이 두 줄이면 렌더를 막으므로, 28pt 고정에서는
+        # 종전(20pt)에 그려지던 33~45자 제목이 막혔다 (2026-10-20 리뷰 TCR-01)
+        ('title', lambda: [_title_frame(chapter, fit_title_preset(preset, 'title', title, metrics), metrics, g)]),
         ('footnote', lambda: [_footnote_frame(chapter, footnote, preset, metrics)] if footnote else []),
         ('page_number', lambda: [_page_number_frame(chapter, page_no, preset)]),
     ):

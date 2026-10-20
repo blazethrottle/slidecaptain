@@ -229,16 +229,16 @@
           {
             "name": "cover:cover_title",
             "x": 80.0,
-            "y": 200.0,
+            "y": 194.0,
             "w": 800.0,
-            "h": 48.0,
+            "h": 54.0,
             "fill": null,
             "border": null,
             "paras": [
               {
                 "text": "합성 보고",
                 "level": 0,
-                "font_pt": 28.0,
+                "font_pt": 36.0,
                 "bold": true,
                 "color": "202020",
                 "align": "left",
@@ -345,7 +345,7 @@
         "warnings": [],
         "diagram": {
           "rule_version": "q3b-render-v1",
-          "input_fingerprint": "f2db2e34d04fd9b92eec268685caf3ef9cecc1b54714410a1e05713f6e97abdd",
+          "input_fingerprint": "ce5d2ef4a05774063e93094ad292fc5fb1db6ec1cbcb1b3e67fc9a9493b9b04b",
           "layout": {
             "diagram_id": "synthetic-flow",
             "page_width_pt": 960.0,
@@ -814,8 +814,8 @@
       "latin": "Noto Sans KR"
     },
     "font_roles": {
-      "cover_title_pt": 28.0,
-      "section_title_pt": 24.0,
+      "cover_title_pt": 36.0,
+      "section_title_pt": 32.0,
       "eyebrow_pt": 10.5,
       "title_pt": 28.0,
       "subtitle_pt": 14.0,

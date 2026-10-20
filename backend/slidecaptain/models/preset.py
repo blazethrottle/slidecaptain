@@ -25,8 +25,10 @@ class Fonts(BaseModel):
 class FontRoles(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, allow_inf_nan=False)
 
-    cover_title_pt: float = Field(default=28.0, gt=0)
-    section_title_pt: float = Field(default=24.0, gt=0)
+    # 표지 > 섹션 > 장 제목 위계. 2026-10-20 사용자 결정(회사 PC 이월표 (21) A)으로 28, 24pt에서 키웠다. 장 제목을
+    # 28pt로 키우자 표지 제목과 같아지고 섹션 제목이 더 작아졌다
+    cover_title_pt: float = Field(default=36.0, gt=0)
+    section_title_pt: float = Field(default=32.0, gt=0)
     # 제목 위 분류 라벨 (2026-09-07 DA-3 신설). 기존 크기는 하나도 바꾸지 않는다
     eyebrow_pt: float = Field(default=10.5, gt=0)
     # 장 제목. 2026-10-20 사용자 결정으로 20pt에서 28pt로 키웠다(회사 PC 이월표 (17), 시안 C). 제목 칸 높이(title_height
