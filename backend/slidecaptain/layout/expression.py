@@ -136,8 +136,8 @@ def build_comparison_chart(deck,slide,frame,preset,metrics,sources):
         # build 20430 실측. 30pt에서 계획과 일치)
         plot_h=height-font*3.5
     else:
-        # 세로 축 글자는 그림 영역 왼쪽에 끝 맞춤된다. 가장 넓은 눈금 글자는 최댓값이다(소수 자릿수가 모두 같다).
-        # 값 글자 폭만 잡으면 '1357.40'처럼 더 넓은 축 글자의 앞자리가 미리보기 왼쪽 밖으로 나간다 (2026-10-16 리뷰)
+        # 세로 축 글자(0과 최댓값)는 그림 영역 왼쪽에 끝 맞춤된다. 더 넓은 쪽은 최댓값이다. 값 글자 폭만 잡으면
+        # 값보다 넓은 축 최댓값(당시 '1357.40')의 앞자리가 미리보기 왼쪽 밖으로 나갔다 (2026-10-16 리뷰)
         plot_x=max(value_width,metrics.face(False).width_pt(axis_text,font))+font*1.5
         plot_y=font*2
         plot_w=frame.w-plot_x-font

@@ -6,7 +6,9 @@ export function ChartPreview({frame}: {frame:Frame}) {
   const y0=chart.plot_y+chart.plot_h;
   const font=chart.font_pt;
   // 값 축 글자는 0과 최댓값 둘이고 PowerPoint 실측 위치에 맞춘다(2026-10-20 회사 PC, build 20430, 12pt). 가로 막대는 눈금
-  // 가운데 맞춤이고 획이 축 아래 14.5~23.5pt다. 세로 막대는 축 왼쪽 약 13.5pt에 끝 맞춤되고 획 가운데가 눈금 높이다
+  // 가운데 맞춤이고 획이 축 아래 14.5~23.5pt다. 세로 막대는 PowerPoint 획 오른쪽 끝이 축 왼쪽 약 14pt이고 획 가운데가 눈금
+  // 높이라, 미리보기는 축 왼쪽 글자 크기의 1.125배(12pt에서 13.5pt)에 끝 맞춤한다. 값 축(c:valAx)에는 글자 거리를 정하는
+  // lblOffset이 없어 PowerPoint 쪽 글자 거리를 직접 정할 수 없으므로 미리보기를 맞춘다
   const axisLabels=chart.kind === "bar"
     ? [{text:"0",x:chart.plot_x,y:y0+font*1.95},{text:chart.axis_maximum,x:chart.plot_x+chart.plot_w,y:y0+font*1.95}]
     : [{text:"0",x:chart.plot_x-font*1.125,y:y0+font/3},{text:chart.axis_maximum,x:chart.plot_x-font*1.125,y:chart.plot_y+font/3}];

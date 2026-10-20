@@ -18,17 +18,18 @@ from slidecaptain.export.pptx_writer import write_pptx
 from slidecaptain.pipeline.story import _text_hash, story_fingerprint
 
 
-def chart_sample(a_value='1,200'):
-    # a_value는 원문과 근거의 A팀 값을 함께 바꾼다. 원문이 바뀌므로 근거의 원문 해시도 다시 계산한다
+def chart_sample(a_value='1,200',b_value='1,000'):
+    # a_value와 b_value는 원문과 근거의 A팀, B팀 값을 함께 바꾼다. 원문이 바뀌므로 근거의 원문 해시도 다시 계산한다.
+    # B팀을 먼저 바꿔, A팀 값에 '1,000'이 들어 있어도 B팀 자리로 잘못 바뀌지 않게 한다
     raw=(Path(__file__).parent/'fixtures/q2d-numeric-review.json').read_text(encoding='utf-8')
-    fixture=json.loads(raw.replace('1,200',a_value))
+    fixture=json.loads(raw.replace('1,000',b_value).replace('1,200',a_value))
     for evidence in fixture['deck']['structure']['story_plan']['evidence']:
         evidence['source_revision']=_text_hash(fixture['sources'][evidence['source_id']])
     deck=Deck.model_validate(fixture['deck'])
     payload=deck.model_dump(mode='json')
     payload['structure']['chapters'][0]['template']='table'
     payload['slides'][0]['slots']={'template':'table','columns':['팀','순매출'],
-                                  'rows':[['A',a_value.replace(',','')+'원'],['B','1000원']],'footnote':'같은 기간과 분모'}
+                                  'rows':[['A',a_value.replace(',','')+'원'],['B',b_value.replace(',','')+'원']],'footnote':'같은 기간과 분모'}
     deck=Deck.model_validate(payload)
     deck.structure.story_plan.input_fingerprint=story_fingerprint(deck.structure.story_plan,deck.meta,deck.structure.chapters,fixture['sources'])
     return deck,fixture['sources']
@@ -183,7 +184,8 @@ def _chart_labels(path,count):
 @pytest.mark.parametrize('kind',['bar','column'])
 @pytest.mark.parametrize('a_value,values,axis_text',[('1,200',None,'1320'),('1,200',(('1200','1200'),('1000.5','1000.5')),'1320'),
                                                      ('1,234',None,'1357.4'),('123456789.123456',None,'135802468.04'),
-                                                     ('1,200',(('1.005','1.01'),('2.675','2.68')),'1320')])
+                                                     ('1,200',(('1.005','1.01'),('2.675','2.68')),'1320'),
+                                                     ('1,200',(('1.005','1.01'),('1000','1000')),'1320')])
 def test_pptx_chart_labels_and_axis_show_the_same_text_as_the_preview(tmp_path,kind,a_value,values,axis_text):
     # 2026-10-16 회사 PC 실측(PowerPoint 16.0 build 20430): '0.##############' 서식 때문에 값과 눈금이 '1200.',
     # '1320.'처럼 끝에 마침표가 붙었다. 미리보기는 표시 글자(display)를 그리고 배치도 그 글자 폭으로 계산한다.
@@ -228,6 +230,28 @@ def test_chart_shows_at_most_two_decimals_and_keeps_the_source_value(tmp_path,a_
     assert reopened.series[0].values==(float(source),1000.0)
     descr=next(shape for shape in Presentation(output).slides[0].shapes if shape.has_chart)._element.nvGraphicFramePr.cNvPr.get('descr')
     assert json.loads(descr)['points'][0]['value']==source
+    # PowerPoint "데이터 편집" 표는 내장 워크북 칸의 서식으로 보인다. 칸 서식이 표시 자릿수를 따르면 원문이 반올림돼
+    # 보이므로, 칸에는 원문 값과 원문 자릿수의 서식을 둔다(C3 후속 리뷰 CDR-01. series.values는 차트 캐시만 읽는다)
+    import openpyxl
+    places=len(source.partition('.')[2])
+    with zipfile.ZipFile(output) as package:
+        embedded=next(n for n in package.namelist() if n.startswith('ppt/embeddings/'))
+        sheet=openpyxl.load_workbook(io.BytesIO(package.read(embedded))).active
+    assert sheet['B2'].value==float(source)
+    assert sheet['B2'].number_format==('0.'+'0'*places if places else '0')
+
+
+def test_tiny_values_round_to_the_axis_maximum_text_but_bars_keep_the_source_scale():
+    # 알려진 한계(C3 후속 리뷰 CDR-02): 큰 값이 0.05 미만이면 막대 라벨과 축 최댓값이 같은 글자(0.01)인데 막대는
+    # 축의 절반쯤까지만 그려진다. 막대 길이는 원문 값, 글자는 소수 2자리 표시이기 때문이다. 0.004와 0.001이 모두
+    # 0.00으로 보이는 한계와 같은 계열로 받아들인다(계획 1절 4). 이 동작을 바꾸면 이 시험과 계획을 함께 고친다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample('0.005','0.004')
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind='bar')
+    chart=next(f.chart for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.chart)
+    assert [p.display for p in chart.points]==['0.01','0.00']
+    assert chart.axis_maximum=='0.01'
+    assert [round(p.w/chart.plot_w,6) for p in chart.points]==[0.5,0.4]
 
 
 def test_preview_value_width_is_measured_on_the_display_text():
