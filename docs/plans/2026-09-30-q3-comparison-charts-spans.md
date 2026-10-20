@@ -4,7 +4,7 @@
 
 - Slide의 optional `chart`는 `comparison-chart-v1`, 기존 comparison ID, bar/column 종류만 받는다. table 슬라이드에서 명시적으로 선택하며 원래 columns/rows/footnote를 그대로 저장한다. 임의 값/근거/좌표, 다수 점, line/pie, 음수, 미지원 환산은 차단한다. 해당 장의 claim에 연결된 current StoryPlan의 등록 비교와 두 원문 근거만 소비한다.
 - `build_render_plan(..., sources=None)`의 optional 실제 자료를 추가한다. 차트가 있을 때 sources 누락, 낡은 story, 원문 hash/위치/발췌 불일치, incompatible/정보 부족 비교나 해석 불가 값을 오류로 반환한다. 원래 표로 조용히 대체하지 않는다. 명시적 단위 환산은 기존 결정론 계약이 확인되는 범위만 소비한다.
-- ChartPlan은 실제 근거 ID, exact 문자열 값, 단위/기간/분모 조건과 결정론 축/plot/bar 외곽을 포함한다. PPTX는 편집 가능한 native chart, preview는 같은 의미/외곽의 SVG를 소비한다. 서로 다른 렌더러의 실제 라벨/축 배치 일치는 미검증이고 Q4 실제 PowerPoint 검수가 필요하다.
+- ChartPlan은 실제 근거 ID, exact 문자열 값, 단위/기간/분모 조건과 결정론 축/plot/bar 외곽을 포함한다. (2026-10-20 추가: 점마다 표시 글자 `display`를 함께 둔다. 소수 3자리 이상인 값은 소수 2자리로 사사오입한 글자이고, exact 값 `value`는 그대로 남는다. 회사 PC 확인 이월표 (18) 사용자 결정 A, [C3 후속 계획](2026-10-20-c3-followup-chart-display.md)) PPTX는 편집 가능한 native chart, preview는 같은 의미/외곽의 SVG를 소비한다. 서로 다른 렌더러의 실제 라벨/축 배치 일치는 미검증이고 Q4 실제 PowerPoint 검수가 필요하다.
 - Slide.text_spans는 기존 eyebrow/subtitle/text/conclusion/bullets의 text_sha256, Unicode codepoint start/end, bold/accent 역할을 받는다. bullets만 index가 필요하고 빈/중첩/범위 밖/낡은 텍스트/미지원 슬롯은 거절한다. 프런트는 같은 텍스트를 편집하면 해당 span을 지우고 원문을 보존한다.
 - Render Para.runs와 line_runs는 원문 전체를 보존한다. span bold는 번들 bold 폭을 실제로 반영해 줄바꿈/용량을 재계산하고 단어를 생략하거나 글자 크기를 줄이지 않는다. 줄별 runs를 preview가, 전체 runs를 PPTX가 소비한다. 원래 diagram/폰트 미지원 경계는 유지한다.
 - 차트/강조 없는 저장/렌더 optional 기본 필드는 직렬화에서 제외해 기존 fingerprint를 유지한다. 보호 재작성은 차트가 참조하는 원래 비교/claim/evidence도 서버가 보존하도록 확장한다.
