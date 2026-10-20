@@ -10,6 +10,7 @@ const {
   readSelectedFiles,
   assertCaller,
   settleJobBeforeClose,
+  serviceEnvironment,
 } = require("../runtime.cjs");
 const origin = "http://127.0.0.1:45678";
 test("known API methods and encoded project names are allowed", () => {
@@ -240,4 +241,22 @@ test("200이 아닌 응답이나 cancel 밖의 답은 닫거나 남는다", asyn
   const { request, calls } = fakeService(activeJob);
   assert.equal(await settleJobBeforeClose(request, async () => undefined), "stay");
   assert.equal(calls.length, 1);
+});
+
+test("Windows에서 C 런타임이 읽지 못하는 TZ는 서비스에 넘기지 않는다 (회사 PC 이월표 (8))", () => {
+  // 2026-10-16 회사 PC 실측: TZ=Asia/Seoul이면 파이썬 현지 시각이 UTC+1이 되어 잠금 시각과 스냅숏 이름이 틀어졌다
+  const base = { PATH: "C:\\bin", TZ: "Asia/Seoul" };
+  const env = serviceEnvironment(base, { PYTHONPATH: "backend" }, "win32");
+  assert.equal(env.TZ, undefined);
+  assert.equal(env.PATH, "C:\\bin");
+  assert.equal(env.PYTHONPATH, "backend");
+  assert.equal(base.TZ, "Asia/Seoul"); // 앱 자신의 환경은 바꾸지 않는다
+  assert.equal(serviceEnvironment({ tz: "UTC" }, {}, "win32").tz, undefined);
+  for (const valid of ["KST-9", "EST5EDT", "PST8PDT", "UTC0", "KST-09:00"]) {
+    assert.equal(serviceEnvironment({ TZ: valid }, {}, "win32").TZ, valid, valid);
+  }
+});
+
+test("Windows가 아니면 TZ를 그대로 넘긴다", () => {
+  assert.equal(serviceEnvironment({ TZ: "Asia/Seoul" }, {}, "darwin").TZ, "Asia/Seoul");
 });

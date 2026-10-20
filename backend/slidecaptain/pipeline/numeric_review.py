@@ -82,6 +82,11 @@ def numeric_fields(deck: Deck) -> Iterator[tuple[str, str, str]]:
             excluded.add("date")
         if chapter.template == "divider":
             excluded.add("section_no")
+        if slide.chart is not None:
+            # 차트가 있는 장은 표를 그리지 않는다(엔진이 표 자리를 차트로 바꾸고, 그릴 수 없으면 표로 대체하지 않고 실패한다).
+            # 차트 값은 등록 비교의 근거에서 오므로 원문과 이미 연결돼 있다. 보이는 칸만 대조한다(도식 장과 같은 원칙,
+            # 회사 PC 이월표 (14): 표의 원문 수치 칸이 unlinked_expression으로 세어졌다). 각주는 계속 본다
+            excluded |= {"columns", "rows"}
         if slide.slots.template == "diagram":
             # 보이는 문구만 대조한다. 버전/ID/근거 참조는 보고서 숫자가 아니다.
             diagram = slide.slots.diagram
@@ -107,10 +112,17 @@ def assess_numeric_review(deck: Deck, sources: dict[str, str]) -> NumericReviewR
     deck = Deck.model_validate(deck.model_dump(mode="json"))
     from slidecaptain.pipeline.story import StaleStoryPlan, require_current_story
 
-    fingerprint = hashlib.sha256(json.dumps({
+    basis = {
         "rule_version": "q2d-v1", "deck": output_dump(deck),  # 보고 목적 칸을 뺀다 (D3b-2)
         "sources": {key: hashlib.sha256(text.encode("utf-8")).hexdigest() for key, text in sources.items()},
-    }, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+    }
+    if any(slide.chart is not None for slide in deck.slides):
+        # 검사할 칸을 고르는 규칙의 표지. 2026-10-20 차트 장의 표 칸을 뺐다(회사 PC 이월표 (14)). 규칙이 바뀌기 전에 저장된
+        # 검토 결과가 같은 지문으로 현재 결과처럼 읽히지 않게 한다. 차트가 없는 덱은 검사 칸이 그대로이므로 지문도 그대로 둔다
+        basis["field_rule"] = "visible-2026-10-20"
+    fingerprint = hashlib.sha256(json.dumps(
+        basis, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
     fields = list(numeric_fields(deck))
     plan = deck.structure.story_plan
     reason = None

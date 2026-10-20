@@ -4,6 +4,9 @@ chcp 65001 >nul
 cd /d "%~dp0"
 set "PYTHONUTF8=1"
 set "PYTHONPATH=%~dp0backend"
+rem Use the Windows time zone. The Windows C runtime reads TZ only in a form such as KST-9; a value such as
+rem Asia/Seoul made Python's local time UTC+1 (company PC carry-over (8), 2026-10-16).
+set "TZ="
 
 echo SlideCaptain: prepare an isolated PowerPoint review, with no AI calls.
 echo Close the previous review server window before running this again.

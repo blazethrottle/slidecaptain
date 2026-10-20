@@ -236,6 +236,19 @@ async function readSelectedFiles(selected) {
   }
   return { cancelled: false, files, notes };
 }
+// Windows C 런타임은 TZ를 "세 글자 이름 + 시각 + 선택적 일광 절약 이름"(KST-9, EST5EDT)으로만 읽는다. Asia/Seoul 같은
+// 값이면 서비스의 파이썬 현지 시각이 UTC+1이 되어 잠금 시각과 스냅숏 파일 이름이 틀어졌다(2026-10-16 회사 PC 실측,
+// 회사 PC 확인 이월표 (8)). 그런 값은 서비스에 넘기지 않아 Windows 시간대 설정을 쓰게 한다. 앱 자신의 환경은 바꾸지 않는다
+const WINDOWS_TZ = /^[A-Za-z]{3}[+-]?\d{1,2}(:\d{1,2}){0,2}([A-Za-z]{3})?$/;
+function serviceEnvironment(base, extra = {}, platform = process.platform) {
+  const env = { ...base, ...extra };
+  if (platform === "win32") {
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "TZ" && !WINDOWS_TZ.test(env[key])) delete env[key];
+    }
+  }
+  return env;
+}
 async function startService({
   command,
   args,
@@ -249,8 +262,7 @@ async function startService({
   const child = spawn(command, args, {
     cwd,
     env: {
-      ...process.env,
-      ...env,
+      ...serviceEnvironment(process.env, env),
       SLIDECAPTAIN_DESKTOP_SESSION: token,
       SLIDECAPTAIN_DESKTOP_INSTANCE: instance,
     },
@@ -461,5 +473,6 @@ module.exports = {
   isOfficialLogin,
   assertCaller,
   readSelectedFiles,
+  serviceEnvironment,
   startService,
 };

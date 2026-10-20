@@ -115,8 +115,11 @@ $ErrorActionPreference = 'Stop'
 if (Get-Process POWERPNT -ErrorAction SilentlyContinue) { throw 'PowerPoint is already running. Close it before server rendering.' }
 $app = $null
 $presentation = $null
+$owned = @()
 try {
     $app = New-Object -ComObject PowerPoint.Application
+    # The guard above saw no PowerPoint, so the process COM just started is ours.
+    $owned = @(Get-Process POWERPNT -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
     $presentation = $app.Presentations.Open($InputFile, -1, 0, 0)
     $width = 1920
     $height = [int][Math]::Round($width * $presentation.PageSetup.SlideHeight / $presentation.PageSetup.SlideWidth)
@@ -128,6 +131,10 @@ try {
     # COM is a singleton and a user may start it after the guard. Release only
     # our reference; never Quit an application whose process ownership is unproved.
     if ($app -ne $null) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($app) }
+    [GC]::Collect(); [GC]::WaitForPendingFinalizers()
+    # Wait (never kill) for the PowerPoint we started to exit, so that the next render's guard does not refuse it.
+    # A user who opened PowerPoint meanwhile shares that process; then stop waiting after the timeout.
+    if ($owned.Count -gt 0) { Wait-Process -Id $owned -Timeout 30 -ErrorAction SilentlyContinue }
 }
 '''
 
