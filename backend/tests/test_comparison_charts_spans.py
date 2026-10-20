@@ -297,6 +297,24 @@ def test_column_chart_leaves_room_below_the_axis_for_powerpoint_category_labels(
     assert frame.h-(chart.plot_y+chart.plot_h)>=25.5/12*chart.font_pt+2
 
 
+@pytest.mark.parametrize('kind',['bar','column'])
+def test_chart_takes_eighty_percent_of_the_table_area_centered(kind):
+    # 2026-10-20 사용자 결정(회사 PC 이월표 (17), 시안 C): 차트가 페이지에 비해 커 보여, 표 자리(내용 영역)의 폭과 높이를
+    # 80%로 줄여 그 가운데에 둔다. 조건 문장은 차트 바로 아래, 줄인 영역 안에 남는다
+    from slidecaptain.models.expression import ChartSpec
+    deck,sources=chart_sample()
+    table=next(f for f in build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames if f.table)
+    deck.slides[0].chart=ChartSpec(rule_version='comparison-chart-v1',comparison_id=deck.structure.story_plan.comparisons[0].id,kind=kind)
+    frames=build_render_plan(deck,Preset(),FontMetrics.load_default(),sources=sources).slides[0].frames
+    chart=next(f for f in frames if f.chart)
+    caption=next(f for f in frames if f.name.endswith(':chart_conditions'))
+    assert chart.w==pytest.approx(table.w*0.8)
+    assert chart.x==pytest.approx(table.x+table.w*0.1)
+    assert chart.y==pytest.approx(table.y+table.h*0.1)
+    assert caption.x==chart.x and caption.w==chart.w and caption.y==pytest.approx(chart.y+chart.h)
+    assert chart.h+caption.h==pytest.approx(table.h*0.8)
+
+
 def test_bar_chart_leaves_room_below_the_plot_for_powerpoint_value_axis_labels():
     # 2026-10-20 회사 PC 실측(PowerPoint 16.0 build 20430, 12pt): 값 축 글자 칸은 약 28pt다. 그림 영역 아래 공간이
     # 24pt(글자 크기의 2배)면 PowerPoint가 글자 칸을 차트 틀 안에 넣으려고 그림 영역을 계획보다 4.2pt 위에 그렸다.

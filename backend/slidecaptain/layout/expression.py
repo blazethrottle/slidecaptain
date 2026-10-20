@@ -37,6 +37,15 @@ def _significant_digits(value):
 
 
 _DISPLAY_PLACES=Decimal('0.01')
+# 차트는 표 자리(내용 영역)의 폭과 높이를 이 비율로 줄여 가운데에 둔다. 2026-10-20 사용자 결정(회사 PC 이월표 (17),
+# 시안 C): 차트가 페이지 제목에 비해 커 보였다
+CHART_AREA_RATIO=0.8
+
+
+def chart_area(frame):
+    """차트와 조건 문장이 들어갈 영역. 표 자리의 가운데에 CHART_AREA_RATIO만큼의 크기로 둔다."""
+    w,h=frame.w*CHART_AREA_RATIO,frame.h*CHART_AREA_RATIO
+    return frame.model_copy(update={'x':frame.x+(frame.w-w)/2,'y':frame.y+(frame.h-h)/2,'w':w,'h':h})
 
 
 def chart_display_text(value):

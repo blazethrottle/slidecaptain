@@ -345,7 +345,7 @@
         "warnings": [],
         "diagram": {
           "rule_version": "q3b-render-v1",
-          "input_fingerprint": "e6ddf69f74905b819c16c4cafac37d40c00e365f800e459c5d7449f7ff550644",
+          "input_fingerprint": "f2db2e34d04fd9b92eec268685caf3ef9cecc1b54714410a1e05713f6e97abdd",
           "layout": {
             "diagram_id": "synthetic-flow",
             "page_width_pt": 960.0,
@@ -727,7 +727,7 @@
                 {
                   "text": "요청 처리 흐름",
                   "level": 0,
-                  "font_pt": 20.0,
+                  "font_pt": 28.0,
                   "bold": true,
                   "color": "202020",
                   "align": "left",

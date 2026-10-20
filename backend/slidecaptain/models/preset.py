@@ -29,7 +29,9 @@ class FontRoles(BaseModel):
     section_title_pt: float = Field(default=24.0, gt=0)
     # 제목 위 분류 라벨 (2026-09-07 DA-3 신설). 기존 크기는 하나도 바꾸지 않는다
     eyebrow_pt: float = Field(default=10.5, gt=0)
-    title_pt: float = Field(default=20.0, gt=0)
+    # 장 제목. 2026-10-20 사용자 결정으로 20pt에서 28pt로 키웠다(회사 PC 이월표 (17), 시안 C). 제목 칸 높이(title_height
+    # 40pt)에는 28pt 한 줄(행간 1.4배, 39.2pt)이 들어가고, 한 줄 글자 수는 본문 폭에서 한글 약 45자에서 32자로 준다
+    title_pt: float = Field(default=28.0, gt=0)
     subtitle_pt: float = Field(default=14.0, gt=0)
     body_pt: float = Field(default=12.0, gt=0)
     box_pt: float = Field(default=12.0, gt=0)

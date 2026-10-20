@@ -2615,7 +2615,7 @@ export interface components {
             eyebrow_pt: number;
             /**
              * Title Pt
-             * @default 20
+             * @default 28
              */
             title_pt: number;
             /**
@@ -3244,7 +3244,7 @@ export interface components {
              *       "cover_title_pt": 28,
              *       "section_title_pt": 24,
              *       "eyebrow_pt": 10.5,
-             *       "title_pt": 20,
+             *       "title_pt": 28,
              *       "subtitle_pt": 14,
              *       "body_pt": 12,
              *       "box_pt": 12,
