@@ -108,7 +108,8 @@ async def repair_story(deck: Deck, sources: dict[str, str], req: StoryRepairRequ
     review_notes = []
 
     async def repair(value, findings, wrapped):
-        svc = GenerationService(wrapped, metrics, requested_model=getattr(provider, "model", None))
+        svc = GenerationService(wrapped, metrics, requested_model=getattr(provider, "model", None),
+                                requested_effort=getattr(provider, "effort", None))
         instructions = req.instructions + "\n현재 확인할 문제 목록:\n" + json.dumps(findings, ensure_ascii=False)
         result = await svc.rewrite_story(value, req.brief, sources, instructions)
         if result.status != "ok" or result.deck is None:
@@ -167,7 +168,8 @@ async def repair_story(deck: Deck, sources: dict[str, str], req: StoryRepairRequ
         try:
             on_usage(UsageRecord(ts=datetime.now().astimezone().isoformat(), kind="rewrite", chapter_id=None,
                 outcome="ok" if result.status == "reviewed_candidate" else "failed",
-                requested_model=getattr(provider, "model", None), summary=summary))
+                requested_model=getattr(provider, "model", None),
+                requested_effort=getattr(provider, "effort", None), summary=summary))
         except Exception:
             _LOG.warning("제한된 수정 사용량 기록을 저장하지 못했습니다.", exc_info=True)
     return StoryRepairResult(status=result.status, deck=result.candidate, findings=result.findings,

@@ -98,7 +98,10 @@ class RequestIdConflict(Exception):
 
 @dataclass(frozen=True)
 class FixedInputs:
-    """등록 때 고정하는 입력 (계획서 5.4). D4의 계정 프로필, Effort, 동의 리비전은 빈 열로 둔다."""
+    """등록 때 고정하는 입력 (계획서 5.4). D4의 계정 프로필과 동의 리비전은 빈 열로 둔다.
+
+    effort는 사용자가 요청한 추론 강도다. None은 제공자 기본값을 요청한 것이며 실제 적용값이 아니다 (D4 실제 생성 확인 3.2).
+    """
 
     provider: str | None
     model: str | None
@@ -106,6 +109,7 @@ class FixedInputs:
     base_etag: str | None
     sources_fingerprint: str | None
     relevance_hash: str | None
+    effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -341,11 +345,11 @@ class JobLedger:
             job_id = uuid.uuid4().hex
             self._conn.execute(
                 "INSERT INTO jobs (id, project, kind, request_id, params_hash, params, state, instance_id,"
-                " provider, model, selection_id, base_etag, sources_fingerprint, relevance_hash, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?)",
+                " provider, model, selection_id, base_etag, sources_fingerprint, relevance_hash, effort, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (job_id, project, kind, request_id, digest, json.dumps(params, ensure_ascii=False), instance_id,
                  inputs.provider, inputs.model, inputs.selection_id, inputs.base_etag,
-                 inputs.sources_fingerprint, inputs.relevance_hash, _now()))
+                 inputs.sources_fingerprint, inputs.relevance_hash, inputs.effort, _now()))
             for position, chapter_id in enumerate(chapter_ids or []):
                 self._conn.execute(
                     "INSERT INTO job_chapters (job_id, chapter_id, position, state) VALUES (?, ?, ?, 'queued')",

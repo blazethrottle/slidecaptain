@@ -8,6 +8,7 @@ call uses a new ephemeral thread and the common generation validation pipeline.
 import asyncio
 import copy
 import json
+import logging
 import os
 import queue
 import shutil
@@ -21,7 +22,16 @@ from urllib.parse import urlsplit
 
 from .auth_status import LoginStatus, mask_email
 from .connections import LoginAttempt, ModelOption
-from .provider import CallUsage, ProviderCallFailed, ProviderNotAvailable, ProviderResponse
+from .provider import CallUsage, ProviderCallFailed, ProviderNotAvailable, ProviderResponse, observed_fields
+
+_LOG = logging.getLogger("slidecaptain.pipeline.codex")
+# 응답 관측 진단에서 값을 남기는 칸 (D4 실제 생성 확인 3.3). 그 밖의 칸은 이름만 남긴다
+_OBSERVED_KEYS = frozenset({"model", "reasoningEffort", "effort"})
+_OBSERVED_HINTS = ("effort", "reasoning")
+
+
+def _log_observed(where, data):
+    _LOG.info("응답 관측 Codex %s: %s", where, observed_fields(data, value_keys=_OBSERVED_KEYS, value_hints=_OBSERVED_HINTS))
 
 _AUTH_HOSTS = {"auth.openai.com", "auth0.openai.com", "chatgpt.com"}
 _EVENTS = {"account/login/completed", "account/updated", "turn/completed",
@@ -374,6 +384,7 @@ class CodexProvider:
                 "approvalPolicy": "on-request", "sandbox": "read-only", "ephemeral": True,
                 "baseInstructions": "Return only the requested JSON. Use only the supplied text. Do not use tools or access files, the network, or other applications.",
             })
+            _log_observed("thread/start", thread)
             thread_id = thread["thread"]["id"]
             actual_model = thread.get("model")
             turn = client.request("turn/start", {"threadId": thread_id,
@@ -382,6 +393,7 @@ class CodexProvider:
                 **({"effort": self.effort} if self.effort is not None else {}),
                 "sandboxPolicy": {"type": "readOnly", "networkAccess": False},
             })
+            _log_observed("turn/start", turn)
             turn_id = turn["turn"]["id"]
             text, tokens = "", None
             while True:
@@ -412,6 +424,7 @@ class CodexProvider:
                     completed = params.get("turn", {})
                     if completed.get("id") != turn_id:
                         continue
+                    _log_observed("turn/completed", completed)
                     if completed.get("status") != "completed":
                         raise ProviderCallFailed("ChatGPT 생성을 완료하지 못했습니다. 로그인, 사용 한도와 연결 상태를 확인해 주세요.", code="provider_call_failed")
                     break

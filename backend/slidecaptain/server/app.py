@@ -390,7 +390,8 @@ def create_app(
     # 단계 5A 묶음 C 가정 1과 6, 태스크 C3). SubscriptionProvider 외의 프로바이더가 model 속성이
     # 없어도 getattr 기본값으로 안전하다.
     service = (
-        GenerationService(provider, metrics, requested_model=getattr(provider, "model", None))
+        GenerationService(provider, metrics, requested_model=getattr(provider, "model", None),
+                          requested_effort=getattr(provider, "effort", None))
         if provider is not None
         else None
     )
@@ -447,12 +448,15 @@ def create_app(
         if ai_connections is None:
             base = _require_service()
             return GenerationService(_CallMarker(base._provider, on_call), metrics,
-                                     requested_model=base._requested_model), (lambda: None)
+                                     requested_model=base._requested_model,
+                                     requested_effort=base._requested_effort), (lambda: None)
         lease = ai_connections.generation(selection_id)
         selected = lease.__enter__()
         try:
+            # 임대 중에는 선택을 바꿀 수 없으므로 지금 선택이 이 작업이 요청하는 모델과 강도다
             svc = GenerationService(_CallMarker(selected, on_call), metrics,
-                                    requested_model=ai_connections.selection.model)
+                                    requested_model=ai_connections.selection.model,
+                                    requested_effort=ai_connections.selection.effort)
         except BaseException:
             lease.__exit__(None, None, None)
             raise
@@ -498,10 +502,17 @@ def create_app(
                        batch_reconcile=lambda row, allow_apply, force=False: _batch_reconcile(row, allow_apply, force))
     app.state.job_runner = runner  # 시험이 실행기의 대기와 종료를 직접 부를 수 있게 둔다
 
-    def _fixed_selection() -> tuple[str | None, str | None]:
+    def _fixed_inputs(selection_id: str | None, base_etag: str | None, sources_fingerprint: str | None,
+                      relevance_hash: str | None) -> FixedInputs:
+        """등록 때 고정하는 입력. 제공자, 모델, 요청 강도는 지금 선택을 한 번만 읽어 함께 고정한다 (D4 실제 생성 확인 3.2)."""
         if ai_connections is not None:
-            return ai_connections.selection.provider, ai_connections.selection.model
-        return ("subscription" if provider is not None else None), getattr(provider, "model", None)
+            selection = ai_connections.selection
+            chosen = selection.provider, selection.model, selection.effort
+        else:
+            chosen = (("subscription" if provider is not None else None), getattr(provider, "model", None),
+                      getattr(provider, "effort", None))
+        return FixedInputs(chosen[0], chosen[1], selection_id, base_etag, sources_fingerprint, relevance_hash,
+                           effort=chosen[2])
 
     def _require_current_selection(selection_id: str | None) -> None:
         """등록 검사: 선택 헤더가 지금 선택과 다르면 로그인 확인 없이 409 (계획서 5.4)."""
@@ -1161,7 +1172,6 @@ def create_app(
                 _rewrite_invalid(exc)
             revision = sources_fingerprint(sources)
         _require_current_selection(selection_id)
-        provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
             # 기준을 결과에 담아 원장의 후보도 적용 라우트에 그대로 쓸 수 있게 한다
@@ -1170,7 +1180,7 @@ def create_app(
             return _with_basis(result, etag, revision)
 
         return JobSpec(kind="rewrite", project=name, request_id=request_id, params=req.model_dump(mode="json"),
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       selection_id=selection_id, inputs=_fixed_inputs(selection_id, etag, revision, None),
                        run=run, recheck=_stale_recheck("rewrite", name, etag, revision),
                        judge=_base_judge(name, etag, revision))
 
@@ -1209,7 +1219,6 @@ def create_app(
                 _rewrite_invalid(exc)
             revision = sources_fingerprint(sources)
         _require_current_selection(selection_id)
-        provider_id, model = _fixed_selection()
 
         def unchanged() -> bool:
             # 임대가 실행 중 선택 변경을 막으므로 선택 식별자는 비교하지 않는다 (계획서 5.8)
@@ -1229,7 +1238,7 @@ def create_app(
                                       on_usage=lambda rec: _append_usage(name, rec))
 
         return JobSpec(kind="repair", project=name, request_id=request_id, params=req.model_dump(mode="json"),
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, None),
+                       selection_id=selection_id, inputs=_fixed_inputs(selection_id, etag, revision, None),
                        run=run, recheck=_stale_recheck("rewrite", name, etag, revision),
                        judge=_base_judge(name, etag, revision), finalize=finalize)
 
@@ -1758,14 +1767,13 @@ def create_app(
             # 조회 때 낡음을 가를 관련 입력 (C1 계획 W2-a). 생성 종료 판정(_base_judge)은 지금처럼 덱 전체 비교다
             relevance = diagram_relevance(deck, req.model_dump(mode="json"))
         _require_current_selection(selection_id)
-        provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
             result = await svc.generate_diagram(deck, req, sources, on_usage=lambda rec: _append_usage(name, rec))
             return _with_basis(result, etag, revision)
 
         return JobSpec(kind="diagram", project=name, request_id=request_id, params=req.model_dump(mode="json"),
-                       selection_id=selection_id, inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance),
+                       selection_id=selection_id, inputs=_fixed_inputs(selection_id, etag, revision, relevance),
                        run=run, recheck=_stale_recheck("diagram", name, etag, revision),
                        judge=_base_judge(name, etag, revision), target=req.chapter_id)
 
@@ -1782,7 +1790,6 @@ def create_app(
         _require_current_selection(selection_id)
         _load_sources(name)  # 자료 422는 등록 검사에서 내고 행을 만들지 않는다 (α 묶음 리뷰 A6)
         revision = _sources_revision(name)
-        provider_id, model = _fixed_selection()
         relevance = structure_relevance(deck)  # 지시문에 넘기는 바로 그 덱에서 계산한다 (리뷰 V18)
 
         async def run(svc, _ctx):
@@ -1795,7 +1802,7 @@ def create_app(
 
         return JobSpec(kind="structure", project=name, request_id=request_id,
                        params=req.model_dump(mode="json"), selection_id=selection_id,
-                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance),
+                       inputs=_fixed_inputs(selection_id, etag, revision, relevance),
                        run=run, recheck=_structure_recheck(name, relevance, etag, revision),
                        judge=lambda _result: _structure_reasons(relevance, etag, revision, _chapter_basis(name)))
 
@@ -1835,15 +1842,14 @@ def create_app(
         _require_current_selection(selection_id)
         require_current_story(deck, sources)
         revision = sources_fingerprint(sources)
-        provider_id, model = _fixed_selection()
+        # 장마다 관련 입력을 담는다. 내용이 있는 장의 묶음 결과를 적용 라우트로 반영할 때 판정 기준이다 (D3c-5)
+        inputs = _fixed_inputs(selection_id, etag, revision, batch_relevance(deck, chapter_ids))
 
         async def run(svc, ctx):
-            await _run_chapters(name, ctx, chapter_ids, etag, revision, svc, provider_id, model)
+            await _run_chapters(name, ctx, chapter_ids, etag, revision, svc, inputs.provider, inputs.model)
 
         return JobSpec(kind=BATCH_KIND, project=name, request_id=request_id, params={"chapter_ids": chapter_ids},
-                       selection_id=selection_id,
-                       # 장마다 관련 입력을 담는다. 내용이 있는 장의 묶음 결과를 적용 라우트로 반영할 때 판정 기준이다 (D3c-5)
-                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, batch_relevance(deck, chapter_ids)),
+                       selection_id=selection_id, inputs=inputs,
                        run=run, recheck=_base_recheck(name, etag, revision), chapter_ids=list(chapter_ids), batch=True)
 
     def _close_chapters(job_id: str, chapter_ids: list[str], new: str, code: str | None = None) -> None:
@@ -2453,7 +2459,6 @@ def create_app(
         # 구성 계획 낡음을 등록 단계에서 낸다. 등록(202) 뒤 실패보다 호출 비용과 기다림이 없다 (D3c-5, E9)
         require_current_story(deck, _load_sources(name))
         relevance = _chapter_relevance(deck, chapter_id)
-        provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
             preset = _preset_for(deck)
@@ -2463,7 +2468,7 @@ def create_app(
 
         return JobSpec(kind="chapter", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
-                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
+                       inputs=_fixed_inputs(selection_id, etag, revision, relevance), run=run,
                        recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision),
                        judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)
@@ -2488,7 +2493,6 @@ def create_app(
             )
         require_current_story(deck, _load_sources(name))  # D3c-5, E9
         relevance = _chapter_relevance(deck, chapter_id)
-        provider_id, model = _fixed_selection()
 
         async def run(svc, _ctx):
             preset = _preset_for(deck)
@@ -2498,7 +2502,7 @@ def create_app(
 
         return JobSpec(kind="condense", project=name, request_id=request_id,
                        params={"chapter_id": chapter_id, **req.model_dump(mode="json")}, selection_id=selection_id,
-                       inputs=FixedInputs(provider_id, model, selection_id, etag, revision, relevance), run=run,
+                       inputs=_fixed_inputs(selection_id, etag, revision, relevance), run=run,
                        recheck=_chapter_recheck(name, chapter_id, relevance, etag, revision),
                        judge=lambda _r: _chapter_reasons(chapter_id, relevance, etag, revision, _chapter_basis(name)),
                        target=chapter_id)

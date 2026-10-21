@@ -93,10 +93,14 @@ def test_codex_budget_remains_shared_between_chapter_and_rewrite(tmp_path):
     assert not (tmp_path / "run" / "rewrite-result.json").exists()
 
 
+# Claude 모델의 고정 별칭 검사는 지웠다. 목록에 없는 모델은 실제 목록과 대조해 호출 전에 멈춘다
+# (tests/test_quality_pilot_effort.py, 2026-10-21 D4 실제 생성 확인 3.4)
 @pytest.mark.parametrize("kwargs", [
     {"ai_provider": "other"},
     {"ai_provider": "chatgpt", "model": "invalid model"},
-    {"ai_provider": "claude", "model": "gpt-6-luna"},
+    {"ai_provider": "claude", "effort": " "},
+    {"ai_provider": "claude", "stop_after": "rewrite"},
+    {"ai_provider": "chatgpt", "claude_cli": "claude.exe"},
 ])
 def test_invalid_selection_does_not_create_output(tmp_path, kwargs):
     output = tmp_path / "run"

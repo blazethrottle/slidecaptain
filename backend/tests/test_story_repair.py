@@ -108,3 +108,16 @@ def test_api_requires_consent_etag_and_never_saves_candidate(rewrite_input, stor
 @pytest.mark.parametrize("bad", [{"max_calls": True}, {"max_rounds": 0}, {"findings": []}, {"max_seconds": 301}])
 def test_budget_and_problem_list_are_explicit_bounded_inputs(rewrite_input, bad):
     with pytest.raises(ValidationError): request(rewrite_input[3], **bad)
+
+
+def test_usage_record_keeps_requested_model_and_effort(rewrite_input):
+    """제한된 수정의 사용량 기록도 요청 모델과 요청 강도를 남긴다 (D4 실제 생성 확인 3.2, 리뷰 LCR-02)."""
+    deck, sources, payload, brief = rewrite_input
+    provider = Provider(payload)
+    provider.model, provider.effort = "opus", "high"
+    records = []
+    asyncio.run(repair_story(deck, sources, request(brief), provider, FontMetrics.load_default(),
+        base_etag='"basis"', source_revision="a"*64, unchanged=lambda: True, cancelled=lambda: False,
+        on_usage=records.append))
+    [record] = records
+    assert (record.requested_model, record.requested_effort) == ("opus", "high")
