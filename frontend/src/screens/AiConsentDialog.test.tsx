@@ -15,8 +15,12 @@ const STATUS: AppStatus = {
   login: { logged_in: true, auth_method: "claude.ai", account: "co***@example.com", cli_version: null, error: null },
 };
 
-it.each([null, "high"])("생성 상태와 전송 동의는 요청 추론 강도 %s를 표시한다", (effort) => {
-  const status: AppStatus = { ...STATUS, provider: "chatgpt", model: "gpt-test", effort };
+it.each([
+  ["chatgpt", "gpt-test", null], ["chatgpt", "gpt-test", "high"],
+  // D4b(2026-10-20): Claude도 요청 강도를 보인다
+  ["claude", "sonnet", null], ["claude", "sonnet", "high"],
+] as const)("%s 생성 상태와 전송 동의는 요청 추론 강도 %s %s를 표시한다", (provider, model, effort) => {
+  const status: AppStatus = { ...STATUS, provider, model, effort };
   const expected = `요청 추론 강도: ${effort ?? "제공자 기본값"}`;
   expect(compactStatus(status)).toContain(expected);
   expect(fullStatus(status)).toContain(expected);

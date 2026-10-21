@@ -2,8 +2,8 @@
 
 실제 AI를 부르지 않는다. 서비스 환경의 SLIDECAPTAIN_CLAUDE_CLI가 이 파일의 실행 래퍼를 가리키게
 해서 쓴다(래퍼는 시험이 `make_fake_cli`로 만든다). 흉내 내는 것은 claude-agent-sdk 0.2.145가 쓰는
-범위뿐이다: `-v` 버전 확인, `auth status`, stream-json 입력의 초기화 제어 요청과 사용자 메시지,
-assistant 메시지와 structured_output이 든 result 메시지.
+범위뿐이다: `-v` 버전 확인, `auth status`, stream-json 입력의 초기화 제어 요청(응답에 모델 목록, D4b)과
+사용자 메시지, assistant 메시지와 structured_output이 든 result 메시지.
 
 동작은 환경 변수로 정한다.
 - FAKE_CLAUDE_DIR: 기록 폴더. calls.log(생성 호출마다 한 줄), pids.log(프로세스마다 한 줄)를 쓴다
@@ -29,6 +29,12 @@ from pathlib import Path
 
 FAKE_VERSION = "2.1.999 (Claude Code)"
 FAKE_MODEL = "claude-fake-model"
+# 초기화 응답의 모델 목록. 앱은 이 목록으로 선택한 모델을 확인한다(D4b). 실제 CLI처럼 강도 정보가 없는 모델도 둔다
+FAKE_MODELS = [
+    {"value": "sonnet", "displayName": "Sonnet", "resolvedModel": FAKE_MODEL,
+     "supportedEffortLevels": ["low", "medium", "high"]},
+    {"value": "haiku", "displayName": "Haiku", "resolvedModel": FAKE_MODEL, "supportedEffortLevels": None},
+]
 
 
 def _dir() -> Path:
@@ -95,8 +101,9 @@ def main(argv: list[str]) -> int:
         message = json.loads(line)
         if message.get("type") == "control_request":
             request = message.get("request", {})
+            payload = {"models": FAKE_MODELS} if request.get("subtype") == "initialize" else {}
             _write({"type": "control_response", "response": {
-                "subtype": "success", "request_id": message["request_id"], "response": {}}})
+                "subtype": "success", "request_id": message["request_id"], "response": payload}})
             if request.get("subtype") not in ("initialize", "interrupt"):
                 continue
         elif message.get("type") == "user":

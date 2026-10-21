@@ -95,6 +95,12 @@ RAISE_SITES = [
     ("pipeline/codex.py", "Codex 응답 형식을 읽지 못했습니다.", "ProviderCallFailed", "provider_call_failed"),
     ("pipeline/connections.py", "Claude Code를 찾지 못했습니다. 설치 후", "ProviderNotAvailable", "provider_missing"),
     ("pipeline/connections.py", "Claude Code 로그인 창을 열지 못했습니다.", "ProviderNotAvailable", "provider_missing"),
+    # D4b Claude 모델 목록 (2026-10-20)
+    ("pipeline/connections.py", "Claude Code를 찾지 못해 모델 목록을", "ProviderNotAvailable", "provider_missing"),
+    ("pipeline/connections.py", "Claude Code가 모델 목록을 알려 주지 않았습니다.", "ProviderNotAvailable", "provider_call_failed"),
+    # 만들어 두고 실패 보존 뒤에 던지는 자리 (D4b 리뷰 CMR-11)
+    ("pipeline/connections.py", "Claude 모델 목록 확인이 시간 안에 끝나지 않았습니다.", "ProviderNotAvailable", "provider_timeout"),
+    ("pipeline/connections.py", "Claude 모델 목록을 읽지 못했습니다.", "ProviderNotAvailable", "provider_call_failed"),
     ("pipeline/connections.py", "AI 생성이 진행 중입니다.", "ConnectionConflict", "settings_busy"),
     ("pipeline/connections.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),
@@ -111,7 +117,9 @@ RAISE_SITES = [
 
 
 def _raise_sites():
-    """slidecaptain 아래의 모든 raise ProviderNotAvailable/ProviderCallFailed/ConnectionConflict를 읽는다."""
+    """slidecaptain 아래에서 ProviderNotAvailable/ProviderCallFailed/ConnectionConflict를 만드는 모든 자리를 읽는다.
+
+    raise 문만 보면 먼저 만들어 두고 나중에 던지는 자리(error = ProviderNotAvailable(...))를 놓친다 (D4b 리뷰 CMR-11)."""
     import ast
     from pathlib import Path
 
@@ -120,15 +128,14 @@ def _raise_sites():
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not (isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call)
-                    and isinstance(node.exc.func, ast.Name)
-                    and node.exc.func.id in ("ProviderNotAvailable", "ProviderCallFailed", "ConnectionConflict")):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in ("ProviderNotAvailable", "ProviderCallFailed", "ConnectionConflict")):
                 continue
-            text = "".join(part.value for part in ast.walk(node.exc.args[0])
+            text = "".join(part.value for part in ast.walk(node.args[0])
                            if isinstance(part, ast.Constant) and isinstance(part.value, str))
-            code = next((k.value for k in node.exc.keywords if k.arg == "code"), None)
+            code = next((k.value for k in node.keywords if k.arg == "code"), None)
             value = code.value if isinstance(code, ast.Constant) else ("<429이면 provider_limit>" if code else None)
-            found.append((path.relative_to(root).as_posix(), text, node.exc.func.id, value))
+            found.append((path.relative_to(root).as_posix(), text, node.func.id, value))
     return found
 
 

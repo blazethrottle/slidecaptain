@@ -84,7 +84,11 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
   const current = settings?.providers.find(p => p.id === provider);
   const selectedModel = current?.models.find(m => m.id === model);
   const supportedEfforts = selectedModel?.supported_efforts ?? [];
-  const effortAvailable = !effort || (provider === "chatgpt" && supportedEfforts.includes(effort));
+  // 제공자와 관계없이 선택한 모델의 지원 목록에 있는 강도만 받는다 (D4b, 백엔드 _supports_effort와 같은 규칙)
+  const effortAvailable = !effort || supportedEfforts.includes(effort);
+  // 저장한 모델이 지금 목록에 없으면(예: Claude의 옛 별칭 opus) 자동으로 바꾸지 않고 다시 고르게 한다 (D4b 리뷰 CMR-05)
+  const savedModelMissing = !!settings && !!current && !current.models_error && !selectedModel && !!model
+    && provider === settings.selection.provider && model === settings.selection.model;
   const chooseModel = (nextProvider: ProviderId, nextModel: string) => {
     if (provider !== nextProvider || model !== nextModel) {
       setEffort(nextProvider === settings?.selection.provider && nextModel === settings.selection.model
@@ -115,7 +119,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
       <h2>AI 연결</h2>
       <p>서비스 선택 → 공식 계정 로그인 → 모델 선택과 저장 순서로 연결합니다.</p>
       {settings && <p className="hint">현재 적용: {selectedName} / {settings.selection.model}
-        {settings.selection.provider === "chatgpt" && ` / 요청 추론 강도: ${settings.selection.effort ?? "제공자 기본값"}`}</p>}
+        {` / 요청 추론 강도: ${settings.selection.effort ?? "제공자 기본값"}`}</p>}
       {working && <p role="status">처리 중...</p>}
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
@@ -167,13 +171,17 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
         <div className="field"><label>언어모델
           <select value={model} onChange={e => chooseModel(provider, e.target.value)} disabled={!current?.models.length}>
             {!current?.models.some(m => m.id === model) && <option value="">모델을 선택해 주세요</option>}
-            {current?.models.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            {current?.models.map(m => <option key={m.id} value={m.id}>
+              {m.resolved_model && m.resolved_model !== m.label ? `${m.label} → ${m.resolved_model}` : m.label}</option>)}
           </select>
         </label></div>
         {current?.models_error && <p role="alert">{current.models_error}</p>}
+        {savedModelMissing && <p role="alert">저장한 모델({model})을 지금 {provider === "claude" ? "Claude Code" : "Codex"} 목록에서
+          찾지 못했습니다. 다시 선택해 주세요.</p>}
         <p className="hint">{provider === "chatgpt" ? "설치된 Codex가 제공하는 모델 목록입니다. 계정별 이용 가능 여부와 한도는 실제 요청 시 확인됩니다."
-          : "Sonnet, Opus, Haiku는 모델 별칭입니다. 정확한 버전과 지원 추론 강도는 아직 확인되지 않았습니다. 계정과 한도에 따라 이용 가능 여부가 달라질 수 있습니다."}</p>
-        {provider === "chatgpt" && <>
+          : "설치된 Claude Code가 이 계정에 알려 준 모델 목록입니다. 화살표 오른쪽은 Claude Code가 알려 준 실제 모델 이름입니다. "
+            + "목록에 있어도 계정별 이용 가능 여부와 한도는 실제 요청 시 확인됩니다."}</p>
+        {current && <>
           <div className="field"><label>추론 강도 (Effort)
             <select value={effort} onChange={e => { setEffort(e.target.value); setNotice(""); }} disabled={!selectedModel}>
               <option value="">제공자 기본값</option>
@@ -182,7 +190,7 @@ export function AISettingsPanel({ disabled = false }: { disabled?: boolean }) {
             </select>
           </label></div>
           {selectedModel?.default_effort && <p className="hint">모델 목록의 기본 강도: {selectedModel.default_effort}</p>}
-          {!supportedEfforts.length && <p className="hint">지원 추론 강도 정보가 없습니다. 제공자 기본값을 사용할 수 있습니다.</p>}
+          {selectedModel && !supportedEfforts.length && <p className="hint">지원 추론 강도 정보가 없습니다. 제공자 기본값을 사용할 수 있습니다.</p>}
           <p className="hint">요청할 강도를 선택합니다. 실제 적용 강도는 응답에서 확인되지 않습니다.</p>
         </>}
         {!effortAvailable && <p role="alert">지원 정보가 바뀌었습니다. 추론 강도를 다시 선택해 주세요.</p>}
