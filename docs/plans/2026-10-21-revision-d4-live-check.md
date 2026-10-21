@@ -1,6 +1,6 @@
 # 개정판 D4 실제 생성 확인: Claude 목록 값과 추론 강도, 요청 강도 기록
 
-작성: 2026-10-21(회사 PC, Windows). 상태: 2판(계획 리뷰 반영, 9절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`).
+작성: 2026-10-21(회사 PC, Windows). 상태: 3판(계획 리뷰 반영 9절, 구현 기록 10절, Claude 실측 결과 11절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`).
 
 상위 문서: [착수 인계](../handoffs/2026-10-21-d4-live-check-prep.md), [D4b 계획](2026-10-20-revision-d4b-claude-models.md) 8절(CMR-06, CMR-07, 설치 CLI 실측), 로드맵 D4a 이월표 둘째 행("원장/사용량의 요청 Effort 기록과 실제 적용값 대조 미구현"), [D2 계획](2026-10-08-revision-d2-common-foundation.md) 215행(원장의 Effort 열).
 
@@ -179,3 +179,29 @@
 - 백엔드 전체 3,000 통과, 48 건너뜀, 실패 0(메모리 여유 2.1GB, 다섯 묶음으로 나눠 실행). OpenAPI 재생성 결과 변경 없음. 공개 저장소 감사기는 처음에 새 시험의 가짜 계정 경로 리터럴을 잡았다. 조각을 이어 붙이도록 고친 뒤 0건이다. 프런트와 데스크톱은 바꾸지 않아 로컬에서 돌리지 않았다(CI가 돌린다).
 - 오프라인 실행(`--offline --effort low --stop-after chapter --max-calls 1`): 상태 `completed`, `provider_calls` 1, `external_calls` 0, `checks`는 `chapter_status` ok, `ledger_effort_matches`와 `usage_effort_matches` 모두 참.
 - 같은 실수를 구조로 막은 곳: 등록 입력을 만드는 함수 하나(`_fixed_inputs`)가 강도까지 고정하므로, 새 생성 라우트가 강도를 빠뜨릴 수 없다.
+
+## 11. 결과 (2026-10-21, 회사 PC)
+
+사용자 결정 "A. Claude 3회 실행"(2026-10-21)으로 L1~L3만 실행했다. CI 두 OS 성공(실행 39555693562) 뒤에 실행했다. 실행 직전 설치 CLI가 2.1.304에서 2.1.306으로 자동 업데이트되어 있었고, 생성 없이 목록을 다시 읽어 2.1.304와 같은 다섯 값(강도 다섯 단계)임을 확인했다. 실제 호출은 3회(행마다 1회)이며 실패, 형식 재시도, 차단은 0회다. 원시 산출물은 `~/slidecaptain-live-check/2026-10-21/L1`~`L3`에 있고 커밋하지 않았다.
+
+| 행 | CLI | 요청 모델, 강도 | 판정 | 응답 모델 | 목록의 해석된 모델 | 입력, 출력, 캐시 생성 토큰 | 시간 | SDK 비용 추정 |
+|---|---|---|---|---|---|---|---|---|
+| L1 | 설치 2.1.306 | `default`, `low` | 수용 | `claude-opus-5-5` | `claude-opus-5-5` | 5,607, 460, 6,388 | 4.2초 | 0.060달러 |
+| L2 | 설치 2.1.306 | `claude-fable-5-1[1m]`, `low` | 수용 | `claude-fable-5-1` | `claude-fable-5-1` | 5,607, 793, 6,388 | 6.4초 | 0.153달러 |
+| L3 | 동봉 2.1.247 | `opus[1m]`, `low` | 수용 | `claude-opus-5` | `claude-opus-5[1m]` | 5,039, 488, 5,919 | 6.8초 | 0.076달러 |
+
+세 행 모두 장 작업이 `succeeded`, 결과 상태 `ok`이고, `checks`의 `ledger_effort_matches`와 `usage_effort_matches`가 참이다. SDK 비용 추정은 `total_cost_usd`이며 구독 청구액이 아니다. 실행 동안 뺀 환경 변수는 세션 연결 변수 11개(이름만 기록)이고 `ANTHROPIC_` 변수는 없었다.
+
+질문별 답:
+
+1. 목록 값의 `--model` 수용: `default`, `claude-fable-5-1[1m]`(설치 CLI), `opus[1m]`(동봉 CLI)를 CLI가 받아 생성했다. `[1m]` 변형의 응답 모델(`AssistantMessage.model`)에는 `[1m]`이 붙지 않는다. 초기화 메시지와 `model_usage`의 키에는 `claude-opus-5[1m]`처럼 붙는다. 그래서 응답 모델과 목록의 해석된 모델은 `[1m]`을 떼고 비교해야 같다.
+2. 강도: `--effort low`를 붙인 생성이 두 CLI 모두 오류 없이 끝났다. 초기화 메시지에는 두 판 모두 `effort` 칸이 없었다. 2.1.306에는 `per_turn_effort_active: true`만 있고 2.1.247에는 그 칸도 없다. 리뷰 LCR-05가 실행 파일 문자열로 추정한 `effort` 칸은 실제 응답에서 관측되지 않았다. 따라서 CLI 적용값은 "없음", API 적용값은 "확인 불가"다. 화면 문구(`AISettingsPanel.tsx` 194행 "응답에서 확인할 수 없다")는 사실과 맞으므로 바꾸지 않고, `CallUsage`에 적용 강도 칸도 더하지 않는다.
+3. 생성 경로의 `strict_mcp_config=True`: 두 CLI 모두 생성이 끝났고 `mcp_servers` 개수는 0이다. 새로 관측한 것: `setting_sources=[]`인데도 초기화 메시지의 스킬은 19개(동봉 16개), 플러그인 3개(동봉 0개), 에이전트 5개, 슬래시 명령 55개(동봉 50개)다. 이것들이 생성 프롬프트에 영향을 주는지는 확인하지 못했다. SDK에는 `skills`, `plugins` 옵션이 있다. 로드맵 D4a 이월표에 담당과 함께 올렸다.
+4. Codex 요청 강도와 실제 모델: 선택지 A라 실행하지 않았다. 이월표 둘째 행에 남긴다.
+5. 원장과 사용량의 요청 강도: 실제 경로의 세 행 모두 원장 `effort`와 `ai-usage.jsonl`의 `requested_effort`가 `low`로 남았다.
+
+그 밖의 관측:
+
+- 세 행 모두 `model_usage`에 보조 모델(설치 CLI는 `claude-haiku-5-5`, 동봉 CLI는 `claude-haiku-4-5-20251001`)이 함께 있었다. `CallUsage`의 토큰은 두 모델의 합이고, `CallUsage.model`은 응답 모델 하나다. 기존 설계(모델별 합산)대로이지만 화면은 보조 모델을 보이지 않는다. 이월표에 올렸다.
+- `[1m]` 변형의 사용량: L3의 입력 토큰은 L1과 비슷했다. 합성 장 하나의 짧은 입력이라 `[1m]`이 사용량에 주는 영향은 이 자료로 판단할 수 없다.
+- 재지 않은 조합(다른 강도 단계, `sonnet`과 `haiku`, 동봉 CLI의 `default`와 `claude-fable-5[1m]`, 이 PC 사용자의 저장 선택 `opus`)은 이월표에 올렸다.
