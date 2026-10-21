@@ -1,12 +1,12 @@
 # 개정판 D4 실제 생성 확인: Claude 목록 값과 추론 강도, 요청 강도 기록
 
-작성: 2026-10-21(회사 PC, Windows). 상태: 3판(계획 리뷰 반영 9절, 구현 기록 10절, Claude 실측 결과 11절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`).
+작성: 2026-10-21(회사 PC, Windows). 상태: 4판(계획 리뷰 반영 9절, 구현 기록 10절, Claude 실측 결과 11절, 코드 리뷰 반영 12절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`).
 
 상위 문서: [착수 인계](../handoffs/2026-10-21-d4-live-check-prep.md), [D4b 계획](2026-10-20-revision-d4b-claude-models.md) 8절(CMR-06, CMR-07, 설치 CLI 실측), 로드맵 D4a 이월표 둘째 행("원장/사용량의 요청 Effort 기록과 실제 적용값 대조 미구현"), [D2 계획](2026-10-08-revision-d2-common-foundation.md) 215행(원장의 Effort 열).
 
 ## 1. 사용자 결정
 
-2026-10-21 사용자 결정 "A로 승인"으로 D4의 다음 단위를 "실제 생성으로 확인"으로 정했다. 실제 호출의 횟수와 대상은 아직 승인되지 않았다. 세션은 4절의 호출 행렬을 실행 직전에 묻고, 승인이 나기 전에는 실제 생성 호출을 하지 않는다. 지금까지 이 단위의 실제 AI 생성 호출은 0회다.
+2026-10-21 사용자 결정 "A로 승인"으로 D4의 다음 단위를 "실제 생성으로 확인"으로 정했다. 실제 호출의 횟수와 대상은 아직 승인되지 않았다. 세션은 4절의 호출 행렬을 실행 직전에 묻고, 승인이 나기 전에는 실제 생성 호출을 하지 않는다. 지금까지 이 단위의 실제 AI 생성 호출은 0회다. (2026-10-21 정정: 사용자 결정 "A. Claude 3회 실행"으로 L1~L3을 승인하고 실행했다. 실제 호출은 3회다. 11절, 코드 리뷰 LCC-09)
 
 ## 2. 지금 코드와 실측 (기준 `9d62455`)
 
@@ -47,7 +47,7 @@
 
 1. 공통 함수 `observed_fields`(`provider.py`)는 칸 이름 목록과, 허용한 칸의 스칼라 값만 고른다. 개수만 셀 칸은 `<이름>#count`로 개수만 담고 안을 보지 않는다.
 2. Claude: 초기화 `SystemMessage`(subtype `init`)를 받으면 INFO 로그 한 줄을 남긴다. 값을 남기는 칸은 `model`과, 이름에 `effort` 또는 `thinking`이 들어간 칸이다. `mcp_servers`, `tools`, `plugins`, `skills`, `agents`, `slash_commands`는 개수만 남긴다(리뷰 LCR-08).
-3. Claude 호출이 실패하면(예외, 결과 없음, 오류 결과), CLI 표준 오류의 마지막 20줄(줄마다 300자까지), `AssistantMessage.error`, 결과의 `subtype`과 `terminal_reason`을 WARNING 로그로 남긴다. 성공한 호출에서는 표준 오류를 남기지 않는다(리뷰 LCR-03). 오류 원문을 로그에만 두고 사용자 문구에 넣지 않는 기존 설계 결정 14와 같다.
+3. Claude 호출이 실패하면(예외, 결과 없음, 오류 결과), CLI 표준 오류의 마지막 20줄(줄마다 300자까지), `AssistantMessage.error`, 결과의 `subtype`과 `terminal_reason`을 WARNING 로그로 남긴다. 성공한 호출에서는 표준 오류를 남기지 않는다(리뷰 LCR-03). 오류 원문을 로그에만 두고 사용자 문구에 넣지 않는 기존 설계 결정 14와 같다. (2026-10-21 정정, 코드 리뷰 LCC-01, LCC-07: 표준 오류 수집은 환경 변수 `SLIDECAPTAIN_CLAUDE_STDERR_LOG=1`일 때만 켜고, 실측 도구가 실제 Claude 실행 동안 켠다. 남길 때는 홈 경로를 `~`로 바꾸고 이메일을 가린다. 응답 오류 종류, `subtype`, `terminal_reason`은 늘 남긴다)
 4. Codex: `thread/start`, `turn/start` 응답과 `turn/completed`의 `turn` 객체에 대해 같은 규칙으로 한 줄씩 남긴다. 값을 남기는 칸은 `model`, `reasoningEffort`, `effort`와, 이름에 `effort` 또는 `reasoning`이 들어간 칸이다(한 단계 아래 객체 포함). `thread/start`의 `reasoningEffort`는 강도를 보내기 전 스레드의 기본값이므로, 요청과 달라도 거절의 근거로 쓰지 않는다(리뷰 LCR-12).
 5. 계정 칸과 경로 칸의 값이 로그에 실리지 않는다는 것을 가짜 응답으로 시험한다.
 6. `CallUsage`에 적용 강도 칸을 더하는 일은 이 단위에서 하지 않는다. `CallUsage`는 생성 결과 모델에 실려 OpenAPI와 프런트 타입이 바뀐다. 관측 뒤에 칸과 화면 문구(`AISettingsPanel.tsx` 194행 "응답에서 확인할 수 없다")를 바꿀지 사용자와 정한다. 그때 "CLI가 정한 값(초기화 메시지)"과 "API가 실제로 적용한 값(확인 불가)"을 나눠 제시한다(리뷰 LCR-05).
@@ -59,7 +59,7 @@
 3. `--stop-after chapter`: 장 생성 작업이 종결되면 멈춘다. 형식 재시도나 자동 축약이 상한에 막혀 작업이 결과 없이 끝나도, 작업 상태(`chapter_job_state`), 오류 코드(`chapter_error_code`), 결과 상태(`chapter_status`)를 `checks`에 적는다. 호출이 1회 이상 나갔으면 `status`는 `completed`(종료 코드 0)이고, 호출 전에 멈췄으면 `blocked`(종료 코드 2)다. `completed`는 "행이 끝까지 실행됨"이며 수용 판정이 아니다. 판정은 3.5로 한다(리뷰 LCR-04).
 4. 강도 기록 대조: 실행이 끝나면(성공, 실패 모두) 원장의 `effort`와 `ai-usage.jsonl` 모든 줄의 `requested_effort`가 요청과 같은지 `checks`의 `ledger_effort_matches`, `usage_effort_matches`에 적는다. 원장은 읽기 전용 sqlite 연결로 읽는다(리뷰 LCR-15).
 5. `--claude-cli PATH`: 이 프로세스의 `SLIDECAPTAIN_CLAUDE_CLI`를 정한다. 목록 조회, 로그인 확인, 생성이 모두 이 값을 읽는다. `report.json`에는 CLI 판(`--version`)과 종류(설치, 동봉, 그 밖)만 적고 전체 경로는 적지 않는다.
-6. 실제 Claude 실행 동안 이름이 `CLAUDE`로 시작하는 환경 변수를 빼고(Windows의 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다), 끝나면 되돌린다. `report.json`에는 뺀 변수의 이름(`env_removed`)과 남은 `ANTHROPIC_` 변수의 이름(`env_present_overrides`)만 적는다(리뷰 LCR-06).
+6. 실제 Claude 실행 동안 이름이 `CLAUDE`로 시작하는 환경 변수를 빼고(Windows의 `CLAUDE_CODE_GIT_BASH_PATH`는 남긴다), 끝나면 되돌린다. `report.json`에는 뺀 변수의 이름(`env_removed`)과 남은 `ANTHROPIC_` 변수의 이름(`env_present_overrides`)만 적는다(리뷰 LCR-06). (2026-10-21 정정, 코드 리뷰 LCC-03: 빼는 범위를 세션 연결 변수의 이름 앞부분 목록(`_SESSION_ENV_PREFIXES`)으로 좁혔다. `CLAUDE_CONFIG_DIR`처럼 사용자가 일부러 둔 설정은 데스크톱 앱처럼 남기고, 남은 `ANTHROPIC_`, `CLAUDE` 변수의 이름을 `env_present_overrides`에 적는다. 환경 변경과 로그 처리기는 연결 닫기에서 예외가 나도 되돌린다, LCC-02)
 7. 진단 로그: `slidecaptain` 로거의 INFO 이상을 출력 폴더의 `diagnostic.log`에 쓰고, 실행이 끝나면 떼어 낸다. 3.3의 관측 줄과 실패 원인이 여기에 남는다.
 8. 작업 대기 상한을 300초에서 360초로 늘린다. 대기는 등록부터 세므로, 300초면 제공자 시간 제한(300초)보다 먼저 끝나 나간 호출의 결과를 기록하지 못할 수 있다(리뷰 LCR-16).
 9. `report.json`에 `requested_effort`, `stop_after`를 더한다.
@@ -205,3 +205,21 @@
 - 세 행 모두 `model_usage`에 보조 모델(설치 CLI는 `claude-haiku-5-5`, 동봉 CLI는 `claude-haiku-4-5-20251001`)이 함께 있었다. `CallUsage`의 토큰은 두 모델의 합이고, `CallUsage.model`은 응답 모델 하나다. 기존 설계(모델별 합산)대로이지만 화면은 보조 모델을 보이지 않는다. 이월표에 올렸다.
 - `[1m]` 변형의 사용량: L3의 입력 토큰은 L1과 비슷했다. 합성 장 하나의 짧은 입력이라 `[1m]`이 사용량에 주는 영향은 이 자료로 판단할 수 없다.
 - 재지 않은 조합(다른 강도 단계, `sonnet`과 `haiku`, 동봉 CLI의 `default`와 `claude-fable-5[1m]`, 이 PC 사용자의 저장 선택 `opus`)은 이월표에 올렸다.
+
+## 12. 코드 리뷰 반영 (2026-10-21)
+
+리뷰어 1명이 `cd3058f`의 코드 변경(main `9d62455` 대비)을 보았다. blocker 0, major 0, minor 4, nit 5다. 사용한 토큰은 약 22만이다(작업 알림의 subagent_tokens 값 215,529). 리뷰어는 실제 생성 호출을 하지 않았다. 리뷰 보고는 세션 임시 폴더에만 있고, 아래 표가 반영 기록의 진본이다.
+
+| ID | 심각도 | 내용 | 반영 |
+|---|---|---|---|
+| LCC-01 | minor(추정) | 표준 오류를 파이프로 받으면 SDK 읽기 작업이 UTF-8 디코딩 오류로 끝난 뒤 파이프가 차서 CLI가 멈출 수 있다. 데스크톱 앱은 백엔드 로그를 버려 제품 경로에서 얻는 것이 없다 | 환경 변수 `SLIDECAPTAIN_CLAUDE_STDERR_LOG=1`일 때만 콜백을 넘긴다. 실측 도구가 실제 Claude 실행 동안 켠다. 꺼져 있으면 `stderr`가 None인 것을 시험한다 |
+| LCC-02 | minor | 실측 도구의 환경 변경과 로그 처리기가 연결 닫기 예외에서 되돌아가지 않는다 | `_pilot_environment` 컨텍스트 관리자(`ExitStack`)로 묶었다. 닫기에서 예외가 나도 되돌아가는 것을 시험한다 |
+| LCC-03 | minor | `CLAUDE`로 시작하는 변수를 모두 빼면 `CLAUDE_CONFIG_DIR` 같은 사용자 설정도 빠진다 | 세션 연결 변수의 이름 앞부분 목록만 뺀다(3.4 6 정정). L1~L3에서 뺀 11개는 모두 이 목록 안이라 결과는 바뀌지 않는다 |
+| LCC-04 | minor | 실제 모드 시험이 동봉 CLI의 `--version`을 실제로 띄운다 | 시험 파일에 `_cli_version`을 바꾸는 autouse 픽스처를 두었다 |
+| LCC-05 | nit | `env_present_overrides` 단언이 개발자 환경 변수에 흔들린다 | 시험이 세션 변수 밖의 `ANTHROPIC_`, `CLAUDE` 변수를 먼저 지운다 |
+| LCC-06 | nit | 사용량 줄이 없으면 `usage_effort_matches`가 False라 불일치처럼 읽힌다 | 줄이 없으면 None이고 `usage_records`(줄 수)를 따로 적는다 |
+| LCC-07 | nit | 표준 오류에 사용자 이름이 든 경로나 이메일이 들어갈 수 있다 | 홈 경로를 `~`로 바꾸고 이메일을 기존 `mask_email`로 가린다. 전체 흐름의 `report.json` `artifacts` 절대 경로는 기존 동작이며 저장소 밖 산출물이라 그대로 둔다 |
+| LCC-08 | nit | 선택 확인과 선택 읽기 사이의 열린 구간이 넓어졌다 | `AIConnections.current_selection(selection_id)`가 잠금 안에서 식별자를 대조하고 선택을 돌려준다. `_fixed_inputs`가 이것을 쓰므로, 그 사이에 선택이 바뀌면 행을 만들지 않고 409다 |
+| LCC-09 | nit | 로드맵 첫 줄과 계획서 1절에 승인 전 서술이 남았다 | 두 곳에 날짜 붙은 정정을 적었다 |
+
+검증: 반영 시험 8건이 고치기 전 실패했다. 표준 오류 스위치 2건(새 시험과, 스위치를 켜도록 고친 기존 시험), 홈 경로와 이메일 가림 1건, 세션 변수 범위 1건, 닫기 예외 복원 1건, 호출 전 차단의 사용량 판정 2건(매개변수 두 사례), 선택 동시 읽기 1건이다. 관련 시험 69건 통과. 백엔드 전체 3,004 통과, 48 건너뜀, 실패 0(다섯 묶음). 처음 돌린 전체 시험에서 오류 코드 표 시험(`test_jobs_error_codes.py`)이 1건 실패했다. 같은 문구의 `selection_changed` 자리가 둘이 되어 표에 행을 하나 더했고, 그 파일 16건이 통과했다. 다섯째 묶음은 메모리 부족으로 한 번 멈춰 사용자 결정으로 앞에서 다시 돌렸다. 공개 저장소 감사기 0건, OpenAPI 재생성 변경 없음.

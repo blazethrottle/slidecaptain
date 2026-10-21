@@ -10,6 +10,9 @@
 import asyncio
 from collections import deque
 import logging
+import os
+from pathlib import Path
+import re
 from typing import Literal
 
 from claude_agent_sdk import (
@@ -31,7 +34,7 @@ from slidecaptain.pipeline.provider import (
     ProviderResponse,
     observed_fields,
 )
-from slidecaptain.pipeline.auth_status import resolve_cli_path
+from slidecaptain.pipeline.auth_status import mask_email, resolve_cli_path
 
 _LOG = logging.getLogger("slidecaptain.pipeline.subscription")
 
@@ -39,9 +42,21 @@ _LOG = logging.getLogger("slidecaptain.pipeline.subscription")
 # 별칭을 써서 세부 버전 교체에 흔들리지 않게 한다.
 DEFAULT_MODEL = "sonnet"
 # 실패한 호출의 원인을 가르려고 CLI 표준 오류의 마지막 몇 줄만 남긴다. 성공한 호출에서는 남기지 않는다
-# (D4 실제 생성 확인 리뷰 LCR-03. SDK는 stderr 콜백이 있을 때만 표준 오류를 받아 온다)
+# (D4 실제 생성 확인 리뷰 LCR-03. SDK는 stderr 콜백이 있을 때만 표준 오류를 받아 온다).
+# 이 환경 변수가 "1"일 때만 켠다. 표준 오류를 파이프로 받으면 SDK의 읽기 작업이 엄격한 UTF-8 디코딩에서 끝난 뒤 파이프가
+# 차서 CLI가 멈출 수 있고, 데스크톱 앱은 백엔드 로그를 버려 제품 경로에서는 얻는 것이 없다. 실측 도구가 켠다 (코드 리뷰 LCC-01)
+ENV_STDERR_LOG = "SLIDECAPTAIN_CLAUDE_STDERR_LOG"
 _STDERR_TAIL_LINES = 20
 _STDERR_LINE_MAX = 300
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def _redacted(line: str) -> str:
+    """표준 오류 한 줄에서 홈 경로를 ~로, 이메일을 가린 형태로 바꾼다 (코드 리뷰 LCC-07)."""
+    home = str(Path.home())
+    for form in {home, home.replace("\\", "/")}:
+        line = re.sub(re.escape(form), "~", line, flags=re.IGNORECASE)
+    return _EMAIL.sub(lambda match: mask_email(match.group(0)), line)[:_STDERR_LINE_MAX]
 # 응답 관측 진단에서 개수만 남기는 초기화 메시지 칸. 생성 경로의 격리(질문 3)를 확인한다
 _INIT_COUNT_KEYS = frozenset({"mcp_servers", "tools", "plugins", "skills", "agents", "slash_commands"})
 
@@ -201,7 +216,7 @@ class SubscriptionProvider:
             model=self.model,
             effort=self.effort,
             output_format={"type": "json_schema", "schema": schema},
-            stderr=lambda line: stderr_tail.append(line[:_STDERR_LINE_MAX]),
+            stderr=(lambda line: stderr_tail.append(_redacted(line))) if os.environ.get(ENV_STDERR_LOG) == "1" else None,
         )
 
         assistant_model: str | None = None

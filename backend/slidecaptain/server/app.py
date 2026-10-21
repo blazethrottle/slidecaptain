@@ -506,7 +506,7 @@ def create_app(
                       relevance_hash: str | None) -> FixedInputs:
         """등록 때 고정하는 입력. 제공자, 모델, 요청 강도는 지금 선택을 한 번만 읽어 함께 고정한다 (D4 실제 생성 확인 3.2)."""
         if ai_connections is not None:
-            selection = ai_connections.selection
+            selection = ai_connections.current_selection(selection_id)
             chosen = selection.provider, selection.model, selection.effort
         else:
             chosen = (("subscription" if provider is not None else None), getattr(provider, "model", None),

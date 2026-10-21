@@ -85,6 +85,7 @@ def test_cli_stderr_tail_is_logged_only_when_the_call_fails(monkeypatch, caplog)
     import pytest
 
     lines = [f"line {n}" for n in range(30)] + ["Error: model 'x[1m]' is not available"]
+    monkeypatch.setenv(sub.ENV_STDERR_LOG, "1")
     monkeypatch.setattr(sub, "query", _failing_query(stderr_lines=lines, error=ProcessError("failed", exit_code=1)))
     with caplog.at_level(logging.INFO, logger="slidecaptain.pipeline.subscription"):
         with pytest.raises(ProviderCallFailed):
@@ -129,3 +130,41 @@ def test_codex_thread_and_turn_responses_are_logged_without_account_values(tmp_p
     assert len(lines) == 3  # thread/start, turn/start, turn/completed
     assert "'reasoningEffort': 'medium'" in lines[0] and "'model': 'gpt-resolved'" in lines[0]
     assert SECRET_EMAIL not in caplog.text and SECRET_PATH not in caplog.text
+
+
+def test_stderr_is_not_piped_unless_the_diagnostic_switch_is_on(monkeypatch):
+    """표준 오류를 파이프로 받으면 읽기 작업이 디코딩 오류로 끝난 뒤 파이프가 차서 CLI가 멈출 수 있다. 데스크톱 앱은 백엔드
+    로그를 버리므로 제품 경로에서는 받지 않는다. 실측 도구만 켠다 (코드 리뷰 LCC-01)."""
+    captured = {}
+    monkeypatch.delenv(sub.ENV_STDERR_LOG, raising=False)
+
+    async def fake(prompt, options):
+        captured["options"] = options
+        yield _result(structured={})
+
+    monkeypatch.setattr(sub, "query", fake)
+    asyncio.run(SubscriptionProvider().complete("q", {}))
+    assert captured["options"].stderr is None
+    monkeypatch.setenv(sub.ENV_STDERR_LOG, "1")
+    asyncio.run(SubscriptionProvider().complete("q", {}))
+    assert callable(captured["options"].stderr)
+
+
+def test_stderr_tail_hides_home_path_and_email(monkeypatch, caplog):
+    """표준 오류에는 사용자 이름이 든 경로나 계정이 들어갈 수 있다. 홈 경로는 ~로, 이메일은 가려서 남긴다 (LCC-07)."""
+    from pathlib import Path
+    from claude_agent_sdk import ProcessError
+    from slidecaptain.pipeline.provider import ProviderCallFailed
+    import pytest
+
+    home = str(Path.home())
+    line = f"Error reading {home}{chr(92)}.claude{chr(92)}settings.json for {SECRET_EMAIL}"
+    monkeypatch.setenv(sub.ENV_STDERR_LOG, "1")
+    monkeypatch.setattr(sub, "query", _failing_query(stderr_lines=[line, home.replace(chr(92), "/") + "/x"],
+                                                     error=ProcessError("failed", exit_code=1)))
+    with caplog.at_level(logging.INFO, logger="slidecaptain.pipeline.subscription"):
+        with pytest.raises(ProviderCallFailed):
+            asyncio.run(SubscriptionProvider().complete("q", {}))
+    assert "~" in caplog.text and "so***@example.com" in caplog.text
+    assert home not in caplog.text and home.replace(chr(92), "/") not in caplog.text
+    assert SECRET_EMAIL not in caplog.text

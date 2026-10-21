@@ -86,3 +86,15 @@ def test_single_provider_app_records_the_provider_effort(store):
         ledger.close()
     [record] = _usage_lines(store)
     assert (record["requested_model"], record["requested_effort"]) == ("opus", "high")
+
+
+def test_current_selection_is_read_together_with_its_id(manager):
+    """등록 입력은 선택과 선택 식별자를 잠금 안에서 함께 읽는다. 그 사이에 선택이 바뀌면 행을 만들지 않고 409다 (코드 리뷰 LCC-08)."""
+    from slidecaptain.pipeline.connections import ConnectionConflict
+
+    token = manager.selection_id
+    assert manager.current_selection(token) == manager.selection
+    manager.select(AISelection(provider="claude", model="sonnet", effort="low"))
+    with pytest.raises(ConnectionConflict) as error:
+        manager.current_selection(token)
+    assert error.value.code == "selection_changed"

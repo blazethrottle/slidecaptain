@@ -8,6 +8,7 @@ D4 live check: --effort sets the requested effort, --stop-after chapter stops af
 chapter job (one call for a matrix row), --claude-cli picks the Claude Code CLI for this run.
 """
 import argparse
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
@@ -33,6 +34,7 @@ from slidecaptain.pipeline.connections import (
 )
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderError, ProviderResponse
 from slidecaptain.pipeline.story import require_current_story, story_fingerprint
+from slidecaptain.pipeline.subscription import ENV_STDERR_LOG
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
 from slidecaptain.storage.job_ledger import LEDGER_NAME
@@ -42,9 +44,13 @@ BODY = "pilot-action"
 # 생성 작업 하나를 기다리는 상한. 등록부터 세므로 제공자 시간 제한(300초)에 연결 상태 확인과 목록 조회의 여유를 더한다.
 # 300초였을 때는 도구가 먼저 멈춰 나간 호출의 결과를 기록하지 못할 수 있었다 (D4 실제 생성 확인 리뷰 LCR-16)
 JOB_WAIT_SECONDS = 360
-# 실제 Claude 실행 동안 빼는 환경 변수. 이 도구를 Claude Code 세션 안에서 돌리면 세션 연결 변수(CLAUDE_CODE_CHILD_SESSION,
-# CLAUDE_EFFORT 등)가 CLI에 물려져 데스크톱 앱 경로와 조건이 달라진다 (리뷰 LCR-06). Windows의 Git Bash 경로 지정은 남긴다
-_KEEP_CLAUDE_ENV = frozenset({"CLAUDE_CODE_GIT_BASH_PATH"})
+# 실제 Claude 실행 동안 빼는 세션 연결 변수의 이름 앞부분. 이 도구를 Claude Code 세션 안에서 돌리면 이 변수들이 CLI에 물려져
+# 데스크톱 앱 경로와 조건이 달라진다 (리뷰 LCR-06). 사용자가 일부러 둔 설정(CLAUDE_CONFIG_DIR 등)은 데스크톱 앱처럼 남긴다
+# (코드 리뷰 LCC-03). 2026-10-21 이 PC의 세션에서 본 11개를 덮는다
+_SESSION_ENV_PREFIXES = (
+    "CLAUDECODE", "CLAUDE_CODE_SESSION_", "CLAUDE_CODE_MESSAGING_", "CLAUDE_CODE_BRIDGE_", "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_PID", "CLAUDE_EFFORT",
+)
 _TERMINAL = {"succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown"}
 
 
@@ -334,8 +340,54 @@ def _effort_checks(output, report, effort):
     report["checks"]["ledger_effort_matches"] = all(job_id in stored and stored[job_id] == effort for job_id in ids)
     path = output / "projects" / PROJECT / "ai-usage.jsonl"
     lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
-    report["checks"]["usage_effort_matches"] = bool(lines) and all(
-        line.get("requested_effort") == effort for line in lines)
+    # 줄이 없으면(호출 전 차단) 불일치가 아니라 판정 없음이다 (코드 리뷰 LCC-06)
+    report["checks"]["usage_records"] = len(lines)
+    report["checks"]["usage_effort_matches"] = (
+        all(line.get("requested_effort") == effort for line in lines) if lines else None)
+
+
+@contextmanager
+def _pilot_environment(output, report, *, live_claude, claude_cli):
+    """실행 동안만 바꾸는 환경 변수와 진단 로그. 연결 닫기를 포함해 어떤 예외로 끝나도 되돌린다 (코드 리뷰 LCC-02)."""
+    with ExitStack() as cleanup:
+        saved = {}
+
+        def change(name, value):
+            saved.setdefault(name, os.environ.get(name))
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+        def restore():
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        cleanup.callback(restore)
+        if claude_cli is not None:
+            change(ENV_CLI, str(Path(claude_cli)))
+        if live_claude:
+            removed = sorted(name for name in os.environ if name.startswith(_SESSION_ENV_PREFIXES))
+            for name in removed:
+                change(name, None)
+            change(ENV_STDERR_LOG, "1")  # 실패 원인을 가르려고 이 실행에서만 표준 오류를 받는다 (LCC-01)
+            # 이름만 적는다. 값(세션 식별자, 토큰, 경로)은 남기지 않는다
+            report["env_removed"] = removed
+            report["env_present_overrides"] = sorted(
+                name for name in os.environ if name.startswith(("ANTHROPIC_", "CLAUDE")))
+        # 응답 관측 줄과 호출 실패 원인을 출력 폴더에 남긴다 (D4 실제 생성 확인 3.4)
+        logger = logging.getLogger("slidecaptain")
+        cleanup.callback(logger.setLevel, logger.level)
+        diagnostic = logging.FileHandler(output / "diagnostic.log", encoding="utf-8")
+        cleanup.callback(diagnostic.close)
+        diagnostic.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logger.addHandler(diagnostic)
+        cleanup.callback(logger.removeHandler, diagnostic)
+        logger.setLevel(logging.INFO)
+        yield
 
 
 def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=None, provider=None,
@@ -368,27 +420,17 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
         "calls": [], "checks": {}, "review": {k: "not_run" for k in ("semantic", "browser", "powerpoint", "reader")},
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
+    with _pilot_environment(output, report, live_claude=mode == "live" and ai_provider == "claude",
+                            claude_cli=claude_cli):
+        return _run_pilot(output, report, mode=mode, limit=limit, model=model, provider=provider,
+                          ai_provider=ai_provider, codex_home=codex_home, effort=effort, stop_after=stop_after,
+                          chosen=chosen)
+
+
+def _run_pilot(output, report, *, mode, limit, model, provider, ai_provider, codex_home, effort, stop_after, chosen):
     bounded = None
     real = None
     manager = None
-    previous_cli = os.environ.get(ENV_CLI)
-    if claude_cli is not None:
-        os.environ[ENV_CLI] = str(Path(claude_cli))
-    removed_env = {}
-    if mode == "live" and ai_provider == "claude":
-        for name in list(os.environ):
-            if name.startswith("CLAUDE") and name not in _KEEP_CLAUDE_ENV:
-                removed_env[name] = os.environ.pop(name)
-        # 이름만 적는다. 값(세션 식별자, 토큰)은 남기지 않는다
-        report["env_removed"] = sorted(removed_env)
-        report["env_present_overrides"] = sorted(name for name in os.environ if name.startswith("ANTHROPIC_"))
-    # 응답 관측 줄과 호출 실패 원인을 출력 폴더에 남긴다. 실행이 끝나면 떼어 낸다 (D4 실제 생성 확인 3.4)
-    logger = logging.getLogger("slidecaptain")
-    previous_level = logger.level
-    diagnostic = logging.FileHandler(output / "diagnostic.log", encoding="utf-8")
-    diagnostic.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
-    logger.addHandler(diagnostic)
-    logger.setLevel(logging.INFO)
 
     def persist():
         if bounded:
@@ -463,15 +505,6 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
                 manager.close()
             elif real is not None:
                 real.close()
-            logger.removeHandler(diagnostic)
-            diagnostic.close()
-            logger.setLevel(previous_level)
-            os.environ.update(removed_env)
-            if claude_cli is not None:
-                if previous_cli is None:
-                    os.environ.pop(ENV_CLI, None)
-                else:
-                    os.environ[ENV_CLI] = previous_cli
     return report
 
 
