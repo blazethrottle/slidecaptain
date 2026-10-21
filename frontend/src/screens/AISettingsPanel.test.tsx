@@ -191,11 +191,33 @@ it("Claude 공식 목록의 정확 버전을 보이고 지원 강도를 저장�
     ] }, settings.providers[1]] });
   render(<AISettingsPanel />);
   await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
-  expect(await screen.findByRole("option", { name: "Sonnet (claude-sonnet-5)" })).toBeInTheDocument();
-  expect(screen.getByText(/설치된 Claude Code가 이 계정에 알려 준 모델 목록입니다/)).toBeInTheDocument();
+  // 리뷰 CMR-10: CLI 이름에 괄호가 들어 있어(Default (recommended)) 실제 모델 이름은 화살표 뒤에 보인다
+  expect(await screen.findByRole("option", { name: "Sonnet → claude-sonnet-5" })).toBeInTheDocument();
+  expect(screen.getByText(/설치된 Claude Code가 이 계정에 알려 준 모델 목록입니다\. 화살표 오른쪽은/)).toBeInTheDocument();
   await userEvent.selectOptions(screen.getByLabelText("추론 강도 (Effort)"), "high");
   await userEvent.click(screen.getByRole("button", { name: "선택 저장" }));
   expect(api.selectAI).toHaveBeenCalledWith({ provider: "claude", model: "sonnet", effort: "high" });
+});
+
+it("목록에 없는 저장 모델은 강도 문제가 아니라 모델 재선택으로 알린다 (D4b 리뷰 CMR-05)", async () => {
+  // 2026-10-20 실측: 기존 별칭 opus는 Claude Code 목록에 없다. 자동으로 바꾸지 않고 다시 고르게 한다
+  vi.mocked(api.getAISettings).mockResolvedValue({ ...settings, selection: { provider: "claude", model: "opus" } });
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  expect(await screen.findByRole("alert"))
+    .toHaveTextContent("저장한 모델(opus)을 지금 Claude Code 목록에서 찾지 못했습니다. 다시 선택해 주세요.");
+  expect(screen.queryByText(/지원 추론 강도 정보가 없습니다/)).toBeNull();
+  expect(screen.getByRole("button", { name: "선택 저장" })).toBeDisabled();
+});
+
+it("목록 조회가 실패하면 저장 모델 경고 대신 조회 오류만 보인다", async () => {
+  vi.mocked(api.getAISettings).mockResolvedValue({ ...settings, selection: { provider: "claude", model: "opus" },
+    providers: [{ ...settings.providers[0], models: [], models_error: "Claude 모델 목록을 읽지 못했습니다." },
+      settings.providers[1]] });
+  render(<AISettingsPanel />);
+  await userEvent.click(screen.getByRole("button", { name: "AI 연결 및 모델" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Claude 모델 목록을 읽지 못했습니다.");
+  expect(screen.queryByText(/저장한 모델/)).toBeNull();
 });
 
 it("지원 목록에서 사라진 저장 강도를 자동 대체하지 않고 재선택을 요구한다", async () => {

@@ -5,9 +5,10 @@ retries, and a revision binds the browser's disclosure to that exact selection.
 """
 
 import asyncio
-import concurrent.futures
 import json
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -26,11 +27,16 @@ from .subscription import SubscriptionProvider
 
 ProviderId = Literal["claude", "chatgpt"]
 
+# 저장할 수 있는 모델 ID. 제공자 목록도 같은 규칙으로 거른다(맞지 않는 ID를 보이면 고른 뒤 저장이 422로 막힌다, D4b 리뷰 CMR-12)
+MODEL_ID_MAX = 150
+MODEL_ID_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]-]*$"
+_MODEL_ID = re.compile(MODEL_ID_PATTERN)
+
 
 class AISelection(BaseModel, frozen=True):
     model_config = ConfigDict(extra="forbid")
     provider: ProviderId = "claude"
-    model: str = Field(default="sonnet", min_length=1, max_length=150, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:/\[\]-]*$")
+    model: str = Field(default="sonnet", min_length=1, max_length=MODEL_ID_MAX, pattern=MODEL_ID_PATTERN)
     effort: str | None = Field(default=None, min_length=1)
 
     @field_validator("effort")
@@ -65,9 +71,35 @@ CLAUDE_CATALOG_RETRY_S = 60.0
 CLAUDE_CATALOG_TIMEOUT_S = 30.0
 
 
+def _remove_folder(path: str, *, attempts: int = 50, wait_s: float = 0.2) -> None:
+    """조회용 빈 작업 폴더를 지운다. Windows에서는 CLI가 완전히 끝나기 전이면 사용 중 오류(WinError 32)가 나므로, 그때는
+    데몬 스레드가 잠시 뒤 다시 지운다(최대 약 10초). 조회마다 빈 폴더가 쌓이지 않게 한다 (D4b 리뷰 CMR-09)."""
+    def remove() -> bool:
+        try:
+            shutil.rmtree(path)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False
+        return True
+
+    def retry():
+        for _ in range(attempts):
+            time.sleep(wait_s)
+            if remove():
+                return
+
+    if not remove():
+        threading.Thread(target=retry, name="slidecaptain-claude-cleanup", daemon=True).start()
+
+
 def _read_claude_catalog() -> dict:
-    """사용자의 기존 Claude Code 프로필로 CLI 초기화 응답을 읽는다. 도구와 사용자 설정 파일을 읽지 않고 프롬프트를 보내지
-    않는다. 응답의 계정 정보는 호출자가 쓰지 않는다. 호출자의 이벤트 루프와 섞이지 않게 별도 스레드에서 돈다."""
+    """사용자의 기존 Claude Code 프로필로 CLI 초기화 응답을 읽는다. 도구, 사용자 설정 파일, 사용자 단위 MCP 서버를 쓰지 않고
+    프롬프트를 보내지 않는다. 응답의 계정 정보는 호출자가 쓰지 않는다.
+
+    호출자의 이벤트 루프와 섞이지 않게 데몬 스레드의 이벤트 루프에서 돈다. 제한 시간은 연결(SDK 초기화)까지 덮는다. 실제
+    대기는 연결 단계에서 일어나고, SDK 자체의 초기화 제한은 60초 이상이다. 시간을 넘기면 CLI 정리를 기다리지 않고
+    TimeoutError를 낸다. 정리는 그 스레드가 마저 한다 (D4b 리뷰 CMR-02)."""
     cli = resolve_cli_path()
     if cli is None:
         raise ProviderNotAvailable("Claude Code를 찾지 못해 모델 목록을 확인하지 못했습니다. 설치 후 다시 확인해 주세요.",
@@ -75,14 +107,32 @@ def _read_claude_catalog() -> dict:
 
     async def read():
         from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient
-        with tempfile.TemporaryDirectory(prefix="slidecaptain-claude-", ignore_cleanup_errors=True) as directory:
+        directory = tempfile.mkdtemp(prefix="slidecaptain-claude-")
+        try:
             options = ClaudeAgentOptions(cli_path=str(cli), cwd=directory, tools=[], setting_sources=[],
-                                         env={"DISABLE_TELEMETRY": "1"}, max_turns=1)
-            async with ClaudeSDKClient(options=options) as client:
-                return await asyncio.wait_for(client.get_server_info(), timeout=CLAUDE_CATALOG_TIMEOUT_S)
+                                         strict_mcp_config=True, env={"DISABLE_TELEMETRY": "1"}, max_turns=1)
+            async with asyncio.timeout(CLAUDE_CATALOG_TIMEOUT_S):
+                async with ClaudeSDKClient(options=options) as client:
+                    return await client.get_server_info()
+        finally:
+            _remove_folder(directory)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        info = pool.submit(asyncio.run, read()).result(timeout=CLAUDE_CATALOG_TIMEOUT_S + 15)
+    outcome = {}
+
+    def run():
+        try:
+            outcome["info"] = asyncio.run(read())
+        except BaseException as e:
+            outcome["error"] = e
+
+    worker = threading.Thread(target=run, name="slidecaptain-claude-catalog", daemon=True)
+    worker.start()
+    worker.join(CLAUDE_CATALOG_TIMEOUT_S + 5)
+    if worker.is_alive():
+        raise TimeoutError("Claude 모델 목록 조회가 제한 시간 안에 끝나지 않았습니다.")
+    if "error" in outcome:
+        raise outcome["error"]
+    info = outcome.get("info")
     return info if isinstance(info, dict) else {}
 
 
@@ -90,12 +140,16 @@ def _short_text(value) -> str | None:
     return value if isinstance(value, str) and value.strip() and len(value) <= 200 else None
 
 
+def _model_id(value) -> str | None:
+    return value if isinstance(value, str) and len(value) <= MODEL_ID_MAX and _MODEL_ID.fullmatch(value) else None
+
+
 def _claude_catalog_models(info: dict) -> list[ModelOption]:
     checked_at = datetime.now(timezone.utc)
     models, seen = [], set()
     items = info.get("models") if isinstance(info, dict) else None
     for item in items[:100] if isinstance(items, list) else []:
-        model_id = _short_text(item.get("value")) if isinstance(item, dict) else None
+        model_id = _model_id(item.get("value")) if isinstance(item, dict) else None
         if model_id is None or model_id in seen:
             continue
         advertised = item.get("supportedEffortLevels")
@@ -195,6 +249,13 @@ class ClaudeConnection:
                 self._catalog_at = now - CLAUDE_CATALOG_TTL_S + CLAUDE_CATALOG_RETRY_S
                 return list(self._catalog)
             raise error
+
+    def warm_models(self):
+        """연결 관리자의 잠금 밖에서 목록을 미리 읽어 둔다. 실패도 보존되어, 다음 models()가 같은 원인을 바로 알린다."""
+        try:
+            self.models()
+        except ProviderNotAvailable:
+            pass
 
     def invalidate_models(self):
         with self._catalog_lock:
@@ -299,7 +360,23 @@ class AIConnections:
         if self._active:
             raise ConnectionConflict("AI 생성이 진행 중입니다. 완료 후 연결 설정을 변경해 주세요.", code="settings_busy")
 
+    def _warm_models(self, providers=None):
+        # Claude 목록 조회는 CLI를 띄워 몇 초 걸린다. 이 잠금 밖에서 캐시를 채우고 잠금 안에서는 캐시만 읽는다. 그동안 상태
+        # 조회, 로그인 확인, 생성 임대의 획득과 반납이 기다리지 않는다. 반납은 작업 루프 스레드가 동기로 부른다 (D4b 리뷰 CMR-03).
+        # Codex는 연결 하나를 공유하므로 지금처럼 잠금 안에서 읽는다
+        for key in providers or list(self.connections):
+            warm = getattr(self.connections[key], "warm_models", None)
+            if warm is not None:
+                warm()
+
     def settings(self):
+        # 신원을 먼저 본다. 로그인이나 계정이 바뀌었으면 목록 캐시를 버린 뒤 새 신원으로 읽는다 (D4b 리뷰 CMR-04)
+        with self._lock:
+            logins = {}
+            for key, connection in self.connections.items():
+                logins[key] = connection.status()
+                self._observe_identity(key, logins[key])
+        self._warm_models()
         with self._lock:
             providers = []
             for key, connection in self.connections.items():
@@ -308,11 +385,9 @@ class AIConnections:
                     models = connection.models()
                 except ProviderNotAvailable as e:
                     models, error = [], str(e)
-                login = connection.status()
-                self._observe_identity(key, login)
                 providers.append(ProviderSettings(
                     id=key, label="Claude" if key == "claude" else "ChatGPT",
-                    login=login, models=models, models_error=error,
+                    login=logins[key], models=models, models_error=error,
                     login_attempt=self.login_status(key),
                 ))
             return AISettings(selection=self.selection, selection_id=self.selection_id,
@@ -325,6 +400,7 @@ class AIConnections:
             return self.selection, self.selection_id, login
 
     def select(self, selection: AISelection):
+        self._warm_models([selection.provider])
         with self._lock:
             self._idle()
             models = self.connections[selection.provider].models()
@@ -390,6 +466,7 @@ class AIConnections:
 
     @contextmanager
     def generation(self, selection_id: str | None):
+        self._warm_models([self.selection.provider])
         with self._lock:
             if selection_id != self.selection_id:
                 raise ConnectionConflict("AI 서비스, 모델 또는 추론 강도가 변경되었습니다. 전송 대상을 다시 확인해 주세요.", code="selection_changed")

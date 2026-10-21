@@ -4,6 +4,13 @@
 """
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
 
 import pytest
 
@@ -107,11 +114,124 @@ def test_failed_lookup_uses_the_last_catalog_or_reports_the_cause(monkeypatch, e
     assert connection.models() == first  # 조회가 실패해도 마지막 목록으로 계속 쓴다
 
 
+def test_fake_cli_lists_the_default_selection(tmp_path):
+    """가짜 CLI의 초기화 응답에 기본 선택 모델이 있어야 한다. 없으면 생성 직전의 모델 확인에서 막혀, 가짜 CLI를 쓰는 POSIX
+    관통 시험(test_process_restart)이 호출 전에 실패한다(2026-10-20 macOS CI 실측). Windows는 그 시험을 건너뛰므로 여기서
+    가짜 CLI를 직접 띄워 고정한다."""
+    from tests.fakes import FAKE_CLAUDE_SCRIPT
+    request = {"type": "control_request", "request_id": "r1", "request": {"subtype": "initialize"}}
+    done = subprocess.run([sys.executable, str(FAKE_CLAUDE_SCRIPT)], input=json.dumps(request) + "\n",
+                          capture_output=True, text=True, encoding="utf-8", timeout=30,
+                          env={**os.environ, "FAKE_CLAUDE_DIR": str(tmp_path / "record")})
+    assert done.returncode == 0, done.stderr
+    reply = json.loads(done.stdout.splitlines()[0])
+    assert reply["response"]["request_id"] == "r1"
+    models = {m.id: m for m in module._claude_catalog_models(reply["response"]["response"])}
+    assert AISelection().model in models
+
+
 def test_missing_cli_fails_before_any_process(monkeypatch):
     monkeypatch.setattr(module, "resolve_cli_path", lambda: None)
     with pytest.raises(ProviderNotAvailable) as raised:
         module._read_claude_catalog()
     assert raised.value.code == "provider_missing"
+
+
+class FakeSDKClient:
+    """claude_agent_sdk.ClaudeSDKClient 대역. 받은 옵션을 남기고, 연결(SDK 초기화)에 걸리는 시간을 정한다."""
+    delay = 0.0
+    made: list["FakeSDKClient"] = []
+
+    def __init__(self, options=None):
+        self.options, self.queried = options, False
+        FakeSDKClient.made.append(self)
+
+    async def __aenter__(self):
+        await asyncio.sleep(self.delay)
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def get_server_info(self):
+        return CATALOG
+
+    async def query(self, *args, **kwargs):
+        self.queried = True
+
+
+@pytest.fixture
+def sdk(monkeypatch):
+    import claude_agent_sdk
+    FakeSDKClient.delay, FakeSDKClient.made = 0.0, []
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", FakeSDKClient)
+    monkeypatch.setattr(module, "resolve_cli_path", lambda: "claude")
+    return FakeSDKClient
+
+
+def test_catalog_read_sends_no_prompt_and_isolates_settings_tools_and_mcp(sdk):
+    # 리뷰 CMR-08, CMR-07: 목록 조회는 초기화만 하고 프롬프트를 보내지 않는다. 사용자 설정, 도구, 사용자 MCP 서버를 쓰지 않는다
+    assert module._read_claude_catalog() == CATALOG
+    [client] = sdk.made
+    assert client.options.tools == [] and client.options.setting_sources == []
+    assert client.options.strict_mcp_config is True
+    assert client.queried is False
+    assert not Path(client.options.cwd).exists()  # 임시 작업 폴더를 남기지 않는다 (CMR-09)
+
+
+def test_catalog_read_is_bounded_including_the_connect_step(sdk, monkeypatch):
+    # 리뷰 CMR-02: 실제 대기는 연결(SDK 초기화) 단계에서 일어난다. 제한 시간이 그 단계까지 덮고, 호출자는 정리를 기다리지 않는다
+    monkeypatch.setattr(module, "CLAUDE_CATALOG_TIMEOUT_S", 0.3)
+    sdk.delay = 3.0
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        module._read_claude_catalog()
+    assert time.monotonic() - started < 1.5
+    with pytest.raises(ProviderNotAvailable) as raised:
+        ClaudeConnection().models()
+    assert raised.value.code == "provider_timeout"
+
+
+def test_catalog_work_folder_is_removed_even_if_the_cli_still_holds_it(sdk, monkeypatch):
+    # 리뷰 CMR-09: Windows에서는 CLI가 끝나기 전에 폴더를 지우면 WinError 32가 난다. 다시 지워 빈 폴더를 남기지 않는다
+    real, calls = module.shutil.rmtree, []
+
+    def busy_once(path, *args, **kwargs):
+        calls.append(path)
+        if len(calls) == 1:
+            raise PermissionError(32, "다른 프로세스가 사용 중")
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(module.shutil, "rmtree", busy_once)
+    module._read_claude_catalog()
+    folder = Path(sdk.made[0].options.cwd)
+    deadline = time.monotonic() + 5
+    while folder.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not folder.exists() and len(calls) >= 2
+
+
+def test_catalog_skips_ids_the_selection_cannot_store():
+    # 리뷰 CMR-12: 선택 저장 규칙(150자, 허용 글자)에 맞지 않는 ID는 목록에 올리지 않는다. 올리면 고른 뒤 저장이 422로 막힌다
+    info = {"models": [{"value": "sonnet"}, {"value": "has space"}, {"value": "a" * 151}, {"value": "-first"}]}
+    assert [m.id for m in module._claude_catalog_models(info)] == ["sonnet"]
+
+
+def test_settings_reads_the_list_after_observing_a_new_login(tmp_path, monkeypatch):
+    # 리뷰 CMR-04: 로그인 직후의 첫 설정 화면이 로그인 전에 실패한 목록을 그대로 보이지 않는다
+    statuses = [LoginStatus(logged_in=False)]
+    monkeypatch.setattr(module, "check_login", lambda: statuses[-1])
+    reader = Reader(RuntimeError("logged out"))
+    manager = AIConnections(tmp_path / "ai.json", connections={"claude": ClaudeConnection(catalog_reader=reader)})
+    try:
+        first = manager.settings().providers[0]
+        assert first.models == [] and first.models_error
+        statuses.append(LoginStatus(logged_in=True, auth_method="claude.ai", account="a***@example.com"))
+        reader.result = CATALOG
+        second = manager.settings().providers[0]
+        assert second.models_error is None and "sonnet" in [m.id for m in second.models]
+    finally:
+        manager.close()
 
 
 @pytest.fixture
@@ -121,6 +241,35 @@ def claude(tmp_path, monkeypatch):
     manager = AIConnections(tmp_path / "ai.json", connections={"claude": connection})
     yield manager, connection
     manager.close()
+
+
+def test_slow_catalog_read_does_not_hold_the_connection_lock(claude):
+    # 리뷰 CMR-03: 목록 조회(Claude CLI 기동, 몇 초)를 하는 동안 상태 조회와 생성 임대 반납이 기다리지 않는다.
+    # 반납은 작업 루프 스레드가 동기로 부르므로, 기다리면 작업 루프 전체가 멈춘다
+    manager, connection = claude
+    manager.settings()
+    gate, entered = threading.Event(), threading.Event()
+
+    def slow():
+        entered.set()
+        gate.wait(3)
+        return CATALOG
+
+    reader = threading.Thread(target=manager.settings)
+    try:
+        with manager.generation(manager.selection_id):
+            connection._read_catalog = slow
+            connection.invalidate_models()
+            reader.start()
+            assert entered.wait(5)
+            started = time.monotonic()
+            manager.selected_status()
+        elapsed = time.monotonic() - started  # 상태 조회와 임대 반납
+    finally:
+        gate.set()
+        if reader.ident is not None:
+            reader.join(10)
+    assert elapsed < 1.0
 
 
 def test_claude_effort_in_the_catalog_is_saved_and_reaches_the_provider(claude):
