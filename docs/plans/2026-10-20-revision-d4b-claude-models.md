@@ -1,6 +1,6 @@
 # 개정판 D4b: Claude 공식 모델 목록, 정확 버전, 추론 강도
 
-작성: 2026-10-20(회사 PC, Windows). 상태: 1판. 브랜치 `feat/d4b-claude-models`(기준 main `e6e3eb8`).
+작성: 2026-10-20(회사 PC, Windows). 상태: 1판. 브랜치 `feat/d4b-claude-models`(기준 main `e6e3eb8`). (2026-10-21: CI 실패 수정과 리뷰 반영(7, 8절) 뒤 사용자 결정 "A"로 main에 머지했다(`f39ba71`). 5절의 업데이트 안내 셋은 같은 날 더했다)
 
 상위 문서: [구현 설계](../architecture/2026-10-02-desktop-revision.md) 4절 `ModelCapability`와 7절 D4, [D4a 계획](2026-10-19-revision-d4a-model-effort.md), 로드맵 D4a 이월표 첫 행("Claude는 기존 별칭이며 공식 모델/해석된 정확 버전/지원 강도 미구현"), [D1 인계](../handoffs/2026-10-02-desktop-d1.md) 「공식 AI 지원 조사」.
 
