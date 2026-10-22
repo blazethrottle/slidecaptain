@@ -1,6 +1,6 @@
 # 개정판 D4 생성 격리: Claude 생성 세션의 내장 스킬과 명령 끄기
 
-작성: 2026-10-22(회사 PC, Windows). 상태: 3판(리뷰 반영 8절, 실측 결과 9절). 브랜치 `feat/d4-generation-isolation`(기준 main `eedab2a`).
+작성: 2026-10-22(회사 PC, Windows). 상태: 3판(리뷰 반영 8절, 실측 결과 9절). 브랜치 `feat/d4-generation-isolation`(기준 main `eedab2a`). (2026-10-22: 사용자 결정 "A. main에 머지"로 main에 머지했다(`91434e9`))
 
 상위 문서: [D4 실제 생성 확인 계획](2026-10-21-revision-d4-live-check.md) 11절 질문 3, 로드맵 D4a 이월표의 "생성 세션에 사용자 스킬과 플러그인이 실린다" 행.
 
