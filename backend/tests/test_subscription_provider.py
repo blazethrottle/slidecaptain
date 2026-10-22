@@ -67,6 +67,15 @@ def test_complete_returns_structured_and_raw(monkeypatch):
     assert options.output_format == {"type": "json_schema", "schema": {"type": "object"}}
 
 
+def test_generation_does_not_start_user_mcp_servers(monkeypatch):
+    """생성도 목록 조회처럼 사용자 단위 MCP 서버를 띄우지 않는다 (D4 실제 생성 확인 계획 3.1, D4b 리뷰 CMR-07)."""
+    captured: dict = {}
+    monkeypatch.setattr(sub, "query", _fake_query(_result(structured={}), captured=captured))
+    asyncio.run(SubscriptionProvider(effort="low").complete("q", {}))
+    assert captured["options"].strict_mcp_config is True
+    assert captured["options"].effort == "low"
+
+
 def test_model_override():
     assert SubscriptionProvider(model="opus").model == "opus"
     assert SubscriptionProvider().model == "sonnet"

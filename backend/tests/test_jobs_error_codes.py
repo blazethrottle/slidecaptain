@@ -103,6 +103,8 @@ RAISE_SITES = [
     ("pipeline/connections.py", "Claude 모델 목록을 읽지 못했습니다.", "ProviderNotAvailable", "provider_call_failed"),
     ("pipeline/connections.py", "AI 생성이 진행 중입니다.", "ConnectionConflict", "settings_busy"),
     ("pipeline/connections.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
+    # 등록 입력을 고정할 때 선택과 식별자를 함께 읽는 자리 (D4 실제 생성 확인 코드 리뷰 LCC-08)
+    ("pipeline/connections.py", "AI 서비스, 모델 또는 추론 강도가 변경되었습니다.", "ConnectionConflict", "selection_changed"),
     ("pipeline/connections.py", "로그인을 완료한 뒤 생성해 주세요.", "ConnectionConflict", "login_pending"),
     ("pipeline/connections.py", "AI 연결 상태가 변경되었습니다.", "ConnectionConflict", "identity_changed"),
     ("pipeline/connections.py", "AI 연결에 로그인되어 있지 않습니다.", "ProviderNotAvailable", "login_required"),

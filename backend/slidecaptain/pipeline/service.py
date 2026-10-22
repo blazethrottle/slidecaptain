@@ -109,6 +109,8 @@ class UsageRecord(BaseModel):
     chapter_id: str | None
     outcome: Literal["ok", "format_error", "failed"]
     requested_model: str | None
+    # 사용자가 요청한 추론 강도. None은 제공자 기본값을 요청한 것이며 실제 적용값이 아니다 (D4 실제 생성 확인 3.2)
+    requested_effort: str | None = None
     summary: GenerationUsage
 
 
@@ -243,10 +245,12 @@ class GenerationService:
         provider: AIProvider,
         metrics: FontMetrics,
         requested_model: str | None = None,
+        requested_effort: str | None = None,
     ) -> None:
         self._provider = provider
         self.metrics = metrics
         self._requested_model = requested_model
+        self._requested_effort = requested_effort
 
     async def _complete(
         self, prompt: str, schema: dict, purpose: _CallPurpose, collector: _UsageCollector
@@ -301,6 +305,7 @@ class GenerationService:
             chapter_id=chapter_id,
             outcome=outcome,
             requested_model=self._requested_model,
+            requested_effort=self._requested_effort,
             summary=summary,
         )
         try:

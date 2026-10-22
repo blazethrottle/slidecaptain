@@ -393,6 +393,15 @@ class AIConnections:
             return AISettings(selection=self.selection, selection_id=self.selection_id,
                               providers=providers, busy=bool(self._active))
 
+    def current_selection(self, selection_id):
+        """선택 식별자가 지금과 같을 때만 지금 선택을 돌려준다. 둘을 잠금 안에서 함께 읽어, 확인과 읽기 사이에 선택이 바뀌면
+        새 선택과 옛 식별자가 한 원장 행에 섞이지 않게 한다 (D4 실제 생성 확인 코드 리뷰 LCC-08)."""
+        with self._lock:
+            if selection_id != self.selection_id:
+                raise ConnectionConflict("AI 서비스, 모델 또는 추론 강도가 변경되었습니다. 전송 대상을 다시 확인해 주세요.",
+                                         code="selection_changed")
+            return self.selection
+
     def selected_status(self):
         with self._lock:
             login = self.connections[self.selection.provider].status()

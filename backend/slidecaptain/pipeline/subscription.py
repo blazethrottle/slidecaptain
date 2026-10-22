@@ -8,7 +8,11 @@
 """
 
 import asyncio
+from collections import deque
 import logging
+import os
+from pathlib import Path
+import re
 from typing import Literal
 
 from claude_agent_sdk import (
@@ -19,6 +23,7 @@ from claude_agent_sdk import (
     CLINotFoundError,
     ProcessError,
     ResultMessage,
+    SystemMessage,
     query,
 )
 
@@ -27,14 +32,33 @@ from slidecaptain.pipeline.provider import (
     ProviderCallFailed,
     ProviderNotAvailable,
     ProviderResponse,
+    observed_fields,
 )
-from slidecaptain.pipeline.auth_status import resolve_cli_path
+from slidecaptain.pipeline.auth_status import mask_email, resolve_cli_path
 
 _LOG = logging.getLogger("slidecaptain.pipeline.subscription")
 
 # CLI 기본 모델(opus 계열)은 사소한 호출에도 사용량이 크다 (2026-08-28 스파이크 실측).
 # 별칭을 써서 세부 버전 교체에 흔들리지 않게 한다.
 DEFAULT_MODEL = "sonnet"
+# 실패한 호출의 원인을 가르려고 CLI 표준 오류의 마지막 몇 줄만 남긴다. 성공한 호출에서는 남기지 않는다
+# (D4 실제 생성 확인 리뷰 LCR-03. SDK는 stderr 콜백이 있을 때만 표준 오류를 받아 온다).
+# 이 환경 변수가 "1"일 때만 켠다. 표준 오류를 파이프로 받으면 SDK의 읽기 작업이 엄격한 UTF-8 디코딩에서 끝난 뒤 파이프가
+# 차서 CLI가 멈출 수 있고, 데스크톱 앱은 백엔드 로그를 버려 제품 경로에서는 얻는 것이 없다. 실측 도구가 켠다 (코드 리뷰 LCC-01)
+ENV_STDERR_LOG = "SLIDECAPTAIN_CLAUDE_STDERR_LOG"
+_STDERR_TAIL_LINES = 20
+_STDERR_LINE_MAX = 300
+_EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def _redacted(line: str) -> str:
+    """표준 오류 한 줄에서 홈 경로를 ~로, 이메일을 가린 형태로 바꾼다 (코드 리뷰 LCC-07)."""
+    home = str(Path.home())
+    for form in {home, home.replace("\\", "/")}:
+        line = re.sub(re.escape(form), "~", line, flags=re.IGNORECASE)
+    return _EMAIL.sub(lambda match: mask_email(match.group(0)), line)[:_STDERR_LINE_MAX]
+# 응답 관측 진단에서 개수만 남기는 초기화 메시지 칸. 생성 경로의 격리(질문 3)를 확인한다
+_INIT_COUNT_KEYS = frozenset({"mcp_servers", "tools", "plugins", "skills", "agents", "slash_commands"})
 
 
 def _sum_model_tokens(model_usage: dict, field: str) -> int | None:
@@ -177,10 +201,13 @@ class SubscriptionProvider:
         cli = resolve_cli_path()
         if cli is None:
             raise ProviderNotAvailable("Claude Code를 찾지 못했습니다. 네이티브 CLI 설치와 경로 설정을 확인해 주세요.", code="provider_missing")
+        stderr_tail: deque[str] = deque(maxlen=_STDERR_TAIL_LINES)
         options = ClaudeAgentOptions(
             cli_path=cli,
             tools=[],  # 도구 없이 순수 생성만
             setting_sources=[],  # 사용자 설정 격리: CLAUDE.md와 스킬이 생성에 개입하지 못하게
+            # 사용자 단위 MCP 서버도 띄우지 않는다. 목록 조회와 같은 격리 조건이다 (D4 실제 생성 확인 3.1, D4b 리뷰 CMR-07)
+            strict_mcp_config=True,
             # 구조화 출력 경로는 생성 1턴 + 구조화 출력 정리 1턴을 쓴다: 2가 실측 최소값이다
             # (2026-08-28 스모크 격리 진단. 트리비얼 프롬프트에서만 통과하던 max_turns=1로는
             # 실제 생성 프롬프트가 "Reached maximum number of turns (1)"로 거부됐다).
@@ -189,16 +216,33 @@ class SubscriptionProvider:
             model=self.model,
             effort=self.effort,
             output_format={"type": "json_schema", "schema": schema},
+            stderr=(lambda line: stderr_tail.append(_redacted(line))) if os.environ.get(ENV_STDERR_LOG) == "1" else None,
         )
 
         assistant_model: str | None = None
+        assistant_error: str | None = None
+
+        def _log_failure_detail() -> None:
+            if stderr_tail:
+                _LOG.warning("Claude CLI 표준 오류(마지막 %d줄): %s", len(stderr_tail), list(stderr_tail))
+            if assistant_error is not None:
+                _LOG.warning("AI 응답 오류 종류: %s", assistant_error)
 
         async def _consume() -> ResultMessage | None:
-            nonlocal assistant_model
+            nonlocal assistant_model, assistant_error
             found: ResultMessage | None = None
             async for message in query(prompt=prompt, options=options):
-                if assistant_model is None and isinstance(message, AssistantMessage):
-                    assistant_model = message.model
+                if isinstance(message, SystemMessage) and message.subtype == "init":
+                    # CLI가 정한 모델과 강도를 초기화 메시지에서 읽을 수 있는지 보는 진단이다. API의 실제 적용값은 아니다
+                    # (D4 실제 생성 확인 3.3, 리뷰 LCR-05)
+                    _LOG.info("응답 관측 Claude init: %s", observed_fields(
+                        message.data, value_keys={"model"}, value_hints=("effort", "thinking"),
+                        count_keys=_INIT_COUNT_KEYS))
+                if isinstance(message, AssistantMessage):
+                    if assistant_model is None:
+                        assistant_model = message.model
+                    if assistant_error is None and message.error:
+                        assistant_error = str(message.error)
                 if isinstance(message, ResultMessage):
                     found = message
                     # 결과를 본 즉시 반환한다: 스트림이 그 뒤 닫히지 않고 멈춰도
@@ -211,6 +255,7 @@ class SubscriptionProvider:
             result = await asyncio.wait_for(_consume(), timeout=self.timeout_s)
         except TimeoutError as e:
             _LOG.warning("AI 호출 타임아웃: %.0f초", self.timeout_s)
+            _log_failure_detail()
             raise ProviderCallFailed(
                 f"AI 응답이 너무 오래 걸려 중단했습니다({self.timeout_s:.0f}초 한도). "
                 "잠시 후 다시 시도해 주세요.", code="provider_timeout",
@@ -222,6 +267,7 @@ class SubscriptionProvider:
             ) from e
         except (CLIConnectionError, ProcessError, ClaudeSDKError) as e:
             _LOG.warning("AI 호출 실패: %s", e)
+            _log_failure_detail()
             # 미로그인과 한도 초과가 이 한 자리로 온다. 서버가 가를 수 없으므로 넓은 코드다 (계획 4.3)
             raise ProviderCallFailed(
                 "AI 호출에 실패했습니다. Claude Code 로그인 상태와 구독 사용 한도를 "
@@ -229,6 +275,7 @@ class SubscriptionProvider:
             ) from e
         if result is None:
             _LOG.warning("AI 호출 비정상 종료: 응답 없음")
+            _log_failure_detail()
             raise ProviderCallFailed(
                 "AI 호출이 정상적으로 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.", code="provider_disconnected",
             )
@@ -238,7 +285,9 @@ class SubscriptionProvider:
         if result.is_error:
             if result.api_error_status is not None:
                 _LOG.warning("AI 호출 오류 상태 코드: %s", result.api_error_status)
-            _LOG.warning("AI 호출 비정상 종료: %s", result.errors)
+            _LOG.warning("AI 호출 비정상 종료: subtype=%s terminal_reason=%s errors=%s",
+                         result.subtype, result.terminal_reason, result.errors)
+            _log_failure_detail()
             # 사용 한도 초과는 HTTP 표준 상태 429(RFC 6585)로 온 경우만 가른다. 구독 한도가 실제로 이 상태로
             # 오는지는 실제 호출 없이 확인하지 못했다(D3a-4 구현 기록). 그 밖은 넓은 코드다
             raise ProviderCallFailed(

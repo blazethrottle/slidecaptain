@@ -7,6 +7,7 @@
 """
 
 from dataclasses import dataclass
+import re
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel
@@ -31,6 +32,55 @@ class CallUsage(BaseModel, frozen=True):
     terminal_reason: str | None
     api_error_status: int | None
     token_source: Literal["model_usage", "usage", "none"]
+
+
+_FIELD_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+_OBSERVED_TEXT_MAX = 80
+
+
+def observed_fields(data: Any, *, value_keys: set[str] | frozenset[str], value_hints: tuple[str, ...],
+                    count_keys: set[str] | frozenset[str] = frozenset()) -> dict:
+    """응답 관측 진단 (D4 실제 생성 확인 3.3): 칸 이름 목록과 허용한 칸의 값만 고른다.
+
+    실제 적용 모델과 강도를 응답에서 읽을 수 있는지 보려는 것이다. 원시 응답에는 계정 정보가 들어 있으므로 통째로 남기지
+    않는다. 칸 이름은 한 단계 아래 dict까지 모은다. 값은 이름이 value_keys에 있거나 value_hints를 포함하는 칸의 스칼라만
+    담고, 그 칸이 dict면 한 단계 아래 스칼라까지 담는다. count_keys의 칸(MCP 서버, 도구 목록 등)은 개수만 "<이름>#count"로
+    담고 안을 보지 않는다. 이름 규칙에 맞지 않는 칸(값이 이름 자리에 온 경우)은 "?"로 센다.
+    """
+    keys: list[str] = []
+    values: dict[str, Any] = {}
+
+    def allowed(name: str) -> bool:
+        lowered = name.lower()
+        return name in value_keys or any(hint in lowered for hint in value_hints)
+
+    def scalar(value: Any) -> bool:
+        return value is None or isinstance(value, (bool, int, float, str))
+
+    def keep(path: str, value: Any) -> None:
+        values[path] = value[:_OBSERVED_TEXT_MAX] if isinstance(value, str) else value
+
+    def visit(node: dict, prefix: str, nested: bool) -> None:
+        for name, value in node.items():
+            if not isinstance(name, str) or not _FIELD_NAME.fullmatch(name):
+                keys.append(prefix + "?")
+                continue
+            path = prefix + name
+            keys.append(path)
+            if not nested and name in count_keys and isinstance(value, (list, dict)):
+                values[path + "#count"] = len(value)
+            elif allowed(name) and scalar(value):
+                keep(path, value)
+            elif allowed(name) and isinstance(value, dict):
+                for sub, sub_value in value.items():
+                    if isinstance(sub, str) and _FIELD_NAME.fullmatch(sub) and scalar(sub_value):
+                        keep(f"{path}.{sub}", sub_value)
+            elif isinstance(value, dict) and not nested:
+                visit(value, path + ".", True)
+
+    if isinstance(data, dict):
+        visit(data, "", False)
+    return {"keys": sorted(set(keys)), "values": values}
 
 
 class ProviderError(Exception):

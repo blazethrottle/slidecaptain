@@ -4,14 +4,19 @@ Run from backend with the repository's dev dependencies installed:
   python -m scripts.quality_pilot --output /new/local/folder [--offline]
 Live use additionally requires --live --consent --max-calls N.
 The limit counts provider.complete attempts, not SDK turns or billing units.
+D4 live check: --effort sets the requested effort, --stop-after chapter stops after the
+chapter job (one call for a matrix row), --claude-cli picks the Claude Code CLI for this run.
 """
 import argparse
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
+import sqlite3
 import tempfile
 import threading
 import time
@@ -22,20 +27,30 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from slidecaptain.models.deck import Deck
-from slidecaptain.pipeline.auth_status import LoginStatus
+from slidecaptain.pipeline.auth_status import ENV_CLI, LoginStatus, _bundled_cli_path, _cli_version, resolve_cli_path
 from slidecaptain.pipeline.codex import CodexConnection
 from slidecaptain.pipeline.connections import (
     AIConnections, AISelection, ClaudeConnection, LoginAttempt, ModelOption,
 )
 from slidecaptain.pipeline.provider import ProviderCallFailed, ProviderError, ProviderResponse
 from slidecaptain.pipeline.story import require_current_story, story_fingerprint
+from slidecaptain.pipeline.subscription import ENV_STDERR_LOG
 from slidecaptain.server.app import create_app
 from slidecaptain.storage.file_store import FileProjectStore
+from slidecaptain.storage.job_ledger import LEDGER_NAME
 
 PROJECT = "quality-pilot"
 BODY = "pilot-action"
-# 생성 작업 하나를 기다리는 상한. 화면이 생성 중에 보이는 "최대 5분" 안내와 같다(editor/GeneratePanel.tsx)
-JOB_WAIT_SECONDS = 300
+# 생성 작업 하나를 기다리는 상한. 등록부터 세므로 제공자 시간 제한(300초)에 연결 상태 확인과 목록 조회의 여유를 더한다.
+# 300초였을 때는 도구가 먼저 멈춰 나간 호출의 결과를 기록하지 못할 수 있었다 (D4 실제 생성 확인 리뷰 LCR-16)
+JOB_WAIT_SECONDS = 360
+# 실제 Claude 실행 동안 빼는 세션 연결 변수의 이름 앞부분. 이 도구를 Claude Code 세션 안에서 돌리면 이 변수들이 CLI에 물려져
+# 데스크톱 앱 경로와 조건이 달라진다 (리뷰 LCR-06). 사용자가 일부러 둔 설정(CLAUDE_CONFIG_DIR 등)은 데스크톱 앱처럼 남긴다
+# (코드 리뷰 LCC-03). 2026-10-21 이 PC의 세션에서 본 11개를 덮는다
+_SESSION_ENV_PREFIXES = (
+    "CLAUDECODE", "CLAUDE_CODE_SESSION_", "CLAUDE_CODE_MESSAGING_", "CLAUDE_CODE_BRIDGE_", "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_PID", "CLAUDE_EFFORT",
+)
 _TERMINAL = {"succeeded", "failed", "cancelled", "interrupted", "remote_completion_unknown"}
 
 
@@ -168,23 +183,26 @@ class BudgetedProvider:
 
 
 class _PilotConnection:
-    def __init__(self, provider, model, real=None):
+    def __init__(self, provider, model, real=None, effort=None):
         self.bounded = provider
         self.model = model
         self.real = real
+        self.effort = effort
 
     def status(self):
         return self.real.status() if self.real else LoginStatus(logged_in=True, auth_method="synthetic")
 
     def models(self):
-        return self.real.models() if self.real else [ModelOption(id=self.model, label=self.model)]
+        if self.real:
+            return self.real.models()  # 실제 목록과 대조한다. 없는 모델이나 강도는 생성 임대가 호출 전에 막는다
+        return [ModelOption(id=self.model, label=self.model, supported_efforts=[self.effort] if self.effort else [])]
 
     def login_status(self):
         return LoginAttempt(state="idle")
 
-    def provider(self, model):
-        if model != self.model:
-            raise ProviderCallFailed("파일럿 모델이 바뀌었습니다.")
+    def provider(self, model, *, effort=None):
+        if model != self.model or effort != self.effort:
+            raise ProviderCallFailed("파일럿 모델이나 추론 강도가 바뀌었습니다.")
         return self.bounded
 
     def close(self):
@@ -201,7 +219,7 @@ def _expect(condition, message):
         raise PilotStopped(message)
 
 
-def _workflow(client, output, data, report):
+def _workflow(client, output, data, report, stop_after=None):
     route = f"/api/projects/{PROJECT}"
 
     def request(method, suffix, *, status=200, **kwargs):
@@ -209,20 +227,33 @@ def _workflow(client, output, data, report):
         _expect(response.status_code == status, f"{method} {suffix}: HTTP {response.status_code}")
         return response
 
-    def job(kind, params, headers=None):
+    def job(kind, params, headers=None, require_result=True):
         """작업 API로 생성을 등록하고 끝날 때까지 기다린다. 동기 생성 래퍼는 D3c-7에서 지웠다. 형식 오류로 실패한 작업도
-        결과(원문과 사용량)를 남기므로 결과를 돌려주고, 결과 없이 끝나면 멈춘다."""
+        결과(원문과 사용량)를 남기므로 결과를 돌려주고, 결과 없이 끝나면 멈춘다(require_result=False면 종결 행을 그대로 돌려준다)."""
         registered = request("POST", "/jobs", status=202, headers=headers or {}, json={
             "request_id": f"pilot-{uuid.uuid4().hex}", "kind": kind, "params": params})
         job_id = registered.json()["id"]
+        report.setdefault("job_ids", []).append(job_id)  # 원장과 사용량의 요청 강도 대조에 쓴다
         deadline = time.monotonic() + JOB_WAIT_SECONDS
         while (view := request("GET", f"/jobs/{job_id}").json())["state"] not in _TERMINAL:
             _expect(time.monotonic() < deadline, f"{kind} 작업이 {JOB_WAIT_SECONDS}초 안에 끝나지 않았습니다.")
             time.sleep(0.05)
-        _expect(view["result"] is not None, f"{kind} 작업이 결과 없이 끝났습니다({view['state']}).")
+        _expect(not require_result or view["result"] is not None, f"{kind} 작업이 결과 없이 끝났습니다({view['state']}).")
         return view
 
     report["stage"] = "chapter"
+    if stop_after == "chapter":
+        # 호출 행렬의 한 칸은 장 생성 1회로 판정한다. 형식 재시도나 자동 축약이 상한에 막혀 작업이 결과 없이 끝나도 종결
+        # 상태를 기록한다. 판정은 calls[0]과 진단 로그로 한다 (D4 실제 생성 확인 3.5, 리뷰 LCR-04)
+        ended = job("chapter", {"chapter_id": BODY, "instructions": data["chapter_instructions"]}, require_result=False)
+        checks = report["checks"]
+        checks["chapter_job_state"] = ended["state"]
+        checks["chapter_error_code"] = (ended.get("error") or {}).get("code")
+        checks["chapter_status"] = (ended["result"] or {}).get("status")
+        if ended["result"] is not None:
+            _write(output / "chapter-result.json", ended["result"])
+        _expect(report["provider_calls"] > 0, "호출을 보내기 전에 장 작업이 끝났습니다(호출 전 차단).")
+        return
     base = request("GET", "/deck")
     chapter = job("chapter", {"chapter_id": BODY, "instructions": data["chapter_instructions"]})
     generated = chapter["result"]
@@ -286,8 +317,81 @@ def _workflow(client, output, data, report):
     report["artifacts"] = {"pptx": str(pptx), "quality": exported["quality_path"]}
 
 
+def _cli_kind(cli):
+    if cli is None:
+        return "missing"
+    if cli == _bundled_cli_path():
+        return "bundled"
+    return "installed" if cli.parent == Path.home() / ".local" / "bin" else "other"
+
+
+def _effort_checks(output, report, effort):
+    """원장 행과 사용량 기록의 요청 강도가 요청과 같은지 본다 (D4 실제 생성 확인 3.2, 3.4). 실제 적용값 대조가 아니다."""
+    ids = report.get("job_ids") or []
+    if not ids:
+        return
+    # 대조가 원장을 바꾸지 않도록 읽기 전용으로 연다. 원장의 effort는 API에 실리지 않는다 (리뷰 LCR-15)
+    connection = sqlite3.connect((output / "projects" / LEDGER_NAME).as_uri() + "?mode=ro", uri=True)
+    try:
+        marks = ",".join("?" * len(ids))
+        stored = dict(connection.execute(f"SELECT id, effort FROM jobs WHERE id IN ({marks})", ids).fetchall())
+    finally:
+        connection.close()
+    report["checks"]["ledger_effort_matches"] = all(job_id in stored and stored[job_id] == effort for job_id in ids)
+    path = output / "projects" / PROJECT / "ai-usage.jsonl"
+    lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    # 줄이 없으면(호출 전 차단) 불일치가 아니라 판정 없음이다 (코드 리뷰 LCC-06)
+    report["checks"]["usage_records"] = len(lines)
+    report["checks"]["usage_effort_matches"] = (
+        all(line.get("requested_effort") == effort for line in lines) if lines else None)
+
+
+@contextmanager
+def _pilot_environment(output, report, *, live_claude, claude_cli):
+    """실행 동안만 바꾸는 환경 변수와 진단 로그. 연결 닫기를 포함해 어떤 예외로 끝나도 되돌린다 (코드 리뷰 LCC-02)."""
+    with ExitStack() as cleanup:
+        saved = {}
+
+        def change(name, value):
+            saved.setdefault(name, os.environ.get(name))
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+        def restore():
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        cleanup.callback(restore)
+        if claude_cli is not None:
+            change(ENV_CLI, str(Path(claude_cli)))
+        if live_claude:
+            removed = sorted(name for name in os.environ if name.startswith(_SESSION_ENV_PREFIXES))
+            for name in removed:
+                change(name, None)
+            change(ENV_STDERR_LOG, "1")  # 실패 원인을 가르려고 이 실행에서만 표준 오류를 받는다 (LCC-01)
+            # 이름만 적는다. 값(세션 식별자, 토큰, 경로)은 남기지 않는다
+            report["env_removed"] = removed
+            report["env_present_overrides"] = sorted(
+                name for name in os.environ if name.startswith(("ANTHROPIC_", "CLAUDE")))
+        # 응답 관측 줄과 호출 실패 원인을 출력 폴더에 남긴다 (D4 실제 생성 확인 3.4)
+        logger = logging.getLogger("slidecaptain")
+        cleanup.callback(logger.setLevel, logger.level)
+        diagnostic = logging.FileHandler(output / "diagnostic.log", encoding="utf-8")
+        cleanup.callback(diagnostic.close)
+        diagnostic.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logger.addHandler(diagnostic)
+        cleanup.callback(logger.removeHandler, diagnostic)
+        logger.setLevel(logging.INFO)
+        yield
+
+
 def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=None, provider=None,
-              ai_provider="claude", codex_home=None):
+              ai_provider="claude", codex_home=None, effort=None, stop_after=None, claude_cli=None):
     if mode not in {"prepare", "offline", "live"}:
         raise ValueError("지원하지 않는 실행 모드입니다.")
     if mode == "live" and (not consent or type(max_calls) is not int or max_calls < 1):
@@ -297,21 +401,33 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
         raise ValueError("호출 상한은 양의 정수여야 합니다.")
     if ai_provider not in {"claude", "chatgpt"}:
         raise ValueError("지원하지 않는 AI 서비스입니다.")
+    if stop_after not in {None, "chapter"}:
+        raise ValueError("지원하지 않는 중단 단계입니다.")
+    if claude_cli is not None and ai_provider != "claude":
+        raise ValueError("Claude CLI는 Claude 실행에만 지정합니다.")
     model = model if model is not None else ("sonnet" if ai_provider == "claude" else "gpt-6-luna")
-    chosen = AISelection(provider=ai_provider, model=model)
-    if ai_provider == "claude" and model not in {"sonnet", "opus", "haiku"}:
-        raise ValueError("Claude 모델은 sonnet, opus, haiku 중에서 선택해야 합니다.")
+    # 모델은 고정 별칭이 아니라 실제 목록과 대조한다. 목록은 Claude Code 판과 계정마다 다르다 (D4b 계획 8절)
+    chosen = AISelection(provider=ai_provider, model=model, effort=effort)
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
     report = {
         "mode": mode, "status": "running", "stage": "prepare", "synthetic": True,
-        "requested_provider": ai_provider, "requested_model": model,
+        "requested_provider": ai_provider, "requested_model": model, "requested_effort": effort,
+        "stop_after": stop_after,
         "max_calls": limit, "provider_calls": 0, "external_calls": 0, "blocked_calls": 0,
         "call_unit": "provider.complete attempts; excludes pre-dispatch refusals; SDK turns are separate",
         "usage_basis": "app CallUsage; raw SDK missing-field normalization is not independently verified",
         "calls": [], "checks": {}, "review": {k: "not_run" for k in ("semantic", "browser", "powerpoint", "reader")},
         "started_at": datetime.now(timezone.utc).isoformat(),
     }
+    with _pilot_environment(output, report, live_claude=mode == "live" and ai_provider == "claude",
+                            claude_cli=claude_cli):
+        return _run_pilot(output, report, mode=mode, limit=limit, model=model, provider=provider,
+                          ai_provider=ai_provider, codex_home=codex_home, effort=effort, stop_after=stop_after,
+                          chosen=chosen)
+
+
+def _run_pilot(output, report, *, mode, limit, model, provider, ai_provider, codex_home, effort, stop_after, chosen):
     bounded = None
     real = None
     manager = None
@@ -334,24 +450,39 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
         if mode == "prepare":
             report["status"] = "prepared"
             return report
+        if mode == "live" and ai_provider == "claude":
+            cli = resolve_cli_path()
+            report["cli_kind"] = _cli_kind(cli)  # 전체 경로는 사용자 이름을 담으므로 적지 않는다
+            report["cli_version"] = _cli_version(cli, 10) if cli is not None else None
         if mode == "live":
             real = (ClaudeConnection() if ai_provider == "claude" else CodexConnection(
                 Path(codex_home) if codex_home is not None
                 else Path.home() / "slidecaptain-projects" / ".slidecaptain-codex",
             ))
-        upstream = provider or (real.provider(model) if real else OfflineProvider())
+        if provider is None and real is not None:
+            # 앱의 생성 임대와 같이, 강도가 없으면 강도 인자를 넘기지 않는다
+            provider = real.provider(model, effort=effort) if effort is not None else real.provider(model)
+            report["provider_effort"] = getattr(provider, "effort", None)  # 실제 프로바이더가 CLI에 넘길 강도 (리뷰 LCR-01)
+            try:
+                # 응답 모델과 대조할 목록의 해석된 모델 (리뷰 LCR-05). 목록 조회는 생성 호출이 아니다
+                report["catalog_resolved_model"] = next(
+                    (option.resolved_model for option in real.models() if option.id == model), None)
+            except Exception as exc:  # 진단 칸이다. 목록 실패는 생성 임대가 원인 코드로 다시 막는다
+                report["catalog_resolved_model"] = None
+                report["catalog_error"] = type(exc).__name__
+        upstream = provider or OfflineProvider()
         bounded = BudgetedProvider(upstream, max_calls=limit, on_change=persist,
                                    on_request=lambda n, prompt, schema: _write(output / f"call-{n:02d}-input.json", {
                                        "prompt": prompt, "schema": schema,
                                    }))
-        connection = _PilotConnection(bounded, model, real)
+        connection = _PilotConnection(bounded, model, real, effort)
         manager = AIConnections(output / "ai-settings.json", initial=chosen, connections={ai_provider: connection})
         _, selection, _ = manager.selected_status()
         # pytest 밖에서도 도는 스크립트라 conftest 의 기본 Host 변경이 적용되지 않는다. 허용 Host 를 명시한다 (SV-11, PM-01)
         with TestClient(create_app(store, ai_connections=manager), base_url="http://127.0.0.1", headers={
             "X-Requested-With": "SlideCaptain", "X-AI-Consent": "SlideCaptain", "X-AI-Selection": selection,
         }) as client:
-            _workflow(client, output, data, report)
+            _workflow(client, output, data, report, stop_after)
         report["status"] = "completed"
         report["stage"] = "done"
     except Exception as exc:
@@ -363,6 +494,11 @@ def run_pilot(output, *, mode="prepare", consent=False, max_calls=None, model=No
     finally:
         report["finished_at"] = datetime.now(timezone.utc).isoformat()
         try:
+            if mode != "prepare":
+                try:
+                    _effort_checks(output, report, effort)
+                except Exception as exc:  # 대조 실패가 실행 결과 기록을 막지 않는다
+                    report["checks"]["effort_check_error"] = type(exc).__name__
             persist()
         finally:
             if manager is not None:
@@ -383,6 +519,9 @@ def main(argv=None):
     parser.add_argument("--provider", choices=["claude", "codex"], default="claude")
     parser.add_argument("--model", help="Claude 기본 sonnet, Codex 기본 gpt-6-luna. 다른 모델은 명시적으로 지정")
     parser.add_argument("--codex-home", type=Path, help="SlideCaptain 전용 Codex 프로필 경로 (기본: ~/slidecaptain-projects/.slidecaptain-codex)")
+    parser.add_argument("--effort", help="요청할 추론 강도. 생략하면 제공자 기본값")
+    parser.add_argument("--stop-after", choices=["chapter"], help="장 생성 작업이 끝나면 멈춘다(호출 행렬의 한 칸)")
+    parser.add_argument("--claude-cli", type=Path, help="이 실행에서 쓸 Claude Code CLI 경로")
     args = parser.parse_args(argv)
     if args.live and (not args.consent or args.max_calls is None or args.max_calls < 1):
         parser.error("--live에는 --consent와 양의 --max-calls가 필요합니다.")
@@ -392,7 +531,8 @@ def main(argv=None):
         report = run_pilot(args.output, mode="live" if args.live else "offline" if args.offline else "prepare",
                            consent=args.consent, max_calls=args.max_calls, model=args.model,
                            ai_provider="chatgpt" if args.provider == "codex" else "claude",
-                           codex_home=args.codex_home)
+                           codex_home=args.codex_home, effort=args.effort, stop_after=args.stop_after,
+                           claude_cli=args.claude_cli)
     except FileExistsError:
         parser.error("이미 존재하는 출력 폴더는 사용할 수 없습니다.")
     except ValueError:
