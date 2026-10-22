@@ -37,6 +37,19 @@
 - 실측 도구와 CLI 판 확인, 메모리 부족 때의 시험 분할 방법은 [앞 인계](2026-10-21-d4-live-check.md) 「운용 사실」과 같다. 이 날은 백그라운드 명령이 메모리 부족으로 정리되어, 전체 시험을 앞에서 묶음별로 돌렸다.
 - 머지는 사용자가 정하면 세션이 `git merge --no-ff`와 push를 한다. `git merge -F -`는 이 셸에서 표준 입력을 읽지 못하므로 메시지는 파일로 넘긴다.
 
+## 새 회사 PC에서 재개할 때 (2026-10-22 기기 교체)
+
+사용자가 2026-10-22 이 회사 PC(Windows)를 새 회사 PC(Windows)로 교체한다고 알렸다. 저장소의 기록은 모두 GitHub `main`에 있다(머지 기록 커밋 `9333c43`까지, CI 두 OS 성공).
+
+1. 저장소를 clone하고 [Windows 개발 환경 인계](2026-10-02-windows-dev-environment.md)의 「Windows 기준선」과 「다음 세션 시작 방법」대로 준비한다: Python 3.13 가상 환경에 `backend[dev,desktop]` editable 설치, Node 22.17.1 x64(`.nvmrc`), `frontend`와 `desktop`에서 `npm ci`.
+2. 로그인을 다시 한다: `gh auth login`(push와 CI 확인), Claude Code CLI(`claude auth status`로 확인, 계정 이메일은 기록하지 않음). 앱 전용 ChatGPT 프로필은 옛 PC에도 없었다.
+3. 기준선을 다시 잰다: 백엔드는 `PYTHONUTF8=1`로 다섯 묶음, 프런트는 `npx vitest run --maxWorkers=4`, 공개 저장소 감사기. 새 PC의 메모리 여유와 긴 경로 설정(`LongPathsEnabled`)이 옛 PC와 다를 수 있다.
+4. 설치 CLI 판과 모델 목록을 생성 없이 다시 읽는다. 옛 PC의 실측(2.1.306, 동봉 2.1.247)은 기기와 판에 묶인 값이다.
+
+GitHub에 없는 것(공개 저장소라 설계상 빼 둔 것): 저장소 폴더의 `.gitignore` 대상(루트의 `projects/`, `exports/`, `feedback/`, 회사 오피스 파일, `docs/pilot`의 회사 자료), 루트의 미추적 피드백 JSON, 앱 자료 폴더 `~/slidecaptain-projects`, `Documents/slidecaptain-backups`, 실측 원시 산출물 `~/slidecaptain-live-check`(요지는 계획서에 있음). 필요한 것은 사용자가 회사가 허용하는 경로로 옮긴다. 세션이 GitHub로 올리지 않는다.
+
+옛 PC의 Claude 메모리는 옮겨지지 않는다. 저장소 정본이 없던 교훈 3건은 위키 저장소 `raw/notes/2026-10-22_흡수큐_회사PC-교체-전-메모리전용-교훈-3건.md`로 옮겼고, 머지 방식 교훈의 정본은 이 저장소의 인계 문서 「운용 사실」이다.
+
 ## 파일 인덱스
 
 | 파일 | 용도 |
