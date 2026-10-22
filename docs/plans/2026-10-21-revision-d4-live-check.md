@@ -1,6 +1,6 @@
 # 개정판 D4 실제 생성 확인: Claude 목록 값과 추론 강도, 요청 강도 기록
 
-작성: 2026-10-21(회사 PC, Windows). 상태: 4판(계획 리뷰 반영 9절, 구현 기록 10절, Claude 실측 결과 11절, 코드 리뷰 반영 12절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`).
+작성: 2026-10-21(회사 PC, Windows). 상태: 4판(계획 리뷰 반영 9절, 구현 기록 10절, Claude 실측 결과 11절, 코드 리뷰 반영 12절). 브랜치 `feat/d4-live-check`(기준 main `9d62455`). (2026-10-22: 사용자 결정 "A. main에 머지"로 main에 머지했다(`964c052`))
 
 상위 문서: [착수 인계](../handoffs/2026-10-21-d4-live-check-prep.md), [D4b 계획](2026-10-20-revision-d4b-claude-models.md) 8절(CMR-06, CMR-07, 설치 CLI 실측), 로드맵 D4a 이월표 둘째 행("원장/사용량의 요청 Effort 기록과 실제 적용값 대조 미구현"), [D2 계획](2026-10-08-revision-d2-common-foundation.md) 215행(원장의 Effort 열).
 
