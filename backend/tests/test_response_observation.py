@@ -38,16 +38,29 @@ def test_observed_fields_drops_odd_key_names_and_truncates_long_values():
 
 
 def test_observed_fields_counts_listed_items_without_their_values():
+    # MCP 서버 이름은 사용자가 짓는 문자열이라 이메일이 들어갈 수 있다. 이름 목록은 name_keys로 고른 칸에만 담는다 (리뷰 GIR-03)
     seen = observed_fields({"mcp_servers": [{"name": SECRET_EMAIL}], "tools": [], "skills": {"a": SECRET_PATH}},
                            value_keys=set(), value_hints=(), count_keys={"mcp_servers", "tools", "skills"})
     assert seen["values"] == {"mcp_servers#count": 1, "tools#count": 0, "skills#count": 1}
     assert SECRET_EMAIL not in repr(seen) and SECRET_PATH not in repr(seen)
 
 
+def test_observed_fields_lists_item_names_but_not_paths():
+    """정체를 모르는 플러그인을 가리려고 개수 칸에 이름 목록을 더한다. 경로 같은 다른 칸은 담지 않는다 (D4 생성 격리 3절 2)."""
+    plugins = [{"name": "builtin-design", "path": SECRET_PATH}, {"path": SECRET_PATH}]
+    seen = observed_fields({"plugins": plugins, "slash_commands": ["loop", "x" * 100] + [f"c{n}" for n in range(50)]},
+                           value_keys=set(), value_hints=(), count_keys={"plugins", "slash_commands"},
+                           name_keys={"plugins", "slash_commands"})
+    assert seen["values"]["plugins#count"] == 2 and seen["values"]["plugins#names"] == ["builtin-design"]
+    names = seen["values"]["slash_commands#names"]
+    assert names[0] == "loop" and len(names[1]) == 60 and len(names) == 40
+    assert SECRET_PATH not in repr(seen)
+
+
 def test_claude_init_message_is_logged_without_path_values(monkeypatch, caplog):
     """스트림 초기화 메시지에는 계정 칸 대신 사용자 이름이 든 경로 칸이 있다 (리뷰 LCR-07). 값은 남기지 않는다."""
     init = SystemMessage(subtype="init", data={
-        "type": "system", "subtype": "init", "model": "claude-test-1", "effort": "low",
+        "type": "system", "subtype": "init", "model": "claude-test-1", "effort": "low", "claude_code_version": "9.9.9",
         "per_turn_effort_active": False, "account": {"email": SECRET_EMAIL}, "cwd": SECRET_PATH,
         "memory_paths": {"user": SECRET_PATH}, "scratchpad_path": SECRET_PATH, "apiKeySource": "none",
         "mcp_servers": [], "tools": [], "plugins": [{"path": SECRET_PATH}]})
@@ -62,6 +75,7 @@ def test_claude_init_message_is_logged_without_path_values(monkeypatch, caplog):
     [line] = [r.getMessage() for r in caplog.records if "응답 관측" in r.getMessage()]
     assert "claude-test-1" in line and "'effort': 'low'" in line and "'per_turn_effort_active': False" in line
     assert "'mcp_servers#count': 0" in line and "'plugins#count': 1" in line and "memory_paths.user" in line
+    assert "'claude_code_version': '9.9.9'" in line  # 판본이 바뀌면 이전 실행과의 비교가 무효다 (리뷰 GIR-02)
     assert SECRET_EMAIL not in caplog.text and SECRET_PATH not in caplog.text
 
 

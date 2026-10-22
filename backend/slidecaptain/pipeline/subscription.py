@@ -112,6 +112,18 @@ def _log_raw_usage_line(result: ResultMessage) -> None:
 
         cost_present = "있음" if result.total_cost_usd is not None else "없음"
 
+        # 보조 모델(haiku 등)의 토큰이 합계에 섞이므로 모델별 (입력, 출력, 캐시 읽기, 캐시 생성)을 함께 남긴다.
+        # 정수가 아닌 값은 None이다 (D4 생성 격리 리뷰 GIR-01)
+        def _field(entry: object, name: str) -> int | None:
+            value = entry.get(name) if isinstance(entry, dict) else None
+            return value if type(value) is int and value >= 0 else None
+
+        by_model = {
+            str(key): tuple(_field(entry, name) for name in (
+                "inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens"))
+            for key, entry in sorted(model_usage_raw.items(), key=lambda item: str(item[0]))
+        }
+
         _LOG.info(
             "SDK 사용량 원시 형태: "
             f"usage_keys={usage_keys} model_usage_keys={model_usage_keys} "
@@ -120,7 +132,8 @@ def _log_raw_usage_line(result: ResultMessage) -> None:
             f"model_usage_in={model_usage_in} model_usage_out={model_usage_out} "
             f"model_usage_cache_read={model_usage_cache_read} "
             f"model_usage_cache_create={model_usage_cache_create} "
-            f"num_turns={result.num_turns} total_cost_usd={cost_present}"
+            f"num_turns={result.num_turns} total_cost_usd={cost_present} "
+            f"model_usage_by_model={by_model}"
         )
     except Exception:  # 로그 조립 실패가 사용량 계산에 영향을 주지 않는다
         _LOG.debug("SDK 사용량 원시 로그 조립 실패", exc_info=True)
@@ -208,6 +221,9 @@ class SubscriptionProvider:
             setting_sources=[],  # 사용자 설정 격리: CLAUDE.md와 스킬이 생성에 개입하지 못하게
             # 사용자 단위 MCP 서버도 띄우지 않는다. 목록 조회와 같은 격리 조건이다 (D4 실제 생성 확인 3.1, D4b 리뷰 CMR-07)
             strict_mcp_config=True,
+            # Claude Code 내장 스킬과 명령도 끈다. 사용자 설정의 스킬과 에이전트는 setting_sources=[]가 이미 막는다
+            # (D4 생성 격리 계획 3절 1. 설치 CLI 2.1.306은 내장 명령 55개, 동봉 2.1.247은 50개를 실었다)
+            extra_args={"disable-slash-commands": None},
             # 구조화 출력 경로는 생성 1턴 + 구조화 출력 정리 1턴을 쓴다: 2가 실측 최소값이다
             # (2026-08-28 스모크 격리 진단. 트리비얼 프롬프트에서만 통과하던 max_turns=1로는
             # 실제 생성 프롬프트가 "Reached maximum number of turns (1)"로 거부됐다).
@@ -236,8 +252,8 @@ class SubscriptionProvider:
                     # CLI가 정한 모델과 강도를 초기화 메시지에서 읽을 수 있는지 보는 진단이다. API의 실제 적용값은 아니다
                     # (D4 실제 생성 확인 3.3, 리뷰 LCR-05)
                     _LOG.info("응답 관측 Claude init: %s", observed_fields(
-                        message.data, value_keys={"model"}, value_hints=("effort", "thinking"),
-                        count_keys=_INIT_COUNT_KEYS))
+                        message.data, value_keys={"model", "claude_code_version"}, value_hints=("effort", "thinking"),
+                        count_keys=_INIT_COUNT_KEYS, name_keys={"plugins"}))
                 if isinstance(message, AssistantMessage):
                     if assistant_model is None:
                         assistant_model = message.model
