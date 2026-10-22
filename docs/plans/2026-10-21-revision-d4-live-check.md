@@ -196,7 +196,7 @@
 
 1. 목록 값의 `--model` 수용: `default`, `claude-fable-5-1[1m]`(설치 CLI), `opus[1m]`(동봉 CLI)를 CLI가 받아 생성했다. `[1m]` 변형의 응답 모델(`AssistantMessage.model`)에는 `[1m]`이 붙지 않는다. 초기화 메시지와 `model_usage`의 키에는 `claude-opus-5[1m]`처럼 붙는다. 그래서 응답 모델과 목록의 해석된 모델은 `[1m]`을 떼고 비교해야 같다.
 2. 강도: `--effort low`를 붙인 생성이 두 CLI 모두 오류 없이 끝났다. 초기화 메시지에는 두 판 모두 `effort` 칸이 없었다. 2.1.306에는 `per_turn_effort_active: true`만 있고 2.1.247에는 그 칸도 없다. 리뷰 LCR-05가 실행 파일 문자열로 추정한 `effort` 칸은 실제 응답에서 관측되지 않았다. 따라서 CLI 적용값은 "없음", API 적용값은 "확인 불가"다. 화면 문구(`AISettingsPanel.tsx` 194행 "응답에서 확인할 수 없다")는 사실과 맞으므로 바꾸지 않고, `CallUsage`에 적용 강도 칸도 더하지 않는다.
-3. 생성 경로의 `strict_mcp_config=True`: 두 CLI 모두 생성이 끝났고 `mcp_servers` 개수는 0이다. 새로 관측한 것: `setting_sources=[]`인데도 초기화 메시지의 스킬은 19개(동봉 16개), 플러그인 3개(동봉 0개), 에이전트 5개, 슬래시 명령 55개(동봉 50개)다. 이것들이 생성 프롬프트에 영향을 주는지는 확인하지 못했다. SDK에는 `skills`, `plugins` 옵션이 있다. 로드맵 D4a 이월표에 담당과 함께 올렸다.
+3. 생성 경로의 `strict_mcp_config=True`: 두 CLI 모두 생성이 끝났고 `mcp_servers` 개수는 0이다. 새로 관측한 것: `setting_sources=[]`인데도 초기화 메시지의 스킬은 19개(동봉 16개), 플러그인 3개(동봉 0개), 에이전트 5개, 슬래시 명령 55개(동봉 50개)다. 이것들이 생성 프롬프트에 영향을 주는지는 확인하지 못했다. SDK에는 `skills`, `plugins` 옵션이 있다. 로드맵 D4a 이월표에 담당과 함께 올렸다. (2026-10-22 정정: 같은 옵션으로 초기화 응답의 이름을 읽어 보니 명령과 스킬, 에이전트는 모두 Claude Code 내장분이고 사용자 설치분은 없었다. `setting_sources=[]`는 사용자 설정을 막고 있었다. SDK의 `skills`, `plugins` 옵션은 더하는 용도라 빼는 데 쓸 수 없다. 내장분은 `--disable-slash-commands`로 끈다. [D4 생성 격리 계획](2026-10-22-revision-d4-generation-isolation.md) 2절)
 4. Codex 요청 강도와 실제 모델: 선택지 A라 실행하지 않았다. 이월표 둘째 행에 남긴다.
 5. 원장과 사용량의 요청 강도: 실제 경로의 세 행 모두 원장 `effort`와 `ai-usage.jsonl`의 `requested_effort`가 `low`로 남았다.
 

@@ -38,10 +38,21 @@ def test_observed_fields_drops_odd_key_names_and_truncates_long_values():
 
 
 def test_observed_fields_counts_listed_items_without_their_values():
-    seen = observed_fields({"mcp_servers": [{"name": SECRET_EMAIL}], "tools": [], "skills": {"a": SECRET_PATH}},
+    seen = observed_fields({"mcp_servers": [{"path": SECRET_EMAIL}], "tools": [], "skills": {"a": SECRET_PATH}},
                            value_keys=set(), value_hints=(), count_keys={"mcp_servers", "tools", "skills"})
     assert seen["values"] == {"mcp_servers#count": 1, "tools#count": 0, "skills#count": 1}
     assert SECRET_EMAIL not in repr(seen) and SECRET_PATH not in repr(seen)
+
+
+def test_observed_fields_lists_item_names_but_not_paths():
+    """정체를 모르는 플러그인을 가리려고 개수 칸에 이름 목록을 더한다. 경로 같은 다른 칸은 담지 않는다 (D4 생성 격리 3절 2)."""
+    plugins = [{"name": "builtin-design", "path": SECRET_PATH}, {"path": SECRET_PATH}]
+    seen = observed_fields({"plugins": plugins, "slash_commands": ["loop", "x" * 100] + [f"c{n}" for n in range(50)]},
+                           value_keys=set(), value_hints=(), count_keys={"plugins", "slash_commands"})
+    assert seen["values"]["plugins#count"] == 2 and seen["values"]["plugins#names"] == ["builtin-design"]
+    names = seen["values"]["slash_commands#names"]
+    assert names[0] == "loop" and len(names[1]) == 60 and len(names) == 40
+    assert SECRET_PATH not in repr(seen)
 
 
 def test_claude_init_message_is_logged_without_path_values(monkeypatch, caplog):

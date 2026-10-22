@@ -208,6 +208,9 @@ class SubscriptionProvider:
             setting_sources=[],  # 사용자 설정 격리: CLAUDE.md와 스킬이 생성에 개입하지 못하게
             # 사용자 단위 MCP 서버도 띄우지 않는다. 목록 조회와 같은 격리 조건이다 (D4 실제 생성 확인 3.1, D4b 리뷰 CMR-07)
             strict_mcp_config=True,
+            # Claude Code 내장 스킬과 명령도 끈다. 사용자 설정의 스킬과 에이전트는 setting_sources=[]가 이미 막는다
+            # (D4 생성 격리 계획 3절 1. 설치 CLI 2.1.306은 내장 명령 55개, 동봉 2.1.247은 50개를 실었다)
+            extra_args={"disable-slash-commands": None},
             # 구조화 출력 경로는 생성 1턴 + 구조화 출력 정리 1턴을 쓴다: 2가 실측 최소값이다
             # (2026-08-28 스모크 격리 진단. 트리비얼 프롬프트에서만 통과하던 max_turns=1로는
             # 실제 생성 프롬프트가 "Reached maximum number of turns (1)"로 거부됐다).

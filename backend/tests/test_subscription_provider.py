@@ -76,6 +76,15 @@ def test_generation_does_not_start_user_mcp_servers(monkeypatch):
     assert captured["options"].effort == "low"
 
 
+def test_generation_turns_off_built_in_skills_and_commands(monkeypatch):
+    """Claude Code 내장 스킬과 명령(설치 CLI 55개)을 생성 세션에서 끈다. 사용자 설정은 setting_sources=[]가 이미 막는다
+    (D4 생성 격리 계획 3절 1)."""
+    captured: dict = {}
+    monkeypatch.setattr(sub, "query", _fake_query(_result(structured={}), captured=captured))
+    asyncio.run(SubscriptionProvider().complete("q", {}))
+    assert captured["options"].extra_args == {"disable-slash-commands": None}
+
+
 def test_model_override():
     assert SubscriptionProvider(model="opus").model == "opus"
     assert SubscriptionProvider().model == "sonnet"
