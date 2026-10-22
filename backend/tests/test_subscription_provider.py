@@ -586,3 +586,21 @@ def test_provider_response_default_usage_is_none():
     """usage 를 명시하지 않고 만들면 기본값은 None 이다 (기존 호출부 호환)."""
     resp = ProviderResponse(structured={"answer": 2}, raw_text="원문")
     assert resp.usage is None
+
+
+def test_raw_usage_line_breaks_tokens_down_by_model(caplog):
+    """model_usage에는 보조 모델(haiku) 토큰이 함께 잡혀 합계만으로는 주 모델의 요청 크기를 알 수 없다. 모델별 값을
+    (입력, 출력, 캐시 읽기, 캐시 생성)으로 함께 남긴다 (D4 생성 격리 리뷰 GIR-01)."""
+    import logging
+
+    result = _result(structured={}, usage={"input_tokens": 2, "output_tokens": 435}, model_usage={
+        "claude-opus-5-5": {"inputTokens": 2, "outputTokens": 435, "cacheReadInputTokens": 0,
+                            "cacheCreationInputTokens": 6388},
+        "claude-haiku-5-5": {"inputTokens": 5605, "outputTokens": 25, "cacheReadInputTokens": 0,
+                             "cacheCreationInputTokens": "bad"},
+    })
+    with caplog.at_level(logging.INFO, logger="slidecaptain.pipeline.subscription"):
+        build_call_usage(result, assistant_model="claude-opus-5-5")
+    [msg] = [r.getMessage() for r in caplog.records if "SDK 사용량 원시 형태" in r.getMessage()]
+    assert "'claude-opus-5-5': (2, 435, 0, 6388)" in msg
+    assert "'claude-haiku-5-5': (5605, 25, 0, None)" in msg  # 정수가 아닌 값은 만들지 않는다

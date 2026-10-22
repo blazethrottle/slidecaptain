@@ -42,13 +42,15 @@ _OBSERVED_NAMES_MAX = 40
 
 
 def observed_fields(data: Any, *, value_keys: set[str] | frozenset[str], value_hints: tuple[str, ...],
-                    count_keys: set[str] | frozenset[str] = frozenset()) -> dict:
+                    count_keys: set[str] | frozenset[str] = frozenset(),
+                    name_keys: set[str] | frozenset[str] = frozenset()) -> dict:
     """응답 관측 진단 (D4 실제 생성 확인 3.3): 칸 이름 목록과 허용한 칸의 값만 고른다.
 
     실제 적용 모델과 강도를 응답에서 읽을 수 있는지 보려는 것이다. 원시 응답에는 계정 정보가 들어 있으므로 통째로 남기지
     않는다. 칸 이름은 한 단계 아래 dict까지 모은다. 값은 이름이 value_keys에 있거나 value_hints를 포함하는 칸의 스칼라만
     담고, 그 칸이 dict면 한 단계 아래 스칼라까지 담는다. count_keys의 칸(MCP 서버, 도구 목록 등)은 개수만 "<이름>#count"로
-    담고 안을 보지 않는다. 목록이면 항목의 이름(문자열 항목 또는 객체의 name 칸)만 "<이름>#names"로 더 담는다.
+    담고 안을 보지 않는다. 그중 name_keys의 칸이 목록이면 항목의 이름(문자열 항목 또는 객체의 name 칸)만 "<이름>#names"로
+    더 담는다. MCP 서버 이름처럼 사용자가 짓는 문자열에는 이메일이 들어갈 수 있어 목적에 맞는 칸만 고른다 (D4 생성 격리 리뷰 GIR-03).
     이름 규칙에 맞지 않는 칸(값이 이름 자리에 온 경우)은 "?"로 센다.
     """
     keys: list[str] = []
@@ -73,8 +75,9 @@ def observed_fields(data: Any, *, value_keys: set[str] | frozenset[str], value_h
             keys.append(path)
             if not nested and name in count_keys and isinstance(value, (list, dict)):
                 values[path + "#count"] = len(value)
+                listed = value if isinstance(value, list) and name in name_keys else []
                 names = [item if isinstance(item, str) else item.get("name") if isinstance(item, dict) else None
-                         for item in (value if isinstance(value, list) else [])]
+                         for item in listed]
                 names = [entry[:_OBSERVED_NAME_MAX] for entry in names if isinstance(entry, str)][:_OBSERVED_NAMES_MAX]
                 if names:
                     values[path + "#names"] = names
