@@ -162,3 +162,34 @@ jobs:
         with:
           name: local-release-${{ matrix.os }}
           path: ${{ runner.temp }}/slidecaptain-release/*
+
+  # 의존성 권고 검사. 기존 verify(Windows, macOS)와 따로 두고, PR과 main 푸시에서 돌린다.
+  # Python은 배포 잠금(backend/requirements-release.txt)만 본다. 개발 추가 의존성은 버전이 고정돼 있지 않다.
+  # npm은 high 이상만 실패다. moderate로 남은 항목은 메이저를 바꾸어야 해서 이번 릴리스에서 남긴다.
+  # 사유와 권고 ID는 docs/releases/0.2.1.md에 있다. high가 새로 생기면 이 잡은 실패한다.
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Python 의존성 검사 (pip-audit)
+        run: |
+          python -m pip install pip-audit
+          python -m pip_audit -r backend/requirements-release.txt --no-deps --disable-pip --progress-spinner=off
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: 프런트 의존성 검사
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+      - name: 독립 앱 의존성 검사
+        working-directory: desktop
+        run: npm audit --audit-level=high

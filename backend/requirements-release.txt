@@ -1,4 +1,6 @@
-# SlideCaptain 0.2.0 runtime dependencies, Python 3.13, Windows/macOS.
+# SlideCaptain 0.2.1 runtime dependencies, Python 3.13, Windows/macOS.
+# 2026-11-02: advisory fixes only (other pins unchanged). pillow 13.0.0,
+# pyjwt 2.15.1, mcp/mcp-types 2.3.0, opentelemetry-api 1.45.2.
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.14.2
@@ -18,15 +20,15 @@ idna==3.19
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 lxml==6.1.2
-mcp==2.1.1
-mcp-types==2.1.1
+mcp==2.3.0
+mcp-types==2.3.0
 openpyxl==3.1.5
-opentelemetry-api==1.44.0
-pillow==12.3.0
+opentelemetry-api==1.45.2
+pillow==13.0.0
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
 pydantic==2.13.5
 pydantic-core==2.46.5
-pyjwt==2.13.0
+pyjwt==2.15.1
 python-multipart==0.0.32
 python-pptx==1.0.2
 pywin32==312 ; sys_platform == 'win32'
