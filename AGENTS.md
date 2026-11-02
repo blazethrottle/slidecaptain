@@ -14,7 +14,7 @@ AI는 보고 논리와 표현을 설계하고 코드는 배치를 계산한다. 
 
 ## Cursor Cloud specific instructions
 
-- 이 이미지의 기본 Python은 3.12다. 앱은 3.13만 받는다. `install`이 `uv`로 3.13을 두고 `backend/.venv`에 개발 의존성(`[dev,desktop]`, `requirements-release.txt` 제약)을 설치한다. 테스트는 `backend`에서 `PYTHONUTF8=1 .venv/bin/python -m pytest tests -q`다. 시스템 `python3`로 pytest를 돌리지 않는다.
+- 이 이미지의 기본 Python은 3.12다. 앱은 3.13만 받는다. `install`이 `uv`로 3.13을 두고 `backend/.venv`에 개발 의존성(`[dev,desktop]`, `requirements-release.txt` 제약)을 설치한다. 환경 빌드는 저장소 기본 브랜치 `main`의 잠금으로 만든다. `requirements-release.txt`가 그 잠금과 다른 브랜치에서는 `uv pip install --python backend/.venv/bin/python -c backend/requirements-release.txt -e "./backend[dev,desktop]"`를 다시 실행한다. 테스트는 `backend`에서 `PYTHONUTF8=1 .venv/bin/python -m pytest tests -q`다. 시스템 `python3`로 pytest를 돌리지 않는다.
 - Node는 이미지의 22.23.4다. `frontend/package.json`의 `engines`(`>=22.17.1`)를 만족한다. CI가 쓰는 정확한 판은 `.nvmrc`의 22.17.1이다. 프런트는 `frontend`에서 `npm ci`, `npm test`, `npm run build`. 독립 앱 런타임 테스트는 `desktop`에서 `npm test`다.
 - `start`는 두 tmux 세션을 켠다. `slidecaptain-api`는 `http://127.0.0.1:8765`(API, `frontend/dist`가 있으면 빌드된 화면). `slidecaptain-web`은 `http://127.0.0.1:5173`(Vite, `/api`는 8765로 프록시). 8765에서 화면을 보려면 `frontend`에서 `npm run build`를 한 번 실행한다. 자료 폴더는 `~/.slidecaptain-cloud/data`다. `~/slidecaptain-projects`는 쓰지 않는다.
 - 프로젝트 만들기와 초안 내보내기는 AI 로그인 없이 된다. 환경 확인에서 실제 Claude/ChatGPT 호출을 하지 않는다.
